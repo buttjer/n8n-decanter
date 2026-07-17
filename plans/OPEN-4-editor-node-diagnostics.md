@@ -9,7 +9,7 @@
 
 - IDEAS: "js files throw IDE errors like TS1108 / cannot-redeclare" — the
   **TS1108 half** (the redeclare half is handled in
-  [Plan 1](1-trustworthy-edit-loop.md) via `moduleDetection: "force"`).
+  [Plan 1](DONE-1-trustworthy-edit-loop.md) via `moduleDetection: "force"`).
 - Related: PLAN.md "Type checking" wart (IDE tsservers show a spurious TS1108);
   `scripts/typecheck.mts`.
 
@@ -35,7 +35,7 @@ in script mode, CJS detection, and `moduleDetection: "force"`).
 The **"cannot redeclare block-scoped variable"** half of the IDEAS entry is a
 *separate* issue — cross-file global scope collision — already fixed by
 `moduleDetection: "force"` (each file becomes its own module scope). That change
-is staged in `template/tsconfig.json.example`; [Plan 1](1-trustworthy-edit-loop.md)
+is staged in `template/tsconfig.json.example`; [Plan 1](DONE-1-trustworthy-edit-loop.md)
 commits it. This plan is only about the 1108 / 1375 / 1378 grammar diagnostics.
 
 **Goal:** editors show **no** false TS1108 / TS1375 / TS1378 on n8n node files,
@@ -48,7 +48,7 @@ holds.
 
 - Do not touch `scripts/typecheck.mts` behavior (CLI typecheck already correct).
 - Do not write the plugin in TypeScript / `.mts` despite the CLI migration
-  ([Plan 6](6-typescript-migration.md)): tsserver loads plugins via
+  ([Plan 6](DONE-6-typescript-migration.md)): tsserver loads plugins via
   `require()` (CommonJS `.js`), and it ships in `template/` as sync-dir
   content — it is not CLI source and lives outside `tsconfig.cli.json`.
 - Do not disable JS validation wholesale (`javascript.validate.enable: false`)

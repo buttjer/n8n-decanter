@@ -34,7 +34,7 @@ changes with **Breaking:**. On release, rename `[Unreleased]` to
 ## Backlog
 
 `plans/` is the backlog (see `plans/README.md` for conventions);
-`plans/0-backlog.md` is the grab-bag of items without their own
+`plans/BACKLOG.md` is the grab-bag of items without their own
 plan. When your work **fully** completes a Plan 0 entry (implemented, tested,
 documented as applicable), check it off (`- [x]`). Partially done is not done:
 leave the box unchecked and append a short parenthetical status instead. Don't
