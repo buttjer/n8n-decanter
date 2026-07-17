@@ -1,7 +1,7 @@
 # Plan 6 — TypeScript migration of the CLI
 
 **Priority:** P3
-**Status:** In progress
+**Status:** Done
 **Theme:** convert the CLI's own source (`n8n-decanter.mjs`, `lib/`, `scripts/`,
 `test/`) from untyped `.mjs` to strict TypeScript `.mts`, run natively via
 Node's type stripping — no build step, no change to the data model or to how
@@ -217,8 +217,8 @@ should be extensions only. (`workflows/` node files and everything under
   to be `composite` (may not `noEmit`), so `tsconfig.cli.json` uses
   composite + declaration-only emit into `node_modules/.cache` instead of
   `noEmit` — same checking, no visible build artifacts. PLAN.md and
-  CLAUDE.md updated with the user's OK. Still open: an editor spot-check
-  of the project binding (no red squiggles on `.mts` imports in `lib/`).
+  CLAUDE.md updated with the user's OK. Closed 2026-07-17 with the user's
+  sign-off on the editor binding.
 - **Ordering:** run this *after* plans 1–4 land. Plans 1 and 4 both touch or
   reference `scripts/typecheck.mjs` and the template hooks; migrating first
   would churn their file references mid-flight. Matches the P3 tag.
