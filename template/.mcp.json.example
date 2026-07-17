@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "n8n-mcp": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "set -a; [ -f ./.env ] && . ./.env; set +a; if [ -n \"$N8N_HOST\" ]; then N8N_API_URL=\"$N8N_HOST\"; export N8N_API_URL; fi; exec npx n8n-mcp"
+      ],
+      "env": {
+        "MCP_MODE": "stdio",
+        "LOG_LEVEL": "error",
+        "DISABLE_CONSOLE_OUTPUT": "true"
+      }
+    }
+  }
+}

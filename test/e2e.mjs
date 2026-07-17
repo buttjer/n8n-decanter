@@ -122,20 +122,26 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   pending.child.stdin.end();
   const { stdout, stderr } = await pending;
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
-  // the ENTIRE template must be copied, whatever it contains
+  // the ENTIRE template must be copied, whatever it contains; `X.example`
+  // materializes as `X` (inert in the repo, live in the target)
   const templateDir = path.join(PROJECT, "template");
   const templateFiles = listFilesRecursive(templateDir);
   assert.ok(templateFiles.length > 0, "template must not be empty");
+  const materialize = (rel) => (rel.endsWith(".example") ? rel.slice(0, -".example".length) : rel);
   for (const rel of templateFiles) {
-    assert.ok(existsSync(path.join(target, rel)), `template file not copied: ${rel}`);
-    assert.equal(read(target, rel), read(templateDir, rel), `content mismatch: ${rel}`);
+    const destRel = materialize(rel);
+    assert.ok(existsSync(path.join(target, destRel)), `template file not copied: ${rel} -> ${destRel}`);
+    // .env pre-exists (init wrote credentials), so the template copy is skipped there
+    if (destRel !== ".env") {
+      assert.equal(read(target, destRel), read(templateDir, rel), `content mismatch: ${rel} -> ${destRel}`);
+    }
   }
   assert.ok(existsSync(path.join(target, "workflows")), "workflows dir copied");
   assert.equal(JSON.parse(read(target, "decanter.config.json")).root, "./workflows");
   assert.match(read(target, ".gitignore"), /^\.env$/m);
   assert.match(stdout + stderr, /credentials verified/);
   // re-init must not clobber user edits to template-provided files
-  const probe = templateFiles[0];
+  const probe = materialize(templateFiles.find((f) => materialize(f) !== ".env"));
   writeFileSync(path.join(target, probe), "user content\n");
   const again = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
   again.child.stdin.write("\n\n"); // keep existing host + key

@@ -10,12 +10,13 @@ See [Plan.md](Plan.md) for the design.
 ```sh
 npm install
 node n8n-decanter.mjs init [dir]   # prompts for host + API key, writes .env,
-                                   # copies template/ (AGENTS.md, CLAUDE.md,
-                                   # workflows/), scaffolds config + .gitignore
+                                   # copies template/, scaffolds config + .gitignore
 ```
 
-`init` never overwrites existing files (safe to re-run) and does a best-effort
-credential check. Alternatively set up manually: `cp .env.example .env` and
+`init` copies everything in [template/](template/); files named `X.example`
+land as `X` (the suffix keeps agent configs inert in this repo, live in the
+target). It never overwrites existing files (safe to re-run) and does a
+best-effort credential check. Alternatively set up manually: `cp .env.example .env` and
 fill it in. Then add workflow ids to `decanter.config.json`:
 
 ```json

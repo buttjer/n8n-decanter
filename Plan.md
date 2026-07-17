@@ -177,10 +177,29 @@ Bootstraps a sync directory (defaults to cwd, runs before any config exists):
    defaults (enter keeps them). Host is normalized (`https://` prepended when
    no scheme, trailing `/` stripped). Write `.env`.
 2. Copy `template/` into the target **recursively and completely** — whatever
-   the template contains ships as-is — but never overwrite files that already
-   exist in the target (`cpSync` with `force: false`), so re-running init is
-   safe. Template contents today: empty `AGENTS.md`, `CLAUDE.md` referencing
-   AGENTS.md, empty `workflows/` (`.gitkeep`).
+   the template contains ships — but never overwrite files that already exist
+   in the target, so re-running init is safe. Files named `X.example`
+   materialize as `X`: the suffix keeps agent-tooling config (CLAUDE.md,
+   `.claude/settings*`, opencode.json, …) inert inside this repo while
+   working on the CLI itself, but live in init'ed dirs. Name template files
+   `<full real name>.example` (e.g. `settings.local.json.example`, not
+   `settings.local.example`). `.env.example` materializes to `.env` and is
+   therefore always skipped — init has just written the real `.env`.
+   The template also ships `shared/` for shared types and helpers used by
+   node files, plus agent permission configs (`.claude/settings.local.json`,
+   `opencode.json`) that allow edits in `workflows/` and `shared/` while
+   denying `.decanter.json`, `*.remote.js`, `.env`, and `push --force` —
+   the CLI compliance guard stays the wall behind those. `.mcp.json` embeds
+   the [n8n-mcp](https://github.com/czlonkowski/n8n-mcp) server through a
+   small `sh -c` wrapper that sources `./.env` (with `set -a` so the vars are
+   exported, mapping `N8N_HOST` to n8n-mcp's `N8N_API_URL`) and then `exec`s
+   `npx n8n-mcp`. That keeps credentials out of the committable file *and*
+   needs no shell setup — Claude Code does not read `.env` itself. Two
+   gotchas: don't use `${VAR}` syntax inside the wrapper (Claude Code expands
+   `${…}` in `.mcp.json` fields before the shell sees them, plain `$VAR` is
+   safe), and the wrapper is POSIX-sh (macOS/Linux). Without a `.env` the
+   server still starts, in docs-only mode. See the shared-code
+   caveat in Implementation notes.
 3. Create `decanter.config.json` (empty workflow list) and `.gitignore`
    (`node_modules/`, `.env`) if missing; if a `.gitignore` exists that doesn't
    ignore `.env`, warn (the file holds the API key).
@@ -268,6 +287,14 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   malformed tree. The guard's checks live in `lib/validate.mjs`, shared by
   push (full validation), watch (per-node subset, no typecheck), and `check`.
   `check` loads config without requiring credentials.
+- **`shared/` caveat — types yes, runtime helpers not yet**: node files can
+  safely use *type-only* imports from `shared/` (erased at compile time, and
+  `.js` files can use JSDoc `@typedef` imports). But **value imports compile
+  to `require()` calls that fail inside n8n** — Code nodes can't load local
+  files, and `compileTs` runs esbuild with `bundle: false`. Shipping shared
+  *functions* into nodes needs `bundle: true` (inline `shared/` into the
+  compiled node, keep n8n globals external) — a candidate milestone 8; until
+  then the guard against it is n8n failing at runtime, not the CLI.
 
 ## Open questions (verify against a live instance)
 

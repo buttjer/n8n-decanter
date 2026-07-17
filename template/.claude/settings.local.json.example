@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(workflows/**)",
+      "Edit(shared/**)"
+    ],
+    "deny": [
+      "Edit(**/.decanter.json)",
+      "Edit(**/*.remote.js)",
+      "Read(.env)",
+      "Edit(.env)",
+      "Bash(n8n-decanter push --force)",
+      "Bash(n8n-decanter push --force:*)",
+      "Bash(node n8n-decanter.mjs push --force)",
+      "Bash(node n8n-decanter.mjs push --force:*)"
+    ]
+  }
+}
