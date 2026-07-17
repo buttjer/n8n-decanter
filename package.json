@@ -1,0 +1,21 @@
+{
+  "name": "n8n-decanter",
+  "version": "0.1.0",
+  "description": "Keep n8n workflows in git: pull Code nodes into per-workflow folders, push them back.",
+  "type": "module",
+  "bin": {
+    "n8n-decanter": "./n8n-decanter.mjs"
+  },
+  "scripts": {
+    "typecheck": "node scripts/typecheck.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
