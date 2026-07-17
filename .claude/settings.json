@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node n8n-decanter.mjs *)",
+      "Bash(node n8n-decanter.mts *)",
       "Bash(npm test *)",
       "Bash(npm view *)",
       "Bash(npm run *)",
@@ -24,7 +24,17 @@
       "Bash(printf 'const x = 1;\\\\n// @ts-ignore\\\\nreturn { x };\\\\n')",
       "Bash(echo \"--- exit: $? \\(ts-ignore\\)\")",
       "Bash(printf '// @ts-nocheck\\\\nconst x = 1;\\\\nreturn { x };\\\\n')",
-      "Bash(echo \"--- exit: $? \\(ts-nocheck\\)\")"
+      "Bash(echo \"--- exit: $? \\(ts-nocheck\\)\")",
+      "Bash(printf 'const x: number = 1;\\\\nconsole.log\\(\"stripped-ok\", x\\);\\\\n')",
+      "Bash(node t.mts)",
+      "Bash(echo \"--- exit: $? ---\")",
+      "Bash(node --disable-warning=ExperimentalWarning t.mts)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(mkdir -p sp/lib)",
+      "Bash(printf 'export const v: string = \"lib-import-ok\";\\\\n')",
+      "Bash(printf 'import { v } from \"./lib/a.mts\";\\\\nconsole.log\\(v\\);\\\\n')",
+      "Bash(printf '#!/usr/bin/env node\\\\nconsole.log\\(\"shebang-ok\" as string\\);\\\\n')",
+      "Bash(chmod +x sp/bin.mts)"
     ],
     "deny": [
       "Bash(rm -rf *)",
