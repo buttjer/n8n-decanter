@@ -2,11 +2,12 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
+import type { Log } from "./types.mts";
 
 const TEMPLATE_DIR = fileURLToPath(new URL("../template", import.meta.url));
 
-function parseEnvFile(file) {
-  const values = {};
+function parseEnvFile(file: string): Record<string, string> {
+  const values: Record<string, string> = {};
   if (!existsSync(file)) return values;
   for (const line of readFileSync(file, "utf8").split("\n")) {
     const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
@@ -17,9 +18,9 @@ function parseEnvFile(file) {
   return values;
 }
 
-function copyTemplate(srcDir, destDir, { force = false, protect = new Set() } = {}) {
-  const overwritten = [];
-  const walk = (src, dest, rel) => {
+function copyTemplate(srcDir: string, destDir: string, { force = false, protect = new Set() }: { force?: boolean; protect?: Set<string> } = {}): string[] {
+  const overwritten: string[] = [];
+  const walk = (src: string, dest: string, rel: string): void => {
     mkdirSync(dest, { recursive: true });
     for (const entry of readdirSync(src, { withFileTypes: true })) {
       const srcPath = path.join(src, entry.name);
@@ -45,10 +46,10 @@ function copyTemplate(srcDir, destDir, { force = false, protect = new Set() } = 
  * Prompt helper that also works with piped stdin: plain readline/promises
  * drops lines arriving before question() is called and hangs forever on EOF.
  */
-function createPrompt() {
+function createPrompt(): { question(prompt: string): Promise<string>; close(): void } {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const buffered = [];
-  const waiters = [];
+  const buffered: string[] = [];
+  const waiters: Array<(line: string) => void> = [];
   let closed = false;
   rl.on("line", (line) => {
     const waiter = waiters.shift();
@@ -60,9 +61,9 @@ function createPrompt() {
     for (const waiter of waiters.splice(0)) waiter("");
   });
   return {
-    async question(prompt) {
+    async question(prompt: string): Promise<string> {
       process.stdout.write(prompt);
-      if (buffered.length > 0) return buffered.shift();
+      if (buffered.length > 0) return buffered.shift()!;
       if (closed) return "";
       return new Promise((resolve) => waiters.push(resolve));
     },
@@ -71,7 +72,7 @@ function createPrompt() {
 }
 
 /** Interactive bootstrap: prompt for credentials, write .env, copy template/. */
-export async function init(targetDir, { force = false } = {}, log) {
+export async function init(targetDir: string | undefined, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
   const dir = path.resolve(targetDir ?? ".");
   mkdirSync(dir, { recursive: true });
   const envFile = path.join(dir, ".env");
@@ -128,6 +129,7 @@ export async function init(targetDir, { force = false } = {}, log) {
     if (res.ok) log.info(`credentials verified against ${host}`);
     else log.warn(`credential check failed (${res.status} ${res.statusText}) — .env written anyway`);
   } catch (err) {
-    log.warn(`could not reach ${host} (${err.cause?.code ?? err.message}) — .env written anyway`);
+    const e = err as Error & { cause?: { code?: string } };
+    log.warn(`could not reach ${host} (${e.cause?.code ?? e.message}) — .env written anyway`);
   }
 }

@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
+import type { DecanterState, Log, NodeState, Workflow, WorkflowNode } from "./types.mts";
 import {
   FILE_PLACEHOLDER_PREFIX,
   isJsCodeNode,
@@ -13,14 +15,14 @@ import {
   workflowStructureHash,
 } from "./util.mts";
 
-function writeIfChanged(file, content) {
+function writeIfChanged(file: string, content: string): boolean {
   if (existsSync(file) && readFileSync(file, "utf8") === content) return false;
   writeFileSync(file, content);
   return true;
 }
 
 /** Locate/create the workflow folder, renaming it if the workflow was renamed. */
-function ensureWorkflowDir(root, wf, log) {
+function ensureWorkflowDir(root: string, wf: Workflow, log: Log): { dir: string; previousDir?: string } {
   const wanted = sanitizeFilename(wf.name);
   const existing = findWorkflowDir(root, wf.id);
   if (!existing) {
@@ -42,7 +44,7 @@ function ensureWorkflowDir(root, wf, log) {
 }
 
 /** Pick/refresh the file name for a node, renaming existing files on node rename. */
-function resolveNodeFile(dir, nodeState, node, ext, usedNames, log) {
+function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: WorkflowNode, ext: string, usedNames: Set<string>, log: Log): { file: string; base: string } {
   let base = sanitizeFilename(node.name);
   if (usedNames.has(base.toLowerCase())) base = `${base}-${node.id.slice(0, 8)}`;
   usedNames.add(base.toLowerCase());
@@ -51,7 +53,7 @@ function resolveNodeFile(dir, nodeState, node, ext, usedNames, log) {
   if (current && current !== wanted) {
     // Rename on node rename, but never across extensions (.js -> .ts would
     // silently declare compiled JS to be TS source).
-    const renames = [[current.replace(/\.(ts|js)$/, ".remote.js"), base + ".remote.js"]];
+    const renames: Array<[string, string]> = [[current.replace(/\.(ts|js)$/, ".remote.js"), base + ".remote.js"]];
     if (path.extname(current) === ext) renames.push([current, wanted]);
     for (const [from, to] of renames) {
       const fromPath = path.join(dir, from);
@@ -65,18 +67,18 @@ function resolveNodeFile(dir, nodeState, node, ext, usedNames, log) {
   return { file: wanted, base };
 }
 
-export async function pullWorkflow(api, root, id, { commitOnPull = false } = {}, log) {
+export async function pullWorkflow(api: N8nApi, root: string, id: string, { commitOnPull = false }: { commitOnPull?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
   const wf = await api.getWorkflow(id);
   const { dir, previousDir } = ensureWorkflowDir(root, wf, log);
-  const state = readState(dir) ?? { workflowId: wf.id, nodes: {} };
+  const state: DecanterState = readState(dir) ?? { workflowId: wf.id, nodes: {} };
   state.workflowId = wf.id;
   state.nodes ??= {};
-  const usedNames = new Set();
-  const placeholders = new Map(); // node id -> file name
+  const usedNames = new Set<string>();
+  const placeholders = new Map<string, string>(); // node id -> file name
 
   for (const node of wf.nodes) {
     if (!isJsCodeNode(node)) continue;
-    const nodeState = state.nodes[node.id] ?? {};
+    const nodeState: Partial<NodeState> = state.nodes[node.id] ?? {};
     const remote = node.parameters.jsCode;
     const { body: remoteBody, markerHash } = splitMarker(remote);
     const remoteHash = sha256(remoteBody);

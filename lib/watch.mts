@@ -1,13 +1,15 @@
 import { watch } from "node:fs";
 import path from "node:path";
+import type { N8nApi } from "./api.mts";
 import { pushSingleNode } from "./push.mts";
 import { readState } from "./state.mts";
+import type { Log } from "./types.mts";
 
 /**
  * Fast inner loop: watch one node file and push only that node on change.
  * Watches the directory (not the file) so atomic editor saves keep working.
  */
-export async function watchFile(api, file, { force = false, commitOnPush = false } = {}, log) {
+export async function watchFile(api: N8nApi, file: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<void> {
   const abs = path.resolve(file);
   const dir = path.dirname(abs);
   const name = path.basename(abs);
@@ -17,7 +19,7 @@ export async function watchFile(api, file, { force = false, commitOnPush = false
   if (!entry) throw new Error(`${name} is not a tracked node file (check .decanter.json)`);
   const [nodeId] = entry;
 
-  let timer = null;
+  let timer: NodeJS.Timeout | undefined;
   let running = false;
   let queued = false;
 
@@ -30,7 +32,7 @@ export async function watchFile(api, file, { force = false, commitOnPush = false
     try {
       await pushSingleNode(api, dir, nodeId, { force, commitOnPush }, log);
     } catch (err) {
-      log.error(err.message);
+      log.error((err as Error).message);
     } finally {
       running = false;
       if (queued) {

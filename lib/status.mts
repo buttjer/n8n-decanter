@@ -1,30 +1,32 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { findWorkflowDir, readState } from "./state.mts";
+import type { Log, Workflow } from "./types.mts";
 import { isJsCodeNode, sha256, splitMarker, workflowStructureHash } from "./util.mts";
 
-async function localHash(dir, file) {
+async function localHash(dir: string, file: string): Promise<string | null> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) return null;
   if (file.endsWith(".ts")) return sha256(await compileTs(filePath));
   return sha256(readFileSync(filePath, "utf8"));
 }
 
-export async function statusWorkflow(api, root, id, log) {
+export async function statusWorkflow(api: N8nApi, root: string, id: string, log: Log): Promise<void> {
   const remote = await api.getWorkflow(id);
   const dir = findWorkflowDir(root, id);
   if (!dir) {
     log.warn(`${remote.name} (${id}): not pulled yet`);
     return;
   }
-  const state = readState(dir);
+  const state = readState(dir)!;
   log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]`);
 
   const remoteStruct = workflowStructureHash(remote);
   const wfFile = path.join(dir, "workflow.json");
   const localStruct = existsSync(wfFile)
-    ? workflowStructureHash(JSON.parse(readFileSync(wfFile, "utf8")))
+    ? workflowStructureHash(JSON.parse(readFileSync(wfFile, "utf8")) as Workflow)
     : null;
   const base = state.lastPulledWorkflowHash;
   if (remoteStruct !== base && localStruct !== base) log.warn("  structure: changed both locally and remotely");

@@ -23,14 +23,15 @@ const parsed = ts.getParsedCommandLineOfConfigFile(configPath, {}, {
     process.exit(2);
   },
 });
+if (!parsed) process.exit(2);
 
-function isNodeFile(fileName) {
+function isNodeFile(fileName: string): boolean {
   if (fileName.endsWith(".d.ts") || fileName.endsWith(".remote.js")) return false;
   if (!/\.(ts|js)$/.test(fileName)) return false;
   return existsSync(path.join(path.dirname(fileName), ".decanter.json"));
 }
 
-const wrapped = new Set();
+const wrapped = new Set<string>();
 const host = ts.createCompilerHost(parsed.options);
 const originalReadFile = host.readFile.bind(host);
 host.readFile = (fileName) => {
@@ -49,7 +50,7 @@ for (const d of ts.getPreEmitDiagnostics(program)) {
     problems++;
     continue;
   }
-  const { line, character } = d.file.getLineAndCharacterOfPosition(d.start);
+  const { line, character } = d.file.getLineAndCharacterOfPosition(d.start!);
   const shift = wrapped.has(path.resolve(d.file.fileName)) ? 1 : 0;
   const displayLine = line + 1 - shift;
   if (shift && displayLine < 1) continue; // diagnostic on the injected wrapper itself

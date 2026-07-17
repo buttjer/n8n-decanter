@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { DecanterConfig } from "./types.mts";
 
 /** Parse KEY=VALUE lines from .env (if present) into process.env, not overriding existing vars. */
-export function loadEnv(dir) {
+export function loadEnv(dir: string): void {
   const file = path.join(dir, ".env");
   if (!existsSync(file)) return;
   for (const line of readFileSync(file, "utf8").split("\n")) {
@@ -15,12 +16,17 @@ export function loadEnv(dir) {
 }
 
 /** Load decanter.config.json from cwd (or nearest ancestor) and resolve paths. */
-export function loadConfig(cwd = process.cwd(), { requireCredentials = true } = {}) {
+export function loadConfig(cwd: string = process.cwd(), { requireCredentials = true } = {}): DecanterConfig {
   let dir = path.resolve(cwd);
   for (;;) {
     const file = path.join(dir, "decanter.config.json");
     if (existsSync(file)) {
-      const cfg = JSON.parse(readFileSync(file, "utf8"));
+      const cfg = JSON.parse(readFileSync(file, "utf8")) as {
+        root?: string;
+        workflows?: string[];
+        commitOnPush?: boolean;
+        commitOnPull?: boolean;
+      };
       loadEnv(dir);
       const host = (process.env.N8N_HOST ?? "").replace(/\/+$/, "");
       const apiKey = process.env.N8N_API_KEY ?? "";

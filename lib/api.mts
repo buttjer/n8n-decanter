@@ -1,21 +1,23 @@
-export class N8nApi {
-  #host;
-  #apiKey;
+import type { Workflow, WorkflowPut } from "./types.mts";
 
-  constructor({ host, apiKey }) {
+export class N8nApi {
+  #host: string;
+  #apiKey: string;
+
+  constructor({ host, apiKey }: { host: string; apiKey: string }) {
     this.#host = host;
     this.#apiKey = apiKey;
   }
 
-  async getWorkflow(id) {
-    return this.#request("GET", `/api/v1/workflows/${encodeURIComponent(id)}`);
+  async getWorkflow(id: string): Promise<Workflow> {
+    return this.#request("GET", `/api/v1/workflows/${encodeURIComponent(id)}`) as Promise<Workflow>;
   }
 
-  async updateWorkflow(id, body) {
-    return this.#request("PUT", `/api/v1/workflows/${encodeURIComponent(id)}`, body);
+  async updateWorkflow(id: string, body: WorkflowPut): Promise<Workflow | undefined> {
+    return this.#request("PUT", `/api/v1/workflows/${encodeURIComponent(id)}`, body) as Promise<Workflow | undefined>;
   }
 
-  async #request(method, pathname, body) {
+  async #request(method: string, pathname: string, body?: unknown): Promise<unknown> {
     const res = await fetch(this.#host + pathname, {
       method,
       headers: {

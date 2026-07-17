@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
+import type { JsCodeNode, Workflow, WorkflowNode, WorkflowPut } from "./types.mts";
 
 export const CODE_NODE_TYPE = "n8n-nodes-base.code";
 export const FILE_PLACEHOLDER_PREFIX = "//@file:";
 const MARKER_PREFIX = "// @ts-n8n ";
 
 /** True for Code nodes whose source is JavaScript (the only kind we extract). */
-export function isJsCodeNode(node) {
+export function isJsCodeNode(node: WorkflowNode | null | undefined): node is JsCodeNode {
   return (
     node?.type === CODE_NODE_TYPE &&
     typeof node.parameters?.jsCode === "string" &&
@@ -13,7 +14,7 @@ export function isJsCodeNode(node) {
   );
 }
 
-export function sha256(text) {
+export function sha256(text: string): string {
   return "sha256:" + createHash("sha256").update(text, "utf8").digest("hex");
 }
 
@@ -23,21 +24,21 @@ export function sha256(text) {
  * the marker line byte-exactly (including the newline before it), so
  * hash(body) matches the hash computed at push time.
  */
-export function splitMarker(code) {
+export function splitMarker(code: string): { body: string; marker: string | null; markerHash: string | null } {
   const m = code.match(/(?:^|\n)(\/\/ @ts-n8n (sha256:[0-9a-f]{64}))[ \t]*\n?[ \t\n]*$/);
   if (!m) return { body: code, marker: null, markerHash: null };
-  const start = m.index + (m[0].startsWith("\n") ? 1 : 0);
+  const start = m.index! + (m[0].startsWith("\n") ? 1 : 0);
   return { body: code.slice(0, start), marker: m[1], markerHash: m[2] };
 }
 
 /** Build the jsCode payload for a TS-managed node from compiled JS. */
-export function withMarker(compiledJs) {
+export function withMarker(compiledJs: string): { jsCode: string; hash: string } {
   const body = compiledJs.endsWith("\n") ? compiledJs : compiledJs + "\n";
   return { jsCode: body + MARKER_PREFIX + sha256(body), hash: sha256(body) };
 }
 
 /** Sanitize a workflow/node name for use as a file or folder name. */
-export function sanitizeFilename(name) {
+export function sanitizeFilename(name: string): string {
   const cleaned = name
     .replace(/[/\\:*?"<>|]/g, "-")
     // eslint-disable-next-line no-control-regex
@@ -57,7 +58,7 @@ const NODE_ORDER = [
   "parameters", "credentials",
 ];
 
-function sortKeys(obj, preferred = []) {
+function sortKeys(obj: object, preferred: string[] = []): string[] {
   const keys = Object.keys(obj);
   keys.sort((a, b) => {
     const ia = preferred.indexOf(a);
@@ -72,19 +73,19 @@ function sortKeys(obj, preferred = []) {
   return keys;
 }
 
-function orderDeep(value, preferred) {
+function orderDeep(value: unknown, preferred: string[] = []): unknown {
   if (Array.isArray(value)) return value.map((v) => orderDeep(v));
   if (value && typeof value === "object") {
-    const out = {};
-    for (const k of sortKeys(value, preferred)) out[k] = orderDeep(value[k]);
+    const out: Record<string, unknown> = {};
+    for (const k of sortKeys(value, preferred)) out[k] = orderDeep((value as Record<string, unknown>)[k]);
     return out;
   }
   return value;
 }
 
 /** Deterministic pretty JSON for a workflow: stable key order, clean diffs. */
-export function stableWorkflowJson(wf) {
-  const ordered = {};
+export function stableWorkflowJson(wf: Workflow): string {
+  const ordered: Record<string, unknown> = {};
   for (const k of sortKeys(wf, TOP_LEVEL_ORDER)) {
     ordered[k] = k === "nodes"
       ? wf.nodes.map((n) => orderDeep(n, NODE_ORDER))
@@ -99,12 +100,12 @@ const SETTINGS_WHITELIST = [
 ];
 
 /** Reduce a workflow to the fields the PUT endpoint accepts. */
-export function sanitizeForPut(wf) {
-  const settings = {};
+export function sanitizeForPut(wf: Workflow): WorkflowPut {
+  const settings: Record<string, unknown> = {};
   for (const k of SETTINGS_WHITELIST) {
     if (wf.settings && wf.settings[k] !== undefined) settings[k] = wf.settings[k];
   }
-  const out = {
+  const out: WorkflowPut = {
     name: wf.name,
     nodes: wf.nodes,
     connections: wf.connections,
@@ -118,7 +119,7 @@ export function sanitizeForPut(wf) {
  * Hash of the sanitized, code-stripped workflow — detects structural edits
  * (nodes added/moved/reconnected, settings changed) independent of code edits.
  */
-export function workflowStructureHash(wf) {
+export function workflowStructureHash(wf: Workflow): string {
   const clone = structuredClone(sanitizeForPut(wf));
   for (const node of clone.nodes ?? []) {
     if (isJsCodeNode(node)) node.parameters.jsCode = "";

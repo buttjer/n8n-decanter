@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
+import type { DecanterState, Log, Workflow } from "./types.mts";
 import {
   FILE_PLACEHOLDER_PREFIX,
   isJsCodeNode,
@@ -12,10 +14,10 @@ import {
   withMarker,
   workflowStructureHash,
 } from "./util.mts";
-import { validateNodeFile, validateWorkflowDir } from "./validate.mts";
+import { validateNodeFile, validateWorkflowDir, type ValidationResult } from "./validate.mts";
 
 /** Layout-compliance gate: warnings pass through, errors abort the push. */
-function assertCompliant({ errors, warnings }, log, what) {
+function assertCompliant({ errors, warnings }: ValidationResult, log: Log, what: string): void {
   for (const w of warnings) log.warn(w);
   if (errors.length === 0) return;
   for (const e of errors) log.error(e);
@@ -23,7 +25,7 @@ function assertCompliant({ errors, warnings }, log, what) {
 }
 
 /** Turn a node source file into the jsCode payload (+ hash of the marker-less body). */
-export async function buildNodeCode(dir, file) {
+export async function buildNodeCode(dir: string, file: string): Promise<{ jsCode: string; hash: string }> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) throw new Error(`referenced node file missing: ${filePath}`);
   if (file.endsWith(".ts")) {
@@ -38,8 +40,8 @@ export async function buildNodeCode(dir, file) {
  * Returns human-readable problems; empty array means safe to push.
  * `onlyNodeIds` restricts the per-node check (watch mode).
  */
-export function driftProblems(remote, state, onlyNodeIds = null) {
-  const problems = [];
+export function driftProblems(remote: Workflow, state: DecanterState, onlyNodeIds: Set<string> | null = null): string[] {
+  const problems: string[] = [];
   for (const node of remote.nodes) {
     if (!isJsCodeNode(node)) continue;
     if (onlyNodeIds && !onlyNodeIds.has(node.id)) continue;
@@ -58,7 +60,7 @@ export function driftProblems(remote, state, onlyNodeIds = null) {
   return problems;
 }
 
-function assertNoDrift(problems, force, log) {
+function assertNoDrift(problems: string[], force: boolean, log: Log): void {
   if (problems.length === 0) return;
   for (const p of problems) log[force ? "warn" : "error"](p);
   if (!force) {
@@ -68,7 +70,7 @@ function assertNoDrift(problems, force, log) {
 }
 
 /** Update per-node + structure hashes from the workflow the server confirmed. */
-function recordSync(state, confirmed) {
+function recordSync(state: DecanterState, confirmed: Workflow): void {
   for (const node of confirmed.nodes) {
     if (!isJsCodeNode(node)) continue;
     const nodeState = state.nodes[node.id];
@@ -77,12 +79,12 @@ function recordSync(state, confirmed) {
   state.lastPulledWorkflowHash = workflowStructureHash(confirmed);
 }
 
-export async function pushWorkflow(api, root, id, { force = false, commitOnPush = false } = {}, log) {
+export async function pushWorkflow(api: N8nApi, root: string, id: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
   const dir = findWorkflowDir(root, id);
   if (!dir) throw new Error(`workflow ${id} not found under ${root} — pull it first`);
   assertCompliant(validateWorkflowDir(dir), log, `"${path.basename(dir)}"`);
-  const state = readState(dir);
-  const wf = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8"));
+  const state = readState(dir)!;
+  const wf = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as Workflow;
 
   for (const node of wf.nodes) {
     if (!isJsCodeNode(node) || !node.parameters.jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) continue;
@@ -103,8 +105,8 @@ export async function pushWorkflow(api, root, id, { force = false, commitOnPush 
 }
 
 /** Push a single node's code (watch mode): GET, swap jsCode, PUT. */
-export async function pushSingleNode(api, dir, nodeId, { force = false, commitOnPush = false } = {}, log) {
-  const state = readState(dir);
+export async function pushSingleNode(api: N8nApi, dir: string, nodeId: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<void> {
+  const state = readState(dir)!;
   const nodeState = state.nodes[nodeId];
   assertCompliant(validateNodeFile(dir, nodeState.file), log, nodeState.file);
   const { jsCode } = await buildNodeCode(dir, nodeState.file);

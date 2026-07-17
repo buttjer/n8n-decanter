@@ -1,0 +1,23 @@
+{
+  // The CLI's own source (run natively via Node type stripping — no build).
+  // Not to be confused with tsconfig.json, which checks workflow node files.
+  // composite + declaration-only emit into node_modules/.cache exists solely
+  // so tsconfig.json may reference this project (tsserver needs that to bind
+  // the .mts files to it); the CLI is never built from these declarations.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "strict": true,
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "declarationDir": "node_modules/.cache/tsc-cli",
+    "tsBuildInfoFile": "node_modules/.cache/tsc-cli/tsconfig.cli.tsbuildinfo",
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": ["n8n-decanter.mts", "lib/**/*.mts", "scripts/**/*.mts", "test/**/*.mts"]
+}

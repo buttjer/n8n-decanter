@@ -4,14 +4,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { readState } from "./state.mts";
+import type { Log, Workflow } from "./types.mts";
 import { FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
 
 const execFile = promisify(execFileCb);
 
+export interface ValidationResult {
+  errors: string[];
+  warnings: string[];
+}
+
 /** Compliance checks for one referenced node file. */
-export function validateNodeFile(dir, file, label = file) {
-  const errors = [];
-  const warnings = [];
+export function validateNodeFile(dir: string, file: string, label: string = file): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
   if (file.endsWith(".remote.js")) {
     errors.push(`${label}: placeholder references the conflict artifact ${file} — resolve it into the real node file instead`);
     return { errors, warnings };
@@ -40,24 +46,24 @@ export function validateNodeFile(dir, file, label = file) {
  * every Code node behind a //@file: placeholder, referenced files present and
  * well-formed, no marker inside .js files; warn on *.remote.js leftovers.
  */
-export function validateWorkflowDir(dir) {
-  const errors = [];
-  const warnings = [];
+export function validateWorkflowDir(dir: string): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
   if (!readState(dir)) errors.push("missing .decanter.json — pull first");
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) {
     errors.push("missing workflow.json — pull first");
     return { errors, warnings };
   }
-  let wf;
+  let wf: Workflow;
   try {
-    wf = JSON.parse(readFileSync(wfFile, "utf8"));
+    wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
   } catch (err) {
-    errors.push(`workflow.json: invalid JSON (${err.message})`);
+    errors.push(`workflow.json: invalid JSON (${(err as Error).message})`);
     return { errors, warnings };
   }
 
-  const coveredRemoteFiles = new Set();
+  const coveredRemoteFiles = new Set<string>();
   for (const node of wf.nodes ?? []) {
     if (!isJsCodeNode(node)) continue;
     const jsCode = node.parameters.jsCode;
@@ -85,9 +91,9 @@ export function validateWorkflowDir(dir) {
  * startDir. Missing tsconfig (e.g. an init'ed sync dir without one) is an
  * info-level skip, not an error. Throws on type errors.
  */
-export async function runTypecheck(startDir, log) {
+export async function runTypecheck(startDir: string, log: Log): Promise<void> {
   let dir = path.resolve(startDir);
-  let tsconfigDir = null;
+  let tsconfigDir: string | null = null;
   for (;;) {
     if (existsSync(path.join(dir, "tsconfig.json"))) {
       tsconfigDir = dir;
@@ -106,7 +112,8 @@ export async function runTypecheck(startDir, log) {
     await execFile(process.execPath, [script], { cwd: tsconfigDir, encoding: "utf8" });
     log.info("typecheck OK");
   } catch (err) {
-    const output = ((err.stdout ?? "") + (err.stderr ?? "")).trim();
+    const e = err as { stdout?: string; stderr?: string };
+    const output = ((e.stdout ?? "") + (e.stderr ?? "")).trim();
     throw new Error(`typecheck failed:\n${output}`);
   }
 }

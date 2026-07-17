@@ -17,15 +17,15 @@ const ROOT = path.join(TMP, "workflows");
 
 // ---------- mock n8n ----------
 const ALLOWED_PUT = ["name", "nodes", "connections", "settings", "staticData"];
-const db = new Map();
+const db = new Map<string, any>();
 const server = http.createServer((req, res) => {
   if (req.headers["x-n8n-api-key"] !== "test-key") return void res.writeHead(401).end("unauthorized");
-  if (req.method === "GET" && req.url.startsWith("/api/v1/workflows?")) {
+  if (req.method === "GET" && req.url!.startsWith("/api/v1/workflows?")) {
     return void res
       .writeHead(200, { "content-type": "application/json" })
       .end(JSON.stringify({ data: [...db.values()], nextCursor: null }));
   }
-  const m = req.url.match(/^\/api\/v1\/workflows\/([^/]+)$/);
+  const m = req.url!.match(/^\/api\/v1\/workflows\/([^/]+)$/);
   if (!m) return void res.writeHead(404).end("nope");
   const wf = db.get(m[1]);
   if (!wf) return void res.writeHead(404).end("not found");
@@ -66,22 +66,23 @@ db.set("wf123", {
 });
 
 // ---------- helpers ----------
-let env;
-async function cli(...args) {
+let env: NodeJS.ProcessEnv;
+async function cli(...args: string[]) {
   // async on purpose: the mock server lives in this process, a sync exec would deadlock
   try {
     const { stdout, stderr } = await execFile(process.execPath, [CLI, ...args], { cwd: TMP, env, encoding: "utf8" });
     return { out: stdout + stderr, code: 0 };
   } catch (err) {
-    return { out: (err.stdout ?? "") + (err.stderr ?? ""), code: err.code ?? 1 };
+    const e = err as { stdout?: string; stderr?: string; code?: number };
+    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
   }
 }
-const wfDir = (name) => path.join(ROOT, name);
-const read = (...p) => readFileSync(path.join(...p), "utf8");
-const state = (dir) => JSON.parse(read(dir, ".decanter.json"));
-const remoteNode = (id, nid) => db.get(id).nodes.find((n) => n.id === nid);
+const wfDir = (name: string) => path.join(ROOT, name);
+const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
+const state = (dir: string) => JSON.parse(read(dir, ".decanter.json"));
+const remoteNode = (id: string, nid: string) => db.get(id).nodes.find((n: any) => n.id === nid);
 let passed = 0;
-function step(name, fn) {
+function step(name: string, fn: () => unknown) {
   return Promise.resolve()
     .then(fn)
     .then(() => {
@@ -101,13 +102,13 @@ mkdirSync(TMP, { recursive: true });
 // commitOnPush/commitOnPull off for the base scenario; a dedicated step tests them explicitly
 writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: false, commitOnPull: false }, null, 2));
 
-await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-env = { ...process.env, N8N_HOST: `http://127.0.0.1:${server.address().port}`, N8N_API_KEY: "test-key" };
+await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+env = { ...process.env, N8N_HOST: `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`, N8N_API_KEY: "test-key" };
 
 const dir1 = wfDir("Order Sync");
 
-function listFilesRecursive(dir, base = dir) {
-  const files = [];
+function listFilesRecursive(dir: string, base = dir): string[] {
+  const files: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, entry.name);
     if (entry.isDirectory()) files.push(...listFilesRecursive(p, base));
@@ -119,8 +120,8 @@ function listFilesRecursive(dir, base = dir) {
 await step("init: writes .env, copies whole template, scaffolds config", async () => {
   const target = path.join(TMP, "init-target");
   const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
-  pending.child.stdin.write(`${env.N8N_HOST}\ntest-key\n`);
-  pending.child.stdin.end();
+  pending.child.stdin!.write(`${env.N8N_HOST}\ntest-key\n`);
+  pending.child.stdin!.end();
   const { stdout, stderr } = await pending;
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
   // the ENTIRE template must be copied, whatever it contains; `X.example`
@@ -128,7 +129,7 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   const templateDir = path.join(PROJECT, "template");
   const templateFiles = listFilesRecursive(templateDir);
   assert.ok(templateFiles.length > 0, "template must not be empty");
-  const materialize = (rel) => (rel.endsWith(".example") ? rel.slice(0, -".example".length) : rel);
+  const materialize = (rel: string) => (rel.endsWith(".example") ? rel.slice(0, -".example".length) : rel);
   for (const rel of templateFiles) {
     const destRel = materialize(rel);
     assert.ok(existsSync(path.join(target, destRel)), `template file not copied: ${rel} -> ${destRel}`);
@@ -142,22 +143,22 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.match(read(target, ".gitignore"), /^\.env$/m);
   assert.match(stdout + stderr, /credentials verified/);
   // re-init must not clobber user edits to template-provided files
-  const probe = materialize(templateFiles.find((f) => materialize(f) !== ".env"));
+  const probe = materialize(templateFiles.find((f) => materialize(f) !== ".env")!);
   writeFileSync(path.join(target, probe), "user content\n");
   const again = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
-  again.child.stdin.write("\n\n"); // keep existing host + key
-  again.child.stdin.end();
+  again.child.stdin!.write("\n\n"); // keep existing host + key
+  again.child.stdin!.end();
   await again;
   assert.equal(read(target, probe), "user content\n");
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
   // init --force re-copies template files over existing ones (.env protected)
   const forced = execFile(process.execPath, [CLI, "init", target, "--force"], { encoding: "utf8" });
-  forced.child.stdin.write("\n\n"); // keep existing host + key
-  forced.child.stdin.end();
+  forced.child.stdin!.write("\n\n"); // keep existing host + key
+  forced.child.stdin!.end();
   const forcedResult = await forced;
   assert.match(forcedResult.stdout + forcedResult.stderr, /using existing \.env/, "re-init must not prompt when .env is complete");
   assert.match(forcedResult.stdout + forcedResult.stderr, /--force: overwrote/);
-  const probeTemplateRel = templateFiles.find((f) => materialize(f) === probe);
+  const probeTemplateRel = templateFiles.find((f) => materialize(f) === probe)!;
   assert.equal(read(target, probe), read(templateDir, probeTemplateRel), "--force must restore the template version");
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`, ".env must survive --force");
 });
@@ -270,7 +271,7 @@ await step("status: reports pending local edit, then in sync", async () => {
 await step("remote workflow + node rename: folder and file follow", async () => {
   const wf = db.get("wf123");
   wf.name = "Order Sync v2";
-  wf.nodes.find((n) => n.id === "n2").name = "Transform: EU/US";
+  wf.nodes.find((n: any) => n.id === "n2").name = "Transform: EU/US";
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   const dir2 = wfDir("Order Sync v2");
@@ -402,8 +403,8 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   assert.equal(dirty.trim(), "", "rename-back pull must leave a clean tree");
 });
 
-const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
-const runOutput = (out) => {
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+const runOutput = (out: string) => {
   // The printed items are the last JSON array on stdout; cli() appends stderr
   // (e.g. warnings) afterwards, so bound the slice by the final closing bracket.
   const clean = stripAnsi(out);

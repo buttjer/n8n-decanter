@@ -7,7 +7,7 @@
     "n8n-decanter": "./n8n-decanter.mts"
   },
   "scripts": {
-    "typecheck": "node scripts/typecheck.mts",
+    "typecheck": "tsc -p tsconfig.cli.json && node scripts/typecheck.mts",
     "test": "node test/e2e.mts"
   },
   "engines": {
@@ -18,6 +18,7 @@
     "luxon": "^3.7.2"
   },
   "devDependencies": {
+    "@types/luxon": "^3.7.2",
     "@types/node": "^22.20.1",
     "typescript": "^5.9.3"
   }

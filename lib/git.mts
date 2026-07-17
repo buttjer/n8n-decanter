@@ -1,5 +1,6 @@
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
+import type { Log } from "./types.mts";
 
 const execFile = promisify(execFileCb);
 
@@ -11,7 +12,7 @@ const execFile = promisify(execFileCb);
  * `extraPaths` (relative to dir) covers a renamed-away old folder, whose
  * deletions live outside the new folder's pathspec.
  */
-export async function commitWorkflowDir(dir, message, log, extraPaths = []) {
+export async function commitWorkflowDir(dir: string, message: string, log: Log, extraPaths: string[] = []): Promise<boolean> {
   try {
     await execFile("git", ["-C", dir, "rev-parse", "--is-inside-work-tree"]);
   } catch {
@@ -33,7 +34,8 @@ export async function commitWorkflowDir(dir, message, log, extraPaths = []) {
     log.info(`committed: ${message}`);
     return true;
   } catch (err) {
-    const detail = (err.stderr || err.message || "").toString().trim().split("\n")[0];
+    const e = err as Error & { stderr?: string };
+    const detail = (e.stderr || e.message || "").toString().trim().split("\n")[0];
     log.warn(`git commit failed (${detail}) — push succeeded, commit skipped`);
     return false;
   }

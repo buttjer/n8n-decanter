@@ -13,5 +13,8 @@
     "skipLibCheck": true
   },
   "include": ["n8n-globals.d.ts", "workflows/**/*.ts", "workflows/**/*.js"],
-  "exclude": ["node_modules", "**/*.remote.js"]
+  "exclude": ["node_modules", "**/*.remote.js"],
+  // Editor-only hint: lets tsserver bind the CLI's .mts sources to their own
+  // project. Ignored by scripts/typecheck.mts (references add no fileNames).
+  "references": [{ "path": "./tsconfig.cli.json" }]
 }

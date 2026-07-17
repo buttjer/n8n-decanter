@@ -9,10 +9,11 @@ import { pushWorkflow } from "./lib/push.mts";
 import { runNode } from "./lib/run.mts";
 import { findWorkflowDir, listWorkflowDirs } from "./lib/state.mts";
 import { statusWorkflow } from "./lib/status.mts";
+import type { Log } from "./lib/types.mts";
 import { runTypecheck, validateWorkflowDir } from "./lib/validate.mts";
 import { watchFile } from "./lib/watch.mts";
 
-const log = {
+const log: Log = {
   info: (m) => console.log(m),
   warn: (m) => console.warn(`\x1b[33m! ${m}\x1b[0m`),
   error: (m) => console.error(`\x1b[31mx ${m}\x1b[0m`),
@@ -90,7 +91,7 @@ async function main() {
           }
         } catch (err) {
           failed = true;
-          log.error(`${id}: ${err.message}`);
+          log.error(`${id}: ${(err as Error).message}`);
         }
       }
       if (failed) process.exitCode = 1;
@@ -118,7 +119,7 @@ async function main() {
         try {
           await runTypecheck(config.configDir, log);
         } catch (err) {
-          log.error(err.message);
+          log.error((err as Error).message);
           errorCount++;
         }
       }
