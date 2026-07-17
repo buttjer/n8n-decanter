@@ -11,13 +11,13 @@
   **TS1108 half** (the redeclare half is handled in
   [Plan 1](1-trustworthy-edit-loop.md) via `moduleDetection: "force"`).
 - Related: PLAN.md "Type checking" wart (IDE tsservers show a spurious TS1108);
-  `scripts/typecheck.mjs`.
+  `scripts/typecheck.mts`.
 
 ## Why
 
 n8n Code node source is a **function body** (top-level `return` / `await`).
 `npm run typecheck` handles this by wrapping each node file in an in-memory
-`async function` (see `scripts/typecheck.mjs`), so the CLI's typecheck is clean.
+`async function` (see `scripts/typecheck.mts`), so the CLI's typecheck is clean.
 But the editor's TypeScript language server (VS Code's bundled tsserver, and the
 same in JetBrains) reads the raw file on disk and reports errors the wrapper
 would have prevented:
@@ -46,7 +46,7 @@ holds.
 
 ## Non-goals
 
-- Do not touch `scripts/typecheck.mjs` behavior (CLI typecheck already correct).
+- Do not touch `scripts/typecheck.mts` behavior (CLI typecheck already correct).
 - Do not disable JS validation wholesale (`javascript.validate.enable: false`)
   — that would drop *all* editor diagnostics, real ones included.
 - Do not add `// @ts-ignore` / `// @ts-nocheck` into node files — that pollutes
@@ -69,7 +69,7 @@ A TS language-service plugin decorates the language service and filters
 diagnostics by code, scoped to the files we choose. It runs **only** in the
 editor's tsserver — `tsc` and our wrapper script are unaffected.
 
-Recognition rule mirrors `isNodeFile` in `scripts/typecheck.mjs` (keep identical
+Recognition rule mirrors `isNodeFile` in `scripts/typecheck.mts` (keep identical
 so the two definitions don't drift): extension `.ts`/`.js`, not `*.d.ts`, not
 `*.remote.js`, and a `.decanter.json` sibling exists.
 
@@ -143,7 +143,7 @@ necessarily an npm project.
 
 ### 4. Template `.example` mechanics (already verified)
 
-`copyTemplate` in `lib/init.mjs` walks recursively and strips a trailing
+`copyTemplate` in `lib/init.mts` walks recursively and strips a trailing
 `.example` per file, so nested files must each carry `.example`
 (`index.js.example`, `settings.json.example`) and directory names must **not**
 end in `.example`. Materialization to `decanter-ts-plugin/index.js` and

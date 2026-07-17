@@ -24,7 +24,7 @@ they need to be. All three fixes reuse machinery that already exists.
 
 ### A. `run` staticData seeding
 
-`lib/run.mjs` `buildGlobals` currently exposes no `$getWorkflowStaticData`, so a
+`lib/run.mts` `buildGlobals` currently exposes no `$getWorkflowStaticData`, so a
 node calling it dies with a ReferenceError — even though `findNode` already
 parses the sibling `workflow.json`.
 
@@ -35,13 +35,13 @@ parses the sibling `workflow.json`.
 
 ### B. `status --diff`
 
-`lib/status.mjs` already does four-way per-node classification and computes both
+`lib/status.mts` already does four-way per-node classification and computes both
 local and remote hashes (compiling `.ts` the same way push does).
 
-1. Add a `--diff` flag to the `status` command in `n8n-decanter.mjs`.
+1. Add a `--diff` flag to the `status` command in `n8n-decanter.mts`.
 2. When set, for each node that differs, render a content diff of the local body
    vs the remote body — respecting the placeholder/compiled-marker rules already
-   encoded in `status.mjs` (`splitMarker`, `compileTs`). A minimal line diff is
+   encoded in `status.mts` (`splitMarker`, `compileTs`). A minimal line diff is
    enough; both sides are already materialized in memory.
 
 ### C. Execution datasets + `run --from-execution`
@@ -50,7 +50,7 @@ local and remote hashes (compiling `.ts` the same way push does).
    `n8n-decanter executions <id>` command), fetch recent executions via the
    public API and write them to `workflows/<Name>/executions/<execId>.json`.
    Guard against writing anything back through the API (read-only). Requires an
-   executions endpoint in `lib/api.mjs`.
+   executions endpoint in `lib/api.mts`.
 2. **`run --from-execution <id>`.** Load an execution dataset as a `run` fixture:
    reconstruct `$input`, the `$('…')` node outputs, and staticData from the
    captured run so a coupled node can be exercised against real data.

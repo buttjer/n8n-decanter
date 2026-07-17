@@ -7,9 +7,12 @@ See [PLAN.md](PLAN.md) for the design.
 
 ## Setup
 
+Requires Node >= 22.18 — the CLI is TypeScript (`.mts`), executed natively
+via Node's type stripping; there is no build step.
+
 ```sh
 npm install
-node n8n-decanter.mjs init [dir]   # prompts for host + API key, writes .env,
+node n8n-decanter.mts init [dir]   # prompts for host + API key, writes .env,
                                    # copies template/, scaffolds config + .gitignore
 ```
 
@@ -43,15 +46,15 @@ and `uuid` are fully offline (no credentials, no network).
 ## Commands
 
 ```sh
-node n8n-decanter.mjs init [dir]             # interactive bootstrap (see Setup)
-node n8n-decanter.mjs pull [id...]           # remote -> workflows/<Name>/
-node n8n-decanter.mjs push [id...] [--force] [--no-typecheck]
-node n8n-decanter.mjs status [id...]         # local vs remote drift report
-node n8n-decanter.mjs check [id...]          # offline layout-compliance + typecheck
-node n8n-decanter.mjs watch <node-file>      # push one node on every save
-node n8n-decanter.mjs run <node-file> [fixture.json]   # run a node offline, print items
-node n8n-decanter.mjs uuid [count]           # lowercase v4 UUID(s) for new node ids
-npm run typecheck
+node n8n-decanter.mts init [dir]             # interactive bootstrap (see Setup)
+node n8n-decanter.mts pull [id...]           # remote -> workflows/<Name>/
+node n8n-decanter.mts push [id...] [--force] [--no-typecheck]
+node n8n-decanter.mts status [id...]         # local vs remote drift report
+node n8n-decanter.mts check [id...]          # offline layout-compliance + typecheck
+node n8n-decanter.mts watch <node-file>      # push one node on every save
+node n8n-decanter.mts run <node-file> [fixture.json]   # run a node offline, print items
+node n8n-decanter.mts uuid [count]           # lowercase v4 UUID(s) for new node ids
+npm run typecheck                            # CLI sources (tsc) + workflow node files
 npm test                                     # e2e against a mock n8n API
                                              # (binds a localhost port)
 ```
@@ -91,11 +94,16 @@ skip; auto-skipped when no `tsconfig.json` is found).
 
 n8n Code node source is a function body (top-level `return`/`await`), which
 plain `tsc` rejects in `.ts` files (TS1108). `npm run typecheck` therefore
-runs [scripts/typecheck.mjs](scripts/typecheck.mjs), which wraps node files in
+runs [scripts/typecheck.mts](scripts/typecheck.mts), which wraps node files in
 an `async function` in memory (sibling `.decanter.json` marks a folder's files
 as node files) and maps diagnostics back to real line numbers. Known
 limitation: the IDE's own tsserver doesn't apply the wrapper, so editors show
 a spurious TS1108 on top-level `return` in `.ts` node files.
+
+The CLI's own `.mts` sources are checked separately by `tsc -p
+tsconfig.cli.json` (strict; the first half of `npm run typecheck`). That
+config is not the root `tsconfig.json`, which belongs to the workflow node
+files above.
 
 ## Open questions (need a live n8n instance)
 

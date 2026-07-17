@@ -1,7 +1,7 @@
-# Plan 5 — TypeScript migration of the CLI
+# Plan 6 — TypeScript migration of the CLI
 
 **Priority:** P3
-**Status:** Not started
+**Status:** In progress
 **Theme:** convert the CLI's own source (`n8n-decanter.mjs`, `lib/`, `scripts/`,
 `test/`) from untyped `.mjs` to strict TypeScript `.mts`, run natively via
 Node's type stripping — no build step, no change to the data model or to how
@@ -209,6 +209,16 @@ should be extensions only. (`workflows/` node files and everything under
 
 ## Notes
 
+- **Outcome (2026-07-17):** implemented on branch `typescript-migration`
+  (rename commit + typing commit), out of order with the user's OK —
+  plans 1–5 hadn't started, so the ordering concern reduced to reference
+  churn, handled by updating the file references in those plan docs.
+  One deviation from the sketch: tsserver requires a *referenced* project
+  to be `composite` (may not `noEmit`), so `tsconfig.cli.json` uses
+  composite + declaration-only emit into `node_modules/.cache` instead of
+  `noEmit` — same checking, no visible build artifacts. Still open:
+  PLAN.md + CLAUDE.md updates (ask-first rule) and an editor spot-check
+  of the project binding.
 - **Ordering:** run this *after* plans 1–4 land. Plans 1 and 4 both touch or
   reference `scripts/typecheck.mjs` and the template hooks; migrating first
   would churn their file references mid-flight. Matches the P3 tag.

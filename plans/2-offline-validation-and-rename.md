@@ -24,7 +24,7 @@ verb closes the loop and removes the failure class entirely.
 ## Design decision
 
 Do **not** add a separate `validate` verb. Extend `validateWorkflowDir` in
-`lib/validate.mjs` — it is already shared by `check`, the push gate, and `watch`,
+`lib/validate.mts` — it is already shared by `check`, the push gate, and `watch`,
 so the push guard hardens for free and we avoid a confusing `check`-vs-`validate`
 split. (The LLM-based *semantic* validation from the original idea stays a
 separate, later P2 command.)

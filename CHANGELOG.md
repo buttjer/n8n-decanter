@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** requires Node >= 22.18 (was >= 18.17). The CLI is now
+  written in TypeScript and executed natively via Node's type stripping —
+  no build step. The entry point is `n8n-decanter.mts` (invoke as
+  `node n8n-decanter.mts …`); the installed `n8n-decanter` bin name is
+  unchanged.
+- Template: the Claude Code permission examples
+  (`.claude/settings.local.json`) now reference the `n8n-decanter.mts`
+  entry point.
+
 ### Added
 
 - `init --force` — re-copies template files over existing ones in the

@@ -18,8 +18,8 @@
       "Edit(.env)",
       "Bash(n8n-decanter push --force)",
       "Bash(n8n-decanter push --force:*)",
-      "Bash(node n8n-decanter.mjs push --force)",
-      "Bash(node n8n-decanter.mjs push --force:*)"
+      "Bash(node n8n-decanter.mts push --force)",
+      "Bash(node n8n-decanter.mts push --force:*)"
     ]
   },
   "hooks": {

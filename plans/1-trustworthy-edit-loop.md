@@ -30,7 +30,7 @@ one workflow so noise from unrelated workflows disappears.
 1. **Duration/Interval stub gap.** Add `declare class Duration` and
    `declare class Interval` (Luxon subset) to **both** copies of the globals
    stub: root `n8n-globals.d.ts` and `template/n8n-globals.d.ts.example`.
-   - `template/AGENTS.md.example` already advertises them and `lib/run.mjs`
+   - `template/AGENTS.md.example` already advertises them and `lib/run.mts`
      (`buildGlobals`) already provides them via luxon — only the `.d.ts` lacks
      the stubs, so a node using `Duration`/`Interval` type-errors despite running
      fine. Keep the subset "pragmatic" (methods actually used); mirror the
@@ -44,7 +44,7 @@ one workflow so noise from unrelated workflows disappears.
    (with a CHANGELOG note if it changes the shipped template) and confirm the e2e
    "template content matches" assertion still passes.
    - The remaining TS1108 ("`return` outside function body") only affects the
-     editor's own tsserver, not the CLI — `scripts/typecheck.mjs` already wraps
+     editor's own tsserver, not the CLI — `scripts/typecheck.mts` already wraps
      node bodies in an `async function`. `moduleDetection` / `module` knobs do
      **not** remove it (verified empirically in
      [Plan 4](4-editor-node-diagnostics.md)). The real editor-squiggle fix lives
@@ -53,13 +53,13 @@ one workflow so noise from unrelated workflows disappears.
      files on disk (CLAUDE.md invariant).
 
 3. **Scope the typecheck to a workflow.**
-   - `scripts/typecheck.mjs`: accept an optional path-filter argument. Still
+   - `scripts/typecheck.mts`: accept an optional path-filter argument. Still
      add every project file to the program (cross-file types need the whole
      graph), but only *report and count* diagnostics whose file resolves under
      the given dir(s).
-   - `lib/validate.mjs` `runTypecheck(startDir, log)`: add an optional
+   - `lib/validate.mts` `runTypecheck(startDir, log)`: add an optional
      `scopeDirs` param and forward it to the script.
-   - `n8n-decanter.mjs` `check`: it already resolves `dirs` from `[id...]`; pass
+   - `n8n-decanter.mts` `check`: it already resolves `dirs` from `[id...]`; pass
      those into `runTypecheck` so `check <id>` scopes typecheck as well as the
      layout checks. No-arg `check` stays project-wide.
 

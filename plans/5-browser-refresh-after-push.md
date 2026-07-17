@@ -23,9 +23,9 @@ triaging so this plan isn't orphaned (per `plans/README.md`).
 ## Directions (design decision — open)
 
 All directions share the same hook point: after a successful PUT in
-`lib/push.mjs` / `pushSingleNode` (`lib/watch.mjs`), with `config.host` and the
+`lib/push.mts` / `pushSingleNode` (`lib/watch.mts`), with `config.host` and the
 workflow id in hand the editor URL is `${host}/workflow/${id}`. Whatever wins
-should live behind one small `lib/reload.mjs` + a `decanter.config.json` knob
+should live behind one small `lib/reload.mts` + a `decanter.config.json` knob
 (e.g. `"browserReload": "applescript" | "cdp" | "livereload" | false`), so the
 mechanisms stay swappable.
 
@@ -109,8 +109,8 @@ long-term, but the timeline isn't ours.
 1. **Spike F first** next time a live instance is at hand (pairs with the other
    "needs live API" open questions in PLAN.md): observe what the editor does on
    an external PUT, both idle and mid-edit. Outcome may delete this plan.
-2. Add the shared hook: `lib/reload.mjs` called after successful push in
-   `lib/push.mjs` and `pushSingleNode`, plus the `browserReload` config knob
+2. Add the shared hook: `lib/reload.mts` called after successful push in
+   `lib/push.mts` and `pushSingleNode`, plus the `browserReload` config knob
    (default `false`; reload failures are warnings, never push failures).
 3. Implement **B** (AppleScript) as the first real mechanism — smallest
    clearly-useful step on the primary platform.
