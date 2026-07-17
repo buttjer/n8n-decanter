@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { N8nApi } from "./lib/api.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { init } from "./lib/init.mjs";
 import { pullWorkflow } from "./lib/pull.mjs";
 import { pushWorkflow } from "./lib/push.mjs";
+import { runNode } from "./lib/run.mjs";
 import { findWorkflowDir, listWorkflowDirs } from "./lib/state.mjs";
 import { statusWorkflow } from "./lib/status.mjs";
 import { runTypecheck, validateWorkflowDir } from "./lib/validate.mjs";
@@ -23,6 +25,8 @@ const USAGE = `Usage:
   n8n-decanter status [id...]
   n8n-decanter check [id...] [--no-typecheck]   offline layout-compliance check
   n8n-decanter watch <node-file> [--force]
+  n8n-decanter run <node-file> [fixture.json]   run a node locally (offline)
+  n8n-decanter uuid [count]        print lowercase v4 UUID(s) for new node ids
 
 Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
@@ -46,6 +50,20 @@ async function main() {
     return;
   }
 
+  // Offline, config-free verbs — no decanter.config.json or credentials needed.
+  if (command === "uuid") {
+    const count = rest[0] ? Number(rest[0]) : 1;
+    if (!Number.isInteger(count) || count < 1) throw new Error("uuid count must be a positive integer");
+    for (let i = 0; i < count; i++) console.log(randomUUID());
+    return;
+  }
+
+  if (command === "run") {
+    if (rest.length < 1) throw new Error("run needs a node file argument: n8n-decanter run <node-file> [fixture.json]");
+    await runNode(rest[0], rest[1], log);
+    return;
+  }
+
   const config = loadConfig(process.cwd(), { requireCredentials: command !== "check" });
   const api = new N8nApi(config);
   const ids = rest.length > 0 ? rest : config.workflows;
@@ -65,7 +83,7 @@ async function main() {
             const { name, dir } = await pullWorkflow(api, config.root, id, log);
             log.info(`pulled "${name}" -> ${dir}`);
           } else if (command === "push") {
-            await pushWorkflow(api, config.root, id, { force }, log);
+            await pushWorkflow(api, config.root, id, { force, commitOnPush: config.commitOnPush }, log);
           } else {
             await statusWorkflow(api, config.root, id, log);
           }
@@ -108,7 +126,7 @@ async function main() {
     }
     case "watch": {
       if (rest.length !== 1) throw new Error("watch needs exactly one node file argument");
-      await watchFile(api, rest[0], { force }, log);
+      await watchFile(api, rest[0], { force, commitOnPush: config.commitOnPush }, log);
       break;
     }
     default:

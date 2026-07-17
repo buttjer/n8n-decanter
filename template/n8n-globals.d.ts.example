@@ -1,0 +1,123 @@
+// Ambient globals available inside n8n Code nodes ("Run Once for All Items" /
+// "Run Once for Each Item"). Pragmatic subset — loose where n8n is dynamic.
+
+interface N8nBinaryData {
+  data: string;
+  mimeType: string;
+  fileName?: string;
+  fileExtension?: string;
+  fileSize?: string;
+  directory?: string;
+  id?: string;
+  [key: string]: unknown;
+}
+
+interface N8nItem {
+  json: Record<string, any>;
+  binary?: Record<string, N8nBinaryData>;
+  pairedItem?: number | { item: number; input?: number };
+  error?: Error;
+}
+
+interface N8nInput {
+  all(branchIndex?: number, runIndex?: number): N8nItem[];
+  first(branchIndex?: number, runIndex?: number): N8nItem;
+  last(branchIndex?: number, runIndex?: number): N8nItem;
+  /** Only in "Run Once for Each Item" mode. */
+  item: N8nItem;
+  params?: Record<string, any>;
+}
+
+interface N8nNodeRef {
+  all(branchIndex?: number, runIndex?: number): N8nItem[];
+  first(branchIndex?: number, runIndex?: number): N8nItem;
+  last(branchIndex?: number, runIndex?: number): N8nItem;
+  item: N8nItem | undefined;
+  itemMatching(itemIndex: number): N8nItem;
+  params: Record<string, any>;
+  context: Record<string, any>;
+  isExecuted: boolean;
+}
+
+/** Access output of an earlier node: `$("Node Name").all()` */
+declare function $(nodeName: string): N8nNodeRef;
+
+declare const $input: N8nInput;
+/** Shorthand for the current item's json ("Run Once for Each Item" mode). */
+declare const $json: Record<string, any>;
+declare const $binary: Record<string, N8nBinaryData>;
+declare const $env: Record<string, string | undefined>;
+
+declare const $execution: {
+  id: string;
+  mode: "test" | "production";
+  resumeUrl?: string;
+  resumeFormUrl?: string;
+  customData?: {
+    set(key: string, value: string): void;
+    get(key: string): string | undefined;
+    setAll(values: Record<string, string>): void;
+    getAll(): Record<string, string>;
+  };
+};
+
+declare const $workflow: { id: string; name: string; active: boolean };
+declare const $prevNode: { name: string; outputIndex: number; runIndex: number };
+declare const $runIndex: number;
+declare const $itemIndex: number;
+declare const $nodeVersion: number;
+declare const $nodeId: string;
+declare const $webhookId: string | undefined;
+
+declare function $jmespath(data: unknown, expression: string): any;
+declare function $evaluateExpression(expression: string, itemIndex?: number): any;
+declare function $if<T, F>(condition: boolean, valueIfTrue: T, valueIfFalse: F): T | F;
+declare function $min(...numbers: number[]): number;
+declare function $max(...numbers: number[]): number;
+
+/** Legacy helpers */
+declare function $items(nodeName?: string, outputIndex?: number, runIndex?: number): N8nItem[];
+declare const $node: Record<string, N8nNodeRef>;
+
+/** Luxon DateTime (subset). */
+declare class DateTime {
+  static now(): DateTime;
+  static fromISO(text: string, opts?: object): DateTime;
+  static fromMillis(ms: number, opts?: object): DateTime;
+  static fromSeconds(seconds: number, opts?: object): DateTime;
+  static fromJSDate(date: Date, opts?: object): DateTime;
+  static fromFormat(text: string, format: string, opts?: object): DateTime;
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  millisecond: number;
+  weekday: number;
+  zoneName: string;
+  isValid: boolean;
+  plus(duration: object | number): DateTime;
+  minus(duration: object | number): DateTime;
+  startOf(unit: string): DateTime;
+  endOf(unit: string): DateTime;
+  set(values: object): DateTime;
+  setZone(zone: string, opts?: object): DateTime;
+  setLocale(locale: string): DateTime;
+  diff(other: DateTime, unit?: string | string[], opts?: object): any;
+  diffNow(unit?: string | string[], opts?: object): any;
+  hasSame(other: DateTime, unit: string): boolean;
+  toISO(opts?: object): string | null;
+  toISODate(): string | null;
+  toISOTime(opts?: object): string | null;
+  toFormat(format: string, opts?: object): string;
+  toLocaleString(opts?: object): string;
+  toMillis(): number;
+  toSeconds(): number;
+  toJSDate(): Date;
+  toUTC(offset?: number, opts?: object): DateTime;
+  valueOf(): number;
+}
+
+declare const $now: DateTime;
+declare const $today: DateTime;

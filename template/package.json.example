@@ -1,0 +1,14 @@
+{
+  "name": "n8n-workflows",
+  "private": true,
+  "version": "0.0.0",
+  "description": "n8n workflows decanted into git — see AGENTS.md",
+  "type": "module",
+  "scripts": {
+    "typecheck": "n8n-decanter check",
+    "check": "n8n-decanter check"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

@@ -6,13 +6,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Standalone CLI that syncs n8n workflows into a git-friendly, folder-per-workflow
 layout: Code node sources become individual `.js`/`.ts` files and get pushed
-back via the n8n public API. **Plan.md is the design document and source of
+back via the n8n public API. **PLAN.md is the design document and source of
 truth** — it also records past decisions/observations so the project could be
 rebuilt from it.
 
 **When your work changes the design, data model, flows, or surfaces a new
-decision or observation, ask the user whether Plan.md should be updated.
-Never let Plan.md silently drift from the code, and don't rewrite it unasked.**
+decision or observation, ask the user whether PLAN.md should be updated.
+Never let PLAN.md silently drift from the code, and don't rewrite it unasked.**
+
+## Changelog
+
+Maintain CHANGELOG.md (Keep a Changelog format) in the same change as the
+code, without being asked: every user-facing change — CLI commands/flags,
+sync behavior, data model (`.decanter.json`, markers, placeholders), guard
+rules, template contents — gets an entry under `[Unreleased]` in the fitting
+category (Added/Changed/Fixed/Removed), written for users, not a commit log.
+Internal refactors and test-only changes get no entry. Prefix breaking
+changes with **Breaking:**. On release, rename `[Unreleased]` to
+`[<version>] - <date>` and start a fresh `[Unreleased]`.
+
+## Ideas
+
+IDEAS.md is the user's idea/todo backlog. When your work **fully** completes
+an entry (implemented, tested, documented as applicable), check it off
+(`- [x]`). Partially done is not done: leave the box unchecked and append a
+short parenthetical status instead. Don't delete, reword, or reorder the
+user's entries, and don't add ideas of your own unasked.
 
 ## Commands
 

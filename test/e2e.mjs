@@ -98,7 +98,8 @@ function step(name, fn) {
 // ---------- run ----------
 rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
-writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"] }, null, 2));
+// commitOnPush off for the base scenario; a dedicated step tests it explicitly
+writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: false }, null, 2));
 
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 env = { ...process.env, N8N_HOST: `http://127.0.0.1:${server.address().port}`, N8N_API_KEY: "test-key" };
@@ -344,6 +345,37 @@ await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", 
   r = await cli("push");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /typecheck OK/);
+});
+
+await step("commit-on-push: warns outside a repo, commits scoped inside one", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: true }, null, 2));
+  // outside a git repo: push succeeds and warns
+  writeFileSync(path.join(dir2, "Transform- EU-US.js"), "return $input.all(); // v-git-1\n");
+  let r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /skipping commit/);
+  // inside a repo: commit happens, scoped to the workflow folder
+  await execFile("git", ["init"], { cwd: TMP });
+  await execFile("git", ["-C", TMP, "config", "user.email", "e2e@test"]);
+  await execFile("git", ["-C", TMP, "config", "user.name", "e2e"]);
+  await execFile("git", ["-C", TMP, "config", "commit.gpgsign", "false"]);
+  writeFileSync(path.join(TMP, "unrelated.txt"), "not part of any workflow\n");
+  writeFileSync(path.join(dir2, "Transform- EU-US.js"), "return $input.all(); // v-git-2\n");
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /committed: decanter: pushed "Order Sync v2" \(wf123\)/);
+  const { stdout: committed } = await execFile("git", ["-C", TMP, "show", "--name-only", "--format="], { encoding: "utf8" });
+  for (const file of committed.trim().split("\n")) {
+    assert.match(file, /^workflows\/Order Sync v2\//, `commit must only contain the workflow folder, found: ${file}`);
+  }
+  const { stdout: status } = await execFile("git", ["-C", TMP, "status", "--porcelain", "--", "unrelated.txt"], { encoding: "utf8" });
+  assert.match(status, /^\?\? unrelated\.txt/m, "unrelated file must stay uncommitted and unstaged");
+  // pushing without changes must not create an empty commit
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  const { stdout: count } = await execFile("git", ["-C", TMP, "rev-list", "--count", "HEAD"], { encoding: "utf8" });
+  assert.equal(count.trim(), "1", "no empty follow-up commit");
 });
 
 server.close();

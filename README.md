@@ -3,7 +3,7 @@
 Standalone CLI that keeps n8n workflows in git: pull full workflows into a
 folder-per-workflow layout, keep every Code node's source as its own file
 (`.js` lossless, or `.ts` compiled one-way), and push them back.
-See [Plan.md](Plan.md) for the design.
+See [PLAN.md](PLAN.md) for the design.
 
 ## Setup
 
@@ -22,6 +22,10 @@ fill it in. Then add workflow ids to `decanter.config.json`:
 ```json
 { "root": "./workflows", "workflows": ["0cXNQKKzmO0pXiCq"] }
 ```
+
+After every successful push, the workflow's folder is git-committed
+automatically (scoped to that folder; outside a git repo it just warns).
+Set `"commitOnPush": false` to turn that off.
 
 ## Commands
 
@@ -80,7 +84,7 @@ a spurious TS1108 on top-level `return` in `.ts` node files.
 
 ## Open questions (need a live n8n instance)
 
-Still unverified, from Plan.md — check once `.env` points at the real host:
+Still unverified, from PLAN.md — check once `.env` points at the real host:
 
 - Whether `GET /api/v1/workflows/:id` exposes folder placement
   (`parentFolderId`/project). Until then the layout is flat under `root`.
