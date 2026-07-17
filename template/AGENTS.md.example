@@ -125,6 +125,10 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
   - `runOnceForAllItems`: return an array of items: `[{ json: {…} }, …]`.
     Always wrap in `{ json: … }` explicitly.
   - `runOnceForEachItem`: return a single `{ json: {…} }`.
+  - Editors squiggle that top-level `return`/`await` (TS1108/TS1375) — a
+    **false positive** from the editor's own tsserver; ignore it, and never
+    "fix" it by wrapping the file in a function. `n8n-decanter check` wraps
+    node bodies in memory before typechecking and is authoritative.
 - Available globals (extend `n8n-globals.d.ts` when you use one it lacks):
   `$input.all()/.first()/.last()/.item` · `$('Node Name').all()/.first()/.item/.itemMatching(i)` ·
   `$json`, `$binary`, `$itemIndex` (each-item mode) ·

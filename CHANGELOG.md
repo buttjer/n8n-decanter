@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `check <id …>` with explicit workflow ids now scopes the typecheck too:
+  only diagnostics from the given workflows' folders are reported and
+  counted (the whole project still compiles, so cross-file types keep
+  working). Bare `check` stays project-wide.
+- Template: the PostToolUse verify hook scopes its check to the edited
+  workflow (it reads the workflow id from the sibling `.decanter.json`), so
+  errors in unrelated workflows no longer block an edit.
+- Template: node files are typechecked as separate module scopes
+  (`moduleDetection: "force"` in `tsconfig.json`) — same-named top-level
+  declarations in different node files no longer raise false "cannot
+  redeclare" errors.
 - **Breaking:** requires Node >= 22.18 (was >= 18.17). The CLI is now
   written in TypeScript and executed natively via Node's type stripping —
   no build step. The entry point is `n8n-decanter.mts` (invoke as
@@ -20,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Template: the `n8n-globals.d.ts` stub declares Luxon `Duration` and
+  `Interval` (pragmatic subsets, matching the existing `DateTime` stub) —
+  both were already advertised in `AGENTS.md` and provided at runtime, only
+  the type stubs were missing. The AGENTS notes now also call out the
+  editor-only TS1108 top-level-`return` squiggle as a false positive.
 - `init --force` — re-copies template files over existing ones in the
   target (`.env` is always protected); every overwrite is logged.
 - Commit-on-sync: after every successful `push` (including `watch`'s

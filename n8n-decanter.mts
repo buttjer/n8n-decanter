@@ -117,7 +117,8 @@ async function main() {
       }
       if (!noTypecheck) {
         try {
-          await runTypecheck(config.configDir, log);
+          // explicit ids scope the typecheck output too; bare `check` stays project-wide
+          await runTypecheck(config.configDir, log, rest.length > 0 ? dirs : undefined);
         } catch (err) {
           log.error((err as Error).message);
           errorCount++;

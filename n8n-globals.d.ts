@@ -69,6 +69,9 @@ declare const $nodeVersion: number;
 declare const $nodeId: string;
 declare const $webhookId: string | undefined;
 
+/** Per-workflow / per-node persisted store. */
+declare function $getWorkflowStaticData(type: "global" | "node"): Record<string, any>;
+
 declare function $jmespath(data: unknown, expression: string): any;
 declare function $evaluateExpression(expression: string, itemIndex?: number): any;
 declare function $if<T, F>(condition: boolean, valueIfTrue: T, valueIfFalse: F): T | F;
@@ -119,5 +122,69 @@ declare class DateTime {
   valueOf(): number;
 }
 
+/** Luxon Duration (subset). */
+declare class Duration {
+  static fromObject(values: object, opts?: object): Duration;
+  static fromMillis(ms: number, opts?: object): Duration;
+  static fromISO(text: string, opts?: object): Duration;
+  years: number;
+  quarters: number;
+  months: number;
+  weeks: number;
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  milliseconds: number;
+  isValid: boolean;
+  as(unit: string): number;
+  get(unit: string): number;
+  plus(duration: Duration | object | number): Duration;
+  minus(duration: Duration | object | number): Duration;
+  negate(): Duration;
+  normalize(): Duration;
+  shiftTo(...units: string[]): Duration;
+  set(values: object): Duration;
+  toObject(): Record<string, number>;
+  toISO(opts?: object): string | null;
+  toFormat(format: string, opts?: object): string;
+  toHuman(opts?: object): string;
+  toMillis(): number;
+  valueOf(): number;
+}
+
+/** Luxon Interval (subset). */
+declare class Interval {
+  static fromDateTimes(start: DateTime | Date, end: DateTime | Date): Interval;
+  static after(start: DateTime | Date, duration: Duration | object | number): Interval;
+  static before(end: DateTime | Date, duration: Duration | object | number): Interval;
+  static fromISO(text: string, opts?: object): Interval;
+  start: DateTime | null;
+  end: DateTime | null;
+  isValid: boolean;
+  length(unit?: string): number;
+  count(unit?: string): number;
+  contains(dateTime: DateTime): boolean;
+  overlaps(other: Interval): boolean;
+  engulfs(other: Interval): boolean;
+  isBefore(dateTime: DateTime): boolean;
+  isAfter(dateTime: DateTime): boolean;
+  set(values: object): Interval;
+  splitAt(...dateTimes: DateTime[]): Interval[];
+  splitBy(duration: Duration | object | number): Interval[];
+  toDuration(unit?: string | string[], opts?: object): Duration;
+  toISO(opts?: object): string;
+  toFormat(format: string, opts?: object): string;
+}
+
 declare const $now: DateTime;
 declare const $today: DateTime;
+
+/** Debug logging — surfaces in the n8n execution view. */
+declare const console: {
+  log(...args: any[]): void;
+  error(...args: any[]): void;
+  warn(...args: any[]): void;
+  info(...args: any[]): void;
+  debug(...args: any[]): void;
+};

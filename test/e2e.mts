@@ -358,6 +358,37 @@ await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", 
   assert.match(r.out, /typecheck OK/);
 });
 
+await step("check <id>: scopes layout checks and typecheck to that workflow", async () => {
+  // a second, broken workflow that must stay invisible to a scoped check
+  const dirB = wfDir("Broken Neighbor");
+  mkdirSync(dirB, { recursive: true });
+  writeFileSync(path.join(dirB, ".decanter.json"), JSON.stringify({ workflowId: "wfBroken", nodes: { b1: { file: "Bad.js" } } }));
+  writeFileSync(path.join(dirB, "workflow.json"), JSON.stringify({
+    nodes: [{ id: "b1", name: "Bad", type: "n8n-nodes-base.code", typeVersion: 2, position: [0, 0], parameters: { jsCode: "//@file:Bad.js" } }],
+    connections: {},
+  }));
+  writeFileSync(path.join(dirB, "Bad.js"), '// @ts-check\nconst bad = "x" * 2;\nreturn [{ json: { bad } }];\n');
+  let r = await cli("check");
+  assert.equal(r.code, 1, "unscoped check must fail on the broken neighbor: " + r.out);
+  assert.match(r.out, /Bad\.js/);
+  r = await cli("check", "wf123");
+  assert.equal(r.code, 0, "scoped check must not see the broken neighbor: " + r.out);
+  assert.match(r.out, /Order Sync v2: OK/);
+  assert.match(r.out, /typecheck OK/);
+  assert.ok(!r.out.includes("Broken Neighbor"), "unrelated workflow leaked into scoped output: " + r.out);
+  assert.ok(!r.out.includes("Bad.js"), "unrelated diagnostics leaked into scoped output: " + r.out);
+  // a type error in the scoped workflow itself must still surface
+  const dir2 = wfDir("Order Sync v2");
+  const file = path.join(dir2, "Transform- EU-US.js");
+  const original = read(dir2, "Transform- EU-US.js");
+  writeFileSync(file, '// @ts-check\nconst broken = "x" * 2;\nreturn [{ json: { broken } }];\n');
+  r = await cli("check", "wf123");
+  assert.equal(r.code, 1, "scoped check must still catch errors in its own workflow");
+  assert.match(r.out, /Transform- EU-US\.js/);
+  writeFileSync(file, original);
+  rmSync(dirB, { recursive: true, force: true });
+});
+
 await step("commit-on-push: warns outside a repo, commits scoped inside one", async () => {
   const dir2 = wfDir("Order Sync v2");
   writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: true, commitOnPull: true }, null, 2));

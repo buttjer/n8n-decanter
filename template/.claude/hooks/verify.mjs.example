@@ -25,7 +25,15 @@ const isNodeFile =
   existsSync(path.join(path.dirname(file), ".decanter.json"));
 if (!isNodeFile) process.exit(0);
 
-const res = spawnSync("n8n-decanter", ["check"], { encoding: "utf8" });
+// Scope the check to the edited workflow. `check` matches on the workflow id
+// stored in .decanter.json (NOT the folder name), so read the id from there;
+// if the state file is unreadable, fall back to a project-wide check.
+let workflowId;
+try {
+  workflowId = JSON.parse(readFileSync(path.join(path.dirname(file), ".decanter.json"), "utf8")).workflowId;
+} catch {}
+const args = typeof workflowId === "string" && workflowId ? ["check", workflowId] : ["check"];
+const res = spawnSync("n8n-decanter", args, { encoding: "utf8" });
 if (res.error?.code === "ENOENT") process.exit(0); // CLI not installed yet — stay quiet
 
 if (typeof res.status === "number" && res.status !== 0) {

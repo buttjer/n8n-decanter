@@ -20,13 +20,13 @@ the P1s forward:
 
 - [x] **[P3]** Transform to TypeScript Project (→ [plans/6](plans/6-typescript-migration.md))
 - [ ] **[P2]** js node files to kebab-case and moving them into the sub dir workflows/*/code/
-- [ ] **[P1]** currently js files throw IDE errors like "A 'return' statement can only be used within a function body.ts(1108)" or say that variables can't be redeclared, even if they are not. I think this is a scope issue. How to solve this? (redeclare half → [plans/1](plans/1-trustworthy-edit-loop.md); TS1108 editor squiggle → [plans/4](plans/4-editor-node-diagnostics.md))
+- [ ] **[P1]** currently js files throw IDE errors like "A 'return' statement can only be used within a function body.ts(1108)" or say that variables can't be redeclared, even if they are not. I think this is a scope issue. How to solve this? (redeclare half → [plans/1](plans/1-trustworthy-edit-loop.md); TS1108 editor squiggle → [plans/4](plans/4-editor-node-diagnostics.md)) (status 2026-07-17: redeclare half done — `moduleDetection: "force"` committed in both tsconfigs, false positive documented in template AGENTS notes; TS1108 editor half still open → plans/4)
       - Note: the redeclare half is addressed by `moduleDetection: "force"`
         (currently uncommitted in `template/tsconfig.json.example` and root
         `tsconfig.json`). The TS1108 function-body half only affects the
         editor's own tsserver; the CLI typecheck already wraps node files
         (`scripts/typecheck.mts`).
-- [ ] **[P1]** the typecheck hook, just to the workflow it is currently worked on. Not global. (→ [plans/1](plans/1-trustworthy-edit-loop.md))
+- [x] **[P1]** the typecheck hook, just to the workflow it is currently worked on. Not global. (→ [plans/1](plans/1-trustworthy-edit-loop.md))
       - Mechanics: the id filter on `check` only scopes the *layout* checks;
         `runTypecheck` always runs project-wide. Two parts: (1) teach
         `scripts/typecheck.mts` an optional path filter — still compile the whole
@@ -78,7 +78,7 @@ the P1s forward:
 
 ## New (from CLI-usage feedback, 2026-07-17)
 
-- [ ] **[P1]** `n8n-globals.d.ts` stub is missing `Duration` and `Interval`
+- [x] **[P1]** `n8n-globals.d.ts` stub is missing `Duration` and `Interval`
       (Luxon). `template/AGENTS.md.example` advertises them and `lib/run.mts`
       already provides them via luxon — only the `.d.ts` lacks the two
       `declare class` stubs (in both the root and template copies). One-minute

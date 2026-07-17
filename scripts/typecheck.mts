@@ -11,6 +11,18 @@ import ts from "typescript";
 const PREFIX = "async function __n8nNode() {\n";
 const SUFFIX = "\n}\nvoid __n8nNode;\n";
 
+// Optional dir arguments scope the *output*: the whole project is still
+// compiled (cross-file types need the full graph), but only diagnostics whose
+// file lives under one of the given dirs are reported and counted. Global
+// (file-less) diagnostics are always reported — a broken tsconfig must not
+// pass as green just because a scope was given.
+const scopeDirs = process.argv.slice(2).map((d) => path.resolve(d));
+function inScope(fileName: string): boolean {
+  if (scopeDirs.length === 0) return true;
+  const file = path.resolve(fileName);
+  return scopeDirs.some((dir) => file === dir || file.startsWith(dir + path.sep));
+}
+
 const configPath = ts.findConfigFile(process.cwd(), ts.sys.fileExists, "tsconfig.json");
 if (!configPath) {
   console.error("tsconfig.json not found");
@@ -50,6 +62,7 @@ for (const d of ts.getPreEmitDiagnostics(program)) {
     problems++;
     continue;
   }
+  if (!inScope(d.file.fileName)) continue;
   const { line, character } = d.file.getLineAndCharacterOfPosition(d.start!);
   const shift = wrapped.has(path.resolve(d.file.fileName)) ? 1 : 0;
   const displayLine = line + 1 - shift;

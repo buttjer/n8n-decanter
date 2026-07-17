@@ -89,9 +89,10 @@ export function validateWorkflowDir(dir: string): ValidationResult {
 /**
  * Run scripts/typecheck.mts against the nearest tsconfig.json at or above
  * startDir. Missing tsconfig (e.g. an init'ed sync dir without one) is an
- * info-level skip, not an error. Throws on type errors.
+ * info-level skip, not an error. Throws on type errors. `scopeDirs` limits
+ * which files' diagnostics are reported (the whole project still compiles).
  */
-export async function runTypecheck(startDir: string, log: Log): Promise<void> {
+export async function runTypecheck(startDir: string, log: Log, scopeDirs?: string[]): Promise<void> {
   let dir = path.resolve(startDir);
   let tsconfigDir: string | null = null;
   for (;;) {
@@ -108,8 +109,10 @@ export async function runTypecheck(startDir: string, log: Log): Promise<void> {
     return;
   }
   const script = fileURLToPath(new URL("../scripts/typecheck.mts", import.meta.url));
+  // absolute paths: the script resolves its arguments against tsconfigDir's cwd
+  const scopeArgs = (scopeDirs ?? []).map((d) => path.resolve(d));
   try {
-    await execFile(process.execPath, [script], { cwd: tsconfigDir, encoding: "utf8" });
+    await execFile(process.execPath, [script, ...scopeArgs], { cwd: tsconfigDir, encoding: "utf8" });
     log.info("typecheck OK");
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };

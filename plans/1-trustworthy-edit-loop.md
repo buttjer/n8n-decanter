@@ -1,7 +1,7 @@
 # Plan 1 — Trustworthy edit loop
 
 **Priority:** P1
-**Status:** Not started
+**Status:** Done
 **Theme:** make the hook/typecheck feedback green-by-default and scoped to the
 workflow being edited.
 
@@ -85,3 +85,16 @@ one workflow so noise from unrelated workflows disappears.
   behavior) — add entries under `[Unreleased]`.
 - Deliberately **not** doing baseline-diffing (fail only on *new* errors): it
   institutionalizes red and drifts. Green-by-default + scoping is the fix.
+- Done 2026-07-17. Findings while executing:
+  - The root `n8n-globals.d.ts` had drifted behind the template copy — commit
+    `680f463`'s `console` + `$getWorkflowStaticData` additions only landed in
+    `template/n8n-globals.d.ts.example`. Re-synced; both copies are byte-identical
+    again (`diff` in CI would catch this — left as an idea, not added unasked).
+  - Likewise `moduleDetection: "force"` was already committed in the template but
+    missing from the root `tsconfig.json`; added there.
+  - The redeclare fix is verified via CLI against the shipped template tsconfig
+    (two workflows redeclaring the same top-level `const` typecheck green);
+    in-editor confirmation still worth a quick look next time the repo is open
+    with tsserver running.
+  - Scoped typecheck still reports file-less (global) diagnostics — a broken
+    tsconfig must not pass as green just because a scope was given.
