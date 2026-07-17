@@ -1,7 +1,7 @@
 import { watch } from "node:fs";
 import path from "node:path";
-import { pushSingleNode } from "./push.mjs";
-import { readState } from "./state.mjs";
+import { pushSingleNode } from "./push.mts";
+import { readState } from "./state.mts";
 
 /**
  * Fast inner loop: watch one node file and push only that node on change.

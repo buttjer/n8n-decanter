@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mjs";
-import { FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mjs";
+import { compileTs } from "./compile.mts";
+import { FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 

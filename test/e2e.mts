@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 
 const execFile = promisify(execFileCb);
 const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = path.join(PROJECT, "n8n-decanter.mjs");
+const CLI = path.join(PROJECT, "n8n-decanter.mts");
 const TMP = path.join(os.tmpdir(), `n8n-decanter-e2e-${process.pid}`);
 const ROOT = path.join(TMP, "workflows");
 
@@ -283,8 +283,8 @@ await step("remote workflow + node rename: folder and file follow", async () => 
 });
 
 await step("watch path: pushSingleNode round-trip", async () => {
-  const { pushSingleNode } = await import(pathToFileURL(path.join(PROJECT, "lib/push.mjs")).href);
-  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mjs")).href);
+  const { pushSingleNode } = await import(pathToFileURL(path.join(PROJECT, "lib/push.mts")).href);
+  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   const dir2 = wfDir("Order Sync v2");
   writeFileSync(path.join(dir2, "Transform- EU-US.js"), "return $input.all(); // watched\n");
   const api = new N8nApi({ host: env.N8N_HOST, apiKey: "test-key" });

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mjs";
-import { findWorkflowDir, readState } from "./state.mjs";
-import { isJsCodeNode, sha256, splitMarker, workflowStructureHash } from "./util.mjs";
+import { compileTs } from "./compile.mts";
+import { findWorkflowDir, readState } from "./state.mts";
+import { isJsCodeNode, sha256, splitMarker, workflowStructureHash } from "./util.mts";
 
 async function localHash(dir, file) {
   const filePath = path.join(dir, file);

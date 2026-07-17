@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { N8nApi } from "./lib/api.mjs";
-import { loadConfig } from "./lib/config.mjs";
-import { init } from "./lib/init.mjs";
-import { pullWorkflow } from "./lib/pull.mjs";
-import { pushWorkflow } from "./lib/push.mjs";
-import { runNode } from "./lib/run.mjs";
-import { findWorkflowDir, listWorkflowDirs } from "./lib/state.mjs";
-import { statusWorkflow } from "./lib/status.mjs";
-import { runTypecheck, validateWorkflowDir } from "./lib/validate.mjs";
-import { watchFile } from "./lib/watch.mjs";
+import { N8nApi } from "./lib/api.mts";
+import { loadConfig } from "./lib/config.mts";
+import { init } from "./lib/init.mts";
+import { pullWorkflow } from "./lib/pull.mts";
+import { pushWorkflow } from "./lib/push.mts";
+import { runNode } from "./lib/run.mts";
+import { findWorkflowDir, listWorkflowDirs } from "./lib/state.mts";
+import { statusWorkflow } from "./lib/status.mts";
+import { runTypecheck, validateWorkflowDir } from "./lib/validate.mts";
+import { watchFile } from "./lib/watch.mts";
 
 const log = {
   info: (m) => console.log(m),

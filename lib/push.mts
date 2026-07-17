@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mjs";
-import { commitWorkflowDir } from "./git.mjs";
-import { findWorkflowDir, readState, writeState } from "./state.mjs";
+import { compileTs } from "./compile.mts";
+import { commitWorkflowDir } from "./git.mts";
+import { findWorkflowDir, readState, writeState } from "./state.mts";
 import {
   FILE_PLACEHOLDER_PREFIX,
   isJsCodeNode,
@@ -11,8 +11,8 @@ import {
   splitMarker,
   withMarker,
   workflowStructureHash,
-} from "./util.mjs";
-import { validateNodeFile, validateWorkflowDir } from "./validate.mjs";
+} from "./util.mts";
+import { validateNodeFile, validateWorkflowDir } from "./validate.mts";
 
 /** Layout-compliance gate: warnings pass through, errors abort the push. */
 function assertCompliant({ errors, warnings }, log, what) {

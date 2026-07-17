@@ -3,8 +3,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { readState } from "./state.mjs";
-import { FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mjs";
+import { readState } from "./state.mts";
+import { FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
 
 const execFile = promisify(execFileCb);
 
@@ -81,7 +81,7 @@ export function validateWorkflowDir(dir) {
 }
 
 /**
- * Run scripts/typecheck.mjs against the nearest tsconfig.json at or above
+ * Run scripts/typecheck.mts against the nearest tsconfig.json at or above
  * startDir. Missing tsconfig (e.g. an init'ed sync dir without one) is an
  * info-level skip, not an error. Throws on type errors.
  */
@@ -101,7 +101,7 @@ export async function runTypecheck(startDir, log) {
     log.info("no tsconfig.json found — skipping typecheck");
     return;
   }
-  const script = fileURLToPath(new URL("../scripts/typecheck.mjs", import.meta.url));
+  const script = fileURLToPath(new URL("../scripts/typecheck.mts", import.meta.url));
   try {
     await execFile(process.execPath, [script], { cwd: tsconfigDir, encoding: "utf8" });
     log.info("typecheck OK");

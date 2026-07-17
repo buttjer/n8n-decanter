@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mjs";
-import { commitWorkflowDir } from "./git.mjs";
-import { findWorkflowDir, readState, writeState } from "./state.mjs";
+import { compileTs } from "./compile.mts";
+import { commitWorkflowDir } from "./git.mts";
+import { findWorkflowDir, readState, writeState } from "./state.mts";
 import {
   FILE_PLACEHOLDER_PREFIX,
   isJsCodeNode,
@@ -11,7 +11,7 @@ import {
   splitMarker,
   stableWorkflowJson,
   workflowStructureHash,
-} from "./util.mjs";
+} from "./util.mts";
 
 function writeIfChanged(file, content) {
   if (existsSync(file) && readFileSync(file, "utf8") === content) return false;
