@@ -1,8 +1,9 @@
 # Plans
 
-Actionable plans split out from [`IDEAS.md`](../IDEAS.md). `IDEAS.md` stays the
-full backlog; a plan here is an item (or batch of related items) that has been
-fleshed out enough to start. Recommended order:
+This folder is the whole backlog (the former `IDEAS.md` was absorbed here,
+2026-07-17). A numbered plan is an item (or batch of related items) fleshed out
+enough to start; [Plan 0](0-backlog.md) is the grab-bag of open
+items not yet claimed by one. Recommended order:
 
 1. [Trustworthy edit loop](1-trustworthy-edit-loop.md) — make the hook/typecheck
    feedback green-by-default and scoped to the workflow being edited. Everything
@@ -38,15 +39,15 @@ mergeable:
 - **Header block** (before the first `##`, one bold field per line):
   - `# Plan N — Title`
   - `**Priority:**` `P1` (do first: small, clearly-right, high-value, offline) /
-    `P2` (valuable, more scope/design) / `P3` (deferred). Mirrors the `IDEAS.md`
-    scale; a plan may split priorities per task (e.g. "P1 (validator) / P2
-    (rename)").
+    `P2` (valuable, more scope/design) / `P3` (deferred). A plan may split
+    priorities per task (e.g. "P1 (validator) / P2 (rename)").
   - `**Status:**` `Not started` / `In progress` / `Done`.
   - `**Theme:**` one-line what-and-why.
 - **Sections**, in order:
   - `## Why` — the motivation/context.
-  - `## Source` — the `IDEAS.md` entries (linked) and any `PLAN.md` refs this
-    plan closes, so nothing is orphaned when an item leaves the backlog.
+  - `## Source` — the backlog entries ([Plan 0](0-backlog.md), or
+    the retired `IDEAS.md` in older plans) and any `PLAN.md` refs this plan
+    closes, so nothing is orphaned when an item leaves the backlog.
   - `## Tasks` — numbered, each grounded in the real files it touches.
   - `## Acceptance / verification` — how you know it's done.
   - `## Notes` — CHANGELOG/PLAN.md implications, decisions, deferrals.
@@ -55,7 +56,8 @@ mergeable:
   TS1108 story).
 
 When a plan is fully implemented, tested, and documented, flip its `**Status:**`
-to `Done` and check off the matching `IDEAS.md` box (per `CLAUDE.md`).
+to `Done` and check off any matching [Plan 0](0-backlog.md) box
+(per `CLAUDE.md`).
 
 These are scoped work plans, not design changes — anything that alters the data
 model or flows in `PLAN.md` must be raised with the user first (see `CLAUDE.md`).

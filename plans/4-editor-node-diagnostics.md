@@ -175,7 +175,7 @@ end in `.example`. Materialization to `decanter-ts-plugin/index.js` and
 2. Write the plugin + unit test (Task 2).
 3. Add template files + extend init e2e assertions (Tasks 3–4).
 4. Manual editor verification.
-5. Docs (see Notes); propose PLAN.md/IDEAS.md updates to the user.
+5. Docs (see Notes); propose PLAN.md updates to the user.
 
 ## Notes
 
@@ -187,6 +187,6 @@ end in `.example`. Materialization to `decanter-ts-plugin/index.js` and
   current TypeScript (1108 fires in `.js` too); the wrapper, not the file type,
   is what makes typecheck pass. Ask the user before rewriting PLAN.md (per
   CLAUDE.md).
-- **IDEAS.md**: check off the entry once implemented + tested + documented (both
-  halves: 1108 via this plugin, redeclare via `moduleDetection: "force"` in
-  Plan 1).
+- Flip this plan's **Status** to `Done` once implemented + tested + documented
+  (both halves: 1108 via this plugin, redeclare via `moduleDetection: "force"`
+  in Plan 1).

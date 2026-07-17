@@ -17,8 +17,8 @@ live-reload loop.
 
 ## Source
 
-Raised in conversation 2026-07-17; **no IDEAS.md entry yet** — add one when
-triaging so this plan isn't orphaned (per `plans/README.md`).
+Raised in conversation 2026-07-17. No separate backlog entry — since `IDEAS.md`
+was retired into `plans/`, this plan is its own backlog entry.
 
 ## Directions (design decision — open)
 

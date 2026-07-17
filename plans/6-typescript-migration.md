@@ -190,7 +190,7 @@ should be extensions only. (`workflows/` node files and everything under
   decision note all name `.mjs` files — propose the updates and **ask the user
   first** (per CLAUDE.md).
 - **CLAUDE.md**: Commands block and the architecture bullet — same rule.
-- **IDEAS.md**: check the entry off only when all of the above is done.
+- Backlog entry checked off (was in the since-retired `IDEAS.md`).
 
 ## Acceptance / verification
 
