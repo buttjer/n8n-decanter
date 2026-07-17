@@ -2,13 +2,35 @@
   "permissions": {
     "allow": [
       "Bash(node n8n-decanter.mjs *)",
-      "Bash(npm test *)", "Bash(npm view *)", "Bash(npm run *)", "Bash(npx tsc *)",
-      "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)", "Bash(git show *)",
-      "Bash(ls *)", "Bash(find *)", "Bash(grep *)", "Bash(head *)",
-      "Bash(jq *)", "Bash(command -v *)", "Bash(mkdir -p *)"
+      "Bash(npm test *)",
+      "Bash(npm view *)",
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(head *)",
+      "Bash(jq *)",
+      "Bash(command -v *)",
+      "Bash(mkdir -p *)",
+      "Bash(printf 'const x = require\\(\"path\"\\);\\\\nreturn { x };\\\\n')",
+      "Bash(npx -y -p typescript@5.6 tsc -p .)",
+      "Bash(echo \"--- exit: $? \\(CJS marker + force\\)\")",
+      "Bash(echo \"--- exit: $? \\(CJS marker, no force\\)\")",
+      "Bash(printf 'const x = 1;\\\\n// @ts-ignore\\\\nreturn { x };\\\\n')",
+      "Bash(echo \"--- exit: $? \\(ts-ignore\\)\")",
+      "Bash(printf '// @ts-nocheck\\\\nconst x = 1;\\\\nreturn { x };\\\\n')",
+      "Bash(echo \"--- exit: $? \\(ts-nocheck\\)\")"
     ],
     "deny": [
-      "Bash(rm -rf *)", "Bash(git push --force *)", "Bash(git push -f *)", "Bash(git reset --hard *)"
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)"
     ]
   }
 }
