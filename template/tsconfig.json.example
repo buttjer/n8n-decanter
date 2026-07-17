@@ -8,6 +8,8 @@
     "checkJs": true,
     "noEmit": true,
     "strict": true,
+    "noImplicitAny": false,
+    "useUnknownInCatchVariables": false,
     "skipLibCheck": true
   },
   "include": [

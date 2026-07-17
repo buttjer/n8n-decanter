@@ -65,7 +65,7 @@ A node object:
 
 ```json
 {
-  "id": "a1b2c3d4-…",            // UUID v4 — generate for new nodes, NEVER change existing ids
+  "id": "a1b2c3d4-…",            // UUID v4 — `n8n-decanter uuid` to generate; NEVER change an existing id
   "name": "Amazon Feed",          // unique per workflow — connections + $('…') reference it
   "type": "n8n-nodes-base.code",
   "typeVersion": 2,
@@ -111,9 +111,11 @@ on the next pull (or do it yourself, folder names are cosmetic — the id inside
 
 ### Adding a Code node
 
-1. Add the node object (new UUID, placeholder `jsCode`, position, connections).
+1. Add the node object — generate its `id` with `n8n-decanter uuid` (a lowercase
+   v4 UUID), placeholder `jsCode`, position, connections.
 2. Create the source file it points at (`.js` or `.ts`, see below).
-3. `npm run typecheck`.
+3. Verify: `n8n-decanter run <file> [fixture.json]` to execute it, then
+   `n8n-decanter check` (typecheck + layout).
 
 ## Writing Code node code
 
@@ -176,24 +178,47 @@ output; never add the marker line.
 
 1. Rename the file, convert JSDoc ↔ annotations.
 2. Update the `//@file:` placeholder in `workflow.json`.
-3. `npm run typecheck`. The tool picks up the new extension on next push;
+3. `n8n-decanter check`. The tool picks up the new extension on next push;
    direction of sync changes accordingly (`.ts` = one-way).
 
 ## Verification
 
-- **Always** run `npm run typecheck` after editing code files or
-  `n8n-globals.d.ts`.
-- There is no local n8n runtime. A workflow folder may contain a sim harness
-  (`sim.mjs` + fixture JSON) that fakes `$input` and runs a node's logic —
-  prefer running it before handing over. Creating one for complex nodes is
-  encouraged.
+Two offline tools, always available (no credentials, no network, no live n8n):
+
+- **`n8n-decanter check`** — runs the layout-compliance guard *and* the
+  typecheck (the same wrapper that maps top-level-`return` node bodies back to
+  real line numbers). Run it after editing any code file or `n8n-globals.d.ts`;
+  treat a failure as a blocker. `npm run typecheck` is an alias for it.
+- **`n8n-decanter run <file> [fixture.json]`** — actually executes a node's body
+  against a faked n8n context (`$input`, `$json`, `$('Node')`, `DateTime`, …) and
+  prints the items it returns. Prefer this over hand-rolling a throwaway test
+  script.
+  - The optional fixture JSON supplies the context; every field is optional:
+
+    ```json
+    {
+      "input":  [{ "json": { "sku": "A1" } }],
+      "nodes":  { "Fetch Products": [{ "json": { "id": 1 } }] },
+      "env":    { "REGION": "eu" }
+    }
+    ```
+
+    `input` feeds `$input`/`$json`; `nodes` backs `$('Node Name')`; without a
+    fixture the input defaults to a single empty item.
+  - Run mode (`runOnceForAllItems` / `runOnceForEachItem`) is read from the node
+    in `workflow.json`, so each-item nodes are looped once per input item.
 - JSON validity of `workflow.json` after every structural edit.
 
 ## Commands — who runs what
 
-- `npm run typecheck`, `n8n-decanter status` — safe, run freely.
-- `n8n-decanter pull` / `push` / `watch` — these read/write the **live n8n
-  instance**. `push` deploys. Only run them when the user explicitly asks;
-  otherwise finish edits, verify, and report that the change is ready to push.
+- **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
+  `n8n-decanter run <file> [fixture]`, `n8n-decanter uuid [n]`. These never touch
+  the network.
+- **Reads remote, no writes:** `n8n-decanter status` — safe to run, but it does
+  contact the instance.
+- **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
+  pull` / `push` / `watch` read/write the real instance and `push` deploys.
+  Otherwise finish edits, verify with `check` + `run`, and report that the
+  change is ready to push.
 - Never use `--force` on push without the user's explicit instruction — it
   overrides the drift guard that protects edits made in the n8n UI.

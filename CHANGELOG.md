@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Commit-on-push: after every successful `push` (including `watch`'s
-  single-node pushes) the workflow's folder is git-committed, pathspec-scoped
-  so unrelated staged changes stay untouched; no empty commits. Disable with
-  `"commitOnPush": false` in `decanter.config.json` (default: on). Outside a
-  git repo it warns and continues.
+- `init --force` — re-copies template files over existing ones in the
+  target (`.env` is always protected); every overwrite is logged.
+- Commit-on-sync: after every successful `push` (including `watch`'s
+  single-node pushes) and every successful `pull`, the workflow's folder is
+  git-committed, pathspec-scoped so unrelated staged changes stay untouched;
+  no empty commits; a pull that renames the folder commits the old path's
+  deletions too. Disable with `"commitOnPush": false` / `"commitOnPull":
+  false` in `decanter.config.json` (default: on). Outside a git repo it
+  warns and continues.
 
 - `pull` — extracts each Code node's `jsCode` into its own `<Node>.js` file
   (lossless, byte-identical round-trip) behind a `//@file:` placeholder in
@@ -34,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `watch <node-file>` — pushes a single node on every save (debounced,
   atomic-save-proof directory watch).
 - `init [dir]` — interactive bootstrap: prompts for host/API key (piped
-  stdin works too), writes `.env`, copies `template/` completely with
+  stdin works too; skipped entirely when `.env` already holds both values),
+  writes `.env`, copies `template/` completely with
   `X.example` files materializing as `X`, scaffolds `decanter.config.json`
   and `.gitignore`, best-effort credential check.
 - `status` — per-node and structural local-vs-remote drift report.

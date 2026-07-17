@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+// PostToolUse verify hook. After an Edit/Write to a Code-node source file, run
+// the offline `n8n-decanter check` (layout compliance + typecheck) and, on
+// failure, feed the output back to the agent (exit 2 = blocking). No-op when the
+// edit isn't a node file, or when the CLI isn't on PATH yet (fresh scaffold).
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+let payload = {};
+try {
+  payload = JSON.parse(readFileSync(0, "utf8") || "{}");
+} catch {
+  process.exit(0);
+}
+
+const file = payload.tool_input?.file_path;
+if (!file) process.exit(0);
+
+// A node source file is a .ts/.js (not a .remote.js artifact) that lives in a
+// workflow folder — marked by a sibling .decanter.json.
+const isNodeFile =
+  /\.(ts|js)$/.test(file) &&
+  !file.endsWith(".remote.js") &&
+  existsSync(path.join(path.dirname(file), ".decanter.json"));
+if (!isNodeFile) process.exit(0);
+
+const res = spawnSync("n8n-decanter", ["check"], { encoding: "utf8" });
+if (res.error?.code === "ENOENT") process.exit(0); // CLI not installed yet — stay quiet
+
+if (typeof res.status === "number" && res.status !== 0) {
+  const out = ((res.stdout ?? "") + (res.stderr ?? "")).trim();
+  console.error(`n8n-decanter check failed after editing ${path.basename(file)}:\n${out}`);
+  process.exit(2);
+}
+process.exit(0);

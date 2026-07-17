@@ -4,13 +4,16 @@
 
 The contract above (from `AGENTS.md`) is authoritative. A few Claude-only notes:
 
-- **The hard invariants are also enforced by hooks**, wired directly into
-  `.claude/settings.json` If an `Edit`/`Write` is blocked with a `decanter-guard`
-  reason, the edit violated a hard rule — fix the edit, don't try to route around the
-  guard.
-- **After editing any node source (`.ts`/`.js`) or `n8n-globals.d.ts`**, a PostToolUse
-  hook runs `npm run typecheck` and feeds any failure back to you. Treat a failure as a
-  blocker to finishing the task.
+- **File-level invariants are enforced by `.claude/settings.local.json`.** Its
+  permission deny-list blocks edits to `.decanter.json` and `*.remote.js`, reads/edits
+  of `.env`, and `push --force`. If an `Edit`/`Write` is blocked, it broke a hard rule —
+  fix the edit, don't route around the guard. The content-level invariants (jsCode
+  placeholder integrity, the `@ts-n8n` marker) are the CLI's wall at `push`/`check`.
+- **After editing a node source (`.ts`/`.js`), a PostToolUse hook runs
+  `n8n-decanter check`** (layout compliance + typecheck) via `.claude/hooks/verify.mjs`
+  and feeds any failure back to you. Treat a failure as a blocker to finishing the task.
+  The hook is a quiet no-op until the CLI is on your PATH (install it globally or
+  `npm link` it) — until then run `n8n-decanter check` / `n8n-decanter run` yourself.
 - **Renames must be atomic** (all four steps in the AGENTS.md rename checklist land in
   one change). Use plan mode for multi-node renames so nothing is left half-updated.
 - **`push --force` is blocked from the agent by design.** It overrides the drift guard;

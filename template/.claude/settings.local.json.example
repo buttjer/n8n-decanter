@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Edit(workflows/**)",
-      "Edit(shared/**)"
+      "Edit(shared/**)",
+      "Bash(n8n-decanter check)",
+      "Bash(n8n-decanter check:*)",
+      "Bash(n8n-decanter run:*)",
+      "Bash(n8n-decanter uuid:*)",
+      "Bash(n8n-decanter status:*)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run check)"
     ],
     "deny": [
       "Edit(**/.decanter.json)",
@@ -13,6 +20,16 @@
       "Bash(n8n-decanter push --force:*)",
       "Bash(node n8n-decanter.mjs push --force)",
       "Bash(node n8n-decanter.mjs push --force:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/verify.mjs" }
+        ]
+      }
     ]
   }
 }

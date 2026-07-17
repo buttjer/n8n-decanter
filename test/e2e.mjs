@@ -98,8 +98,8 @@ function step(name, fn) {
 // ---------- run ----------
 rmSync(TMP, { recursive: true, force: true });
 mkdirSync(TMP, { recursive: true });
-// commitOnPush off for the base scenario; a dedicated step tests it explicitly
-writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: false }, null, 2));
+// commitOnPush/commitOnPull off for the base scenario; a dedicated step tests them explicitly
+writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: false, commitOnPull: false }, null, 2));
 
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 env = { ...process.env, N8N_HOST: `http://127.0.0.1:${server.address().port}`, N8N_API_KEY: "test-key" };
@@ -150,6 +150,16 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   await again;
   assert.equal(read(target, probe), "user content\n");
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
+  // init --force re-copies template files over existing ones (.env protected)
+  const forced = execFile(process.execPath, [CLI, "init", target, "--force"], { encoding: "utf8" });
+  forced.child.stdin.write("\n\n"); // keep existing host + key
+  forced.child.stdin.end();
+  const forcedResult = await forced;
+  assert.match(forcedResult.stdout + forcedResult.stderr, /using existing \.env/, "re-init must not prompt when .env is complete");
+  assert.match(forcedResult.stdout + forcedResult.stderr, /--force: overwrote/);
+  const probeTemplateRel = templateFiles.find((f) => materialize(f) === probe);
+  assert.equal(read(target, probe), read(templateDir, probeTemplateRel), "--force must restore the template version");
+  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`, ".env must survive --force");
 });
 
 await step("pull: creates folder, files, placeholders, state", async () => {
@@ -349,7 +359,7 @@ await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", 
 
 await step("commit-on-push: warns outside a repo, commits scoped inside one", async () => {
   const dir2 = wfDir("Order Sync v2");
-  writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: true }, null, 2));
+  writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: true, commitOnPull: true }, null, 2));
   // outside a git repo: push succeeds and warns
   writeFileSync(path.join(dir2, "Transform- EU-US.js"), "return $input.all(); // v-git-1\n");
   let r = await cli("push");
@@ -376,6 +386,79 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   assert.equal(r.code, 0, r.out);
   const { stdout: count } = await execFile("git", ["-C", TMP, "rev-list", "--count", "HEAD"], { encoding: "utf8" });
   assert.equal(count.trim(), "1", "no empty follow-up commit");
+  // pull commits too (commitOnPull); a rename must also commit the old-path deletions
+  db.get("wf123").name = "Order Sync v3";
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /committed: decanter: pulled "Order Sync v3" \(wf123\)/);
+  assert.ok(existsSync(wfDir("Order Sync v3")) && !existsSync(wfDir("Order Sync v2")), "folder renamed");
+  let { stdout: dirty } = await execFile("git", ["-C", TMP, "status", "--porcelain", "--", "workflows"], { encoding: "utf8" });
+  assert.equal(dirty.trim(), "", "rename pull must leave no uncommitted changes under workflows/");
+  // rename back so later steps keep their folder; must stay clean too
+  db.get("wf123").name = "Order Sync v2";
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  ({ stdout: dirty } = await execFile("git", ["-C", TMP, "status", "--porcelain", "--", "workflows"], { encoding: "utf8" }));
+  assert.equal(dirty.trim(), "", "rename-back pull must leave a clean tree");
+});
+
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
+const runOutput = (out) => {
+  // The printed items are the last JSON array on stdout; cli() appends stderr
+  // (e.g. warnings) afterwards, so bound the slice by the final closing bracket.
+  const clean = stripAnsi(out);
+  const start = clean.indexOf("[", clean.indexOf("returned"));
+  return JSON.parse(clean.slice(start, clean.lastIndexOf("]") + 1));
+};
+
+await step("uuid: prints lowercase v4 uuids", async () => {
+  const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  let r = await cli("uuid");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out.trim(), V4);
+  r = await cli("uuid", "3");
+  const lines = r.out.trim().split("\n");
+  assert.equal(lines.length, 3);
+  for (const l of lines) assert.match(l, V4);
+  r = await cli("uuid", "0");
+  assert.equal(r.code, 1, "uuid 0 must fail");
+});
+
+await step("run: executes a .ts node against a fixture (all-items)", async () => {
+  const rd = path.join(TMP, "runtest");
+  mkdirSync(rd, { recursive: true });
+  writeFileSync(path.join(rd, "Gen.ts"),
+    "interface Row { id: number }\nconst rows: Row[] = $input.all().map((i) => ({ id: Number(i.json.id) }));\nreturn rows.map((r) => ({ json: r }));\n");
+  writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ input: [{ json: { id: 5 } }, { json: { id: 9 } }] }));
+  const r = await cli("run", path.join("runtest", "Gen.ts"), path.join("runtest", "fx.json"));
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /runOnceForAllItems/);
+  assert.match(r.out, /returned 2 items/);
+  assert.deepEqual(runOutput(r.out), [{ json: { id: 5 } }, { json: { id: 9 } }]);
+});
+
+await step("run: each-item mode (from workflow.json) loops per input item", async () => {
+  const rd = path.join(TMP, "runtest2");
+  mkdirSync(rd, { recursive: true });
+  writeFileSync(path.join(rd, "workflow.json"), JSON.stringify({
+    nodes: [{ id: "x", name: "Dbl", type: "n8n-nodes-base.code", typeVersion: 2, position: [0, 0],
+      parameters: { mode: "runOnceForEachItem", jsCode: "//@file:Dbl.js" } }],
+  }));
+  writeFileSync(path.join(rd, "Dbl.js"), "return { json: { n: $json.n * 2, i: $itemIndex } };\n");
+  writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ input: [{ json: { n: 2 } }, { json: { n: 5 } }] }));
+  const r = await cli("run", path.join("runtest2", "Dbl.js"), path.join("runtest2", "fx.json"));
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /runOnceForEachItem/);
+  assert.deepEqual(runOutput(r.out), [{ json: { n: 4, i: 0 } }, { json: { n: 10, i: 1 } }]);
+});
+
+await step("run: missing $() fixture data errors clearly", async () => {
+  const rd = path.join(TMP, "runtest3");
+  mkdirSync(rd, { recursive: true });
+  writeFileSync(path.join(rd, "Ref.js"), "return $('Up').all();\n");
+  const r = await cli("run", path.join("runtest3", "Ref.js"));
+  assert.equal(r.code, 1);
+  assert.match(r.out, /node "Up" has no fixture data/);
 });
 
 server.close();

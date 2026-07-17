@@ -19,7 +19,8 @@ const log = {
 };
 
 const USAGE = `Usage:
-  n8n-decanter init [dir]          interactive setup: .env, starter files, config
+  n8n-decanter init [dir] [--force]   interactive setup: .env, starter files, config
+                                   (--force re-copies template files over existing ones)
   n8n-decanter pull [id...]        pull workflows (default: all in decanter.config.json)
   n8n-decanter push [id...] [--force] [--no-typecheck]
   n8n-decanter status [id...]
@@ -46,7 +47,7 @@ async function main() {
   if (command === "init") {
     // must run before loadConfig: a fresh directory has no config/.env yet
     if (rest.length > 1) throw new Error("init takes at most one directory argument");
-    await init(rest[0], log);
+    await init(rest[0], { force }, log);
     return;
   }
 
@@ -80,7 +81,7 @@ async function main() {
       for (const id of ids) {
         try {
           if (command === "pull") {
-            const { name, dir } = await pullWorkflow(api, config.root, id, log);
+            const { name, dir } = await pullWorkflow(api, config.root, id, { commitOnPull: config.commitOnPull }, log);
             log.info(`pulled "${name}" -> ${dir}`);
           } else if (command === "push") {
             await pushWorkflow(api, config.root, id, { force, commitOnPush: config.commitOnPush }, log);

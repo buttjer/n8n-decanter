@@ -1,8 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm test *)",
-      "Bash(npm view *)"
+      "Bash(node n8n-decanter.mjs *)",
+      "Bash(npm test *)", "Bash(npm view *)", "Bash(npm run *)", "Bash(npx tsc *)",
+      "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)", "Bash(git show *)",
+      "Bash(ls *)", "Bash(find *)", "Bash(grep *)", "Bash(head *)",
+      "Bash(jq *)", "Bash(command -v *)", "Bash(mkdir -p *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)", "Bash(git push --force *)", "Bash(git push -f *)", "Bash(git reset --hard *)"
     ]
   }
 }

@@ -15,17 +15,30 @@ node n8n-decanter.mjs init [dir]   # prompts for host + API key, writes .env,
 
 `init` copies everything in [template/](template/); files named `X.example`
 land as `X` (the suffix keeps agent configs inert in this repo, live in the
-target). It never overwrites existing files (safe to re-run) and does a
-best-effort credential check. Alternatively set up manually: `cp .env.example .env` and
+target). It never overwrites existing files (safe to re-run) unless you pass
+`--force`, which re-copies template files over existing ones (`.env` is never
+touched by it). When `.env` already holds both values, init skips the
+prompts and reuses them — edit or delete `.env` to change credentials. It
+also does a best-effort credential check. Alternatively set up manually: `cp .env.example .env` and
 fill it in. Then add workflow ids to `decanter.config.json`:
 
 ```json
 { "root": "./workflows", "workflows": ["0cXNQKKzmO0pXiCq"] }
 ```
 
-After every successful push, the workflow's folder is git-committed
-automatically (scoped to that folder; outside a git repo it just warns).
-Set `"commitOnPush": false` to turn that off.
+After every successful push **and pull**, the workflow's folder is
+git-committed automatically (scoped to that folder; outside a git repo it
+just warns). Set `"commitOnPush": false` / `"commitOnPull": false` to turn
+that off.
+
+`init` also scaffolds the TypeScript tooling a sync dir needs to type-check and
+run nodes locally — `package.json` (with a `typecheck` script + the `typescript`
+devDep), `tsconfig.json`, and `n8n-globals.d.ts` — plus a Claude Code
+PostToolUse hook that runs `check` after node edits. Verification routes through
+the CLI, so `n8n-decanter` must be on the sync dir's PATH: install it globally
+(`npm i -g n8n-decanter`) or `npm link` it. Once it's published to npm you can
+instead add it to the sync dir's `devDependencies`. The verbs `check`, `run`,
+and `uuid` are fully offline (no credentials, no network).
 
 ## Commands
 
@@ -34,8 +47,10 @@ node n8n-decanter.mjs init [dir]             # interactive bootstrap (see Setup)
 node n8n-decanter.mjs pull [id...]           # remote -> workflows/<Name>/
 node n8n-decanter.mjs push [id...] [--force] [--no-typecheck]
 node n8n-decanter.mjs status [id...]         # local vs remote drift report
-node n8n-decanter.mjs check [id...]          # offline layout-compliance check
+node n8n-decanter.mjs check [id...]          # offline layout-compliance + typecheck
 node n8n-decanter.mjs watch <node-file>      # push one node on every save
+node n8n-decanter.mjs run <node-file> [fixture.json]   # run a node offline, print items
+node n8n-decanter.mjs uuid [count]           # lowercase v4 UUID(s) for new node ids
 npm run typecheck
 npm test                                     # e2e against a mock n8n API
                                              # (binds a localhost port)

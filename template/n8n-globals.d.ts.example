@@ -69,6 +69,9 @@ declare const $nodeVersion: number;
 declare const $nodeId: string;
 declare const $webhookId: string | undefined;
 
+/** Per-workflow / per-node persisted store. */
+declare function $getWorkflowStaticData(type: "global" | "node"): Record<string, any>;
+
 declare function $jmespath(data: unknown, expression: string): any;
 declare function $evaluateExpression(expression: string, itemIndex?: number): any;
 declare function $if<T, F>(condition: boolean, valueIfTrue: T, valueIfFalse: F): T | F;
@@ -121,3 +124,12 @@ declare class DateTime {
 
 declare const $now: DateTime;
 declare const $today: DateTime;
+
+/** Debug logging — surfaces in the n8n execution view. */
+declare const console: {
+  log(...args: any[]): void;
+  error(...args: any[]): void;
+  warn(...args: any[]): void;
+  info(...args: any[]): void;
+  debug(...args: any[]): void;
+};
