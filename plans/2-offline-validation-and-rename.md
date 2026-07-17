@@ -1,7 +1,9 @@
 # Plan 2 — Offline validation + rename
 
-**Priority:** P1 (validator) / P2 (rename) · **Theme:** convert the repo's most
-fragile manual invariants into machine-checked ones, then make renames atomic.
+**Priority:** P1 (validator) / P2 (rename)
+**Status:** Not started
+**Theme:** convert the repo's most fragile manual invariants into machine-checked
+ones, then make renames atomic.
 
 ## Why
 
@@ -13,7 +15,7 @@ already covers placeholder integrity and marker hygiene; extending it hardens
 that code path. Once dangling-`$('…')` is machine-checked, an atomic `rename`
 verb closes the loop and removes the failure class entirely.
 
-## Source items
+## Source
 
 - IDEAS: "Ad a workflow validator and offering it the project using llm as
   command similar to others" (P1 for the offline structural subset)

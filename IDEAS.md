@@ -18,9 +18,9 @@ the P1s forward:
 
 ---
 
-- [ ] **[P3]** Transform to TypeScript Project
+- [ ] **[P3]** Transform to TypeScript Project (→ [plans/5](plans/5-typescript-migration.md))
 - [ ] **[P2]** js node files to kebab-case and moving them into the sub dir workflows/*/code/
-- [ ] **[P1]** currently js files throw IDE errors like "A 'return' statement can only be used within a function body.ts(1108)" or say that variables can't be redeclared, even if they are not. I think this is a scope issue. How to solve this? (→ [plans/1](plans/1-trustworthy-edit-loop.md))
+- [ ] **[P1]** currently js files throw IDE errors like "A 'return' statement can only be used within a function body.ts(1108)" or say that variables can't be redeclared, even if they are not. I think this is a scope issue. How to solve this? (redeclare half → [plans/1](plans/1-trustworthy-edit-loop.md); TS1108 editor squiggle → [plans/4](plans/4-editor-node-diagnostics.md))
       - Note: the redeclare half is addressed by `moduleDetection: "force"`
         (currently uncommitted in `template/tsconfig.json.example` and root
         `tsconfig.json`). The TS1108 function-body half only affects the

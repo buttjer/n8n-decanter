@@ -1,7 +1,9 @@
 # Plan 1 — Trustworthy edit loop
 
-**Priority:** P1 · **Theme:** make the hook/typecheck feedback green-by-default
-and scoped to the workflow being edited.
+**Priority:** P1
+**Status:** Not started
+**Theme:** make the hook/typecheck feedback green-by-default and scoped to the
+workflow being edited.
 
 ## Why
 
@@ -14,10 +16,11 @@ guard. Commit `680f463` already fixed the green-by-default half (added `console`
 stub gap, land the uncommitted redeclare fix, and scope the hook/typecheck to
 one workflow so noise from unrelated workflows disappears.
 
-## Source items
+## Source
 
 - IDEAS: "js node files throw IDE errors … TS1108 / can't be redeclared … scope
-  issue" (P1)
+  issue" (P1) — *redeclare half only; the TS1108 editor squiggle is
+  [Plan 4](4-editor-node-diagnostics.md)*
 - IDEAS: "the typecheck hook, just to the workflow it is currently worked on. Not
   global." (P1)
 - IDEAS (new): `Duration`/`Interval` stub gap (P1)
@@ -35,20 +38,19 @@ one workflow so noise from unrelated workflows disappears.
 
 2. **Commit the redeclare fix.** `moduleDetection: "force"` is currently
    uncommitted in `template/tsconfig.json.example` and root `tsconfig.json`.
-   Making each node file its own module is the standard fix for cross-file
-   "cannot redeclare" errors — **verify empirically** that it actually clears
-   them in the editor before claiming so (the sibling plan below found `force`
-   does *not* touch TS1108, so don't assume it fixes the redeclare half either).
-   Commit it (with a CHANGELOG note if it changes the shipped template) and
-   confirm the e2e "template content matches" assertion still passes.
+   Making each node file its own module scope fixes the cross-file "cannot
+   redeclare" errors — [Plan 4](4-editor-node-diagnostics.md) reports this half
+   is already handled by `force`; confirm in-editor when you commit it. Commit it
+   (with a CHANGELOG note if it changes the shipped template) and confirm the e2e
+   "template content matches" assertion still passes.
    - The remaining TS1108 ("`return` outside function body") only affects the
      editor's own tsserver, not the CLI — `scripts/typecheck.mjs` already wraps
      node bodies in an `async function`. `moduleDetection` / `module` knobs do
-     **not** remove it (verified in
-     [`ts-plugin-suppress-node-diagnostics.md`](ts-plugin-suppress-node-diagnostics.md)).
-     The real editor-squiggle fix lives in that plan (a TS language-service
-     plugin); until it lands, just document the false positive in the template's
-     CLAUDE/AGENTS notes. Do **not** wrap files on disk (CLAUDE.md invariant).
+     **not** remove it (verified empirically in
+     [Plan 4](4-editor-node-diagnostics.md)). The real editor-squiggle fix lives
+     in that plan (a TS language-service plugin); until it lands, just document
+     the false positive in the template's CLAUDE/AGENTS notes. Do **not** wrap
+     files on disk (CLAUDE.md invariant).
 
 3. **Scope the typecheck to a workflow.**
    - `scripts/typecheck.mjs`: accept an optional path-filter argument. Still

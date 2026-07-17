@@ -1,8 +1,9 @@
 # Plan 3 — Local run/diff fidelity
 
-**Priority:** P2 · **Theme:** make offline iteration trustworthy — seed
-staticData in `run`, diff local vs live before push, and capture real execution
-data as fixtures.
+**Priority:** P2
+**Status:** Not started
+**Theme:** make offline iteration trustworthy — seed staticData in `run`, diff
+local vs live before push, and capture real execution data as fixtures.
 
 ## Why
 
@@ -12,7 +13,7 @@ that read workflow static data can't be exercised at all. Meanwhile `status`
 detects per-node drift but won't show *what* changed, so pushes are riskier than
 they need to be. All three fixes reuse machinery that already exists.
 
-## Source items
+## Source
 
 - IDEAS (new): `run` staticData seeding (P2)
 - IDEAS (new): `status --diff` (P2)
