@@ -8,19 +8,23 @@ folder-per-workflow layout, keep every Code node's source as its own file
 
 ```
 n8n-decanter/
-  package.json            # deps: esbuild; devDeps: typescript
+  package.json            # deps: esbuild, luxon; devDeps: typescript,
+                          #   @types/node, @types/luxon
   .env                    # N8N_HOST, N8N_API_KEY (gitignored; written by init)
   .env.example
   decanter.config.json
-  n8n-decanter.mjs        # CLI entry: init | pull | push | status | check | watch
-  lib/                    # implementation: api, config, state, util, compile,
-                          #   pull, push, status, watch, init, validate (one .mjs each)
-  scripts/typecheck.mjs   # tsc wrapper — see Type checking
+  n8n-decanter.mts        # CLI entry: init | pull | push | status | check | watch
+  lib/                    # implementation: api, compile, config, git, init,
+                          #   pull, push, run, state, status, util, validate,
+                          #   watch (one .mts each) + types.mts (shared
+                          #   data-model shapes)
+  scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
                           #   added here later is copied too
-  test/e2e.mjs            # mock-API end-to-end test (npm test)
-  tsconfig.json           # allowJs + checkJs, includes workflows/
+  test/e2e.mts            # mock-API end-to-end test (npm test)
+  tsconfig.json           # workflow node files: allowJs + checkJs, includes workflows/
+  tsconfig.cli.json       # the CLI's own .mts sources: strict NodeNext, no emit
   n8n-globals.d.ts        # ambient types: $, $input, DateTime, …
   workflows/              # synced content, see below
 ```
@@ -157,7 +161,7 @@ Warnings (don't block):
 
 - Unresolved `*.remote.js` leftovers — push will overwrite those remote edits.
 
-Typecheck gate: `push` and `check` run `scripts/typecheck.mjs` against the
+Typecheck gate: `push` and `check` run `scripts/typecheck.mts` against the
 nearest `tsconfig.json` at/above the config dir; skipped with an info message
 when none exists (e.g. an init'ed sync dir), skippable with `--no-typecheck`.
 Watch validates only its own node file and never typechecks (fast inner loop).
@@ -215,8 +219,10 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
   excludes `**/*.remote.js`.
 - `n8n-globals.d.ts` covers `.ts` and JSDoc-`.js` files alike.
 - `.js` node files start with `// @ts-check` + JSDoc types.
-- `npm run typecheck` → `node scripts/typecheck.mjs` (**not** plain
-  `tsc --noEmit`): node code is a function body, and `tsc` rejects top-level
+- `npm run typecheck` → `tsc -p tsconfig.cli.json && node
+  scripts/typecheck.mts`. The first half strict-checks the CLI's own `.mts`
+  sources. The second checks node files and is **not** plain `tsc --noEmit`:
+  node code is a function body, and `tsc` rejects top-level
   `return` in `.ts` files (TS1108; `.js` under checkJs is tolerated). The
   script wraps node files in `async function () { … }` in memory via a custom
   CompilerHost — files on disk stay verbatim — and maps diagnostic lines back
@@ -240,7 +246,7 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
 
 ## Implementation notes (decisions & observations from the 2026-07-17 build)
 
-Everything below was validated by `npm test` (`test/e2e.mjs`): an in-process
+Everything below was validated by `npm test` (`test/e2e.mts`): an in-process
 mock n8n API — including the strict PUT that rejects unknown fields — driven
 through the real CLI as a subprocess. 11 scenarios: init (+ idempotent re-init),
 pull, byte-identical `.js` round-trip, TS convert + marker, UI-edit and
@@ -248,7 +254,7 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
 
 - **Top-level `return`**: node code is a function body. esbuild
   (`transform`, `format: "cjs"`) accepts it; `tsc` rejects it in `.ts` files
-  (TS1108) but tolerates it in checkJs `.js` files → `scripts/typecheck.mjs`
+  (TS1108) but tolerates it in checkJs `.js` files → `scripts/typecheck.mts`
   wrapper (see Type checking).
 - **`lastPushedHash` really means "remote code hash at last sync"** (push *or*
   pull). Pull updates it even when surfacing a UI edit/conflict — otherwise
@@ -275,8 +281,23 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   arrive before `question()` is called and hangs on stdin EOF → init uses a
   small buffering prompt helper so `printf "host\nkey\n" | n8n-decanter init`
   works.
-- **Layout deviation**: implementation is split into `lib/*.mjs` modules with
-  a thin CLI entry instead of one big `n8n-decanter.mjs`.
+- **Layout deviation**: implementation is split into `lib/*.mts` modules with
+  a thin CLI entry instead of one big `n8n-decanter.mts`.
+- **TypeScript CLI (added 2026-07-17, plans/6)**: the CLI's own sources are
+  `.mts`, executed natively via Node's type stripping — no build step;
+  engines `>=22.18` (the first line where stripping is on by default; Node
+  18/20 are EOL). `tsconfig.cli.json` holds the strict NodeNext project:
+  `erasableSyntaxOnly` keeps the sources strippable (no enums, namespaces,
+  or parameter properties — a permanent style rule), and
+  `allowImportingTsExtensions` matches the runtime's literal `.mts` import
+  specifiers. `composite` + declaration-only emit into `node_modules/.cache`
+  exists solely so the root `tsconfig.json` can list the project under
+  `references` — that is what lets tsserver bind the `.mts` files to it.
+  The root `tsconfig.json`'s name and role are unchanged: it is the workflow
+  node-file config, discovered *by name* by `scripts/typecheck.mts` and by
+  the sync-dir upward search in `lib/validate.mts`. Shared data-model shapes
+  (`Workflow`, `JsCodeNode`, `DecanterState`, `DecanterConfig`, …) live in
+  `lib/types.mts`; `isJsCodeNode` is a type guard.
 - **Testing note**: the e2e test binds a localhost port and must exec the CLI
   *asynchronously* (the mock server shares the test process; a sync exec
   deadlocks). Sandboxed environments may block the port bind.
@@ -284,7 +305,7 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   with recursively sorted keys, so key order never causes false drift.
 - **Compliance guard** (milestone 7): `--force` deliberately does *not*
   bypass it — force is for "I know the remote changed", not for pushing a
-  malformed tree. The guard's checks live in `lib/validate.mjs`, shared by
+  malformed tree. The guard's checks live in `lib/validate.mts`, shared by
   push (full validation), watch (per-node subset, no typecheck), and `check`.
   `check` loads config without requiring credentials.
 - **`shared/` caveat — types yes, runtime helpers not yet**: node files can

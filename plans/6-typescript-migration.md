@@ -216,9 +216,9 @@ should be extensions only. (`workflows/` node files and everything under
   One deviation from the sketch: tsserver requires a *referenced* project
   to be `composite` (may not `noEmit`), so `tsconfig.cli.json` uses
   composite + declaration-only emit into `node_modules/.cache` instead of
-  `noEmit` — same checking, no visible build artifacts. Still open:
-  PLAN.md + CLAUDE.md updates (ask-first rule) and an editor spot-check
-  of the project binding.
+  `noEmit` — same checking, no visible build artifacts. PLAN.md and
+  CLAUDE.md updated with the user's OK. Still open: an editor spot-check
+  of the project binding (no red squiggles on `.mts` imports in `lib/`).
 - **Ordering:** run this *after* plans 1–4 land. Plans 1 and 4 both touch or
   reference `scripts/typecheck.mjs` and the template hooks; migrating first
   would churn their file references mid-flight. Matches the P3 tag.

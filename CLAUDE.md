@@ -36,10 +36,11 @@ user's entries, and don't add ideas of your own unasked.
 ## Commands
 
 ```sh
-npm test              # e2e suite (test/e2e.mjs) — spins up a mock n8n API on a
+npm test              # e2e suite (test/e2e.mts) — spins up a mock n8n API on a
                       #   localhost port; sandboxes that block port binding break it
-npm run typecheck     # scripts/typecheck.mjs — NOT plain tsc, see below
-node n8n-decanter.mjs <init|pull|push|status|check|watch> …
+npm run typecheck     # tsc -p tsconfig.cli.json (CLI sources) + scripts/
+                      #   typecheck.mts (node files — NOT plain tsc, see below)
+node n8n-decanter.mts <init|pull|push|status|check|watch> …
 ```
 
 The e2e suite is one sequential, stateful scenario (each step builds on the
@@ -49,7 +50,15 @@ mock server.
 
 ## Architecture
 
-- `n8n-decanter.mjs` — thin CLI dispatcher; one module per concern in `lib/`.
+- The CLI is TypeScript (`.mts`), run natively via Node's type stripping —
+  no build step; requires Node >= 22.18. Only erasable TS syntax is allowed
+  (`erasableSyntaxOnly`: no enums, namespaces, or parameter properties), and
+  relative imports name the real `.mts` file. `tsconfig.cli.json` checks the
+  CLI's own sources; the root `tsconfig.json` stays the workflow node-file
+  config — its name is load-bearing (discovered by name by
+  `scripts/typecheck.mts` and the sync-dir upward search).
+- `n8n-decanter.mts` — thin CLI dispatcher; one module per concern in `lib/`;
+  shared data-model types in `lib/types.mts`.
 - Data model (the part that spans files):
   - `workflows/<Name>/workflow.json` — full workflow, each Code node's
     `jsCode` replaced by a `//@file:<Node>.js` placeholder.
@@ -62,7 +71,7 @@ mock server.
     `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker presence
     is what identifies a TS-managed node on pull.
 - Push runs two independent gates, in order:
-  1. Compliance guard (`lib/validate.mjs`, shared with `check` and watch):
+  1. Compliance guard (`lib/validate.mts`, shared with `check` and watch):
      layout violations are hard errors that `--force` does NOT bypass.
   2. Drift guard: remote changed since last sync → abort; only this one is
      bypassed by `--force`.
@@ -79,7 +88,7 @@ mock server.
 ## Type checking
 
 n8n Code node source is a *function body* (top-level `return`/`await`), which
-`tsc` rejects in `.ts` files (TS1108). `scripts/typecheck.mjs` wraps node
+`tsc` rejects in `.ts` files (TS1108). `scripts/typecheck.mts` wraps node
 files in an in-memory `async function` via a custom CompilerHost and maps
 diagnostic lines back; node files are recognized by a `.decanter.json`
 sibling. Files on disk must stay verbatim — never "fix" a node file by
