@@ -10,7 +10,8 @@
     "strict": true,
     "noImplicitAny": false,
     "useUnknownInCatchVariables": false,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "moduleDetection": "force"
   },
   "include": [
     "n8n-globals.d.ts",
