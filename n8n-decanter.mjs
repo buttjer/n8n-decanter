@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { N8nApi } from "./lib/api.mjs";
 import { loadConfig } from "./lib/config.mjs";
+import { init } from "./lib/init.mjs";
 import { pullWorkflow } from "./lib/pull.mjs";
 import { pushWorkflow } from "./lib/push.mjs";
 import { statusWorkflow } from "./lib/status.mjs";
@@ -13,6 +14,7 @@ const log = {
 };
 
 const USAGE = `Usage:
+  n8n-decanter init [dir]          interactive setup: .env, starter files, config
   n8n-decanter pull [id...]        pull workflows (default: all in decanter.config.json)
   n8n-decanter push [id...] [--force]
   n8n-decanter status [id...]
@@ -29,6 +31,13 @@ async function main() {
 
   if (!command || command === "help" || command === "--help") {
     console.log(USAGE);
+    return;
+  }
+
+  if (command === "init") {
+    // must run before loadConfig: a fresh directory has no config/.env yet
+    if (rest.length > 1) throw new Error("init takes at most one directory argument");
+    await init(rest[0], log);
     return;
   }
 

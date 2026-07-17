@@ -9,10 +9,14 @@ See [Plan.md](Plan.md) for the design.
 
 ```sh
 npm install
-cp .env.example .env        # fill in N8N_HOST + N8N_API_KEY
+node n8n-decanter.mjs init [dir]   # prompts for host + API key, writes .env,
+                                   # copies template/ (AGENTS.md, CLAUDE.md,
+                                   # workflows/), scaffolds config + .gitignore
 ```
 
-Add workflow ids to `decanter.config.json`:
+`init` never overwrites existing files (safe to re-run) and does a best-effort
+credential check. Alternatively set up manually: `cp .env.example .env` and
+fill it in. Then add workflow ids to `decanter.config.json`:
 
 ```json
 { "root": "./workflows", "workflows": ["0cXNQKKzmO0pXiCq"] }
@@ -21,11 +25,14 @@ Add workflow ids to `decanter.config.json`:
 ## Commands
 
 ```sh
+node n8n-decanter.mjs init [dir]             # interactive bootstrap (see Setup)
 node n8n-decanter.mjs pull [id...]           # remote -> workflows/<Name>/
 node n8n-decanter.mjs push [id...] [--force] # workflows/<Name>/ -> remote
 node n8n-decanter.mjs status [id...]         # local vs remote drift report
 node n8n-decanter.mjs watch <node-file>      # push one node on every save
 npm run typecheck
+npm test                                     # e2e against a mock n8n API
+                                             # (binds a localhost port)
 ```
 
 Without ids, all workflows from the config are processed.

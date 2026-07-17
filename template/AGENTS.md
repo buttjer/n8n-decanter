@@ -1,0 +1,199 @@
+# n8n-decanter — guide for coding agents
+
+This is the **source of truth** for working in this repository, and it is written to
+be tool-agnostic. Codex and opencode read this file natively; Claude Code reads it
+through a one-line `@AGENTS.md` import in `CLAUDE.md`; other agents can be pointed at
+it (see `SCAFFOLD.md`). Keep project-specific rules here so every agent stays in sync.
+
+This repo holds n8n workflows *decanted* into git-friendly form: one folder per
+workflow containing `workflow.json` plus one source file per Code node. The
+`n8n-decanter` CLI moves content between here and the live n8n instance
+(`pull` / `push`). This document is the contract for creating and editing these files.
+
+## How this differs from standard n8n editing — read this first
+
+Your general n8n knowledge (docs, n8n MCP tools, training data) is **valid** for:
+node types and parameters, expression syntax, connection semantics, the Code-node
+runtime. It is **wrong** about how code is stored here. The deviations:
+
+1. **`jsCode` in `workflow.json` never contains code.** Its entire value is a
+   placeholder: `//@file:<filename>` (e.g. `"jsCode": "//@file:Amazon Feed.ts"`).
+   Never inline JavaScript into `workflow.json`; edit the referenced file.
+2. **Code node sources are sibling files**, named after the node
+   (sanitized: `/` and `:` → `-`). `.js` files are pushed verbatim (what you
+   write is exactly what runs in n8n). `.ts` files are compiled on push; the
+   local `.ts` is the only source of truth — n8n holds compiled output.
+3. **Never write a `// @ts-n8n sha256:…` line.** That marker is appended by the
+   tool to *compiled* output on push. It must not appear in any repo file.
+4. **`.decanter.json` is machine state** (node-id → filename map, drift-detection
+   hashes). Never edit it by hand; never "fix" a hash.
+5. **`<Node>.remote.js` is an incoming-change artifact** written by `pull` when
+   someone edited a TS-managed node in the n8n UI. Handle it like an incoming
+   diff: port the change into the `.ts`, delete the `.remote.js`, then the user
+   pushes. Never edit `.remote.js` itself; never push while one exists.
+6. **Renames have no UI magic here.** The n8n editor auto-updates references on
+   rename; raw JSON editing does not. See the rename checklist below.
+7. **New workflows are born in n8n, not here.** The tool has no create. To add a
+   workflow: create it (even empty) in the n8n UI, add its id to
+   `decanter.config.json`, then the user runs `pull`.
+
+> **Enforcement.** Rules 1, 3, 4, 5 are *hard invariants* — violating them corrupts
+> sync state. They are enforced by the CLI at `push` time regardless of who made the
+> edit (any agent, or a human). On Claude Code and opencode they are additionally
+> guarded before the write happens (see `.claude/settings.json` and `opencode.json`).
+> If a write is blocked with a `decanter-guard` reason, the edit broke a hard rule —
+> fix the edit, don't work around the guard.
+
+## File ownership
+
+| File | Written by | May the agent edit it? |
+|---|---|---|
+| `workflow.json` | pull + you | Yes — structure, parameters, connections. Placeholders stay placeholders. |
+| `<Node>.js` | pull + you | Yes — this is live node code, verbatim. |
+| `<Node>.ts` | you only | Yes — pull never touches it. |
+| `<Node>.remote.js` | pull only | No — read, port into the `.ts`, delete. |
+| `.decanter.json` | tool only | No. |
+| `decanter.config.json` | you | Yes — add/remove workflow ids. |
+| `n8n-globals.d.ts` | you | Yes — extend when node code uses a global it doesn't cover yet. |
+
+## Editing `workflow.json`
+
+Pretty-printed, 2-space indent, keep the existing key order (clean diffs are the
+point of this repo).
+
+A node object:
+
+```json
+{
+  "id": "a1b2c3d4-…",            // UUID v4 — generate for new nodes, NEVER change existing ids
+  "name": "Amazon Feed",          // unique per workflow — connections + $('…') reference it
+  "type": "n8n-nodes-base.code",
+  "typeVersion": 2,
+  "position": [880, 300],
+  "parameters": {
+    "mode": "runOnceForAllItems", // or "runOnceForEachItem"
+    "jsCode": "//@file:Amazon Feed.ts"
+  }
+}
+```
+
+Connections are keyed by **node name**, not id:
+
+```json
+"connections": {
+  "Fetch Products": { "main": [[{ "node": "Amazon Feed", "type": "main", "index": 0 }]] }
+}
+```
+
+Rules:
+
+- **Expressions** in parameters keep their `=` prefix: `"={{ $json.sku }}"`.
+  A value without `=` is a literal string.
+- **Credentials** are referenced as `{ "id": "…", "name": "…" }` and must already
+  exist in n8n — never invent credential ids.
+- **Not synced / don't add:** `active`, `tags`, `pinData`, `shared`, timestamps.
+  The push endpoint only accepts `name`, `nodes`, `connections`, `settings`
+  (whitelisted keys), `staticData`. Activation is managed in the n8n UI.
+- **Position:** keep a sensible grid; new nodes roughly +200 x from their input.
+
+### Renaming a node — checklist (all four, atomically)
+
+1. `name` in the node object.
+2. Every reference in `connections` (keys *and* target `"node"` values).
+3. Every `$('Old Name')` in **all** code files of the workflow.
+4. The source file name and its `//@file:` placeholder (keep name-file
+   convention). The tool re-maps by node id on the next pull, but the repo must
+   be self-consistent immediately.
+
+Renaming a **workflow**: change `name` in `workflow.json`; folder rename happens
+on the next pull (or do it yourself, folder names are cosmetic — the id inside
+`workflow.json` is authoritative).
+
+### Adding a Code node
+
+1. Add the node object (new UUID, placeholder `jsCode`, position, connections).
+2. Create the source file it points at (`.js` or `.ts`, see below).
+3. `npm run typecheck`.
+
+## Writing Code node code
+
+The runtime contract (identical for `.js` and `.ts` — types are erased):
+
+- Code runs as a function body, **top-level `return` required**.
+  - `runOnceForAllItems`: return an array of items: `[{ json: {…} }, …]`.
+    Always wrap in `{ json: … }` explicitly.
+  - `runOnceForEachItem`: return a single `{ json: {…} }`.
+- Available globals (extend `n8n-globals.d.ts` when you use one it lacks):
+  `$input.all()/.first()/.last()/.item` · `$('Node Name').all()/.first()/.item/.itemMatching(i)` ·
+  `$json`, `$binary`, `$itemIndex` (each-item mode) ·
+  `DateTime`, `Duration`, `Interval` (Luxon), `$now`, `$today` ·
+  `$jmespath()` · `$workflow`, `$execution`, `$prevNode`, `$runIndex` ·
+  `$getWorkflowStaticData('global' | 'node')`.
+- **No `import` / `require`** — assume the instance allows no external or
+  built-in modules. Everything must be self-contained in the one file.
+- `console.log` is available for debugging (visible in the execution view).
+- `$('Node Name')` takes the node's **name** — see the rename checklist.
+
+### `.js` nodes (default — lossless)
+
+What you write is byte-for-byte what runs and what round-trips back on pull.
+Type-safety via JSDoc:
+
+```js
+// @ts-check
+
+/** @typedef {{ sku: string, qty: number }} StockLine */
+
+/** @type {StockLine[]} */
+const lines = [];
+for (const item of $input.all()) {
+  // …
+}
+return lines.map((l) => ({ json: l }));
+```
+
+- First line is `// @ts-check`.
+- Prefer `@typedef` for shapes, inline casts `/** @type {Foo} */ (x)` where
+  narrowing is needed. `@template`, `@satisfies` are available.
+- Comments are fine and encouraged — they survive into n8n and document the
+  node in place.
+
+### `.ts` nodes (one-way)
+
+Choose `.ts` when the type surface is heavy (large interfaces, generics,
+discriminated unions). Costs, so you can weigh them:
+
+- esbuild compiles on push: **comments are stripped** and **line numbers shift**
+  — n8n error line numbers won't match the source, and the node code in the
+  n8n UI is undocumented output. Documentation belongs in the `.ts`.
+- UI edits can't be merged back automatically (they arrive as `.remote.js`).
+
+Rules: full single-file TS is fine (interfaces, type aliases, enums, generics);
+still no imports; still ends in a top-level `return`. Never commit compiled
+output; never add the marker line.
+
+### Switching a node `.js` → `.ts` (or back)
+
+1. Rename the file, convert JSDoc ↔ annotations.
+2. Update the `//@file:` placeholder in `workflow.json`.
+3. `npm run typecheck`. The tool picks up the new extension on next push;
+   direction of sync changes accordingly (`.ts` = one-way).
+
+## Verification
+
+- **Always** run `npm run typecheck` after editing code files or
+  `n8n-globals.d.ts`.
+- There is no local n8n runtime. A workflow folder may contain a sim harness
+  (`sim.mjs` + fixture JSON) that fakes `$input` and runs a node's logic —
+  prefer running it before handing over. Creating one for complex nodes is
+  encouraged.
+- JSON validity of `workflow.json` after every structural edit.
+
+## Commands — who runs what
+
+- `npm run typecheck`, `n8n-decanter status` — safe, run freely.
+- `n8n-decanter pull` / `push` / `watch` — these read/write the **live n8n
+  instance**. `push` deploys. Only run them when the user explicitly asks;
+  otherwise finish edits, verify, and report that the change is ready to push.
+- Never use `--force` on push without the user's explicit instruction — it
+  overrides the drift guard that protects edits made in the n8n UI.

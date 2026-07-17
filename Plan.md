@@ -8,10 +8,18 @@ folder-per-workflow layout, keep every Code node's source as its own file
 
 ```
 n8n-decanter/
-  package.json            # deps: esbuild; devDeps: typescript; optional: chokidar
-  .env                    # N8N_HOST, N8N_API_KEY
+  package.json            # deps: esbuild; devDeps: typescript
+  .env                    # N8N_HOST, N8N_API_KEY (gitignored; written by init)
+  .env.example
   decanter.config.json
-  n8n-decanter.mjs            # CLI: pull | push | status | watch
+  n8n-decanter.mjs        # CLI entry: init | pull | push | status | watch
+  lib/                    # implementation: api, config, state, util, compile,
+                          #   pull, push, status, watch, init (one .mjs each)
+  scripts/typecheck.mjs   # tsc wrapper — see Type checking
+  template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
+                          #   (references AGENTS.md), workflows/ — anything
+                          #   added here later is copied too
+  test/e2e.mjs            # mock-API end-to-end test (npm test)
   tsconfig.json           # allowJs + checkJs, includes workflows/
   n8n-globals.d.ts        # ambient types: $, $input, DateTime, …
   workflows/              # synced content, see below
@@ -130,30 +138,109 @@ resolve its workflow + node via the directory's `.decanter.json`, and on change
 compile (if TS) and push **only that node** (GET workflow → replace `jsCode` →
 sanitized PUT). Same drift guard as full push.
 
+## Init flow (`n8n-decanter init [dir]`)
+
+Bootstraps a sync directory (defaults to cwd, runs before any config exists):
+
+1. Prompt for host + API key; values from an existing `.env` are offered as
+   defaults (enter keeps them). Host is normalized (`https://` prepended when
+   no scheme, trailing `/` stripped). Write `.env`.
+2. Copy `template/` into the target **recursively and completely** — whatever
+   the template contains ships as-is — but never overwrite files that already
+   exist in the target (`cpSync` with `force: false`), so re-running init is
+   safe. Template contents today: empty `AGENTS.md`, `CLAUDE.md` referencing
+   AGENTS.md, empty `workflows/` (`.gitkeep`).
+3. Create `decanter.config.json` (empty workflow list) and `.gitignore`
+   (`node_modules/`, `.env`) if missing; if a `.gitignore` exists that doesn't
+   ignore `.env`, warn (the file holds the API key).
+4. Best-effort credential check: `GET /api/v1/workflows?limit=1`; failure is
+   a warning, not an error.
+
+Prompting must buffer piped stdin (plain `readline/promises` drops lines that
+arrive before `question()` and hangs on EOF — see Implementation notes).
+
 ## Type checking
 
-- `tsconfig.json`: `"allowJs": true, "checkJs": true`, includes `workflows/`.
+- `tsconfig.json`: `"allowJs": true, "checkJs": true`, includes `workflows/`,
+  excludes `**/*.remote.js`.
 - `n8n-globals.d.ts` covers `.ts` and JSDoc-`.js` files alike.
 - `.js` node files start with `// @ts-check` + JSDoc types.
-- `npm run typecheck` → `tsc --noEmit -p .`.
+- `npm run typecheck` → `node scripts/typecheck.mjs` (**not** plain
+  `tsc --noEmit`): node code is a function body, and `tsc` rejects top-level
+  `return` in `.ts` files (TS1108; `.js` under checkJs is tolerated). The
+  script wraps node files in `async function () { … }` in memory via a custom
+  CompilerHost — files on disk stay verbatim — and maps diagnostic lines back
+  (−1). Node files are recognized by a `.decanter.json` sibling. Known wart:
+  IDE tsservers don't apply the wrapper, so editors show a spurious TS1108 on
+  top-level `return` in `.ts` node files.
 
 ## Milestones
 
-1. **Scaffold + pull, single workflow, flat layout** — project setup, fetch,
+1. ✅ **Scaffold + pull, single workflow, flat layout** — project setup, fetch,
    extract code files, placeholders, marker detection, `.decanter.json`.
    (Validates the whole data model.)
-2. **push** — reassembly, compile+marker, drift guard, PUT.
-3. **multi-workflow loop + rename handling** (workflow + node renames by id).
-4. **n8n folder hierarchy** — only if the API exposes it (see below).
-5. **QoL**: `watch`, `status` (local vs remote drift report).
+2. ✅ **push** — reassembly, compile+marker, drift guard, PUT.
+3. ✅ **multi-workflow loop + rename handling** (workflow + node renames by id).
+4. ⬜ **n8n folder hierarchy** — only if the API exposes it (see below).
+   Deferred: needs a live instance to verify; layout is flat until then.
+5. ✅ **QoL**: `watch`, `status` (local vs remote drift report).
+6. ✅ **init** — interactive bootstrap, see Init flow. (Added after v1 of this
+   plan.)
 
-## Open questions (verify before/at milestone 1 & 4)
+## Implementation notes (decisions & observations from the 2026-07-17 build)
+
+Everything below was validated by `npm test` (`test/e2e.mjs`): an in-process
+mock n8n API — including the strict PUT that rejects unknown fields — driven
+through the real CLI as a subprocess. 11 scenarios: init (+ idempotent re-init),
+pull, byte-identical `.js` round-trip, TS convert + marker, UI-edit and
+conflict surfacing, structural drift abort, status, renames, single-node push.
+
+- **Top-level `return`**: node code is a function body. esbuild
+  (`transform`, `format: "cjs"`) accepts it; `tsc` rejects it in `.ts` files
+  (TS1108) but tolerates it in checkJs `.js` files → `scripts/typecheck.mjs`
+  wrapper (see Type checking).
+- **`lastPushedHash` really means "remote code hash at last sync"** (push *or*
+  pull). Pull updates it even when surfacing a UI edit/conflict — otherwise
+  push would stay blocked forever after the warned pull. Consequence: after a
+  warned pull, push *will* overwrite the remote edits; `<Node>.remote.js` +
+  git history are the safety net. This matches the "pull first" guard message.
+- **Sync hashes are recorded from the PUT *response*** (server-canonical
+  form), not the request body, to avoid false drift when the server
+  normalizes the workflow.
+- **Extension transitions are never auto-renamed.** Remote marker appears but
+  locally there's only a `.js` (or no file): remote code goes to
+  `<Node>.remote.js` + warning, nothing is silently relabeled as TS source.
+  Reverse (local `.ts`, remote without marker — e.g. node re-created in the
+  UI): remote goes to `.remote.js`, the `.ts` is never clobbered.
+- **Filename sanitization** (open question resolved by decision):
+  `/ \ : * ? " < > |` → `-`, control chars stripped, trailing dots stripped,
+  empty → `unnamed`. Same-name collisions get `-<first 8 chars of node id>`.
+- **Nodes deleted remotely** are dropped from `.decanter.json` with a warning;
+  their files stay on disk (git is the safety net).
+- **Watch** uses native `fs.watch` on the *directory*, filtering for the file
+  name (atomic editor saves replace the inode and break plain file watches),
+  with 200 ms debounce and overlap protection. No chokidar dependency needed.
+- **Piped stdin for init prompts**: `readline/promises` drops lines that
+  arrive before `question()` is called and hangs on stdin EOF → init uses a
+  small buffering prompt helper so `printf "host\nkey\n" | n8n-decanter init`
+  works.
+- **Layout deviation**: implementation is split into `lib/*.mjs` modules with
+  a thin CLI entry instead of one big `n8n-decanter.mjs`.
+- **Testing note**: the e2e test binds a localhost port and must exec the CLI
+  *asynchronously* (the mock server shares the test process; a sync exec
+  deadlocks). Sandboxed environments may block the port bind.
+- **Structure drift detection** hashes the sanitized, code-stripped workflow
+  with recursively sorted keys, so key order never causes false drift.
+
+## Open questions (verify against a live instance)
 
 - Does this n8n version's public API expose folder placement
   (`parentFolderId`/project) on `GET /workflows/:id`? Check the raw response of a
   workflow that sits inside a folder. If not exposed → flat layout under `root`,
-  hierarchy deferred.
-- Node name characters that need filename sanitization beyond `/` and `:`.
+  hierarchy deferred. **Still open — needs live API.**
+- ~~Node name characters that need filename sanitization beyond `/` and `:`.~~
+  Resolved by decision, see Implementation notes.
 - Whether `PUT` preserves workflow fields that are neither sent nor whitelisted
   (tags, pinned data) — confirm nothing is lost on a pull→push round-trip of an
-  untouched workflow.
+  untouched workflow. **Still open — needs live API** (the mock can't answer
+  server-side behavior).
