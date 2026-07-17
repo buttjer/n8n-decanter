@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Response style
+
+- Very compact — no long conclusions or wrap-up prose.
+- Prefer bullet points over paragraphs.
+- **Highlight** important things and decisions so they stand out.
+
 ## What this is
 
 Standalone CLI that syncs n8n workflows into a git-friendly, folder-per-workflow
