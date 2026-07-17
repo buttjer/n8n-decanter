@@ -47,6 +47,10 @@ holds.
 ## Non-goals
 
 - Do not touch `scripts/typecheck.mts` behavior (CLI typecheck already correct).
+- Do not write the plugin in TypeScript / `.mts` despite the CLI migration
+  ([Plan 6](6-typescript-migration.md)): tsserver loads plugins via
+  `require()` (CommonJS `.js`), and it ships in `template/` as sync-dir
+  content — it is not CLI source and lives outside `tsconfig.cli.json`.
 - Do not disable JS validation wholesale (`javascript.validate.enable: false`)
   — that would drop *all* editor diagnostics, real ones included.
 - Do not add `// @ts-ignore` / `// @ts-nocheck` into node files — that pollutes
