@@ -2,7 +2,7 @@
 // Needs to bind a localhost port — sandboxed environments may block this.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -105,26 +105,43 @@ env = { ...process.env, N8N_HOST: `http://127.0.0.1:${server.address().port}`, N
 
 const dir1 = wfDir("Order Sync");
 
-await step("init: writes .env, copies template, scaffolds config", async () => {
+function listFilesRecursive(dir, base = dir) {
+  const files = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...listFilesRecursive(p, base));
+    else files.push(path.relative(base, p));
+  }
+  return files;
+}
+
+await step("init: writes .env, copies whole template, scaffolds config", async () => {
   const target = path.join(TMP, "init-target");
   const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
   pending.child.stdin.write(`${env.N8N_HOST}\ntest-key\n`);
   pending.child.stdin.end();
   const { stdout, stderr } = await pending;
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
-  assert.ok(existsSync(path.join(target, "AGENTS.md")), "AGENTS.md copied");
-  assert.match(read(target, "CLAUDE.md"), /AGENTS\.md/);
+  // the ENTIRE template must be copied, whatever it contains
+  const templateDir = path.join(PROJECT, "template");
+  const templateFiles = listFilesRecursive(templateDir);
+  assert.ok(templateFiles.length > 0, "template must not be empty");
+  for (const rel of templateFiles) {
+    assert.ok(existsSync(path.join(target, rel)), `template file not copied: ${rel}`);
+    assert.equal(read(target, rel), read(templateDir, rel), `content mismatch: ${rel}`);
+  }
   assert.ok(existsSync(path.join(target, "workflows")), "workflows dir copied");
   assert.equal(JSON.parse(read(target, "decanter.config.json")).root, "./workflows");
   assert.match(read(target, ".gitignore"), /^\.env$/m);
   assert.match(stdout + stderr, /credentials verified/);
   // re-init must not clobber user edits to template-provided files
-  writeFileSync(path.join(target, "AGENTS.md"), "user content\n");
+  const probe = templateFiles[0];
+  writeFileSync(path.join(target, probe), "user content\n");
   const again = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
   again.child.stdin.write("\n\n"); // keep existing host + key
   again.child.stdin.end();
   await again;
-  assert.equal(read(target, "AGENTS.md"), "user content\n");
+  assert.equal(read(target, probe), "user content\n");
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
 });
 
@@ -257,6 +274,70 @@ await step("watch path: pushSingleNode round-trip", async () => {
   const log = { info: () => {}, warn: () => {}, error: () => {} };
   await pushSingleNode(api, dir2, "n2", {}, log);
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, "return $input.all(); // watched\n");
+});
+
+await step("check: clean tree passes, typecheck skipped without tsconfig", async () => {
+  const r = await cli("check");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Order Sync v2: OK/);
+  assert.match(r.out, /no tsconfig\.json found — skipping typecheck/);
+});
+
+await step("guard: inline code in workflow.json blocks push", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  const wfJson = read(dir2, "workflow.json");
+  writeFileSync(path.join(dir2, "workflow.json"), wfJson.replace('"//@file:Transform- EU-US.js"', '"return 1;"'));
+  let r = await cli("push");
+  assert.equal(r.code, 1, "push must abort on inline code");
+  assert.match(r.out, /inline code/);
+  assert.match(r.out, /does not comply/);
+  r = await cli("check");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /inline code/);
+  writeFileSync(path.join(dir2, "workflow.json"), wfJson);
+});
+
+await step("guard: @ts-n8n marker inside a .js file blocks push", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  const file = path.join(dir2, "Transform- EU-US.js");
+  const original = read(dir2, "Transform- EU-US.js");
+  writeFileSync(file, original + "// @ts-n8n sha256:" + "0".repeat(64) + "\n");
+  const r = await cli("push");
+  assert.equal(r.code, 1, "push must abort on marker in .js");
+  assert.match(r.out, /@ts-n8n marker/);
+  writeFileSync(file, original);
+});
+
+await step("guard: .remote.js leftovers warn but don't block", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  const leftover = path.join(dir2, "Transform- EU-US.remote.js");
+  writeFileSync(leftover, "// leftover from a conflict\n");
+  const r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /unresolved remote copy Transform- EU-US\.remote\.js/);
+  unlinkSync(leftover);
+});
+
+await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", async () => {
+  writeFileSync(path.join(TMP, "n8n-globals.d.ts"), readFileSync(path.join(PROJECT, "n8n-globals.d.ts"), "utf8"));
+  writeFileSync(path.join(TMP, "tsconfig.json"), JSON.stringify({
+    compilerOptions: { target: "ES2022", module: "CommonJS", moduleResolution: "Node", lib: ["ES2022"], allowJs: true, checkJs: true, noEmit: true, strict: true, skipLibCheck: true },
+    include: ["n8n-globals.d.ts", "workflows/**/*.ts", "workflows/**/*.js"],
+    exclude: ["**/*.remote.js"],
+  }, null, 2));
+  const dir2 = wfDir("Order Sync v2");
+  const file = path.join(dir2, "Transform- EU-US.js");
+  const original = read(dir2, "Transform- EU-US.js");
+  writeFileSync(file, '// @ts-check\nconst bad = "x" * 2;\nreturn [{ json: { bad } }];\n');
+  let r = await cli("push");
+  assert.equal(r.code, 1, "push must abort on type error");
+  assert.match(r.out, /typecheck failed/);
+  r = await cli("push", "--no-typecheck");
+  assert.equal(r.code, 0, "--no-typecheck must bypass the gate: " + r.out);
+  writeFileSync(file, original);
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /typecheck OK/);
 });
 
 server.close();

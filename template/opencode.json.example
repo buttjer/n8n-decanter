@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "//": "opencode reads AGENTS.md natively, so no `instructions` entry is needed for it.",
+  "//_enforcement": "opencode permissions are path/pattern based — they can protect whole files but can't inspect content. So the two file-level invariants (never touch .decanter.json or *.remote.js) are enforced here; the content-level ones (jsCode placeholder integrity, the sha256 marker) are enforced by the n8n-decanter CLI at push, which is the wall for every agent.",
+
+  "permission": {
+    "edit": {
+      "*": "allow",
+      "**/.decanter.json": "deny",
+      "**/*.remote.js": "deny"
+    },
+    "bash": {
+      "*": "allow",
+      "n8n-decanter push --force*": "deny",
+      "n8n-decanter push -f*": "deny"
+    }
+  }
+}

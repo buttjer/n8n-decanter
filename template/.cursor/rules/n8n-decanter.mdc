@@ -1,0 +1,21 @@
+---
+description: n8n-decanter repo — how to treat decanted workflow files
+alwaysApply: true
+---
+
+This repository is managed by **n8n-decanter**. The authoritative contract is
+`AGENTS.md` at the repo root — read it in full before editing workflow files.
+
+Hard rules (violating any of these corrupts sync state):
+
+- `jsCode` in any `workflow.json` is only a `//@file:<name>` placeholder. Never inline
+  code there — edit the referenced sibling source file.
+- Never edit `.decanter.json` (machine state) or any `*.remote.js` (incoming-change
+  artifact — port its change into the matching `.ts`, then delete it).
+- Never write a `// @ts-n8n sha256:` line — the tool appends it on push.
+- Code nodes run as a function body with a top-level `return`, no `import`/`require`.
+- Run `npm run typecheck` after editing node source. `push` is a deploy — only when asked,
+  and never `--force` without an explicit instruction.
+
+Cursor applies this as guidance only; the n8n-decanter CLI enforces the same invariants
+at `push` regardless of which tool made the edit.

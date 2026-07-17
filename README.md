@@ -27,8 +27,9 @@ fill it in. Then add workflow ids to `decanter.config.json`:
 ```sh
 node n8n-decanter.mjs init [dir]             # interactive bootstrap (see Setup)
 node n8n-decanter.mjs pull [id...]           # remote -> workflows/<Name>/
-node n8n-decanter.mjs push [id...] [--force] # workflows/<Name>/ -> remote
+node n8n-decanter.mjs push [id...] [--force] [--no-typecheck]
 node n8n-decanter.mjs status [id...]         # local vs remote drift report
+node n8n-decanter.mjs check [id...]          # offline layout-compliance check
 node n8n-decanter.mjs watch <node-file>      # push one node on every save
 npm run typecheck
 npm test                                     # e2e against a mock n8n API
@@ -57,6 +58,14 @@ Push refuses to overwrite remote changes made since the last sync
 (`pull first`, or `--force`). Pulling records the remote state as the new
 sync base — after a warned pull, push *will* overwrite the surfaced remote
 edits, with `.remote.js` + git as the safety net.
+
+Push also runs a **compliance guard** first (standalone: `check`, which needs
+no credentials): inline code without a `//@file:` placeholder, placeholders
+pointing at missing/`.remote.js`/non-`.js`/`.ts` files, or an `@ts-n8n`
+marker inside a `.js` file all abort the push — `--force` does not bypass
+these, only the drift guard. Unresolved `.remote.js` leftovers warn without
+blocking. The typecheck runs as a blocking push gate too (`--no-typecheck` to
+skip; auto-skipped when no `tsconfig.json` is found).
 
 ## Type checking
 

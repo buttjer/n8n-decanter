@@ -12,9 +12,9 @@ n8n-decanter/
   .env                    # N8N_HOST, N8N_API_KEY (gitignored; written by init)
   .env.example
   decanter.config.json
-  n8n-decanter.mjs        # CLI entry: init | pull | push | status | watch
+  n8n-decanter.mjs        # CLI entry: init | pull | push | status | check | watch
   lib/                    # implementation: api, config, state, util, compile,
-                          #   pull, push, status, watch, init (one .mjs each)
+                          #   pull, push, status, watch, init, validate (one .mjs each)
   scripts/typecheck.mjs   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
@@ -116,6 +116,11 @@ For each configured workflow:
 
 ## Push flow (`n8n-decanter push [id…]`)
 
+Before anything else, two local gates run: the **compliance guard** (below) per
+workflow, and — unless `--no-typecheck` — the **typecheck** once per push.
+Guard errors abort and are *not* bypassable with `--force` (that flag only
+overrides remote-drift protection); they must be fixed.
+
 1. Read `workflow.json`, resolve `//@file:` placeholders:
    - `.js` → verbatim.
    - `.ts` → esbuild → append marker with hash → `jsCode`.
@@ -130,6 +135,32 @@ For each configured workflow:
      `saveDataErrorExecution`, `saveDataSuccessExecution`, `executionTimeout`,
      `timezone`, `errorWorkflow`
 4. Update `.decanter.json` (`lastPushedHash` per node, workflow hash).
+
+## Compliance guard (`n8n-decanter check [id…]`)
+
+Validates pulled folders against this plan's layout — runs automatically at
+the start of every push, and standalone as `check` (offline; needs no
+credentials, so it works in CI without secrets). Without ids it checks every
+folder under `root` that has a `.decanter.json`.
+
+Errors (block push / exit 1):
+
+- Code node in `workflow.json` with inline `jsCode` instead of a `//@file:`
+  placeholder (hand edit or bad merge).
+- Placeholder referencing a missing file, a `*.remote.js` conflict artifact,
+  or anything that isn't `.js`/`.ts`.
+- A `.js` node file ending with an `@ts-n8n` marker line (would be
+  misidentified as TS-managed on the next pull).
+- Missing/corrupt `workflow.json` or `.decanter.json`.
+
+Warnings (don't block):
+
+- Unresolved `*.remote.js` leftovers — push will overwrite those remote edits.
+
+Typecheck gate: `push` and `check` run `scripts/typecheck.mjs` against the
+nearest `tsconfig.json` at/above the config dir; skipped with an info message
+when none exists (e.g. an init'ed sync dir), skippable with `--no-typecheck`.
+Watch validates only its own node file and never typechecks (fast inner loop).
 
 ## Watch mode (`n8n-decanter watch <file>`)
 
@@ -186,6 +217,7 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
 5. ✅ **QoL**: `watch`, `status` (local vs remote drift report).
 6. ✅ **init** — interactive bootstrap, see Init flow. (Added after v1 of this
    plan.)
+7. ✅ **compliance guard + `check`** — see Compliance guard. (Added after v1.)
 
 ## Implementation notes (decisions & observations from the 2026-07-17 build)
 
@@ -231,6 +263,11 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   deadlocks). Sandboxed environments may block the port bind.
 - **Structure drift detection** hashes the sanitized, code-stripped workflow
   with recursively sorted keys, so key order never causes false drift.
+- **Compliance guard** (milestone 7): `--force` deliberately does *not*
+  bypass it — force is for "I know the remote changed", not for pushing a
+  malformed tree. The guard's checks live in `lib/validate.mjs`, shared by
+  push (full validation), watch (per-node subset, no typecheck), and `check`.
+  `check` loads config without requiring credentials.
 
 ## Open questions (verify against a live instance)
 
