@@ -164,7 +164,15 @@ Warnings (don't block):
 Typecheck gate: `push` and `check` run `scripts/typecheck.mts` against the
 nearest `tsconfig.json` at/above the config dir; skipped with an info message
 when none exists (e.g. an init'ed sync dir), skippable with `--no-typecheck`.
-Watch validates only its own node file and never typechecks (fast inner loop).
+With explicit ids, `check` scopes the typecheck too: the workflow dirs are
+passed to the script, which still compiles the whole project (cross-file types
+need the full graph) but only reports/counts diagnostics under those dirs;
+file-less diagnostics (broken tsconfig) always surface. The template's
+PostToolUse verify hook leans on this — it reads `workflowId` from the edited
+file's sibling `.decanter.json` (ids, not folder names, are what `check`
+resolves) and runs `check <id>`, so an unrelated broken workflow can't block
+an edit. Watch validates only its own node file and never typechecks (fast
+inner loop).
 
 ## Watch mode (`n8n-decanter watch <file>`)
 
@@ -216,7 +224,10 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
 ## Type checking
 
 - `tsconfig.json`: `"allowJs": true, "checkJs": true`, includes `workflows/`,
-  excludes `**/*.remote.js`.
+  excludes `**/*.remote.js`. `"moduleDetection": "force"` gives every node
+  file its own module scope, so same-named top-level declarations across
+  node files don't collide ("cannot redeclare"); `.d.ts` files are exempt
+  from `force`, so `n8n-globals.d.ts` stays ambient.
 - `n8n-globals.d.ts` covers `.ts` and JSDoc-`.js` files alike.
 - `.js` node files start with `// @ts-check` + JSDoc types.
 - `npm run typecheck` → `tsc -p tsconfig.cli.json && node
