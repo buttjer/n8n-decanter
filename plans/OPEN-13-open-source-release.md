@@ -67,6 +67,12 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
 - [x] **Tarball smoke test:** `npm pack`, installed into a clean prefix,
       `n8n-decanter uuid` runs from the installed bin (36 files, 43.5 kB,
       no raw `.mts`, no repo-internal files).
+- [ ] **Re-run the tarball smoke incl. `init` before publishing** — the
+      first pass only exercised `uuid` and missed that `init` resolved
+      `template/` relative to `dist/lib/`, which the tarball doesn't contain
+      (found + fixed 2026-07-18, `packageRootFrom` in `lib/init.mts`,
+      unit-tested for both layouts). Verify: pack → install into a clean
+      prefix → `n8n-decanter init <tmp>` copies the template.
 
 ## Manual steps left (user)
 

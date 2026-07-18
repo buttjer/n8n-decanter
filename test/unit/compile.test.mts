@@ -106,6 +106,17 @@ describe("compileTs", () => {
     assert.deepEqual(out, [{ json: { total: 25 } }]);
   });
 
+  it("pure type-only imports bundle to an executable body with nothing inlined", async () => {
+    const { codeDir } = makeSyncDir("typeonly");
+    const file = path.join(codeDir, "node.ts");
+    writeFileSync(file, 'import type { Line } from "../../../shared/money";\nconst l: Line[] = [];\nreturn [{ json: { n: l.length } }];\n');
+    const code = await compileTs(file);
+    assert.doesNotMatch(code, /function total/, "no runtime code pulled in");
+    assert.match(code, /return __n8n_node\.default\(\);\n$/);
+    const out = await new AsyncFunction(code)();
+    assert.deepEqual(out, [{ json: { n: 0 } }]);
+  });
+
   it("bundles an allowlisted npm package from node_modules", async () => {
     const { root, codeDir } = makeSyncDir("npm", { bundleDependencies: ["tiny-add"] });
     const pkg = path.join(root, "node_modules", "tiny-add");

@@ -35,8 +35,16 @@ export function validateNodeFile(dir: string, file: string, label: string = file
     errors.push(`${label}: referenced file ${file} is missing`);
     return { errors, warnings };
   }
-  if (file.endsWith(".js") && splitMarker(readFileSync(filePath, "utf8")).marker) {
-    errors.push(`${label}: ${file} ends with an @ts-n8n marker — that line is reserved for compiled TS pushes and would make the node look TS-managed on the next pull; remove it`);
+  if (file.endsWith(".js")) {
+    const jsSource = readFileSync(filePath, "utf8");
+    if (splitMarker(jsSource).marker) {
+      errors.push(`${label}: ${file} ends with an @ts-n8n marker — that line is reserved for compiled TS pushes and would make the node look TS-managed on the next pull; remove it`);
+    }
+    // .js is pushed verbatim — an import would reach n8n unbundled and fail
+    // at runtime (imports are a .ts feature, bundled on push; plans/14)
+    if (scanNodeImports(jsSource).specifiers.length > 0) {
+      errors.push(`${label}: ${file} has an import — .js nodes run verbatim in n8n, where import/require fail; convert the node to .ts (imports are bundled on push) or inline the code`);
+    }
   }
   if (file.endsWith(".ts")) {
     // bundling rules (plans/14), offline lexical subset: same checker the

@@ -95,6 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ANSI escape codes no longer leak into piped output — previously the two
   hardcoded warn/error colors were emitted unconditionally, polluting logs,
   scripts, and LLM harness transcripts.
+- `init` from the npm-installed package no longer fails to find `template/`:
+  it resolved the directory relative to the compiled `dist/lib/`, a location
+  that exists in a git checkout but not in the published tarball. The
+  template (and the version banner) now resolve via the nearest
+  `package.json`, which works in both layouts.
+- The compliance guard now rejects a `.js` node containing an `import` —
+  `.js` nodes are pushed verbatim, so the import would reach n8n unbundled
+  and fail at runtime; the error points to `.ts` (where imports are bundled)
+  or inlining.
 
 ## [0.1.0] - 2026-07-18
 

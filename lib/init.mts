@@ -6,27 +6,32 @@ import { createPrompt } from "./prompt.mts";
 import { style } from "./style.mts";
 import type { Log } from "./types.mts";
 
-const TEMPLATE_DIR = fileURLToPath(new URL("../template", import.meta.url));
-
 /**
- * Own package version, found by walking up from this module — works from the
- * checkout (lib/ → repo root) and from the published build (dist/lib/ →
- * package root).
+ * Nearest ancestor of `startDir` holding a package.json — the package root.
+ * Works from the checkout (lib/ → repo root) *and* from the published build
+ * (dist/lib/ → package root): dist/ ships no package.json, so a plain
+ * `../template` URL would resolve to the nonexistent dist/template in the
+ * npm tarball (release blocker found 2026-07-18). Exported for tests.
  */
-function cliVersion(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
+export function packageRootFrom(startDir: string): string {
+  let dir = path.resolve(startDir);
   for (;;) {
-    const pkg = path.join(dir, "package.json");
-    if (existsSync(pkg)) {
-      try {
-        return (JSON.parse(readFileSync(pkg, "utf8")) as { version?: string }).version ?? "0.0.0";
-      } catch {
-        // unreadable package.json — keep walking
-      }
-    }
+    if (existsSync(path.join(dir, "package.json"))) return dir;
     const parent = path.dirname(dir);
-    if (parent === dir) return "0.0.0";
+    if (parent === dir) return path.resolve(startDir); // fs root — let the template lookup fail loudly
     dir = parent;
+  }
+}
+
+const PACKAGE_ROOT = packageRootFrom(path.dirname(fileURLToPath(import.meta.url)));
+const TEMPLATE_DIR = path.join(PACKAGE_ROOT, "template");
+
+/** Own package version (banner); tolerant of an unreadable package.json. */
+function cliVersion(): string {
+  try {
+    return (JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8")) as { version?: string }).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
   }
 }
 
