@@ -95,13 +95,19 @@ today (no more leaked ANSI).
    (final art is a taste call):
 
    ```
-        __
-       |  |
-       |  |        n8n-decanter v0.1.0
-      /    \       n8n workflows ⇄ git
-     / n8n  \
-     \______/
+     ▄▖     ▌        ▗
+   ▛▌▙▌▛▌  ▛▌█▌▛▘▀▌▛▌▜▘█▌▛▘
+   ▌▌▙▌▌▌  ▙▌▙▖▙▖█▌▌▌▐▖▙▖▌
+   n8n workflows ⇄ agentic code · v0.1.0
    ```
+
+   ~37 cols × 4 rows incl. tagline — tiny, and much wider than high.
+   Wordmark is the 2×2 quadrant-block minifont (Block Elements glyphs,
+   supported by any modern terminal font; piped runs never see it).
+   Color via the style layer (task 1): `n8n` in n8n brand red,
+   `decanter` bold, tagline dim — plain text carries everything when
+   colors are off. The top row's leading offset is load-bearing
+   (ascenders of `8`/`d`/`t`) — keep it verbatim.
 
 7. **Help & docs** — USAGE (`n8n-decanter.mts:23-41`): bold verbs, dim
    explanations via the style layer; add `list` and `completion`; document
