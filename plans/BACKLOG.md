@@ -35,10 +35,13 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
       there a way to really execute the workflow with the n8n engine using
       executions data as a mock/dry run? Also making sure nothing is really
       written through APIs or similar. Keep in mind executions data can be
-      flawed or change in the future.
+      flawed or change in the future. (graduated to
+      [Plan 7](OPEN-7-engine-true-simulation-suite.md))
 - [ ] **Folder hierarchy in sync layout** — mirror n8n's folder hierarchy, if
       the API exposes folder placement (PLAN.md milestone 4 — needs a live
-      instance to verify).
+      instance to verify). (graduated to
+      [Plan 8](OPEN-8-folder-hierarchy-in-sync-layout.md) — API research done:
+      placement is write-only, so the plan inverts to push-driven placement)
 - [ ] **Tags/pinned-data round-trip check** — verify against the live instance
       that PUT preserves tags/pinned data on an untouched pull→push round-trip
       (open question in PLAN.md).
