@@ -55,10 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   result and fails loudly if anything is left dangling. Offline — `push`
   propagates. `rename <id> --workflow "<new name>"` renames the workflow
   itself (the folder follows on the next pull).
-- Id-first argument order: the verb may come after its arguments
-  (`n8n-decanter.mts wf123 push` == `n8n-decanter.mts push wf123`). The first
-  token matching a known verb is taken as the command; everything else,
-  including flags, may appear in any position.
+- Id-first argument order: `n8n-decanter.mts wf123 push` ==
+  `n8n-decanter.mts push wf123` — the first token matching a known verb is
+  taken as the command; everything else, including flags, may appear in any
+  position. The CLI help and README document id-first as the canonical form.
 - Template: the `n8n-globals.d.ts` stub declares Luxon `Duration` and
   `Interval` (pragmatic subsets, matching the existing `DateTime` stub) —
   both were already advertised in `AGENTS.md` and provided at runtime, only

@@ -23,18 +23,18 @@ const log: Log = {
 const USAGE = `Usage:
   n8n-decanter init [dir] [--force]   interactive setup: .env, starter files, config
                                    (--force re-copies template files over existing ones)
-  n8n-decanter pull [id...]        pull workflows (default: all in decanter.config.json)
-  n8n-decanter push [id...] [--force] [--no-typecheck]
-  n8n-decanter status [id...]
-  n8n-decanter check [id...] [--no-typecheck]   offline layout-compliance check
-  n8n-decanter rename <id> "<old node>" "<new node>"   rename a node everywhere (offline)
-  n8n-decanter rename <id> --workflow "<new name>"     rename the workflow itself
-  n8n-decanter watch <node-file> [--force]
-  n8n-decanter run <node-file> [fixture.json]   run a node locally (offline)
+  n8n-decanter [id...] pull        pull workflows (default: all in decanter.config.json)
+  n8n-decanter [id...] push [--force] [--no-typecheck]
+  n8n-decanter [id...] status
+  n8n-decanter [id...] check [--no-typecheck]   offline layout-compliance check
+  n8n-decanter <id> rename "<old node>" "<new node>"   rename a node everywhere (offline)
+  n8n-decanter <id> rename --workflow "<new name>"     rename the workflow itself
+  n8n-decanter <node-file> watch [--force]
+  n8n-decanter <node-file> run [fixture.json]   run a node locally (offline)
   n8n-decanter uuid [count]        print lowercase v4 UUID(s) for new node ids
 
-The verb may come after its arguments too (id-first): "n8n-decanter wf123 push"
-is the same as "n8n-decanter push wf123".
+The verb may sit anywhere among the arguments: "n8n-decanter push wf123" is the
+same as "n8n-decanter wf123 push", and flags may appear in any position too.
 
 Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;

@@ -47,23 +47,23 @@ and `uuid` are fully offline (no credentials, no network).
 
 ```sh
 node n8n-decanter.mts init [dir]             # interactive bootstrap (see Setup)
-node n8n-decanter.mts pull [id...]           # remote -> workflows/<Name>/
-node n8n-decanter.mts push [id...] [--force] [--no-typecheck]
-node n8n-decanter.mts status [id...]         # local vs remote drift report
-node n8n-decanter.mts check [id...]          # offline layout-compliance + typecheck
-node n8n-decanter.mts rename <id> "<old node>" "<new node>"   # rename a node everywhere
-node n8n-decanter.mts rename <id> --workflow "<new name>"     # rename the workflow
-node n8n-decanter.mts watch <node-file>      # push one node on every save
-node n8n-decanter.mts run <node-file> [fixture.json]   # run a node offline, print items
+node n8n-decanter.mts [id...] pull           # remote -> workflows/<Name>/
+node n8n-decanter.mts [id...] push [--force] [--no-typecheck]
+node n8n-decanter.mts [id...] status         # local vs remote drift report
+node n8n-decanter.mts [id...] check          # offline layout-compliance + typecheck
+node n8n-decanter.mts <id> rename "<old node>" "<new node>"   # rename a node everywhere
+node n8n-decanter.mts <id> rename --workflow "<new name>"     # rename the workflow
+node n8n-decanter.mts <node-file> watch      # push one node on every save
+node n8n-decanter.mts <node-file> run [fixture.json]   # run a node offline, print items
 node n8n-decanter.mts uuid [count]           # lowercase v4 UUID(s) for new node ids
 npm run typecheck                            # CLI sources (tsc) + workflow node files
 npm test                                     # e2e against a mock n8n API
                                              # (binds a localhost port)
 ```
 
-Without ids, all workflows from the config are processed. The verb may also
-come after its arguments (`node n8n-decanter.mts wf123 push`) — the first
-token matching a known verb is the command, everything else stays positional.
+Without ids, all workflows from the config are processed. The verb may sit
+anywhere among the arguments (`push wf123` == `wf123 push`) — the first token
+matching a known verb is the command; flags may appear in any position too.
 
 ## How node files work
 
