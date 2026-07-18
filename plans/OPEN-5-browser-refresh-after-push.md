@@ -1,139 +1,109 @@
-# Plan 5 — Browser refresh after push
+# Plan 5 — Browser refresh after push (The Proxy Method)
 
-**Priority:** P2 (AppleScript reload) / P3 (livereload channel, upstream spike — needs a live instance)
-**Status:** Not started
-**Theme:** After a successful push, the n8n editor tab still shows the pre-push
-workflow; find a way to refresh it automatically so the browser never lies.
+**Priority:** P2 (High DX Impact)
+
+**Status:** Ready for implementation
+
+**Theme:** Spin up a transparent development proxy during `decanter watch`. The proxy injects a lightweight live-reload client into n8n's frontend HTML payload. When a local push completes, the proxy signals the client to cleanly refresh the browser tab.
+
+---
 
 ## Why
 
-The edit loop is: edit locally → `push` (or `watch` auto-push) → look at the
-result in the n8n editor. Today the last step is a manual ⌘R, and forgetting it
-is worse than an inconvenience: an editor holding the stale version invites
-in-browser edits on top of outdated code. n8n's own `versionId` conflict check
-softens that (saving from a stale editor warns — verify, see Direction F), but
-an auto-refresh closes the gap properly and makes `watch` feel like a real
-live-reload loop.
+The current edit loop requires a manual refresh (⌘R) after every local push. Forgetting this step leads to a stale browser editor holding outdated workflow code, which invites accidental clobbering.
 
-## Source
+By utilizing a local development proxy, we achieve a **100% cross-platform, zero-configuration live reload loop**. It requires:
 
-Raised in conversation 2026-07-17. No separate backlog entry — since `IDEAS.md`
-was retired into `plans/`, this plan is its own backlog entry.
+* No macOS-specific AppleScript permissions.
+* No risky Chrome DevTools Protocol (CDP) debugging flags.
+* No manual Tampermonkey/browser extension setups for the developer.
 
-## Directions (design decision — open)
+---
 
-All directions share the same hook point: after a successful PUT in
-`lib/push.mts` / `pushSingleNode` (`lib/watch.mts`), with `config.host` and the
-workflow id in hand the editor URL is `${host}/workflow/${id}`. Whatever wins
-should live behind one small `lib/reload.mts` + a `decanter.config.json` knob
-(e.g. `"browserReload": "applescript" | "cdp" | "livereload" | false`), so the
-mechanisms stay swappable.
+## Architecture Overview
 
-### A. Baseline: print the URL, lean on n8n's staleness guard
+```
+[ Browser Tab ] 
+       │  ▲
+       │  │ 1. Serves UI + Injects Client Script
+       ▼  │ 3. WebSocket/SSE: "pushed" -> window.location.reload()
+[ Decanter Proxy Server (Port 5679) ] ◄─── (Fired by local watch/push)
+       │  ▲
+       │  │ 2. Transparently pipes all auth, assets, and native WS traffic
+       ▼  │
+[ Live n8n Instance (Port 5678) ]
 
-Do nothing active; print `${host}/workflow/${id}` after push and rely on n8n's
-`versionId` conflict prompt to stop stale saves. Zero cost, zero risk, and the
-fallback path for every other direction. (Plain `open <url>` is *not* a variant
-worth keeping: it spawns a new tab per push instead of reloading the existing
-one.)
+```
 
-### B. OS-level tab reload via AppleScript (macOS)
+When `browserReload: "proxy"` is enabled in `decanter.config.json`:
 
-`osascript` enumerates tabs of Chromium-family browsers (Chrome/Edge/Arc/Brave
-share the AppleScript dialect: `reload tab`) or Safari (`do JavaScript
-"location.reload()"`, needs the "Allow JavaScript from Apple Events" developer
-setting) and reloads every tab whose URL starts with `${host}/workflow/${id}`.
+1. `decanter watch` boots a lightweight HTTP/WebSocket proxy on a secondary port (e.g., `5679`).
+2. The proxy transparently forwards all traffic to the upstream n8n host, preserving cookies, headers, and n8n's native `/rest/push` WebSockets.
+3. For HTML responses (`text/html`), the proxy intercepts the stream and injects a small, self-contained client script before the closing `</body>` tag.
+4. The client script establishes a Server-Sent Events (SSE) or WebSocket connection back to the Decanter proxy. When a push succeeds, an event triggers an intelligent page reload.
 
-- **Pros:** no browser install/flag at all; ~50 lines; matches the primary dev
-  machine (darwin).
-- **Cons:** macOS-only (no-op elsewhere); one-time TCC Automation permission
-  prompt; per-browser dialects; a dirty editor tab triggers the native
-  beforeunload dialog and blocks until answered (arguably a feature — it
-  protects browser-side WIP).
+---
 
-### C. Chrome DevTools Protocol
+## Configuration
 
-Browser launched with `--remote-debugging-port`; decanter queries
-`http://127.0.0.1:<port>/json`, finds matching targets, sends `Page.reload`
-over the target's WebSocket.
+Add the following knobs to `decanter.config.json`:
 
-- **Pros:** cross-platform, no extension, precise targeting, can bypass or
-  honor beforeunload deliberately.
-- **Cons:** the user must run their daily browser with a debug flag — real
-  friction and a local-security hole (any local process can drive the browser);
-  recent Chrome additionally requires a separate `--user-data-dir` for remote
-  debugging. Realistic only for dedicated dev-browser setups.
+```json
+{
+  "browserReload": "proxy",
+  "proxyPort": 5679
+}
 
-### D. Livereload channel: local WS/SSE server + userscript
+```
 
-The classic livereload pattern. `watch` hosts a tiny WebSocket/SSE server on a
-well-known localhost port; one-shot `push` does a fire-and-forget POST to it if
-something is listening. A Tampermonkey userscript, shipped in `template/` as
-`n8n-reload.user.js.example` (per the `.example` convention), matches the n8n
-origin, connects to the local port, and on `{event: "pushed", workflowId}`
-reloads iff the current route is that workflow **and** the editor has no
-unsaved changes (dirty check → decline + console note instead of clobbering).
-
-- **Pros:** cross-platform and cross-browser; precise; the only direction that
-  can *check dirty state before reloading*; fits `watch`'s inner-loop story.
-- **Cons:** one-time userscript install; a port to own; verify mixed-content
-  behavior (https n8n page → `ws://127.0.0.1` is allowed in Chromium as a
-  trustworthy origin, Safari historically stricter).
-
-### E. Pull-based userscript, zero CLI changes
-
-Userscript polls n8n's own session-authenticated REST
-(`/rest/workflows/:id`, same origin) every few seconds, compares
-`versionId`/`updatedAt`, reloads on change. Catches *any* external change
-(decanter, a teammate, another machine), needs no decanter code at all — but
-polls constantly and still requires the userscript install. Natural fallback
-mode inside D's userscript rather than a standalone direction.
-
-### F. Ride n8n's native push channel (upstream spike)
-
-The editor already holds a push connection (`/rest/push`) for execution and
-collaboration events. Spike against a live instance: does a public-API PUT
-make current n8n versions show a "workflow updated" banner or refresh? If yes,
-document the minimum version and ship nothing. If no, file an upstream feature
-request ("notify open editors on external workflow update") — zero-maintenance
-long-term, but the timeline isn't ours.
-
-### Rejected
-
-- **Iframe wrapper page** (decanter serves a page embedding the editor,
-  reloads the iframe): n8n's `X-Frame-Options`/CSP `frame-ancestors` and
-  SameSite auth cookies make this a dead end.
+---
 
 ## Tasks
 
-1. **Spike F first** next time a live instance is at hand (pairs with the other
-   "needs live API" open questions in PLAN.md): observe what the editor does on
-   an external PUT, both idle and mid-edit. Outcome may delete this plan.
-2. Add the shared hook: `lib/reload.mts` called after successful push in
-   `lib/push.mts` and `pushSingleNode`, plus the `browserReload` config knob
-   (default `false`; reload failures are warnings, never push failures).
-3. Implement **B** (AppleScript) as the first real mechanism — smallest
-   clearly-useful step on the primary platform.
-4. If/when the loop matters cross-platform or the dirty-check matters: **D**
-   (livereload server in `watch` + templated userscript, with E's polling as
-   fallback mode).
+### 1. Core Proxy Engine (`lib/proxy.mts`)
 
-## Acceptance / verification
+* Implement an HTTP/HTTPS reverse proxy using a robust library (e.g., `http-proxy` or native Node.js `http` streams).
+* Ensure strict forwarding of `Host`, `Cookie`, and connection-upgrade headers to prevent breaking n8n's authentication system.
+* Support WebSocket proxying to allow n8n's native `/rest/push` channel to function natively through the proxy.
 
-- Push with `browserReload` configured and the workflow open in a browser tab →
-  tab shows the new version without manual reload; other tabs untouched.
-- Push with a *dirty* editor tab → browser-side edits are not silently lost
-  (B: native dialog appears; D: reload declined).
-- Push with no browser open / unsupported OS / reload mechanism failing →
-  push still succeeds, warning only.
-- e2e suite unaffected (mechanisms are all no-ops without config/browser).
+### 2. HTML Interception & Script Injection
+
+* Intercept responses where the `Content-Type` header matches `text/html`.
+* Inject the client bootstrapper snippet:
+```html
+<script src="/__decanter/client.js" defer></script>
+
+```
+
+
+* Intercept `GET /__decanter/client.js` requests at the proxy level to serve the dynamic client-side live-reload asset.
+
+### 3. Client Reload Script (`src/templates/proxy-client.js`)
+
+* Establish an SSE (`EventSource`) or lightweight WebSocket connection back to `/__decanter/events`.
+* **Dirty State Protection:** Before executing `window.location.reload()`, read the browser DOM or state variables to check for unsaved n8n changes.
+> **Note:** If the editor is dirty, log a prominent warning to the browser console and decline the reload to prevent loss of in-browser work.
+
+
+
+### 4. CLI Watch Hook Integration
+
+* Update `lib/watch.mts` to initialize the proxy server on boot if configured.
+* Expose a global or contextual broadcast method: `global.__decanterProxy?.broadcast('pushed', { workflowId })`.
+* Trigger this broadcast inside the successful resolution loop of `lib/push.mts` and `pushSingleNode`.
+
+---
+
+## Acceptance / Verification
+
+* **Seamless Proxying:** Navigating to `http://localhost:5679` serves the full, authenticated n8n workspace identically to the raw instance port.
+* **Auto-Refresh:** Modifying a local node file triggers `decanter` auto-push $\rightarrow$ the browser tab focused on that workflow instantly reloads to show the changes without manual intervention.
+* **Dirty Safeguard:** If a node parameter is actively being edited in the UI (showing unsaved changes), a local push does *not* clobber the browser state; it surfaces a console message instead.
+* **Graceful Fallbacks:** If the proxy fails to bind to the port, `decanter watch` logs a warning but continues executing local sync operations safely.
+
+---
 
 ## Notes
 
-- **CHANGELOG:** the config knob and any shipped userscript template are
-  user-facing → `[Unreleased]` Added entries.
-- **PLAN.md:** adopting a direction adds a new flow (post-push notify) and
-  possibly a template file — raise with the user before writing it into
-  PLAN.md (per `CLAUDE.md`).
-- Reloading the browser is downstream-only; it never feeds back into sync
-  state — no `.decanter.json` changes in any direction.
+* **PLAN.md Updates:** This architectural shift introduces a persistent network component to `watch`. Ensure `PLAN.md` documentation reflects the secondary port usage.
+* **Performance:** HTML stream modification must be handled efficiently via buffering or lightweight regex streaming to ensure page load latency remains imperceptible.
