@@ -1,7 +1,7 @@
 {
   "name": "n8n-decanter",
   "version": "0.1.0",
-  "description": "Keep n8n workflows in git: pull Code nodes into per-workflow folders, push them back.",
+  "description": "Work on n8n like a codebase — built for AI coding agents",
   "keywords": [
     "n8n",
     "workflow",
