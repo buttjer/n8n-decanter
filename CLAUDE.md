@@ -61,6 +61,10 @@ npm test              # unit tests (node:test, test/unit/) + e2e suite
                       #   sandboxed)
 npm run typecheck     # tsc -p tsconfig.cli.json (CLI sources) + scripts/
                       #   typecheck.mts (node files — NOT plain tsc, see below)
+npm run test:smoke    # OPT-IN, dev-only: real n8n in Docker (test/smoke-n8n.mts,
+                      #   plans/15); needs a running Docker daemon; never part
+                      #   of npm test
+
 node n8n-decanter.mts <init|pull|push|status|check|watch> …
 ```
 

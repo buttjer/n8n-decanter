@@ -24,7 +24,7 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
       compiles so value imports from `shared/` get inlined into the pushed code
       (today only type-only imports work — see the shared-code caveat in
       PLAN.md). (graduated to
-      [Plan 14](INPROGRESS-14-bundle-shared-code-into-ts-pushes.md), whose spike
+      [Plan 14](DONE-14-bundle-shared-code-into-ts-pushes.md), whose spike
       found the premise wrong — *no* import worked in a `.ts` node, type
       imports included; implemented 2026-07-18 incl. an npm-package
       `bundleDependencies` allowlist, offline-tested)
@@ -48,7 +48,10 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
       placement is write-only, so the plan inverts to push-driven placement)
 - [ ] **Tags/pinned-data round-trip check** — verify against the live instance
       that PUT preserves tags/pinned data on an untouched pull→push round-trip
-      (open question in PLAN.md).
+      (open question in PLAN.md). (tags half **verified** 2026-07-19 by the
+      [Plan 15](INPROGRESS-15-docker-n8n-smoke-suite.md) smoke suite against
+      n8n 2.30.7; pinData still open — the public API cannot set it, needs
+      the UI or internal REST)
 - [x] **Watch: deep-link URL to the workflow** — on `watch` start, print the
       editor URL pointing straight at the watched workflow
       (`<origin>/workflow/<id>`), using the browser-reload proxy origin when

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1" # weekly: does the pinned n8n still pass the smoke suite?
 
 jobs:
   test:
@@ -22,3 +25,18 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+  # Dev-only integration smoke against a real n8n in Docker (plans/15).
+  # Not part of the merge gate: runs on manual dispatch and a weekly cron.
+  smoke:
+    name: n8n smoke (docker)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:smoke

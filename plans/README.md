@@ -63,12 +63,12 @@ items not yet claimed by one. Recommended order:
     "the code is done" and v0.1.0 public on GitHub + npm: identity rewrite,
     repo hygiene, publish build, CI, tarball verification. Remaining steps are
     the user's manual checklist (repo creation, npm publish).
-14. [Bundle `shared/` code into TS pushes](INPROGRESS-14-bundle-shared-code-into-ts-pushes.md) —
+14. [Bundle `shared/` code into TS pushes](DONE-14-bundle-shared-code-into-ts-pushes.md) —
     make imports from `shared/` work in `.ts` nodes (types *and* values) via
     hoist→wrap→bundle at push time; no-import nodes keep byte-identical
     output. The spike found today's docs wrong: no import compiles at all in
     a `.ts` node — the plan corrects PLAN.md's caveat alongside.
-15. [Docker n8n smoke suite](OPEN-15-docker-n8n-smoke-suite.md) — dev-only,
+15. [Docker n8n smoke suite](INPROGRESS-15-docker-n8n-smoke-suite.md) — dev-only,
     opt-in integration suite (`npm run test:smoke`) against a pinned n8n
     container: proves bundled nodes execute in the real sandbox and
     re-verifies the recorded API semantics (publish model, tags/pinned

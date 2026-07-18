@@ -91,6 +91,16 @@ it has real ordering/mode semantics; revisit after `--from-execution` lands.
   push-pending, changed-remotely, and CONFLICT nodes; `.ts` nodes diff their
   compiled JS (what the hashes compare). Structural (`workflow.json`) diffing
   stayed out of scope.
+- **C — executions API ground truth (captured 2026-07-19 by the Plan 15
+  smoke suite against n8n 2.30.7):** `GET /api/v1/executions?includeData=true`
+  → `{ data: [{ id, status: "success", mode: "webhook", workflowId,
+  workflowVersionId, startedAt, stoppedAt, jsonSizeBytes, data: {
+  resultData: { runData: { "<Node Name>": [{ data: { main: [[{ json: {…},
+  pairedItem: {…} }]] } }] } }, workflowData, customData }] }` — items are
+  under `runData.<name>[0].data.main[0][]` with `.json` payloads; note the
+  2.x per-execution `workflowVersionId` (executions run the *published*
+  version). The smoke suite asserts this shape weekly, so drift shows up
+  before C is built on it.
 - **C — open questions raised before starting (record of 2026-07-18 review):**
   execution data may contain credentials/PII, and `workflows/<Name>/executions/`
   sits inside the commit-on-pull pathspec — storage must default to

@@ -541,12 +541,20 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   top-level import (even `import type`) next to a top-level `return`, so
   `.ts` nodes could import nothing at all; only JSDoc `@typedef` in `.js`
   nodes ever worked. Mechanism (`lib/compile.mts`): hoist the leading import
-  block, wrap the body in an async arrow, esbuild-bundle as an iife
-  (`absWorkingDir` = sync root → machine-stable output and hashes), append
+  block, wrap the body in an async arrow **assigned onto a plain shim
+  object** (`__n8n_node.default = …` — deliberately no `export` in the
+  entry), esbuild-bundle as an iife (`absWorkingDir` = sync root →
+  machine-stable output and hashes), rewrite esbuild's `__copyProps`
+  CJS-interop helper to eager data assignment, prepend the shim var, append
   `return __n8n_node.default();` — the artifact remains a function body, so
   the marker, `run`, and push contracts are untouched, and n8n globals pass
-  through as free identifiers. **No-import nodes keep the plain-transform
-  output byte-identically** (zero drift on upgrade). Rules (shared by
+  through as free identifiers. The export-free entry and the interop rewrite
+  are load-bearing (verified against real n8n 2.30.7, plans/15): **n8n's
+  task-runner sandbox neuters getter property descriptors** — reading a
+  `defineProperty`-getter yields undefined — and esbuild lowers module
+  exports and CJS interop to exactly such getters. **No-import nodes keep
+  the plain-transform output byte-identically** (zero drift on upgrade).
+  Rules (shared by
   `check` and the compiler): imports at the top of the file only; relative
   imports stay inside the sync dir; npm packages opt in per package via
   config `bundleDependencies` (pure JS only — no native addons); Node

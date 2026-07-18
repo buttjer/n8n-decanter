@@ -11,7 +11,15 @@ Node's type stripping; there is no build step.
 npm install
 npm test              # unit tests + e2e + proxy suite (binds localhost ports)
 npm run typecheck     # CLI sources (tsc) + workflow node files
+npm run test:smoke    # OPTIONAL: integration smoke against a real n8n in
+                      #   Docker (pinned image; needs a running daemon).
+                      #   SMOKE_N8N_TAG=n8nio/n8n:<tag> tests another version,
+                      #   SMOKE_KEEP=1 keeps the container after a failure.
 ```
+
+The smoke suite is the only place that proves behavior against a *real* n8n
+(bundled-node execution, PUT normalization, publish semantics); run it when
+touching push/pull/compile, and when bumping the pinned n8n tag.
 
 ## Ground rules
 

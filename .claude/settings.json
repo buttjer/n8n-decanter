@@ -36,7 +36,8 @@
       "Bash(curl -sL \"https://raw.githubusercontent.com/n8n-io/*\")",
       "Bash(curl -sL \"https://api.github.com/repos/n8n-io/*\")",
       "Read(//tmp/claude-501/**)",
-      "Read(//private/tmp/claude-501/**)"
+      "Read(//private/tmp/claude-501/**)",
+      "Bash(curl -s 'http://127.0.0.1:59264/api/v1/executions?includeData=true&limit=1' -H 'X-N8N-API-KEY: __CMDSUB_OUTPUT__')"
     ],
     "deny": [
       "Bash(rm -rf *)",

@@ -1,9 +1,34 @@
 # Plan 14 — Bundle `shared/` code into TS pushes
 
 **Priority:** P2
-**Status:** In progress (implemented + offline-tested 2026-07-18 — all tasks
-done incl. the `bundleDependencies` npm allowlist; only the live-instance
-smoke from Acceptance rides the next live session)
+**Status:** Done (2026-07-19 — implemented + offline-tested 2026-07-18; the
+live smoke ran via [Plan 15](INPROGRESS-15-docker-n8n-smoke-suite.md) against
+n8n 2.30.7, caught a real sandbox incompatibility, and passes after the
+mechanism revision below)
+
+## Live-smoke outcome (2026-07-19) — mechanism revised
+
+The Docker smoke suite proved the original artifact did **not** run in n8n's
+task-runner sandbox: `__n8n_node.default is not a function`. Bisection
+showed the sandbox **neuters getter property descriptors**
+(`Object.defineProperty` with `get` reads back undefined) — and esbuild
+lowers module exports (`__export`/`__toCommonJS`) and CJS interop
+(`__toESM`/`__copyProps`) to exactly such getters. Passing in `run` and unit
+tests proved nothing: plain Node honors getters. Fix (lib/compile.mts):
+
+- entry emits **no `export`** — the wrapper arrow is assigned onto a free
+  shim identifier (`__n8n_node.default = …`), so esbuild generates no export
+  machinery at all; ESM imports (shared/) inline into the iife scope
+  getter-free;
+- esbuild's `__copyProps` helper is **rewritten post-bundle to eager data
+  assignment** (snapshot-at-require — normal CJS semantics), fixing npm
+  CJS-package interop;
+- a residual `__export(` in a bundle (lazily-wrapped module: import cycle /
+  top-level await in shared code) triggers a compile-time warning naming the
+  restructure.
+
+Verified end-to-end by the smoke suite: shared helper + npm package compute
+through a real webhook execution, in both all-items and each-item modes.
 **Theme:** Make `import`s from `shared/` actually work in `.ts` nodes — types
 *and* values — by bundling them into the compiled node at push time, without
 touching the `.js` lossless contract, the marker semantics, or the one-way

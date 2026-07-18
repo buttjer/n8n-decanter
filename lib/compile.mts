@@ -178,10 +178,16 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
   }
 
   const workingDir = ctx.syncRoot ?? path.dirname(file);
+  // The entry must contain NO `export` syntax: n8n's task-runner sandbox
+  // neuters getter property descriptors (Object.defineProperty with `get`
+  // reads back undefined), and esbuild lowers module exports to exactly such
+  // getters. A plain assignment onto a free identifier sidesteps the entire
+  // export machinery — esbuild inlines ESM imports directly into the iife
+  // scope, getter-free.
   const entry =
     importBlock +
     (importBlock.endsWith("\n") ? "" : "\n") +
-    "export default async () => {\n" +
+    `${GLOBAL_NAME}.default = async () => {\n` +
     body +
     "\n};\n";
   let bundled: string;
@@ -191,15 +197,14 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
         contents: entry,
         loader: "ts",
         resolveDir: path.dirname(file),
-        // sync-root-relative so bundle comments (and hashes) are machine-independent
-        sourcefile: path.relative(workingDir, file).split(path.sep).join("/"),
+        sourcefile: path.basename(file),
       },
       bundle: true,
       format: "iife",
-      globalName: GLOBAL_NAME,
       platform: "node",
       target: "node18",
       write: false,
+      // sync-root-relative module comments -> machine-independent hashes
       absWorkingDir: workingDir,
       logLevel: "silent",
     });
@@ -209,7 +214,18 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
     const messages = e.errors?.map((m) => (m.location?.file ? `${m.location.file}:${m.location.line}: ${m.text}` : m.text)) ?? [(err as Error).message];
     throw new Error(`${file}: bundling failed\n${messages.map((m) => `  ${m}`).join("\n")}`);
   }
-  const code = `${bundled}return ${GLOBAL_NAME}.default();\n`;
+  // Same sandbox constraint, second front: esbuild's CJS-interop helper
+  // (__copyProps, used by __toESM for npm packages) copies properties as
+  // getters. Rewrite it to eager data assignment — snapshot-at-require is
+  // normal CommonJS behavior, and our bundles have no live-binding needs.
+  bundled = bundled.replace(
+    /__defProp\(to, key, \{ get: \(\) => from\[key\], enumerable: [^}]+\}\);/,
+    "to[key] = from[key];",
+  );
+  if (/\b__export\(/.test(bundled)) {
+    log?.warn(`${file}: the bundle contains lazily-wrapped modules (import cycle or top-level await in shared code?) — these rely on getter exports, which n8n's Code-node sandbox does not support; restructure the shared imports`);
+  }
+  const code = `var ${GLOBAL_NAME} = {};\n${bundled}return ${GLOBAL_NAME}.default();\n`;
   if (code.length > SIZE_WARN_BYTES && log) {
     log.warn(`${file}: compiled node is ${Math.round(code.length / 1024)} KB after bundling — large nodes bloat the workflow JSON; consider trimming imports`);
   }
