@@ -1,0 +1,58 @@
+// decanter-ts-plugin — TypeScript language-service plugin that hides the
+// editor-only false positives on n8n Code node files. Node source is a
+// *function body* (top-level `return` / `await` is legal), but the editor's
+// tsserver reads the raw file and reports TS1108 / TS1375 / TS1378.
+// `n8n-decanter check` wraps node bodies in memory and stays authoritative;
+// this plugin only filters those three codes in the editor, for node files
+// only — every other diagnostic and every other file passes through.
+//
+// CommonJS on purpose: tsserver loads plugins via require(). Loaded through
+// the tsconfig "plugins" entry; resolves from node_modules via the
+// `file:./decanter-ts-plugin` devDependency (VS Code needs the workspace
+// TypeScript version for that — see AGENTS.md).
+const FILTERED = new Set([
+  1108, // A 'return' statement can only be used within a function body.
+  1375, // 'await' expressions are only allowed at the top level of a module …
+  1378, // Top-level 'await' expressions require module es2022+ …
+]);
+
+function init({ typescript: ts }) {
+  function create(info) {
+    const ls = info.languageService;
+    const fileExists = (p) =>
+      info.languageServiceHost.fileExists
+        ? info.languageServiceHost.fileExists(p)
+        : ts.sys.fileExists(p);
+
+    // Mirrors isNodeFile in n8n-decanter's scripts/typecheck.mts — keep the
+    // two in sync: .ts/.js, not *.d.ts / *.remote.js, with a .decanter.json
+    // sibling directly or (code/ layout) in the parent of the code/ dir.
+    function isNodeFile(fileName) {
+      const file = fileName.replace(/\\/g, "/");
+      if (file.endsWith(".d.ts") || file.endsWith(".remote.js")) return false;
+      if (!/\.(ts|js)$/.test(file)) return false;
+      const cut = file.lastIndexOf("/");
+      if (cut < 0) return false;
+      const dir = file.slice(0, cut);
+      if (fileExists(dir + "/.decanter.json")) return true;
+      return dir.endsWith("/code") && fileExists(dir.slice(0, -"/code".length) + "/.decanter.json");
+    }
+
+    const proxy = Object.create(null);
+    for (const k of Object.keys(ls)) {
+      proxy[k] = (...args) => ls[k].apply(ls, args);
+    }
+    const filtered = (fileName, diags) =>
+      isNodeFile(fileName) ? diags.filter((d) => !FILTERED.has(d.code)) : diags;
+    // Both channels: grammar errors like 1108 are raised in the checker
+    // (semantic) on current TS, but cover syntactic too in case a TS version
+    // moves them.
+    proxy.getSemanticDiagnostics = (fileName) => filtered(fileName, ls.getSemanticDiagnostics(fileName));
+    proxy.getSyntacticDiagnostics = (fileName) => filtered(fileName, ls.getSyntacticDiagnostics(fileName));
+    return proxy;
+  }
+
+  return { create };
+}
+
+module.exports = init;

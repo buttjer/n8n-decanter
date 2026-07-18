@@ -1,0 +1,6 @@
+{
+  // Use the workspace TypeScript (devDependency) so tsserver can load
+  // decanter-ts-plugin from node_modules — VS Code asks once ("Use Workspace
+  // Version"). The bundled tsserver cannot see workspace plugins.
+  "typescript.tsdk": "node_modules/typescript/lib"
+}

@@ -11,7 +11,8 @@
     "noImplicitAny": false,
     "useUnknownInCatchVariables": false,
     "skipLibCheck": true,
-    "moduleDetection": "force"
+    "moduleDetection": "force",
+    "plugins": [{ "name": "decanter-ts-plugin" }]
   },
   "include": [
     "n8n-globals.d.ts",

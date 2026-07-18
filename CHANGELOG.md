@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The template now ships **`decanter-ts-plugin/`**, a TypeScript
+  language-service plugin that stops the editor from flagging legal n8n node
+  source — top-level `return`/`await` — with false TS1108/TS1375/TS1378
+  errors, while every other diagnostic (and every non-node file) stays live.
+  Wired via the sync dir's `tsconfig.json` `plugins` entry and a
+  `file:./decanter-ts-plugin` devDependency; `.vscode/settings.json` (new)
+  points VS Code at the workspace TypeScript so tsserver can load it — run
+  `npm install` and accept *Use Workspace Version* once (JetBrains IDEs use
+  the project TypeScript by default). `n8n-decanter check` is unaffected and
+  stays authoritative.
+
 ## [0.1.0] - 2026-07-18
 
 First public release.

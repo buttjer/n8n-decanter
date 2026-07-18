@@ -15,10 +15,12 @@ items not yet claimed by one. Recommended order:
 3. [Local run/diff fidelity](OPEN-3-local-run-and-diff-fidelity.md) — make offline
    iteration trustworthy: seed staticData in `run`, add `status --diff`, and pull
    real execution datasets as fixtures.
-4. [Editor node diagnostics](OPEN-4-editor-node-diagnostics.md) — a TS
+4. [Editor node diagnostics](INPROGRESS-4-editor-node-diagnostics.md) — a TS
    language-service plugin that suppresses the editor-only TS1108/1375/1378 false
    positives on node files. Related to Plan 1's edit-loop work but larger
-   (needs a load-path spike), so it trails the first three.
+   (needs a load-path spike), so it trails the first three. Implemented
+   (plugin ships in `template/decanter-ts-plugin/`); manual editor
+   verification pending.
 5. [Browser refresh after push](DONE-5-browser-refresh-after-push.md) — auto-refresh
    the n8n editor tab after a successful push, via a transparent dev proxy that
    injects an SSE live-reload client during `watch` (opt-in `browserReload`).

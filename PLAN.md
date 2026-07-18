@@ -327,14 +327,23 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
 - `npm run typecheck` → `tsc -p tsconfig.cli.json && node
   scripts/typecheck.mts`. The first half strict-checks the CLI's own `.mts`
   sources. The second checks node files and is **not** plain `tsc --noEmit`:
-  node code is a function body, and `tsc` rejects top-level
-  `return` in `.ts` files (TS1108; `.js` under checkJs is tolerated). The
+  node code is a function body, and `tsc` rejects top-level `return` (TS1108)
+  — in checkJs `.js` and `.ts` files alike; the wrapper, not the file type,
+  is what makes typecheck pass. The
   script wraps node files in `async function () { … }` in memory via a custom
   CompilerHost — files on disk stay verbatim — and maps diagnostic lines back
   (−1). Node files are recognized by a `.decanter.json` sibling — directly, or
-  in the parent of their `code/` dir. Known wart:
-  IDE tsservers don't apply the wrapper, so editors show a spurious TS1108 on
-  top-level `return` in `.ts` node files.
+  in the parent of their `code/` dir.
+- Editor tsservers don't apply the wrapper, so the template ships
+  **`decanter-ts-plugin/`** — a tsserver language-service plugin that drops
+  exactly TS1108/TS1375/TS1378 on node files (same recognition rule as the
+  wrapper; every other diagnostic and every non-node file untouched). Loaded
+  via the sync-dir tsconfig `plugins` entry plus a `file:./decanter-ts-plugin`
+  devDependency; VS Code must run the *workspace* TypeScript
+  (`.vscode/settings.json` sets `typescript.tsdk`, one-time "Use Workspace
+  Version" consent) because `typescript.tsserver.pluginPaths` is
+  machine-scoped and the bundled tsserver can't resolve workspace plugins.
+  JetBrains IDEs use the project TypeScript by default. (plans/4)
 
 ## Milestones
 
@@ -361,8 +370,8 @@ pull, byte-identical `.js` round-trip, TS convert + marker, UI-edit and
 conflict surfacing, structural drift abort, status, renames, single-node push.
 
 - **Top-level `return`**: node code is a function body. esbuild
-  (`transform`, `format: "cjs"`) accepts it; `tsc` rejects it in `.ts` files
-  (TS1108) but tolerates it in checkJs `.js` files → `scripts/typecheck.mts`
+  (`transform`, `format: "cjs"`) accepts it; `tsc` rejects it (TS1108) in
+  checkJs `.js` and `.ts` files alike → `scripts/typecheck.mts`
   wrapper (see Type checking).
 - **`lastPushedHash` really means "remote code hash at last sync"** (push *or*
   pull). Pull updates it even when surfacing a UI edit/conflict — otherwise

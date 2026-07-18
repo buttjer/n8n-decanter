@@ -128,10 +128,15 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
   - `runOnceForAllItems`: return an array of items: `[{ json: {…} }, …]`.
     Always wrap in `{ json: … }` explicitly.
   - `runOnceForEachItem`: return a single `{ json: {…} }`.
-  - Editors squiggle that top-level `return`/`await` (TS1108/TS1375) — a
-    **false positive** from the editor's own tsserver; ignore it, and never
+  - Editors squiggle that top-level `return`/`await` (TS1108/TS1375/TS1378) —
+    a **false positive** from the editor's own tsserver; ignore it, and never
     "fix" it by wrapping the file in a function. `n8n-decanter check` wraps
     node bodies in memory before typechecking and is authoritative.
+    The bundled `decanter-ts-plugin/` suppresses exactly these three codes on
+    node files (all other diagnostics stay live) once tsserver runs the
+    workspace TypeScript: `npm install`, then in VS Code accept
+    *Use Workspace Version* (offered via `.vscode/settings.json`'s
+    `typescript.tsdk`; JetBrains uses the project TypeScript by default).
 - Available globals (extend `n8n-globals.d.ts` when you use one it lacks):
   `$input.all()/.first()/.last()/.item` · `$('Node Name').all()/.first()/.item/.itemMatching(i)` ·
   `$json`, `$binary`, `$itemIndex` (each-item mode) ·

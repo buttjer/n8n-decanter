@@ -9,6 +9,7 @@
     "check": "n8n-decanter check"
   },
   "devDependencies": {
+    "decanter-ts-plugin": "file:./decanter-ts-plugin",
     "typescript": "^5.6.0"
   }
 }
