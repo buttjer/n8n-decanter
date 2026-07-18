@@ -12,6 +12,7 @@ import {
   CODE_DIR,
   FILE_PLACEHOLDER_PREFIX,
   isJsCodeNode,
+  publicationState,
   sha256,
   splitMarker,
   stableWorkflowJson,
@@ -83,6 +84,9 @@ export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: str
   } else {
     const local = readLocalWorkflow();
     const remote = await api.getWorkflow(id);
+    if (publicationState(remote) === "published") {
+      log.warn("workflow is published — every push goes live immediately (n8n auto-publishes API updates)");
+    }
     if (local && structureAction(workflowStructureHash(local), workflowStructureHash(remote), structureBaseline) === "conflict") {
       log.warn("structural conflict at watch start: workflow.json and the remote workflow both changed since last sync — pulling remote; your local version is preserved in git, reconcile and save workflow.json to push");
     }

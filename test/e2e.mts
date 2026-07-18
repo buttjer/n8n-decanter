@@ -175,6 +175,7 @@ await step("push unchanged: byte-identical js round-trip", async () => {
   const before = remoteNode("wf123", "n2").parameters.jsCode;
   const r = await cli("push");
   assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /pushed "Order Sync" \(wf123\) — published: code is live now/);
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, before);
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, JS_CODE);
 });
@@ -273,6 +274,7 @@ await step("status: reports pending local edit, then in sync", async () => {
   writeFileSync(js, read(dir1, "code", "transform.js") + "// local tweak\n");
   let r = await cli("status");
   assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Order Sync \(wf123\).*published/);
   assert.match(r.out, /Transform: local changes in code\/transform\.js — push pending/);
   r = await cli("push");
   assert.equal(r.code, 0, r.out);

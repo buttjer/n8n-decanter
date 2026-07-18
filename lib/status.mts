@@ -4,7 +4,7 @@ import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { findWorkflowDir, readState } from "./state.mts";
 import type { Log, Workflow } from "./types.mts";
-import { isJsCodeNode, sha256, splitMarker, workflowStructureHash } from "./util.mts";
+import { isJsCodeNode, publicationState, sha256, splitMarker, workflowStructureHash } from "./util.mts";
 
 async function localHash(dir: string, file: string): Promise<string | null> {
   const filePath = path.join(dir, file);
@@ -21,7 +21,8 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
     return;
   }
   const state = readState(dir)!;
-  log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]`);
+  const pub = publicationState(remote);
+  log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]${pub ? `  ${pub}` : ""}`);
 
   const remoteStruct = workflowStructureHash(remote);
   const wfFile = path.join(dir, "workflow.json");

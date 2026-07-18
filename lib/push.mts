@@ -9,6 +9,7 @@ import type { DecanterState, Log, Workflow } from "./types.mts";
 import {
   isJsCodeNode,
   placeholderFile,
+  publicationState,
   sanitizeForPut,
   sha256,
   splitMarker,
@@ -70,6 +71,13 @@ function assertNoDrift(problems: string[], force: boolean, log: Log): void {
   log.warn("--force: overwriting remote changes");
 }
 
+/** Publication suffix for push result lines (see publicationState in util). */
+function liveNote(wf: Workflow | undefined): string {
+  const state = publicationState(wf);
+  if (!state) return "";
+  return state === "published" ? " — published: code is live now" : " — unpublished: draft only";
+}
+
 /** Update per-node + structure hashes from the workflow the server confirmed. */
 function recordSync(state: DecanterState, confirmed: Workflow): void {
   for (const node of confirmed.nodes) {
@@ -101,7 +109,7 @@ export async function pushWorkflow(api: N8nApi, root: string, id: string, { forc
   const confirmed = await api.updateWorkflow(id, sanitizeForPut(wf));
   recordSync(state, confirmed ?? wf);
   writeState(dir, state);
-  log.info(`pushed "${wf.name}" (${id})`);
+  log.info(`pushed "${wf.name}" (${id})${liveNote(confirmed ?? remote)}`);
   notifyPushed(id);
   if (commitOnPush) await commitWorkflowDir(dir, `decanter: pushed "${wf.name}" (${id})`, log);
   return { dir, name: wf.name };
@@ -126,7 +134,7 @@ export async function pushSingleNode(api: N8nApi, dir: string, nodeId: string, {
   const confirmed = await api.updateWorkflow(state.workflowId, sanitizeForPut(remote));
   recordSync(state, confirmed ?? remote);
   writeState(dir, state);
-  log.info(`pushed node "${node.name}" -> workflow "${remote.name}"`);
+  log.info(`pushed node "${node.name}" -> workflow "${remote.name}"${liveNote(confirmed ?? remote)}`);
   notifyPushed(state.workflowId);
   if (commitOnPush) {
     await commitWorkflowDir(dir, `decanter: pushed "${remote.name}" / node "${node.name}" (${state.workflowId})`, log);

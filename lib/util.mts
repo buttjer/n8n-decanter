@@ -188,6 +188,18 @@ export function sanitizeForPut(wf: Workflow): WorkflowPut {
 }
 
 /**
+ * Publication state from an API workflow response. n8n's public API
+ * auto-publishes updates to a *published* workflow (publishIfActive is
+ * hardcoded server-side), so pushes there go live immediately; on an
+ * unpublished workflow they only update the draft. Undefined when the
+ * server doesn't report `active`.
+ */
+export function publicationState(wf: Workflow | undefined): "published" | "unpublished" | undefined {
+  if (typeof wf?.active !== "boolean") return undefined;
+  return wf.active ? "published" : "unpublished";
+}
+
+/**
  * Hash of the sanitized, code-stripped workflow — detects structural edits
  * (nodes added/moved/reconnected, settings changed) independent of code edits.
  */

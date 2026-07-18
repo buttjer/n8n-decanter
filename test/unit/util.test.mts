@@ -7,6 +7,7 @@ import {
   forEachConnectionTarget,
   kebabCase,
   placeholderFile,
+  publicationState,
   renameNodeRefs,
   sanitizeFilename,
   sanitizeForPut,
@@ -214,6 +215,20 @@ describe("sanitizeForPut", () => {
     assert.ok(!("staticData" in sanitizeForPut(baseWorkflow())));
     const wf = { ...baseWorkflow(), staticData: { counter: 1 } };
     assert.deepEqual(sanitizeForPut(wf).staticData, { counter: 1 });
+  });
+});
+
+describe("publicationState", () => {
+  it("maps the active flag to published/unpublished", () => {
+    assert.equal(publicationState({ ...baseWorkflow(), active: true }), "published");
+    assert.equal(publicationState({ ...baseWorkflow(), active: false }), "unpublished");
+  });
+  it("is undefined without a boolean active field", () => {
+    const wf = baseWorkflow();
+    delete wf.active;
+    assert.equal(publicationState(wf), undefined);
+    assert.equal(publicationState({ ...baseWorkflow(), active: "yes" as unknown as boolean }), undefined);
+    assert.equal(publicationState(undefined), undefined);
   });
 });
 

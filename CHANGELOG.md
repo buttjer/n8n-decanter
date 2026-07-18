@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Push, watch, and `status` now report the workflow's **publication state**
+  (n8n 2.x draft/publish model): push result lines end in
+  `— published: code is live now` or `— unpublished: draft only`, `watch`
+  warns at start when the workflow is published (n8n auto-publishes every
+  API update to a published workflow — there is no draft-only push), and
+  `status` shows `published`/`unpublished` in its header line. Servers that
+  don't report an `active` flag are unaffected.
+
 ## [0.1.0] - 2026-07-18
 
 First public release.

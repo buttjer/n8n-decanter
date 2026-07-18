@@ -26,6 +26,8 @@ export interface JsCodeNode extends WorkflowNode {
 export interface Workflow {
   id: string;
   name: string;
+  /** Publication state (n8n 2.x publish model; activation toggle on 1.x). Read-only via API. */
+  active?: boolean;
   nodes: WorkflowNode[];
   connections: Record<string, unknown>;
   settings?: Record<string, unknown>;
