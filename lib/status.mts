@@ -9,10 +9,10 @@ import type { Log, Workflow } from "./types.mts";
 import { isJsCodeNode, publicationState, sha256, splitMarker, workflowStructureHash } from "./util.mts";
 
 /** The comparable local body: file content for .js, the compiled JS for .ts. */
-async function localBody(dir: string, file: string): Promise<string | null> {
+async function localBody(dir: string, file: string, log?: Log): Promise<string | null> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) return null;
-  if (file.endsWith(".ts")) return compileTs(filePath);
+  if (file.endsWith(".ts")) return compileTs(filePath, log);
   return readFileSync(filePath, "utf8");
 }
 
@@ -67,7 +67,7 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
     }
     const remoteBody = splitMarker(node.parameters.jsCode).body;
     const remoteHash = sha256(remoteBody);
-    const body = await localBody(dir, nodeState.file);
+    const body = await localBody(dir, nodeState.file, log);
     const local = body === null ? null : sha256(body);
     // --diff: the same bodies the hashes compare — for .ts that is the
     // compiled JS, which is what push would put on the remote

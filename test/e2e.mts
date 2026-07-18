@@ -882,6 +882,87 @@ await step("ts conflict: local .ts and remote both changed → CONFLICT + .remot
   assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")));
 });
 
+await step("bundle: shared/ value import inlines on push, drifts on shared edit, runs offline", async () => {
+  // the typecheck-gate step left a tsconfig in TMP — extend it with shared/
+  const tsc = JSON.parse(read(TMP, "tsconfig.json"));
+  tsc.include.push("shared/**/*.ts");
+  tsc.compilerOptions.esModuleInterop = true;
+  writeFileSync(path.join(TMP, "tsconfig.json"), JSON.stringify(tsc, null, 2));
+  mkdirSync(path.join(TMP, "shared"), { recursive: true });
+  writeFileSync(path.join(TMP, "shared", "money.ts"),
+    "export interface Line { qty: number; price: number }\nexport function total(lines: Line[]): number {\n  return lines.reduce((s, l) => s + l.qty * l.price, 0);\n}\n");
+  const tsFile = path.join(dirF, "code", "amazon-export.ts");
+  const originalTs = read(dirF, "code", "amazon-export.ts");
+  writeFileSync(tsFile,
+    'import { total, type Line } from "../../../shared/money";\nconst lines: Line[] = $input.all().map((i) => ({ qty: Number(i.json.qty), price: Number(i.json.price) }));\nreturn [{ json: { total: total(lines) } }];\n');
+  // full pipeline — including the typecheck wrapper handling the import block
+  let r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  const code = remoteNode("wf123", "n3").parameters.jsCode;
+  assert.match(code, /function total/, "helper inlined into the pushed node");
+  assert.match(code, /shared\/money\.ts/, "sync-root-relative module label");
+  assert.match(code, /return __n8n_node\.default\(\);\n\/\/ @ts-n8n sha256:/, "re-enter footer + marker");
+  // pull: PUT-response hash matches the compiled local → in sync, no artifact
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")), "no conflict artifact");
+  // shared edit → importing node drifts as push-pending; --diff shows the inlined change
+  writeFileSync(path.join(TMP, "shared", "money.ts"),
+    read(TMP, "shared", "money.ts").replace("s + l.qty * l.price", "s + l.qty * l.price + 1"));
+  r = await cli("status", "--diff");
+  assert.equal(r.code, 0, "shared edit is local-only drift: " + r.out);
+  assert.match(r.out, /Amazon Export: local changes in code\/amazon-export\.ts — push pending/);
+  assert.match(r.out, /\+.*l\.price \+ 1/, "diff shows the inlined shared change");
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(remoteNode("wf123", "n3").parameters.jsCode, /l\.price \+ 1/, "push propagates the shared edit");
+  // run executes the importing node offline: (2*10+1) + (1*5+1) = 27
+  writeFileSync(path.join(TMP, "fx-bundle.json"),
+    JSON.stringify({ input: [{ json: { qty: 2, price: 10 } }, { json: { qty: 1, price: 5 } }] }));
+  r = await cli("run", path.join("workflows", "Order Sync Final", "code", "amazon-export.ts"), "fx-bundle.json");
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { total: 27 } }]);
+  // restore the import-free node for the steps that follow
+  writeFileSync(tsFile, originalTs);
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+});
+
+await step("bundle: builtins and unlisted npm packages error; bundleDependencies opts in", async () => {
+  const tsFile = path.join(dirF, "code", "amazon-export.ts");
+  const originalTs = read(dirF, "code", "amazon-export.ts");
+  const cfg = read(TMP, "decanter.config.json");
+  try {
+    // Node builtin → compliance guard refuses offline, push refuses too
+    writeFileSync(tsFile, 'import { createHash } from "node:crypto";\nreturn [{ json: { h: String(createHash) } }];\n');
+    let r = await cli("check", "--no-typecheck");
+    assert.equal(r.code, 1, "check must flag a builtin import: " + r.out);
+    assert.match(r.out, /Node builtin "node:crypto"/);
+    r = await cli("push", "--no-typecheck");
+    assert.equal(r.code, 1, "push must refuse a builtin import");
+    // unlisted npm package → error names the opt-in key
+    writeFileSync(tsFile, 'import { add } from "tiny-add";\nreturn [{ json: { n: add(1, 2) } }];\n');
+    r = await cli("check", "--no-typecheck");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /bundleDependencies/);
+    // opt in (config) + install (fake node_modules) → bundles and runs
+    const pkg = path.join(TMP, "node_modules", "tiny-add");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "tiny-add", version: "1.0.0", main: "index.js" }));
+    writeFileSync(path.join(pkg, "index.js"), "exports.add = (a, b) => a + b;\n");
+    writeFileSync(path.join(TMP, "decanter.config.json"),
+      JSON.stringify({ ...JSON.parse(cfg), bundleDependencies: ["tiny-add"] }, null, 2));
+    r = await cli("push", "--no-typecheck"); // untyped fake package — skip the type gate
+    assert.equal(r.code, 0, r.out);
+    assert.match(remoteNode("wf123", "n3").parameters.jsCode, /a \+ b/, "package code inlined");
+  } finally {
+    writeFileSync(path.join(TMP, "decanter.config.json"), cfg);
+    writeFileSync(tsFile, originalTs);
+  }
+  const r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+});
+
 await step("status: remote-drift, CONFLICT, and missing-file branches", async () => {
   const js = path.join(dirF, "code", "transform-eu-us.js");
   const original = read(dirF, "code", "transform-eu-us.js");

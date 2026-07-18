@@ -193,7 +193,7 @@ export async function runNode(file: string, fixturePath: string | undefined, log
   if (!node) log.warn(`no workflow.json placeholder points at ${basename} — assuming ${mode}`);
 
   const code = resolved.endsWith(".ts")
-    ? await compileTs(resolved)
+    ? await compileTs(resolved, log)
     : splitMarker(readFileSync(resolved, "utf8")).body;
 
   const fixture = loadFixture(fixturePath, log);

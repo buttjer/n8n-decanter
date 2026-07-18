@@ -12,6 +12,7 @@
     "useUnknownInCatchVariables": false,
     "skipLibCheck": true,
     "moduleDetection": "force",
+    "esModuleInterop": true,
     "plugins": [{ "name": "decanter-ts-plugin" }]
   },
   "include": [

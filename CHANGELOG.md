@@ -58,6 +58,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pull would bring, or both sides of a CONFLICT. `.ts` nodes diff their
   compiled JS — exactly what the sync hashes compare. In-sync nodes print
   nothing extra.
+- **`.ts` nodes can import now** — shared code from inside the sync dir and
+  opted-in npm packages — and push **bundles the imports into the compiled
+  node**: the pushed code is self-contained and runs on any instance,
+  n8n Cloud included, with no server-side module configuration. Put helpers
+  and types in `shared/*.ts` and import them relatively (types *and*
+  values); npm packages bundle after a normal install in the sync dir plus a
+  `"bundleDependencies": ["zod", …]` opt-in in `decanter.config.json`
+  (pure-JS packages only). Rules, enforced by `check` and the compiler:
+  imports at the top of the file, relative imports stay inside the sync dir,
+  Node builtins and unlisted packages are errors. Nodes without imports
+  compile byte-identically to before — no drift noise on upgrade.
+  Previously *any* import — even `import type` — failed the push compile
+  outright ("Top-level return cannot be used inside an ECMAScript module").
+  Editing a shared file marks every importing node push-pending in `status`
+  (`--diff` shows the inlined change); pushing propagates it. Oversized
+  compiles (> 100 KB) warn. The template ships `shared/example-helpers.ts`
+  and updated agent guidance.
 
 ### Changed
 

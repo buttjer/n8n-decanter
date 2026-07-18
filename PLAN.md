@@ -105,7 +105,10 @@ code-stripped workflow JSON, to warn about structural UI edits.
 Ids only — names, folders, node lists are all derived on pull. Optional keys:
 `commitOnPush`/`commitOnPull` (default `true`, see Push/Pull),
 `requestTimeoutMs` (default `30000` — per-request timeout on all n8n API
-calls, plans/10; init's credential probe is fixed at 10 s), and — for watch's
+calls, plans/10; init's credential probe is fixed at 10 s),
+`bundleDependencies` (default `[]` — npm packages `.ts` nodes may import;
+bundled into the compiled node on push, plans/14; read at compile time by an
+upward config search so `run` stays config-optional), and — for watch's
 browser live-reload (plans/5) — `browserReload` (`"off"` default, or `"proxy"`)
 and `proxyPort` (default `5679`).
 
@@ -532,14 +535,27 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   a node without updating `connections`; the connection-integrity check
   caught it — real n8n rewrites connections on rename, the mock now mirrors
   that.
-- **`shared/` caveat — types yes, runtime helpers not yet**: node files can
-  safely use *type-only* imports from `shared/` (erased at compile time, and
-  `.js` files can use JSDoc `@typedef` imports). But **value imports compile
-  to `require()` calls that fail inside n8n** — Code nodes can't load local
-  files, and `compileTs` runs esbuild with `bundle: false`. Shipping shared
-  *functions* into nodes needs `bundle: true` (inline `shared/` into the
-  compiled node, keep n8n globals external) — a candidate milestone 8; until
-  then the guard against it is n8n failing at runtime, not the CLI.
+- **`shared/` code in `.ts` nodes is bundled on push (plans/14, 2026-07-18)**.
+  This replaces an earlier, wrong note claiming type-only imports worked and
+  value imports failed at n8n runtime — in truth esbuild rejects *any*
+  top-level import (even `import type`) next to a top-level `return`, so
+  `.ts` nodes could import nothing at all; only JSDoc `@typedef` in `.js`
+  nodes ever worked. Mechanism (`lib/compile.mts`): hoist the leading import
+  block, wrap the body in an async arrow, esbuild-bundle as an iife
+  (`absWorkingDir` = sync root → machine-stable output and hashes), append
+  `return __n8n_node.default();` — the artifact remains a function body, so
+  the marker, `run`, and push contracts are untouched, and n8n globals pass
+  through as free identifiers. **No-import nodes keep the plain-transform
+  output byte-identically** (zero drift on upgrade). Rules (shared by
+  `check` and the compiler): imports at the top of the file only; relative
+  imports stay inside the sync dir; npm packages opt in per package via
+  config `bundleDependencies` (pure JS only — no native addons); Node
+  builtins always error (bundling can't include them; runtime allowance is
+  the instance's `NODE_FUNCTION_ALLOW_BUILTIN` policy). Shared edits
+  surface as push-pending drift on every importing node — that is the
+  propagation mechanism. `.js` nodes never bundle (lossless tier); the
+  typecheck wrapper inserts its function header *after* the import block so
+  imports stay module-scoped and diagnostic lines keep mapping.
 - **n8n 2.x publish semantics (researched 2026-07-18 in the n8n source)**:
   n8n 2.x splits workflows into a draft (`versionId`) and a published version
   (`activeVersionId`) — UI Save = draft, UI Publish = live. The public API is

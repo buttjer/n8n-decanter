@@ -20,13 +20,14 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
       a command. Split out of the validator idea —
       [Plan 2](DONE-2-offline-validation-and-rename.md) covers only the offline
       structural subset and explicitly defers this.
-- [ ] **Bundle shared code into TS pushes** — `bundle: true` for `.ts` node
+- [x] **Bundle shared code into TS pushes** — `bundle: true` for `.ts` node
       compiles so value imports from `shared/` get inlined into the pushed code
       (today only type-only imports work — see the shared-code caveat in
       PLAN.md). (graduated to
-      [Plan 14](OPEN-14-bundle-shared-code-into-ts-pushes.md) — whose spike
-      found the premise wrong: *no* import works in a `.ts` node today, type
-      imports included; the plan corrects PLAN.md's caveat too)
+      [Plan 14](INPROGRESS-14-bundle-shared-code-into-ts-pushes.md), whose spike
+      found the premise wrong — *no* import worked in a `.ts` node, type
+      imports included; implemented 2026-07-18 incl. an npm-package
+      `bundleDependencies` allowlist, offline-tested)
 - [ ] **Modification-aware template refresh** — conffile-style: record
       copy-time hashes of template files in a manifest at init; on re-init
       update pristine files (after confirm), never touch user-modified ones,

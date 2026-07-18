@@ -143,8 +143,15 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
   `DateTime`, `Duration`, `Interval` (Luxon), `$now`, `$today` ·
   `$jmespath()` · `$workflow`, `$execution`, `$prevNode`, `$runIndex` ·
   `$getWorkflowStaticData('global' | 'node')`.
-- **No `import` / `require`** — assume the instance allows no external or
-  built-in modules. Everything must be self-contained in the one file.
+- **Imports**: `.js` nodes — none at all (they run verbatim; assume the
+  instance allows no external or built-in modules). `.ts` nodes — imports
+  from inside this repo (`shared/`, relative paths) and from npm packages
+  listed in `decanter.config.json`'s `"bundleDependencies"` are **bundled
+  into the compiled node on push** (self-contained output, works on any
+  instance incl. n8n Cloud). Rules: imports at the **top of the file** only;
+  relative paths must stay inside this repo; unlisted npm packages and Node
+  builtins (`node:*`, `fs`, `crypto`, …) are compile errors. Never
+  `require()`.
 - `console.log` is available for debugging (visible in the execution view).
 - `$('Node Name')` takes the node's **name** — see the rename checklist.
 
@@ -182,9 +189,27 @@ discriminated unions). Costs, so you can weigh them:
   n8n UI is undocumented output. Documentation belongs in the `.ts`.
 - UI edits can't be merged back automatically (they arrive as `.remote.js`).
 
-Rules: full single-file TS is fine (interfaces, type aliases, enums, generics);
-still no imports; still ends in a top-level `return`. Never commit compiled
-output; never add the marker line.
+Rules: full TS is fine (interfaces, type aliases, enums, generics); still
+ends in a top-level `return`. Never commit compiled output; never add the
+marker line.
+
+**Shared code (`shared/`)**: put helpers and types used by several nodes in
+`shared/*.ts` and import them from `.ts` nodes — types *and* functions:
+
+```ts
+import { total, type OrderLine } from "../../shared/money";
+
+const lines: OrderLine[] = $input.all().map((i) => i.json as OrderLine);
+return [{ json: { total: total(lines) } }];
+```
+
+Push inlines the imported code into the compiled node (each importing node
+carries its own copy — keep helpers small). Editing a shared file makes every
+importing node show up as "push pending" in `status`; push to propagate.
+Small npm libraries work the same way once installed here (`npm i zod`) and
+opted in via `"bundleDependencies": ["zod"]` in `decanter.config.json` —
+pure-JS packages only (no native addons, no builtins). `.js` nodes cannot
+import; give them JSDoc `@typedef`s or convert to `.ts`.
 
 ### Switching a node `.js` → `.ts` (or back)
 

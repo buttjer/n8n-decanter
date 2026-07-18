@@ -133,6 +133,14 @@ on the next `pull`.
   `// @ts-n8n sha256:...` marker line; `pull` never touches the `.ts`.
   To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
   its `//@file:` placeholder in `workflow.json` to the `.ts` name.
+- `shared/*.ts` — helpers and types **imported by `.ts` nodes** (values and
+  types); push bundles the imports into the compiled node, so the pushed
+  code is self-contained and runs anywhere — n8n Cloud included, no
+  `NODE_FUNCTION_ALLOW_*` setup. Small npm packages bundle the same way:
+  install them in the sync dir and list them under `"bundleDependencies"`
+  in `decanter.config.json` (pure JS only; builtins and unlisted packages
+  are compile errors, imports must sit at the top of the file). `.js` nodes
+  stay import-free — that tier is byte-lossless by contract.
 - `code/<node>.remote.js` — written by `pull` when the remote code changed in
   ways it can't merge (UI edit of a TS-managed node, conflict, missing local
   `.ts`). Port the changes manually, then push; the file is removed on the

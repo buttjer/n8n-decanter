@@ -1,7 +1,9 @@
 # Plan 14 — Bundle `shared/` code into TS pushes
 
 **Priority:** P2
-**Status:** Not started (mechanism spike done 2026-07-18 — see Design decision)
+**Status:** In progress (implemented + offline-tested 2026-07-18 — all tasks
+done incl. the `bundleDependencies` npm allowlist; only the live-instance
+smoke from Acceptance rides the next live session)
 **Theme:** Make `import`s from `shared/` actually work in `.ts` nodes — types
 *and* values — by bundling them into the compiled node at push time, without
 touching the `.js` lossless contract, the marker semantics, or the one-way
@@ -9,7 +11,14 @@ touching the `.js` lossless contract, the marker semantics, or the one-way
 
 ## Why
 
-The docs oversell what works today. PLAN.md's shared-code caveat claims
+The user's actual goal (2026-07-18): *"enable developers to add small
+libraries and maintain shared code and types between multiple code nodes."*
+Bundling is the right lever for both halves: n8n's native alternative
+(`NODE_FUNCTION_ALLOW_EXTERNAL`) is self-hosted-only, needs packages
+installed on the n8n host, and doesn't exist on n8n Cloud — a bundled node
+is self-contained and runs anywhere.
+
+Beyond that, the docs oversell what works today. PLAN.md's shared-code caveat claims
 type-only imports from `shared/` are safe in `.ts` nodes and only *value*
 imports break at runtime. **Both halves are wrong** (verified 2026-07-18):
 
@@ -83,12 +92,24 @@ Rules that keep it sane (all guard/compile errors, not silent behavior):
   keeps the hoist a pure split and keeps typecheck line-mapping an
   insert-only transform (diagnostics stay on real lines). Mid-file imports
   are a compliance error.
-- **Relative imports only, resolving inside the sync dir** (realpath
-  containment against `configDir`). Bare specifiers error: n8n Code nodes
-  have no `node_modules`, and silently inlining an npm package (size,
-  license, native deps) is a footgun. `node:*` builtins error for the same
-  reason — whether the instance allows `require`-ing builtins is a runtime
-  policy we can't see offline.
+- **Relative imports resolve inside the sync dir** (containment against
+  `configDir`); escapes above it error.
+- **npm packages are opt-in, per package** (user goal 2026-07-18: "small
+  libraries"): a bare specifier bundles only when its package name is listed
+  in `decanter.config.json`'s **`"bundleDependencies": ["zod", …]`** —
+  installed in the sync dir like any dep, inlined like `shared/`. An
+  unlisted bare import errors, naming the key: a stray `import lodash` must
+  not silently add 70 KB to a workflow. Scoped names (`@scope/pkg`) and
+  subpath imports (`pkg/sub`) match on the package name. Pure-JS libraries
+  work; the compiled-size warning is the guard against oversized graphs, and
+  the lockfile is the guard against per-machine hash drift (a collaborator
+  with different installed versions sees honest "push pending" drift, not
+  corruption).
+- **`node:*` builtins error** always — they can't be inlined, and whether the
+  instance lets Code nodes `require` builtins (`NODE_FUNCTION_ALLOW_BUILTIN`)
+  is a runtime policy invisible offline. Same for native addons (a library
+  that ships `.node` binaries fails at bundle time with esbuild's resolution
+  error).
 - **`.js` nodes never bundle** — the lossless byte-identical round-trip is
   the tier's whole point. JSDoc `@typedef` stays their shared-types story.
 
@@ -186,7 +207,8 @@ Rules that keep it sane (all guard/compile errors, not silent behavior):
 ## Non-goals
 
 - No bundling for `.js` nodes — lossless round-trip is their contract.
-- No npm-package or `node:` builtin bundling (explicit error, see rules).
+- No implicit npm bundling (only `bundleDependencies`-listed packages) and no
+  `node:` builtins or native addons (explicit errors, see rules).
 - No minification, no source maps (deterministic, diffable output wins).
 - No `watch`ing of `shared/` in this plan — "save a helper, re-push all
   importers" is a separate decision with its own blast radius; backlog

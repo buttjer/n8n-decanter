@@ -89,7 +89,7 @@ export async function pullWorkflow(api: N8nApi, root: string, id: string, { comm
         writeFileSync(remoteJsFile, remoteBody);
         log.warn(`${wf.name} / ${node.name}: TS-managed on remote but no local ${file} — compiled code saved to ${remoteRel}`);
       } else {
-        const compiled = await compileTs(filePath);
+        const compiled = await compileTs(filePath, log);
         const localHash = sha256(compiled);
         if (localHash === remoteHash) {
           if (existsSync(remoteJsFile)) {

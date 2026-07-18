@@ -27,11 +27,11 @@ function assertCompliant({ errors, warnings }: ValidationResult, log: Log, what:
 }
 
 /** Turn a node source file into the jsCode payload (+ hash of the marker-less body). */
-export async function buildNodeCode(dir: string, file: string): Promise<{ jsCode: string; hash: string }> {
+export async function buildNodeCode(dir: string, file: string, log?: Log): Promise<{ jsCode: string; hash: string }> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) throw new Error(`referenced node file missing: ${filePath}`);
   if (file.endsWith(".ts")) {
-    return withMarker(await compileTs(filePath));
+    return withMarker(await compileTs(filePath, log));
   }
   const jsCode = readFileSync(filePath, "utf8");
   return { jsCode, hash: sha256(jsCode) };
@@ -99,7 +99,7 @@ export async function pushWorkflow(api: N8nApi, root: string, id: string, { forc
     if (!isJsCodeNode(node)) continue;
     const file = placeholderFile(node);
     if (file === null) continue;
-    node.parameters.jsCode = (await buildNodeCode(dir, file)).jsCode;
+    node.parameters.jsCode = (await buildNodeCode(dir, file, log)).jsCode;
     state.nodes[node.id] = { ...state.nodes[node.id], file };
   }
 
@@ -122,7 +122,7 @@ export async function pushSingleNode(api: N8nApi, dir: string, nodeId: string, {
   const nodeState = state.nodes[nodeId];
   if (!nodeState) throw new Error(`node ${nodeId} has no entry in ${dir}/.decanter.json — pull first`);
   assertCompliant(validateNodeFile(dir, nodeState.file), log, nodeState.file);
-  const { jsCode } = await buildNodeCode(dir, nodeState.file);
+  const { jsCode } = await buildNodeCode(dir, nodeState.file, log);
 
   const remote = await api.getWorkflow(state.workflowId);
   assertNoDrift(driftProblems(remote, state, new Set([nodeId])), force, log);
