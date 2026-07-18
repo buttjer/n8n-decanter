@@ -44,7 +44,7 @@ const usage = (): string => {
                                    ${d("(--force re-copies template files over existing ones)")}
   ${b("n8n-decanter")} [ref...] ${b("pull")}       ${d("pull workflows (default: all in decanter.config.json)")}
   ${b("n8n-decanter")} [ref...] ${b("push")} [--force] [--no-typecheck]
-  ${b("n8n-decanter")} [ref...] ${b("status")}
+  ${b("n8n-decanter")} [ref...] ${b("status")}     ${d("drift report; exits 1 on conflict/remote drift")}
   ${b("n8n-decanter")} [ref...] ${b("check")} [--no-typecheck]   ${d("offline layout-compliance check")}
   ${b("n8n-decanter")} <ref> ${b("rename")} "<old node>" "<new node>"   ${d("rename a node everywhere (offline)")}
   ${b("n8n-decanter")} <ref> ${b("rename")} --workflow "<new name>"     ${d("rename the workflow itself")}
@@ -204,6 +204,7 @@ async function main() {
       }
       if (command === "push" && !noTypecheck) await runTypecheck(config.configDir, log);
       let failed = false;
+      let drifted = false;
       const total = ids.length;
       for (const [i, id] of ids.entries()) {
         // progress: [2/5] prefix in both modes (dim on a TTY), transient
@@ -226,7 +227,8 @@ async function main() {
             transient.show(`${prefix}pushing ${id}…`);
             await pushWorkflow(api, config.root, id, { force, commitOnPush: config.commitOnPush }, { ...plog, ok: (m) => plog.ok(m + dur()) });
           } else {
-            await statusWorkflow(api, config.root, id, plog);
+            const { remoteDrift } = await statusWorkflow(api, config.root, id, plog);
+            drifted ||= remoteDrift;
           }
         } catch (err) {
           failed = true;
@@ -235,7 +237,8 @@ async function main() {
           transient.clear();
         }
       }
-      if (failed) process.exitCode = 1;
+      // status: conflict/remote drift exits 1 so scripts and CI can gate on it
+      if (failed || drifted) process.exitCode = 1;
       break;
     }
     case "list": {
@@ -298,7 +301,9 @@ async function main() {
     }
     case "watch": {
       if (ids.length !== 1) throw new Error("watch needs exactly one workflow id (pass it, or list a single workflow in decanter.config.json)");
+      // the returned handle exists for tests; the CLI watches until Ctrl-C
       await watchWorkflow(api, config, ids[0], { force }, log);
+      await new Promise(() => {});
       break;
     }
     default:
@@ -308,6 +313,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  log.error(err.message);
+  // DEBUG=1 surfaces the stack — the one-line default hides exactly the
+  // context needed when an unexpected TypeError escapes
+  log.error(process.env.DEBUG ? err.stack ?? String(err) : err.message);
   process.exitCode = 1;
 });

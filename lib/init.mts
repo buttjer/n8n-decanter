@@ -129,11 +129,14 @@ export async function init(targetDir: string | undefined, { force = false }: { f
   try {
     const res = await fetch(`${host}/api/v1/workflows?limit=1`, {
       headers: { "X-N8N-API-KEY": apiKey, accept: "application/json" },
+      // best-effort probe: fail fast on a black-holed host rather than hanging init
+      signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) log.info(`credentials verified against ${host}`);
     else log.warn(`credential check failed (${res.status} ${res.statusText}) — .env written anyway`);
   } catch (err) {
     const e = err as Error & { cause?: { code?: string } };
-    log.warn(`could not reach ${host} (${e.cause?.code ?? e.message}) — .env written anyway`);
+    const reason = e.name === "TimeoutError" ? "timed out after 10s" : e.cause?.code ?? e.message;
+    log.warn(`could not reach ${host} (${reason}) — .env written anyway`);
   }
 }

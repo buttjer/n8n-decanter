@@ -19,8 +19,11 @@ const ROOT = path.join(TMP, "workflows");
 // ---------- mock n8n ----------
 const ALLOWED_PUT = ["name", "nodes", "connections", "settings", "staticData"];
 const db = new Map<string, any>();
+let putCount = 0; // total PUTs served — watch steps assert deltas
+let slowPutMs = 0; // when > 0, PUT responses are delayed (queued-push test)
 const server = http.createServer((req, res) => {
   if (req.headers["x-n8n-api-key"] !== "test-key") return void res.writeHead(401).end("unauthorized");
+  if (req.url === "/api/v1/workflows/wf-hang") return; // never responds (timeout step)
   if (req.method === "GET" && req.url!.startsWith("/api/v1/workflows?")) {
     return void res
       .writeHead(200, { "content-type": "application/json" })
@@ -40,8 +43,13 @@ const server = http.createServer((req, res) => {
       const sent = JSON.parse(body);
       const unknown = Object.keys(sent).filter((k) => !ALLOWED_PUT.includes(k));
       if (unknown.length > 0) return void res.writeHead(400).end("request/body must NOT have additional properties: " + unknown.join(","));
-      Object.assign(wf, sent, { updatedAt: new Date().toISOString() });
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
+      putCount++;
+      const respond = () => {
+        Object.assign(wf, sent, { updatedAt: new Date().toISOString() });
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
+      };
+      if (slowPutMs > 0) setTimeout(respond, slowPutMs);
+      else respond();
     });
   }
 });
@@ -328,6 +336,56 @@ await step("watch: takes a workflow id, errors on an unknown one before watching
   assert.match(r.out, /workflow nope not found/);
 });
 
+await step("watch: debounce coalesces, queued save re-pushes, close() stops", async () => {
+  // in-process (like the pushSingleNode step): the WatchHandle exists for this
+  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
+  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
+  const dir2 = wfDir("Order Sync v2");
+  const js = path.join(dir2, "code", "transform-eu-us.js");
+  const original = read(dir2, "code", "transform-eu-us.js");
+  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
+  const config = {
+    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
+    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+  };
+  const logs: string[] = [];
+  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // TMP is not a git repo yet at this point — watch skips the startup pull
+  const handle = await watchWorkflow(api, config, "wf123", {}, log);
+  const before = putCount;
+  try {
+    // two rapid saves coalesce into a single push of the final content
+    writeFileSync(js, "return $input.all(); // debounce-1\n");
+    await sleep(30);
+    writeFileSync(js, "return $input.all(); // debounce-2\n");
+    await sleep(900);
+    assert.equal(putCount - before, 1, "rapid saves must coalesce into one push:\n" + logs.join("\n"));
+    assert.match(remoteNode("wf123", "n2").parameters.jsCode, /debounce-2/);
+    // a save landing while a push is in flight is queued and re-pushed
+    slowPutMs = 300;
+    writeFileSync(js, "return $input.all(); // queued-1\n");
+    await sleep(320); // debounce fired, PUT held open
+    writeFileSync(js, "return $input.all(); // queued-2\n");
+    await sleep(1500);
+    slowPutMs = 0;
+    assert.equal(putCount - before, 3, "queued save must trigger a follow-up push:\n" + logs.join("\n"));
+    assert.match(remoteNode("wf123", "n2").parameters.jsCode, /queued-2/);
+    // restore the synced content through watch itself, then stop
+    writeFileSync(js, original);
+    await sleep(900);
+    assert.equal(putCount - before, 4, "restore push:\n" + logs.join("\n"));
+  } finally {
+    slowPutMs = 0;
+    await handle.close();
+  }
+  writeFileSync(js, original + "// after-close\n");
+  await sleep(600);
+  assert.equal(putCount - before, 4, "no push after close()");
+  writeFileSync(js, original); // silent restore — the watcher is closed
+  assert.equal(remoteNode("wf123", "n2").parameters.jsCode, original);
+});
+
 await step("check: clean tree passes, typecheck skipped without tsconfig", async () => {
   const r = await cli("check");
   assert.equal(r.code, 0, r.out);
@@ -537,6 +595,32 @@ await step("completion: prints shell scripts; __complete emits verbs, flags, nam
     assert.ok(words.includes(w), `__complete must emit "${w}": ${r.out}`);
   }
   assert.ok(!words.includes("__complete"), "__complete must not advertise itself");
+});
+
+await step("api timeout: a hung instance aborts with a clear error", async () => {
+  const cfg = read(TMP, "decanter.config.json");
+  writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ ...JSON.parse(cfg), requestTimeoutMs: 300 }));
+  try {
+    const r = await cli("status", "wf-hang");
+    assert.equal(r.code, 1, "timeout must exit 1: " + r.out);
+    assert.match(r.out, /timed out after 0\.3s/);
+    assert.match(r.out, /requestTimeoutMs/);
+  } finally {
+    writeFileSync(path.join(TMP, "decanter.config.json"), cfg);
+  }
+});
+
+await step("DEBUG=1 prints the stack trace on errors", async () => {
+  let r = await cli("definitely-not-a-verb");
+  assert.equal(r.code, 1);
+  assert.ok(!r.out.includes("    at "), "no stack without DEBUG: " + r.out);
+  try {
+    await execFile(process.execPath, [CLI, "definitely-not-a-verb"], { cwd: TMP, env: { ...env, DEBUG: "1" }, encoding: "utf8" });
+    assert.fail("must exit non-zero");
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string };
+    assert.match((e.stdout ?? "") + (e.stderr ?? ""), /    at /, "DEBUG=1 must include the stack");
+  }
 });
 
 const runOutput = (out: string) => {
@@ -770,16 +854,17 @@ await step("status: remote-drift, CONFLICT, and missing-file branches", async ()
   const original = read(dirF, "code", "transform-eu-us.js");
   const node = remoteNode("wf123", "n2");
   const remoteOriginal = node.parameters.jsCode;
-  // remote-only edit → pull hint
+  // remote-only edit → pull hint, and remote drift exits 1
   node.parameters.jsCode = remoteOriginal + "// remote edit\n";
   let r = await cli("status");
-  assert.equal(r.code, 0, r.out);
+  assert.equal(r.code, 1, "remote drift must exit 1: " + r.out);
   assert.match(r.out, /Transform: EU\/US: changed remotely — pull/);
-  // both sides changed → CONFLICT
+  // both sides changed → CONFLICT, exits 1
   writeFileSync(js, original + "// local edit\n");
   r = await cli("status");
+  assert.equal(r.code, 1, "CONFLICT must exit 1: " + r.out);
   assert.match(r.out, /Transform: EU\/US: CONFLICT — changed both locally and remotely/);
-  // local file missing → warning
+  // local file missing → warning (a local problem, not remote drift)
   renameSync(js, js + ".away");
   r = await cli("status");
   assert.match(r.out, /Transform: EU\/US: local file code\/transform-eu-us\.js missing/);
@@ -788,6 +873,7 @@ await step("status: remote-drift, CONFLICT, and missing-file branches", async ()
   writeFileSync(js, original);
   node.parameters.jsCode = remoteOriginal;
   r = await cli("status");
+  assert.equal(r.code, 0, "in sync must exit 0: " + r.out);
   assert.match(r.out, /Transform: EU\/US: in sync/);
 });
 
@@ -832,7 +918,7 @@ await step("node deleted remotely: status warns, pull drops state, file kept", a
   const wf = db.get("wf123");
   wf.nodes = wf.nodes.filter((n: any) => n.id !== "n6collide");
   let r = await cli("status");
-  assert.equal(r.code, 0, r.out);
+  assert.equal(r.code, 1, "remotely deleted node counts as remote drift: " + r.out);
   assert.match(r.out, /code\/report-n6collid\.js: node n6collide deleted remotely/);
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);

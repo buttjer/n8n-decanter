@@ -70,6 +70,8 @@ export interface DecanterConfig {
   browserReload: "off" | "proxy";
   /** Port the browser-reload proxy binds on 127.0.0.1 (browserReload: "proxy"). */
   proxyPort: number;
+  /** Per-request timeout for n8n API calls, milliseconds (default 30 000). */
+  requestTimeoutMs: number;
   host: string;
   apiKey: string;
 }

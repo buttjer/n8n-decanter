@@ -148,7 +148,7 @@ today (no more leaked ANSI).
   — raise the PLAN.md update with the user at implementation time (per
   CLAUDE.md), not before.
 - Cross-links: [Plan 9](DONE-9-tests-stability-refactoring.md) (unit-test
-  harness for the resolver), [Plan 10](OPEN-10-hardening-bigger-refactors.md)
+  harness for the resolver), [Plan 10](DONE-10-hardening-bigger-refactors.md)
   (`status` exit codes pair naturally with `list`).
 
 ## Outcome notes (implementation deviations, 2026-07-18)

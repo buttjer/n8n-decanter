@@ -1,8 +1,46 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { DecanterState, Log } from "./types.mts";
+import { CODE_DIR } from "./util.mts";
 
 export const STATE_FILE = ".decanter.json";
+
+/**
+ * Locate the workflow folder a node file belongs to: the file's own
+ * directory, or its parent when the file sits in `code/`. `marker` is the
+ * file that proves a workflow folder — `.decanter.json` for sync state,
+ * `workflow.json` for structure. Null when neither location qualifies.
+ */
+export function nodeFileContextDir(filePath: string, marker: string = STATE_FILE): string | null {
+  let dir = path.dirname(filePath);
+  if (!existsSync(path.join(dir, marker)) && path.basename(dir) === CODE_DIR) {
+    dir = path.dirname(dir);
+  }
+  return existsSync(path.join(dir, marker)) ? dir : null;
+}
+
+/**
+ * Rename a node's source file *and* its `.remote.js` sibling to a new kebab
+ * base. Never renames across extensions (an `ext` differing from the current
+ * file's leaves the source in place — compiled JS must not silently become
+ * "TS source"), and never clobbers an existing target: skipped renames are
+ * silent because both callers handle them (pull rewrites content afterwards,
+ * remote being authoritative; rename pre-checks collisions and throws).
+ * Returns the wanted relative path (`code/<base><ext>`).
+ */
+export function renameNodeFilePair(dir: string, current: string, base: string, ext: string, log: Log): string {
+  const wanted = `${CODE_DIR}/${base}${ext}`;
+  const renames: Array<[string, string]> = [[current.replace(/\.(ts|js)$/, ".remote.js"), `${CODE_DIR}/${base}.remote.js`]];
+  if (path.extname(current) === ext) renames.push([current, wanted]);
+  for (const [from, to] of renames) {
+    const fromPath = path.join(dir, from);
+    if (from !== to && existsSync(fromPath) && !existsSync(path.join(dir, to))) {
+      renameSync(fromPath, path.join(dir, to));
+      log.info(`renamed ${from} -> ${to}`);
+    }
+  }
+  return wanted;
+}
 
 /** Missing state is null; corrupt state throws a clear, file-naming error. */
 export function readState(dir: string): DecanterState | null {

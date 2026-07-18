@@ -44,7 +44,7 @@ items not yet claimed by one. Recommended order:
    currently breaks every command), small e2e/proxy coverage gaps, and
    mechanical dedupes. Fully offline, no decisions needed — can interleave
    with any other plan.
-10. [Hardening: bigger refactors & decision-gated work](OPEN-10-hardening-bigger-refactors.md) —
+10. [Hardening: bigger refactors & decision-gated work](DONE-10-hardening-bigger-refactors.md) —
     the rest of the hardening split: behavior changes (timeouts, `status`
     exit codes, debug switch), the deliberately-diverged dedupes
     (kebab-rename machinery, `code/`-parent lookup), watch testability, and

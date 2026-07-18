@@ -6,7 +6,7 @@
 pure core, crash-path fixes that only implement already-documented behavior,
 small scenario-coverage gaps, and trivial dedupes. Everything here is clearly
 right, fully offline, and needs no user decision — the decision-gated /
-bigger half lives in [Plan 10](OPEN-10-hardening-bigger-refactors.md).
+bigger half lives in [Plan 10](DONE-10-hardening-bigger-refactors.md).
 
 ## Why
 
@@ -43,7 +43,7 @@ bigger half lives in [Plan 10](OPEN-10-hardening-bigger-refactors.md).
 
 Direct user request (2026-07-18): "a plan for more tests, stability and
 refactoring", split per follow-up into quick wins (this plan) and
-decision-gated work ([Plan 10](OPEN-10-hardening-bigger-refactors.md)).
+decision-gated work ([Plan 10](DONE-10-hardening-bigger-refactors.md)).
 No Plan 0 entry graduates here. PLAN.md's compliance-guard spec
 ("Missing/corrupt `workflow.json` or `.decanter.json`") is the reference for
 task B1.
@@ -151,6 +151,6 @@ task B1.
 - **PLAN.md**: B1 implements what PLAN.md already documents — no PLAN.md
   change. D dedupes don't touch the data model or flows.
 - **Cross-links**: the decision-gated / bigger siblings live in
-  [Plan 10](OPEN-10-hardening-bigger-refactors.md); C4's proxy additions
+  [Plan 10](DONE-10-hardening-bigger-refactors.md); C4's proxy additions
   extend [Plan 5](DONE-5-browser-refresh-after-push.md)'s in-flight
   `lib/proxy.mts` / `test/proxy.mts`.

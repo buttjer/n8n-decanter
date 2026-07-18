@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { compileTs } from "./compile.mts";
+import { nodeFileContextDir } from "./state.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
-import { CODE_DIR, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
+import { isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -30,12 +31,9 @@ interface Fixture {
  * matching node (a bare file can still be run).
  */
 function findNode(resolved: string): WorkflowNode | null {
-  let dir = path.dirname(resolved);
-  if (!existsSync(path.join(dir, "workflow.json")) && path.basename(dir) === CODE_DIR) {
-    dir = path.dirname(dir);
-  }
+  const dir = nodeFileContextDir(resolved, "workflow.json");
+  if (dir === null) return null;
   const wfFile = path.join(dir, "workflow.json");
-  if (!existsSync(wfFile)) return null;
   let wf: Workflow;
   try {
     wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;

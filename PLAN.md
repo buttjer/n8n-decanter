@@ -103,7 +103,9 @@ code-stripped workflow JSON, to warn about structural UI edits.
 ```
 
 Ids only — names, folders, node lists are all derived on pull. Optional keys:
-`commitOnPush`/`commitOnPull` (default `true`, see Push/Pull), and — for watch's
+`commitOnPush`/`commitOnPull` (default `true`, see Push/Pull),
+`requestTimeoutMs` (default `30000` — per-request timeout on all n8n API
+calls, plans/10; init's credential probe is fixed at 10 s), and — for watch's
 browser live-reload (plans/5) — `browserReload` (`"off"` default, or `"proxy"`)
 and `proxyPort` (default `5679`).
 
@@ -137,6 +139,13 @@ text in both modes; the transient `pulling <id>…` rewrite, the `init` logo
 and hyperlinks are TTY-only. `watch` prints a deep link to
 `<origin>/workflow/<id>` (proxy origin when live-reload runs, upstream
 otherwise).
+
+Exit codes: `status` exits **1 on conflict/remote drift** — anything where a
+pull is needed or a push would clobber remote work (CONFLICT, remote-only
+structure/code changes, remote nodes unknown locally or deleted, not pulled
+yet); local-only "push pending" edits exit 0 (plans/10 decision, 2026-07-18:
+the normal dev state must stay green). `DEBUG=1` prints stack traces on
+errors; the default is the one-line message.
 
 ## Pull flow (`n8n-decanter pull [id…]`)
 

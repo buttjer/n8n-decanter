@@ -2,11 +2,11 @@
 // particular the corrupt-state behavior: one broken folder must not take
 // down commands for every other workflow.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, readState, writeState } from "../../lib/state.mts";
+import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, nodeFileContextDir, readState, renameNodeFilePair, writeState } from "../../lib/state.mts";
 import type { Log } from "../../lib/types.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-state-"));
@@ -107,6 +107,49 @@ describe("looksLikeWorkflowId", () => {
     assert.equal(looksLikeWorkflowId("aBc123XyZ456"), true);
     assert.equal(looksLikeWorkflowId("Order Sync"), false);
     assert.equal(looksLikeWorkflowId("Räder"), false);
+  });
+});
+
+describe("nodeFileContextDir", () => {
+  it("finds the folder next to the file or one level above code/", () => {
+    const wf = workflowDir("ctx/WF", JSON.stringify({ workflowId: "w", nodes: {} }));
+    mkdirSync(path.join(wf, "code"), { recursive: true });
+    writeFileSync(path.join(wf, "workflow.json"), "{}");
+    const inCode = path.join(wf, "code", "a.js");
+    assert.equal(nodeFileContextDir(inCode), wf); // .decanter.json one level above code/
+    assert.equal(nodeFileContextDir(inCode, "workflow.json"), wf);
+    assert.equal(nodeFileContextDir(path.join(wf, "b.js")), wf); // sibling marker
+    assert.equal(nodeFileContextDir(path.join(TMP, "nowhere", "c.js")), null);
+  });
+});
+
+describe("renameNodeFilePair", () => {
+  const log: Log = { info: () => {}, ok: () => {}, warn: () => {}, error: () => {} };
+
+  it("renames the source and its .remote.js sibling, returns the wanted path", () => {
+    const dir = path.join(TMP, "pair1");
+    mkdirSync(path.join(dir, "code"), { recursive: true });
+    writeFileSync(path.join(dir, "code/old-name.js"), "x");
+    writeFileSync(path.join(dir, "code/old-name.remote.js"), "r");
+    assert.equal(renameNodeFilePair(dir, "code/old-name.js", "new-name", ".js", log), "code/new-name.js");
+    assert.ok(existsSync(path.join(dir, "code/new-name.js")));
+    assert.ok(existsSync(path.join(dir, "code/new-name.remote.js")));
+    assert.ok(!existsSync(path.join(dir, "code/old-name.js")));
+  });
+
+  it("never renames across extensions and never clobbers an existing target", () => {
+    const dir = path.join(TMP, "pair2");
+    mkdirSync(path.join(dir, "code"), { recursive: true });
+    writeFileSync(path.join(dir, "code/a.js"), "js source");
+    // ext .ts differs from the current .js → the source must stay in place
+    assert.equal(renameNodeFilePair(dir, "code/a.js", "b", ".ts", log), "code/b.ts");
+    assert.ok(existsSync(path.join(dir, "code/a.js")));
+    assert.ok(!existsSync(path.join(dir, "code/b.ts")));
+    // occupied target → rename skipped, target content preserved
+    writeFileSync(path.join(dir, "code/c.js"), "target");
+    assert.equal(renameNodeFilePair(dir, "code/a.js", "c", ".js", log), "code/c.js");
+    assert.equal(readFileSync(path.join(dir, "code/c.js"), "utf8"), "target");
+    assert.ok(existsSync(path.join(dir, "code/a.js")));
   });
 });
 

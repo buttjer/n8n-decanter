@@ -3,7 +3,7 @@ import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
-import { findWorkflowDir, readState, writeState } from "./state.mts";
+import { findWorkflowDir, readState, renameNodeFilePair, writeState } from "./state.mts";
 import type { DecanterState, Log, NodeState, Workflow, WorkflowNode } from "./types.mts";
 import {
   CODE_DIR,
@@ -48,6 +48,8 @@ function ensureWorkflowDir(root: string, wf: Workflow, log: Log): { dir: string;
 /**
  * Pick/refresh the file name for a node: kebab-case under code/, renaming
  * existing files on node rename (which also migrates pre-code/ layouts).
+ * Collision handling is per-pull (`usedNames`), deterministic across nodes
+ * that kebab to the same base.
  */
 function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: WorkflowNode, ext: string, usedNames: Set<string>, log: Log): { file: string; base: string } {
   let base = kebabCase(node.name);
@@ -56,20 +58,7 @@ function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: Workf
   const wanted = `${CODE_DIR}/${base}${ext}`;
   mkdirSync(path.join(dir, CODE_DIR), { recursive: true });
   const current = nodeState.file;
-  if (current && current !== wanted) {
-    // Rename on node rename, but never across extensions (.js -> .ts would
-    // silently declare compiled JS to be TS source).
-    const renames: Array<[string, string]> = [[current.replace(/\.(ts|js)$/, ".remote.js"), `${CODE_DIR}/${base}.remote.js`]];
-    if (path.extname(current) === ext) renames.push([current, wanted]);
-    for (const [from, to] of renames) {
-      const fromPath = path.join(dir, from);
-      const toPath = path.join(dir, to);
-      if (from !== to && existsSync(fromPath) && !existsSync(toPath)) {
-        renameSync(fromPath, toPath);
-        log.info(`renamed ${from} -> ${to}`);
-      }
-    }
-  }
+  if (current && current !== wanted) renameNodeFilePair(dir, current, base, ext, log);
   return { file: wanted, base };
 }
 

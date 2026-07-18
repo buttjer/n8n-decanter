@@ -41,8 +41,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `watch` prints a deep link straight to the watched workflow's editor page —
   through the live-reload proxy when it is running, the configured n8n host
   otherwise — as a clickable OSC 8 hyperlink on supporting terminals.
+- n8n API requests now **time out after 30 seconds** instead of hanging the
+  CLI forever on an unresponsive instance; raise `"requestTimeoutMs"` in
+  `decanter.config.json` for slow instances. `init`'s best-effort credential
+  probe gives up after 10 seconds.
+- `DEBUG=1` prints the full stack trace when a command fails — the default
+  stays the one-line error message.
 
 ### Changed
+
+- **Breaking:** `status` now exits **1 when a pull is needed or a push would
+  clobber remote work** — on a CONFLICT, remote-only changes (structure or
+  node code), remote code nodes unknown locally, remotely deleted nodes, or a
+  workflow not pulled yet. Local-only "push pending" edits still exit 0.
+  Scripts that relied on `status` always exiting 0 must check output instead.
 
 - CLI output is styled — color, `✓`/`!`/`✗` glyphs, bold names, dim
   metadata — **only when the stream is a terminal**, honoring `NO_COLOR` and

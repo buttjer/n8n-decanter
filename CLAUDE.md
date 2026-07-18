@@ -55,8 +55,10 @@ config, …) as thin pointers to it, so every agent stays in sync.
 ```sh
 npm test              # unit tests (node:test, test/unit/) + e2e suite
                       #   (test/e2e.mts) + proxy suite (test/proxy.mts); e2e and
-                      #   proxy bind localhost ports — sandboxes that block port
-                      #   binding break them (unit tests run fine sandboxed)
+                      #   proxy bind localhost ports, and one e2e step uses
+                      #   fs.watch (macOS FSEvents) — sandboxes that block port
+                      #   binding or FSEvents break them (unit tests run fine
+                      #   sandboxed)
 npm run typecheck     # tsc -p tsconfig.cli.json (CLI sources) + scripts/
                       #   typecheck.mts (node files — NOT plain tsc, see below)
 node n8n-decanter.mts <init|pull|push|status|check|watch> …

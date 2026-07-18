@@ -79,7 +79,7 @@ offline (no credentials, no network).
 n8n-decanter init [dir]             # interactive bootstrap (see Setup)
 n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
 n8n-decanter [ref...] push [--force] [--no-typecheck]
-n8n-decanter [ref...] status        # local vs remote drift report
+n8n-decanter [ref...] status        # drift report; exits 1 on conflict/remote drift
 n8n-decanter [ref...] check         # offline layout-compliance + typecheck
 n8n-decanter <ref> rename "<old node>" "<new node>"   # rename a node everywhere
 n8n-decanter <ref> rename --workflow "<new name>"     # rename the workflow
@@ -107,6 +107,12 @@ a terminal** and respects `NO_COLOR`/`FORCE_COLOR`; piped or redirected output
 is plain line-oriented text, safe for scripts and LLM harnesses. Tab
 completion for verbs, flags, and workflow names: append
 `eval "$(n8n-decanter completion zsh)"` (or `bash`) to your shell rc.
+
+`status` exits 1 when a pull is needed or a push would clobber remote work
+(CONFLICT, remote-only changes, not pulled yet); local-only pending edits
+exit 0 — scripts and CI can gate on it like on `check`. API requests time
+out after 30 s (set `"requestTimeoutMs"` in `decanter.config.json` for slow
+instances), and `DEBUG=1` prints full stack traces on errors.
 
 ## How node files work
 

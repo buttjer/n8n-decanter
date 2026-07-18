@@ -13,13 +13,27 @@ async function localHash(dir: string, file: string): Promise<string | null> {
   return sha256(readFileSync(filePath, "utf8"));
 }
 
-export async function statusWorkflow(api: N8nApi, root: string, id: string, log: Log): Promise<void> {
+export interface StatusResult {
+  /**
+   * True when a pull is needed or a push would clobber remote changes
+   * (CONFLICT, remote edits, unknown/deleted remote nodes, not pulled yet).
+   * Local-only "push pending" changes do NOT count — that's a normal dev
+   * state. The CLI exits 1 on it (plans/10 decision, 2026-07-18).
+   */
+  remoteDrift: boolean;
+}
+
+export async function statusWorkflow(api: N8nApi, root: string, id: string, log: Log): Promise<StatusResult> {
   const remote = await api.getWorkflow(id);
   const dir = findWorkflowDir(root, id, log);
   if (!dir) {
     log.warn(`${remote.name} (${id}): not pulled yet`);
-    return;
+    return { remoteDrift: true };
   }
+  let remoteDrift = false;
+  const drift = (): void => {
+    remoteDrift = true;
+  };
   const state = readState(dir)!;
   const pub = publicationState(remote);
   log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]${pub ? `  ${pub}` : ""}`);
@@ -30,9 +44,13 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
     ? workflowStructureHash(JSON.parse(readFileSync(wfFile, "utf8")) as Workflow)
     : null;
   const base = state.lastPulledWorkflowHash;
-  if (remoteStruct !== base && localStruct !== base) log.warn("  structure: changed both locally and remotely");
-  else if (remoteStruct !== base) log.warn("  structure: changed remotely — pull");
-  else if (localStruct !== base) log.info("  structure: changed locally — push pending");
+  if (remoteStruct !== base && localStruct !== base) {
+    log.warn("  structure: changed both locally and remotely");
+    drift();
+  } else if (remoteStruct !== base) {
+    log.warn("  structure: changed remotely — pull");
+    drift();
+  } else if (localStruct !== base) log.info("  structure: changed locally — push pending");
   else log.ok("  structure: in sync");
 
   for (const node of remote.nodes) {
@@ -41,6 +59,7 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
     const label = `  ${node.name}`;
     if (!nodeState) {
       log.warn(`${label}: remote code node unknown locally — pull`);
+      drift();
       continue;
     }
     const remoteHash = sha256(splitMarker(node.parameters.jsCode).body);
@@ -49,12 +68,19 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
     if (local === null) log.warn(`${label}: local file ${nodeState.file} missing`);
     else if (local === remoteHash) log.ok(`${label}: in sync (${nodeState.file})`);
     else if (remoteHash === last) log.info(`${label}: local changes in ${nodeState.file} — push pending`);
-    else if (local === last) log.warn(`${label}: changed remotely — pull`);
-    else log.error(`${label}: CONFLICT — changed both locally and remotely`);
+    else if (local === last) {
+      log.warn(`${label}: changed remotely — pull`);
+      drift();
+    } else {
+      log.error(`${label}: CONFLICT — changed both locally and remotely`);
+      drift();
+    }
   }
   for (const [nodeId, nodeState] of Object.entries(state.nodes)) {
     if (!remote.nodes.some((n) => n.id === nodeId)) {
       log.warn(`  ${nodeState.file}: node ${nodeId} deleted remotely`);
+      drift();
     }
   }
+  return { remoteDrift };
 }

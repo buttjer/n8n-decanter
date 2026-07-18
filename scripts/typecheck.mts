@@ -5,9 +5,9 @@
 // in memory only — files on disk stay verbatim — and maps diagnostic line
 // numbers back. Node files are recognized by a .decanter.json sibling, or —
 // code/ layout — one in the parent of their code/ dir.
-import { existsSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { nodeFileContextDir } from "../lib/state.mts";
 
 const PREFIX = "async function __n8nNode() {\n";
 const SUFFIX = "\n}\nvoid __n8nNode;\n";
@@ -41,10 +41,8 @@ if (!parsed) process.exit(2);
 function isNodeFile(fileName: string): boolean {
   if (fileName.endsWith(".d.ts") || fileName.endsWith(".remote.js")) return false;
   if (!/\.(ts|js)$/.test(fileName)) return false;
-  const dir = path.dirname(fileName);
-  if (existsSync(path.join(dir, ".decanter.json"))) return true;
-  // kebab-case layout: node files live in <workflow>/code/, state one level up
-  return path.basename(dir) === "code" && existsSync(path.join(path.dirname(dir), ".decanter.json"));
+  // .decanter.json sibling, or — kebab-case layout — in the parent of code/
+  return nodeFileContextDir(fileName) !== null;
 }
 
 const wrapped = new Set<string>();

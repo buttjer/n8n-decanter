@@ -2,7 +2,7 @@ import { existsSync, readFileSync, rmSync, watch, writeFileSync, type FSWatcher 
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { commitWorkflowDir } from "./git.mts";
-import { startProxy } from "./proxy.mts";
+import { startProxy, type ProxyHandle } from "./proxy.mts";
 import { createPrompt } from "./prompt.mts";
 import { pullWorkflow } from "./pull.mts";
 import { pushSingleNode, pushWorkflow } from "./push.mts";
@@ -21,6 +21,12 @@ import {
 } from "./util.mts";
 
 export type StructureAction = "skip" | "push" | "conflict";
+
+/** Returned by watchWorkflow so tests can stop a session; the CLI never closes it. */
+export interface WatchHandle {
+  /** Stop watching: closes the fs watchers, the debounce timer, and the proxy. */
+  close(): Promise<void>;
+}
 
 /**
  * Pure 3-way decision for a workflow.json save event. `baseline` is the
@@ -60,7 +66,7 @@ export function structureAction(localHash: string, remoteHash: string, baseline:
  * each successful push signals the browser tab to refresh (notifyPushed in
  * lib/proxy).
  */
-export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: string, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
+export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: string, { force = false }: { force?: boolean } = {}, log: Log): Promise<WatchHandle> {
   const found = findWorkflowDir(config.root, id, log);
   if (!found) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
   let dir = found;
@@ -99,8 +105,9 @@ export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: str
   // Deep link straight to the watched workflow — through the proxy when it
   // runs (so live reload works in that tab), the configured upstream otherwise.
   let editorOrigin = config.host;
+  let proxy: ProxyHandle | null = null;
   if (config.browserReload === "proxy") {
-    const proxy = await startProxy({ upstream: config.host, port: config.proxyPort }, log);
+    proxy = await startProxy({ upstream: config.host, port: config.proxyPort }, log);
     if (proxy) editorOrigin = `http://127.0.0.1:${proxy.port}`;
   }
   const editorUrl = `${editorOrigin.replace(/\/+$/, "")}/workflow/${id}`;
@@ -297,5 +304,12 @@ export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: str
   armWatchers();
   const count = Object.keys(readState(dir)?.nodes ?? {}).length;
   log.info(`watching workflow ${id} — ${count} Code node${count === 1 ? "" : "s"} in ${path.join(path.basename(dir), CODE_DIR)} + workflow.json — Ctrl-C to stop`);
-  await new Promise(() => {});
+  return {
+    async close() {
+      clearTimeout(timer);
+      codeWatcher?.close();
+      dirWatcher?.close();
+      await proxy?.close();
+    },
+  };
 }
