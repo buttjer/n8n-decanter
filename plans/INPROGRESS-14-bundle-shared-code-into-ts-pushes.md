@@ -218,6 +218,13 @@ Rules that keep it sane (all guard/compile errors, not silent behavior):
 
 ## Notes
 
+- **Compression/minification of oversized bundles: dropped (user decision
+  2026-07-18).** The 100 KB warning is hygiene, not a wall — the real
+  ceiling is n8n's HTTP payload limit (`N8N_PAYLOAD_SIZE_MAX`, default
+  16 MB, per instance) for the whole workflow JSON. Self-decompressing
+  nodes were rejected outright (zlib unavailable, eval-dependent, kills
+  diffability); an opt-in minify knob was considered and not backlogged.
+
 - **Spike (2026-07-18, session scratchpad `bundle-spike/`)**: direct-entry
   bundling rejected by esbuild; hoist→wrap→bundle(iife)→footer verified
   end-to-end including execution with free-identifier globals and correct

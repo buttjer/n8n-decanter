@@ -127,7 +127,10 @@ Layouts from older versions (files at the folder root) migrate automatically
 on the next `pull`.
 
 - `code/<node>.js` — lossless: pulled/pushed byte-identical. Type-checked via
-  JSDoc + `checkJs`.
+  JSDoc + `checkJs`. **No `import`s** — yes, `import` is standard JavaScript,
+  but a `.js` node is pushed verbatim into n8n, where Code nodes cannot load
+  modules; `check` rejects it. Imports are a `.ts`-only feature (bundled on
+  push, next bullets).
 - `code/<node>.ts` — one-way: local file is the source of truth. `push`
   compiles it (esbuild, comments stripped) and appends a
   `// @ts-n8n sha256:...` marker line; `pull` never touches the `.ts`.
