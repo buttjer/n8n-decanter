@@ -54,6 +54,12 @@ today (no more leaked ANSI).
    - Glyphs: `✓` success (green), `!` warning (yellow, as today), `✗` error
      (red, replaces `x`), dim for metadata (paths, ids, durations), bold for
      workflow/node names.
+   - `link(text, url)` helper: OSC 8 hyperlink
+     (`\x1b]8;;<url>\x1b\\<text>\x1b]8;;\x1b\\`) on a TTY, plain
+     `<text> <url>` otherwise — same gating rule as color. First consumer:
+     watch's deep-link to the watched workflow's editor URL (see the
+     backlog item in [Plan 0](BACKLOG.md)). Supported by VS Code, iTerm2,
+     Windows Terminal, kitty, WezTerm; unsupported terminals show plain text.
    - Rewire the `log` object in `n8n-decanter.mts:17-21`; extend `Log`
      (`lib/types.mts:75`) with `ok(m)` for green success lines (`check` "OK",
      `pushed`, `in sync`, `typecheck OK`). Callers keep `info` for neutral
@@ -124,7 +130,8 @@ today (no more leaked ANSI).
   zero new deps; `styleText` covers color.
 - No `--json` output mode (would be a separate backlog item if wanted).
 - No watch-mode output redesign (Plan 10 touches watch testability; avoid
-  collisions).
+  collisions). Exception: the single deep-link line via `link()` (backlog
+  item) — additive, no existing watch lines change.
 
 ## Notes
 
