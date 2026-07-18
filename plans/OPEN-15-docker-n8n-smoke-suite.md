@@ -41,11 +41,11 @@ dependency, and the suite is invoked only by an explicit
   sequential step-runner script (same `test/harness.mts` style as e2e).
   `npm test` stays Docker-free; the script fails fast with a clear message
   when the Docker CLI or daemon is missing.
-- **Container**: `docker run -d -p 127.0.0.1:0:5678 n8nio/n8n:<pinned>` —
-  the tag is pinned in one constant at the top of the script (pick the
-  current 2.x at implementation time; bumping it is how "does a new n8n
-  break us?" gets asked). Wait for `/healthz`; always `docker rm -f` in a
-  `finally`.
+- **Container**: `docker run -d -p 127.0.0.1::5678 n8nio/n8n:<pinned>`
+  (empty host port = random; read it back via `docker port`). The tag is
+  pinned in one constant at the top of the script (pick the current 2.x at
+  implementation time; bumping it is how "does a new n8n break us?" gets
+  asked). Wait for `/healthz`; always `docker rm -f` in a `finally`.
 - **Auth bootstrap** (the fiddly part, and the reason this is a plan):
   automate the owner-setup + API-key flow over n8n's *internal* REST
   (`/rest/owner/setup`, login cookie, `/rest/api-keys`) — the public API
@@ -67,15 +67,17 @@ dependency, and the suite is invoked only by an explicit
    real PUT normalization the e2e mock only imitates.
 3. **Bundled-node execution proof** (Plan 14's missing acceptance): convert
    a node to `.ts` importing a `shared/` helper (and one allowlisted fake
-   npm package), push, then **execute it for real** — a Webhook →
-   Code → Respond-to-Webhook workflow, POST to the webhook, assert the
-   response contains the value the shared helper computes. This is the only
-   test anywhere that proves the hoist→wrap→bundle artifact runs inside
-   n8n's actual sandbox (task-runner or vm).
+   npm package), push, activate via the **public API**
+   (`POST /api/v1/workflows/:id/activate` — no internal REST needed here),
+   then **execute it for real**: a Webhook → Code → Respond-to-Webhook
+   workflow, POST to the production webhook, assert the response contains
+   the value the shared helper computes. This is the only test anywhere
+   that proves the hoist→wrap→bundle artifact runs inside n8n's actual
+   sandbox (task-runner or vm).
 4. **Publish semantics check** (PLAN.md's researched claims): push to an
-   unpublished workflow → stays draft; publish it (internal REST), push
-   again → goes live immediately; `push`/`status` publication-state lines
-   match reality.
+   unpublished workflow → stays draft; activate/publish via the public API,
+   push again → goes live immediately; `push`/`status` publication-state
+   lines match reality.
 5. **Tags/pinned-data round-trip** (backlog item): tag + pin data on a
    workflow in n8n, untouched pull → push, assert both survive. Check the
    box in [Plan 0](BACKLOG.md) when it holds.
@@ -116,7 +118,15 @@ dependency, and the suite is invoked only by an explicit
 ## Notes
 
 - The auth bootstrap over internal REST is deliberately quarantined: it is
-  the unstable surface. If a version bump breaks only the bootstrap, that
-  is maintenance; if it breaks tasks 2–5, that is news about n8n-decanter.
+  the unstable surface — and it is also **unspiked** (endpoint paths are
+  from n8n-internals knowledge, not verified against the pinned image), so
+  task 1 doubles as the spike; budget the first stretch of implementation
+  for it. Everything downstream of the API key uses the public API only
+  (activation included), keeping the fragile surface to owner-setup +
+  key creation. If a version bump breaks only the bootstrap, that is
+  maintenance; if it breaks tasks 2–5, that is news about n8n-decanter.
+- Dev-machine prereqs (checked 2026-07-18): Docker Desktop is installed on
+  the dev Mac but the daemon must be running; agent sessions need
+  unsandboxed exec for docker (socket + registry access).
 - Version pin doubles as a compatibility statement: bump the tag, run the
   suite, record the result in PLAN.md's open-questions section.
