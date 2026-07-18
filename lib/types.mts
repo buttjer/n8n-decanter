@@ -64,6 +64,10 @@ export interface DecanterConfig {
   workflows: string[];
   commitOnPush: boolean;
   commitOnPull: boolean;
+  /** `"proxy"` boots the browser-reload dev proxy during watch; `"off"` disables it. */
+  browserReload: "off" | "proxy";
+  /** Port the browser-reload proxy binds on 127.0.0.1 (browserReload: "proxy"). */
+  proxyPort: number;
   host: string;
   apiKey: string;
 }

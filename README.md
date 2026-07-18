@@ -53,7 +53,8 @@ node n8n-decanter.mts [id...] status         # local vs remote drift report
 node n8n-decanter.mts [id...] check          # offline layout-compliance + typecheck
 node n8n-decanter.mts <id> rename "<old node>" "<new node>"   # rename a node everywhere
 node n8n-decanter.mts <id> rename --workflow "<new name>"     # rename the workflow
-node n8n-decanter.mts <node-file> watch      # push one node on every save
+node n8n-decanter.mts [id] watch             # push a workflow's nodes on save
+                                             #   (+ browser live-reload, opt-in)
 node n8n-decanter.mts <node-file> run [fixture.json]   # run a node offline, print items
 node n8n-decanter.mts uuid [count]           # lowercase v4 UUID(s) for new node ids
 npm run typecheck                            # CLI sources (tsc) + workflow node files
@@ -107,6 +108,28 @@ connections, `$('…')` references, filename) — use
 `rename <id> "<old>" "<new>"` instead: it rewrites all of them atomically,
 refuses colliding names, and re-validates the folder afterwards. It works
 offline; `push` propagates the rename to n8n.
+
+## Browser live-reload (watch)
+
+Tired of ⌘R'ing the n8n editor after every push? Add `"browserReload":
+"proxy"` to `decanter.config.json` and `watch` boots a transparent dev proxy
+on `127.0.0.1:5679` (override with `"proxyPort"`):
+
+```json
+{ "root": "./workflows", "workflows": ["…"], "browserReload": "proxy" }
+```
+
+Open the n8n editor through the **proxy URL** (`http://localhost:5679`) instead
+of the real port. The proxy pipes everything to your n8n host untouched — login,
+assets, and n8n's native `/rest/push` WebSocket — and injects a tiny reload
+client into the editor page. Every successful `watch` push then refreshes the
+tab for you, **unless the editor has unsaved changes** (it declines the reload
+and logs a console warning so nothing in-browser is clobbered). If the port is
+taken, `watch` warns and keeps syncing without live reload.
+
+Built on native Node (no extra deps). It's designed for a **local http** n8n
+(`http://localhost:5678`); pointing it at an https/remote host is best-effort —
+Secure cookies don't survive the plain-http hop, so auth may not carry through.
 
 ## Type checking
 

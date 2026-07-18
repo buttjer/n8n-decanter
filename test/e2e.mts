@@ -317,6 +317,12 @@ await step("watch path: pushSingleNode round-trip", async () => {
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, "return $input.all(); // watched\n");
 });
 
+await step("watch: takes a workflow id, errors on an unknown one before watching", async () => {
+  const r = await cli("watch", "nope");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /workflow nope not found/);
+});
+
 await step("check: clean tree passes, typecheck skipped without tsconfig", async () => {
   const r = await cli("check");
   assert.equal(r.code, 0, r.out);

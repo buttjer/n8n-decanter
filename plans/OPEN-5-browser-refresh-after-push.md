@@ -2,7 +2,7 @@
 
 **Priority:** P2 (High DX Impact)
 
-**Status:** Ready for implementation
+**Status:** Implemented (offline-tested); live-instance verification pending
 
 **Theme:** Spin up a transparent development proxy during `decanter watch`. The proxy injects a lightweight live-reload client into n8n's frontend HTML payload. When a local push completes, the proxy signals the client to cleanly refresh the browser tab.
 
@@ -103,7 +103,45 @@ Add the following knobs to `decanter.config.json`:
 
 ---
 
+## Implementation status (2026-07-18)
+
+Built in `lib/proxy.mts` + wired into `watch`/`push`/config. Deviations from the
+task sketch above, all deliberate:
+
+* **Native Node, no new dependency** (`node:http`/`https`/`net`/`tls`) instead
+  of `http-proxy` — matches the project's esbuild-+-luxon-only, no-build rule.
+* **Reload channel is SSE**, not a WebSocket — one-way server→client, plain
+  HTTP, nothing to hand-shake.
+* **Client lives inlined in `lib/proxy.mts`** (served at `/__decanter/client.js`),
+  not a separate `src/templates/proxy-client.js` — there is no `src/` tree and
+  the CLI ships as source with no bundling step.
+* **Broadcast is a typed module singleton**, `notifyPushed(workflowId)` exported
+  from `lib/proxy.mts` and called by `pushWorkflow`/`pushSingleNode`, instead of
+  a magic `global.__decanterProxy`. No-op when no proxy is running, so plain
+  `push` calls it harmlessly.
+* **Dirty probe** dispatches a synthetic `beforeunload` and treats
+  `defaultPrevented`/`returnValue===false` (or a property-style
+  `window.onbeforeunload`) as dirty — framework-agnostic, but a heuristic that
+  can miss on some n8n versions; it fails toward *not* reloading when it detects
+  dirtiness. The client also skips reload when a *different* workflow id is open.
+* **Config knobs** `browserReload` (`"off"`|`"proxy"`, default off) and
+  `proxyPort` (default 5679) parsed in `lib/config.mts`.
+* **`watch` is now workflow-id-scoped** (breaking, decided while landing this):
+  `watch <id>` watches the whole `code/` dir and pushes whichever node you save,
+  instead of a single node file — browser-reload is workflow-scoped, so a
+  single-node watch was the wrong granularity. See PLAN.md "Watch mode".
+
+Verified offline by `test/proxy.mts` (in `npm test`): HTML injection before
+`</body>` with recomputed content-length, `accept-encoding` stripped for
+injection, non-HTML passthrough byte-identical, client asset served, `pushed`
+SSE broadcast delivered, and graceful `null`+warning on a taken port.
+
+**Still needs a live n8n** (can't be exercised against the mock): real auth +
+asset + `/rest/push` WebSocket passthrough, the dirty safeguard against n8n's
+actual unsaved-changes guard, and the end-to-end auto-refresh loop. Best on a
+local http n8n — https/remote upstreams are best-effort (Secure cookies).
+
 ## Notes
 
-* **PLAN.md Updates:** This architectural shift introduces a persistent network component to `watch`. Ensure `PLAN.md` documentation reflects the secondary port usage.
-* **Performance:** HTML stream modification must be handled efficiently via buffering or lightweight regex streaming to ensure page load latency remains imperceptible.
+* **PLAN.md Updates:** This architectural shift introduces a persistent network component to `watch`. Ensure `PLAN.md` documentation reflects the secondary port usage. *(Pending — raised with the user per CLAUDE.md's "don't rewrite PLAN.md unasked" rule.)*
+* **Performance:** HTML stream modification must be handled efficiently via buffering or lightweight regex streaming to ensure page load latency remains imperceptible. *(HTML responses are buffered then injected; non-HTML is streamed through untouched.)*

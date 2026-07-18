@@ -3,6 +3,7 @@ import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
+import { notifyPushed } from "./proxy.mts";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
 import {
@@ -100,6 +101,7 @@ export async function pushWorkflow(api: N8nApi, root: string, id: string, { forc
   recordSync(state, confirmed ?? wf);
   writeState(dir, state);
   log.info(`pushed "${wf.name}" (${id})`);
+  notifyPushed(id);
   if (commitOnPush) await commitWorkflowDir(dir, `decanter: pushed "${wf.name}" (${id})`, log);
   return { dir, name: wf.name };
 }
@@ -122,6 +124,7 @@ export async function pushSingleNode(api: N8nApi, dir: string, nodeId: string, {
   recordSync(state, confirmed ?? remote);
   writeState(dir, state);
   log.info(`pushed node "${node.name}" -> workflow "${remote.name}"`);
+  notifyPushed(state.workflowId);
   if (commitOnPush) {
     await commitWorkflowDir(dir, `decanter: pushed "${remote.name}" / node "${node.name}" (${state.workflowId})`, log);
   }
