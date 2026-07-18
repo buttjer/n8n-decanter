@@ -152,5 +152,5 @@ task B1.
   change. D dedupes don't touch the data model or flows.
 - **Cross-links**: the decision-gated / bigger siblings live in
   [Plan 10](OPEN-10-hardening-bigger-refactors.md); C4's proxy additions
-  extend [Plan 5](OPEN-5-browser-refresh-after-push.md)'s in-flight
+  extend [Plan 5](DONE-5-browser-refresh-after-push.md)'s in-flight
   `lib/proxy.mts` / `test/proxy.mts`.

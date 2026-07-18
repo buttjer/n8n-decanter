@@ -73,7 +73,7 @@ entry graduates here.
    - Then add the missing tests: watch debounce coalescing and the
      queued-while-running re-push (real file writes against a stub api), and
      the proxy's WebSocket-upgrade round-trip (raw TCP echo upstream).
-   - **Coordinate with [Plan 5](OPEN-5-browser-refresh-after-push.md)**: its
+   - **Coordinate with [Plan 5](DONE-5-browser-refresh-after-push.md)**: its
      in-flight watch/proxy integration touches the same code.
 6. **CI workflow** — GitHub Actions running `npm run typecheck` + `npm test`
    on push/PR. The e2e suite binds a localhost port, which GH runners allow.

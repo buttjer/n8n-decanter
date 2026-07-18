@@ -19,10 +19,9 @@ items not yet claimed by one. Recommended order:
    language-service plugin that suppresses the editor-only TS1108/1375/1378 false
    positives on node files. Related to Plan 1's edit-loop work but larger
    (needs a load-path spike), so it trails the first three.
-5. [Browser refresh after push](OPEN-5-browser-refresh-after-push.md) — auto-refresh
-   the n8n editor tab after a successful push. Direction still open (six
-   candidates compared in the plan); starts with a live-instance spike, so it
-   trails the offline work.
+5. [Browser refresh after push](DONE-5-browser-refresh-after-push.md) — auto-refresh
+   the n8n editor tab after a successful push, via a transparent dev proxy that
+   injects an SSE live-reload client during `watch` (opt-in `browserReload`).
 6. [TypeScript migration](DONE-6-typescript-migration.md) — convert the CLI's own
    source to strict `.mts` run natively via Node type stripping (no build
    step).
