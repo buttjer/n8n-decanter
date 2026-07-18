@@ -294,6 +294,12 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   works.
 - **Layout deviation**: implementation is split into `lib/*.mts` modules with
   a thin CLI entry instead of one big `n8n-decanter.mts`.
+- **Id-first argument order (added 2026-07-17, backlog)**: the dispatcher
+  takes the *first* positional token that matches a known verb as the
+  command, wherever it sits — `wf123 push` ≡ `push wf123`; flags may appear
+  in any position too. Consequence of first-verb-wins: an id/path that
+  literally equals a verb name must be passed *after* the verb (accepted —
+  n8n ids are nanoid-style and can't collide).
 - **TypeScript CLI (added 2026-07-17, plans/6)**: the CLI's own sources are
   `.mts`, executed natively via Node's type stripping — no build step;
   engines `>=22.18` (the first line where stripping is on by default; Node

@@ -59,7 +59,9 @@ npm test                                     # e2e against a mock n8n API
                                              # (binds a localhost port)
 ```
 
-Without ids, all workflows from the config are processed.
+Without ids, all workflows from the config are processed. The verb may also
+come after its arguments (`node n8n-decanter.mts wf123 push`) — the first
+token matching a known verb is the command, everything else stays positional.
 
 ## How node files work
 

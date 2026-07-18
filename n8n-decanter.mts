@@ -30,17 +30,26 @@ const USAGE = `Usage:
   n8n-decanter run <node-file> [fixture.json]   run a node locally (offline)
   n8n-decanter uuid [count]        print lowercase v4 UUID(s) for new node ids
 
+The verb may come after its arguments too (id-first): "n8n-decanter wf123 push"
+is the same as "n8n-decanter push wf123".
+
 Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 
+const VERBS = new Set(["init", "pull", "push", "status", "check", "watch", "run", "uuid", "help"]);
+
 async function main() {
   const args = process.argv.slice(2);
-  const command = args.shift();
   const force = args.includes("--force");
   const noTypecheck = args.includes("--no-typecheck");
-  const rest = args.filter((a) => !a.startsWith("--"));
+  const positional = args.filter((a) => !a.startsWith("--"));
+  // id-first support: the first token matching a known verb is the command,
+  // wherever it sits — `push wf123` and `wf123 push` are equivalent.
+  const verbIndex = positional.findIndex((a) => VERBS.has(a));
+  const command = verbIndex === -1 ? positional[0] : positional[verbIndex];
+  const rest = positional.filter((_, i) => i !== verbIndex);
 
-  if (!command || command === "help" || command === "--help") {
+  if (!command || command === "help" || args[0] === "--help") {
     console.log(USAGE);
     return;
   }

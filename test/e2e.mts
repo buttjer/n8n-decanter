@@ -434,6 +434,20 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   assert.equal(dirty.trim(), "", "rename-back pull must leave a clean tree");
 });
 
+await step("id-first argument order: `<id> <verb>` == `<verb> <id>`", async () => {
+  let r = await cli("wf123", "status");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /structure: in sync/);
+  // flags may sit anywhere among the arguments too
+  r = await cli("--no-typecheck", "wf123", "check");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Order Sync v2: OK/);
+  // no verb anywhere still reports an unknown command
+  r = await cli("wf123");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /unknown command: wf123/);
+});
+
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 const runOutput = (out: string) => {
   // The printed items are the last JSON array on stdout; cli() appends stderr

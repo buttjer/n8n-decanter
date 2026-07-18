@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Id-first argument order: the verb may come after its arguments
+  (`n8n-decanter.mts wf123 push` == `n8n-decanter.mts push wf123`). The first
+  token matching a known verb is taken as the command; everything else,
+  including flags, may appear in any position.
 - Template: the `n8n-globals.d.ts` stub declares Luxon `Duration` and
   `Interval` (pragmatic subsets, matching the existing `DateTime` stub) —
   both were already advertised in `AGENTS.md` and provided at runtime, only
