@@ -45,14 +45,14 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
 - [ ] **Tags/pinned-data round-trip check** — verify against the live instance
       that PUT preserves tags/pinned data on an untouched pull→push round-trip
       (open question in PLAN.md).
-- [ ] **Watch: deep-link URL to the workflow** — on `watch` start, print the
+- [x] **Watch: deep-link URL to the workflow** — on `watch` start, print the
       editor URL pointing straight at the watched workflow
       (`<origin>/workflow/<id>`), using the browser-reload proxy origin when
       the proxy is running (today it only prints its root URL) and the
       configured upstream otherwise. Plain URLs are already cmd/ctrl-clickable
       in most terminals (VS Code, iTerm2, Windows Terminal); rendering it as a
       styled OSC 8 hyperlink is a style-layer concern —
-      [Plan 11](OPEN-11-cli-look-and-feel.md) task 1.
+      [Plan 11](DONE-11-cli-look-and-feel.md) task 1.
 - [ ] **`n8n-globals.d.ts` sourcing** — today it's a hand-written "pragmatic
       subset" shipped in `template/` as a byte-identical copy of the repo's
       root file → two copies that can drift.

@@ -33,8 +33,9 @@ throwaway mock n8n API — do not import lib/ modules directly.
   sandbox disabled; it is an environment artifact, not a code failure.
 - The e2e suite's mock (test/e2e.mts) is in-process and not importable;
   building a fresh mock is faster than extracting it.
-- CLI output contains ANSI codes even when piped (known, Plan 11) — match
-  with regexes, not exact strings.
+- Piped CLI output is ANSI-free since Plan 11 (styling is TTY-gated) — in
+  fact assert the absence of `\x1b` in captured output. Error lines start
+  with `✗ `, success lines with `✓ `.
 
 A known-good full driver (watch structural sync, conflict prompt via expect)
 from 2026-07-18 exists in the session scratchpad as `drive.mjs`; recreate

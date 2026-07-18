@@ -33,7 +33,7 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
   if (remoteStruct !== base && localStruct !== base) log.warn("  structure: changed both locally and remotely");
   else if (remoteStruct !== base) log.warn("  structure: changed remotely — pull");
   else if (localStruct !== base) log.info("  structure: changed locally — push pending");
-  else log.info("  structure: in sync");
+  else log.ok("  structure: in sync");
 
   for (const node of remote.nodes) {
     if (!isJsCodeNode(node)) continue;
@@ -47,7 +47,7 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
     const local = await localHash(dir, nodeState.file);
     const last = nodeState.lastPushedHash;
     if (local === null) log.warn(`${label}: local file ${nodeState.file} missing`);
-    else if (local === remoteHash) log.info(`${label}: in sync (${nodeState.file})`);
+    else if (local === remoteHash) log.ok(`${label}: in sync (${nodeState.file})`);
     else if (remoteHash === last) log.info(`${label}: local changes in ${nodeState.file} — push pending`);
     else if (local === last) log.warn(`${label}: changed remotely — pull`);
     else log.error(`${label}: CONFLICT — changed both locally and remotely`);

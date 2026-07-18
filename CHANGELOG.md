@@ -19,6 +19,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `npm install` and accept *Use Workspace Version* once (JetBrains IDEs use
   the project TypeScript by default). `n8n-decanter check` is unaffected and
   stays authoritative.
+- **Workflow-name arguments**: `pull`/`push`/`status`/`check`/`rename`/`watch`
+  now take a workflow's name (or a unique name prefix) wherever they took an
+  id — `n8n-decanter "Order Sync" push`. Matching is case-insensitive and
+  never prompts: ambiguous or unknown names error with the candidate list.
+  `pull` also resolves names of not-yet-pulled workflows against the server's
+  workflow list. A workflow literally named like a verb must be addressed by
+  id (the verb wins argument detection).
+- `list` verb — one line per pulled workflow (name, id, folder), offline;
+  `list --remote` additionally shows remote workflows not pulled yet. The
+  discovery surface for what a ref can address.
+- `completion zsh|bash` prints a shell tab-completion script (append to your
+  rc file) covering verbs, flags, and local workflow names/ids, backed by a
+  hidden credentials-free `__complete` verb.
+- Progress indication: multi-workflow `pull`/`push`/`status` prefix each line
+  with a `[2/5]` counter, pull/push result lines get a `(0.4s)` duration
+  suffix, and on a terminal a transient `pulling <id>…` line shows while the
+  network call runs (piped output only ever gets the result lines).
+- `init` greets with a small ASCII logo + version on a terminal; piped runs
+  print a plain `n8n-decanter v<version>` line instead.
+- `watch` prints a deep link straight to the watched workflow's editor page —
+  through the live-reload proxy when it is running, the configured n8n host
+  otherwise — as a clickable OSC 8 hyperlink on supporting terminals.
+
+### Changed
+
+- CLI output is styled — color, `✓`/`!`/`✗` glyphs, bold names, dim
+  metadata — **only when the stream is a terminal**, honoring `NO_COLOR` and
+  `FORCE_COLOR`; piped/redirected output stays plain line-oriented text (no
+  information is carried by color alone). Error lines now start with `✗ `
+  (was `x `), success lines with `✓ `.
+
+### Fixed
+
+- ANSI escape codes no longer leak into piped output — previously the two
+  hardcoded warn/error colors were emitted unconditionally, polluting logs,
+  scripts, and LLM harness transcripts.
 
 ## [0.1.0] - 2026-07-18
 

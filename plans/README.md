@@ -50,7 +50,7 @@ items not yet claimed by one. Recommended order:
     (kebab-rename machinery, `code/`-parent lookup), watch testability, and
     CI. Each task needs a decision or checking first; lands after Plan 9's
     tests exist as the safety net.
-11. [CLI look & feel](OPEN-11-cli-look-and-feel.md) — color, progress, and a
+11. [CLI look & feel](DONE-11-cli-look-and-feel.md) — color, progress, and a
     logo strictly TTY-gated; workflow-name arguments, shell completion, and a
     `list` verb. Piped output stays plain and line-oriented (LLM/script safe —
     and fixes today's ANSI leak into pipes).

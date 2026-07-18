@@ -70,13 +70,20 @@ db.set("wf123", {
 let env: NodeJS.ProcessEnv;
 async function cli(...args: string[]) {
   // async on purpose: the mock server lives in this process, a sync exec would deadlock
+  let out: string;
+  let code: number;
   try {
     const { stdout, stderr } = await execFile(process.execPath, [CLI, ...args], { cwd: TMP, env, encoding: "utf8" });
-    return { out: stdout + stderr, code: 0 };
+    out = stdout + stderr;
+    code = 0;
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; code?: number };
-    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
+    out = (e.stdout ?? "") + (e.stderr ?? "");
+    code = e.code ?? 1;
   }
+  // styling is TTY-gated (Plan 11): piped output must never carry escapes
+  assert.ok(!out.includes("\x1b"), `ANSI escape leaked into piped output of "${args.join(" ")}": ${JSON.stringify(out.slice(0, 300))}`);
+  return { out, code };
 }
 const wfDir = (name: string) => path.join(ROOT, name);
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
@@ -135,6 +142,9 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.equal(JSON.parse(read(target, "decanter.config.json")).root, "./workflows");
   assert.match(read(target, ".gitignore"), /^\.env$/m);
   assert.match(stdout + stderr, /credentials verified/);
+  // piped init prints a plain version line instead of the TTY logo
+  assert.match(stdout + stderr, /n8n-decanter v\d+\.\d+\.\d+/);
+  assert.ok(!(stdout + stderr).includes("\x1b"), "init must not emit ANSI when piped");
   // re-init must not clobber user edits to template-provided files
   const probe = materialize(templateFiles.find((f) => materialize(f) !== ".env")!);
   writeFileSync(path.join(target, probe), "user content\n");
@@ -307,7 +317,7 @@ await step("watch path: pushSingleNode round-trip", async () => {
   const dir2 = wfDir("Order Sync v2");
   writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "return $input.all(); // watched\n");
   const api = new N8nApi({ host: env.N8N_HOST, apiKey: "test-key" });
-  const log = { info: () => {}, warn: () => {}, error: () => {} };
+  const log = { info: () => {}, ok: () => {}, warn: () => {}, error: () => {} };
   await pushSingleNode(api, dir2, "n2", {}, log);
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, "return $input.all(); // watched\n");
 });
@@ -472,13 +482,68 @@ await step("id-first argument order: `<id> <verb>` == `<verb> <id>`", async () =
   assert.match(r.out, /unknown command: wf123/);
 });
 
-const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+await step("name refs: exact name and case-insensitive prefix resolve; unknown name lists candidates", async () => {
+  let r = await cli("Order Sync v2", "status");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /structure: in sync/);
+  r = await cli("order sy", "check", "--no-typecheck"); // unique case-insensitive prefix
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Order Sync v2: OK/);
+  r = await cli("Order Sync v2", "push", "--no-typecheck"); // name push ≡ id push
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /pushed "Order Sync v2" \(wf123\)/);
+  // name-shaped ref with no match must error with the candidate list — no prompt
+  r = await cli("No Such Flow", "status");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /no workflow matches "No Such Flow"/);
+  assert.match(r.out, /"Order Sync v2"/);
+});
+
+await step("list: name, id, and folder per pulled workflow; --remote adds unpulled ones", async () => {
+  let r = await cli("list");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Order Sync v2  wf123  workflows[/\\]Order Sync v2/);
+  db.set("wf777", { ...structuredClone(db.get("wf123")), id: "wf777", name: "Unpulled Flow" });
+  try {
+    r = await cli("list", "--remote");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Unpulled Flow  wf777  \(not pulled\)/);
+    assert.match(r.out, /Order Sync v2  wf123/);
+  } finally {
+    db.delete("wf777");
+  }
+});
+
+await step("completion: prints shell scripts; __complete emits verbs, flags, names, ids", async () => {
+  let r = await cli("completion", "zsh");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /compdef _n8n_decanter n8n-decanter/);
+  r = await cli("completion", "bash");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /complete -F _n8n_decanter n8n-decanter/);
+  const bashScript = path.join(TMP, "completion.bash");
+  writeFileSync(bashScript, r.out);
+  try {
+    await execFile("bash", ["-n", bashScript]); // syntax-check when bash exists
+  } catch (err) {
+    if ((err as { code?: string }).code !== "ENOENT") throw err;
+  }
+  r = await cli("completion");
+  assert.equal(r.code, 1, "completion without a shell must fail");
+  r = await cli("__complete");
+  assert.equal(r.code, 0, r.out);
+  const words = r.out.trim().split("\n");
+  for (const w of ["pull", "push", "watch", "list", "--force", "wf123", "Order Sync v2"]) {
+    assert.ok(words.includes(w), `__complete must emit "${w}": ${r.out}`);
+  }
+  assert.ok(!words.includes("__complete"), "__complete must not advertise itself");
+});
+
 const runOutput = (out: string) => {
   // The printed items are the last JSON array on stdout; cli() appends stderr
   // (e.g. warnings) afterwards, so bound the slice by the final closing bracket.
-  const clean = stripAnsi(out);
-  const start = clean.indexOf("[", clean.indexOf("returned"));
-  return JSON.parse(clean.slice(start, clean.lastIndexOf("]") + 1));
+  const start = out.indexOf("[", out.indexOf("returned"));
+  return JSON.parse(out.slice(start, out.lastIndexOf("]") + 1));
 };
 
 await step("uuid: prints lowercase v4 uuids", async () => {
@@ -818,7 +883,7 @@ await step("corrupt .decanter.json: scoped guard error, other workflows unaffect
   r = await cli("check", "wf123", "--no-typecheck");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /skipping this folder/);
-  const errorLines = stripAnsi(r.out).split("\n").filter((l) => l.startsWith("x "));
+  const errorLines = r.out.split("\n").filter((l) => l.startsWith("✗ "));
   assert.deepEqual(errorLines, [], "corrupt neighbor's guard error leaked into scoped output: " + r.out);
   rmSync(dirC, { recursive: true, force: true });
 });

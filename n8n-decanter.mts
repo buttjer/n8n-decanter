@@ -8,46 +8,102 @@ import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { renameNode, renameWorkflow } from "./lib/rename.mts";
 import { runNode } from "./lib/run.mts";
-import { findWorkflowDir, listWorkflowDirs } from "./lib/state.mts";
+import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef } from "./lib/state.mts";
 import { statusWorkflow } from "./lib/status.mts";
+import { style, styleErr, transientLine } from "./lib/style.mts";
 import type { Log } from "./lib/types.mts";
 import { runTypecheck, validateWorkflowDir } from "./lib/validate.mts";
 import { watchWorkflow } from "./lib/watch.mts";
 
+// Every real log line first erases a pending transient "pulling …" status line.
+const transient = transientLine();
 const log: Log = {
-  info: (m) => console.log(m),
-  warn: (m) => console.warn(`\x1b[33m! ${m}\x1b[0m`),
-  error: (m) => console.error(`\x1b[31mx ${m}\x1b[0m`),
+  info: (m) => {
+    transient.clear();
+    console.log(m);
+  },
+  ok: (m) => {
+    transient.clear();
+    console.log(`${style.green("✓")} ${m}`);
+  },
+  warn: (m) => {
+    transient.clear();
+    console.warn(styleErr.yellow(`! ${m}`));
+  },
+  error: (m) => {
+    transient.clear();
+    console.error(styleErr.red(`✗ ${m}`));
+  },
 };
 
-const USAGE = `Usage:
-  n8n-decanter init [dir] [--force]   interactive setup: .env, starter files, config
-                                   (--force re-copies template files over existing ones)
-  n8n-decanter [id...] pull        pull workflows (default: all in decanter.config.json)
-  n8n-decanter [id...] push [--force] [--no-typecheck]
-  n8n-decanter [id...] status
-  n8n-decanter [id...] check [--no-typecheck]   offline layout-compliance check
-  n8n-decanter <id> rename "<old node>" "<new node>"   rename a node everywhere (offline)
-  n8n-decanter <id> rename --workflow "<new name>"     rename the workflow itself
-  n8n-decanter [id] watch [--force]   watch code/ + workflow.json, push on save
-                                   (starts with a safety commit + pull; structural
-                                   conflicts prompt; browser live-reload optional)
-  n8n-decanter <node-file> run [fixture.json]   run a node locally (offline)
-  n8n-decanter uuid [count]        print lowercase v4 UUID(s) for new node ids
+const usage = (): string => {
+  const b = style.bold;
+  const d = style.dim;
+  return `Usage:
+  ${b("n8n-decanter init")} [dir] [--force]   ${d("interactive setup: .env, starter files, config")}
+                                   ${d("(--force re-copies template files over existing ones)")}
+  ${b("n8n-decanter")} [ref...] ${b("pull")}       ${d("pull workflows (default: all in decanter.config.json)")}
+  ${b("n8n-decanter")} [ref...] ${b("push")} [--force] [--no-typecheck]
+  ${b("n8n-decanter")} [ref...] ${b("status")}
+  ${b("n8n-decanter")} [ref...] ${b("check")} [--no-typecheck]   ${d("offline layout-compliance check")}
+  ${b("n8n-decanter")} <ref> ${b("rename")} "<old node>" "<new node>"   ${d("rename a node everywhere (offline)")}
+  ${b("n8n-decanter")} <ref> ${b("rename")} --workflow "<new name>"     ${d("rename the workflow itself")}
+  ${b("n8n-decanter")} [ref] ${b("watch")} [--force]   ${d("watch code/ + workflow.json, push on save")}
+                                   ${d("(starts with a safety commit + pull; structural")}
+                                   ${d("conflicts prompt; browser live-reload optional)")}
+  ${b("n8n-decanter list")} [--remote]      ${d("pulled workflows: name, id, folder")}
+                                   ${d("(--remote adds workflows not pulled yet)")}
+  ${b("n8n-decanter completion")} zsh|bash  ${d("print a shell completion script for your rc file")}
+  ${b("n8n-decanter")} <node-file> ${b("run")} [fixture.json]   ${d("run a node locally (offline)")}
+  ${b("n8n-decanter uuid")} [count]         ${d("print lowercase v4 UUID(s) for new node ids")}
 
-The verb may sit anywhere among the arguments: "n8n-decanter push wf123" is the
-same as "n8n-decanter wf123 push", and flags may appear in any position too.
+A workflow <ref> is its id, its workflow/folder name, or a unique name prefix
+(case-insensitive; ambiguity is an error, never a prompt). A workflow named
+like a verb must be addressed by id. The verb may sit anywhere among the
+arguments: "n8n-decanter push wf123" is the same as "n8n-decanter wf123 push",
+and flags may appear in any position too.
 
 Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
+};
 
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "list", "completion", "__complete", "help"]);
+/** Verbs whose workflow arguments go through name resolution. */
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch"]);
+
+// Both scripts delegate to the hidden `__complete` verb at completion time,
+// so candidates stay current without regenerating the script.
+const COMPLETION_SCRIPTS: Record<string, string> = {
+  zsh: [
+    "# n8n-decanter zsh completion — append to ~/.zshrc (after compinit):",
+    '#   eval "$(n8n-decanter completion zsh)"',
+    "_n8n_decanter() {",
+    "  local -a words",
+    '  words=(${(f)"$(n8n-decanter __complete 2>/dev/null)"})',
+    '  compadd -- "${words[@]}"',
+    "}",
+    "compdef _n8n_decanter n8n-decanter",
+    "",
+  ].join("\n"),
+  bash: [
+    "# n8n-decanter bash completion — append to ~/.bashrc:",
+    '#   eval "$(n8n-decanter completion bash)"',
+    "_n8n_decanter() {",
+    '  local cur="${COMP_WORDS[COMP_CWORD]}"',
+    "  local IFS=$'\\n'",
+    '  COMPREPLY=($(compgen -W "$(n8n-decanter __complete 2>/dev/null)" -- "$cur"))',
+    "}",
+    "complete -F _n8n_decanter n8n-decanter",
+    "",
+  ].join("\n"),
+};
 
 async function main() {
   const args = process.argv.slice(2);
   const force = args.includes("--force");
   const noTypecheck = args.includes("--no-typecheck");
   const workflowFlag = args.includes("--workflow");
+  const remoteFlag = args.includes("--remote");
   const positional = args.filter((a) => !a.startsWith("--"));
   // id-first support: the first token matching a known verb is the command,
   // wherever it sits — `push wf123` and `wf123 push` are equivalent.
@@ -56,7 +112,7 @@ async function main() {
   const rest = positional.filter((_, i) => i !== verbIndex);
 
   if (!command || command === "help" || args[0] === "--help") {
-    console.log(USAGE);
+    console.log(usage());
     return;
   }
 
@@ -81,9 +137,63 @@ async function main() {
     return;
   }
 
-  const config = loadConfig(process.cwd(), { requireCredentials: command !== "check" && command !== "rename" });
+  if (command === "completion") {
+    const script = rest[0] !== undefined ? COMPLETION_SCRIPTS[rest[0]] : undefined;
+    if (script === undefined) throw new Error("completion needs a shell: n8n-decanter completion zsh|bash");
+    process.stdout.write(script);
+    return;
+  }
+
+  if (command === "__complete") {
+    // hidden helper backing the completion scripts: verbs, flags, and local
+    // workflow names/ids — offline, credentials-free, silent without a config
+    const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
+    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--help");
+    try {
+      const config = loadConfig(process.cwd(), { requireCredentials: false });
+      for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
+    } catch {
+      // no decanter.config.json in reach — verbs and flags still complete
+    }
+    console.log([...new Set(words)].join("\n"));
+    return;
+  }
+
+  const offline = command === "check" || command === "rename" || (command === "list" && !remoteFlag);
+  const config = loadConfig(process.cwd(), { requireCredentials: !offline });
   const api = new N8nApi(config);
-  const ids = rest.length > 0 ? rest : config.workflows;
+
+  /**
+   * Workflow-name arguments: resolve a ref locally (id → name → unique
+   * prefix); `pull` falls back to the remote workflow list for not-yet-pulled
+   * names. An id-shaped ref that matches nothing passes through unchanged —
+   * it may exist only remotely (pull/status by fresh id must keep working).
+   */
+  const resolveRef = async (ref: string): Promise<string> => {
+    const local = matchWorkflowRef(listWorkflowRefs(config.root, log), ref);
+    if (local) return local.id;
+    if (command === "pull") {
+      try {
+        const remote = await api.listWorkflows();
+        const hit = matchWorkflowRef(remote.map((w) => ({ id: w.id, names: [w.name] })), ref);
+        if (hit) return hit.id;
+      } catch (err) {
+        log.warn(`could not list remote workflows to resolve "${ref}" (${(err as Error).message.split("\n")[0]})`);
+      }
+    }
+    if (looksLikeWorkflowId(ref)) return ref;
+    const known = listWorkflowRefs(config.root).map((r) => `"${r.name}"`);
+    throw new Error(`no workflow matches "${ref}"${known.length > 0 ? ` — pulled workflows: ${known.join(", ")}` : " — nothing pulled yet"}`);
+  };
+
+  let refs = rest;
+  if (REF_VERBS.has(command)) {
+    refs = [];
+    for (const r of rest) refs.push(await resolveRef(r));
+  } else if (command === "rename" && rest.length > 0) {
+    refs = [await resolveRef(rest[0]), ...rest.slice(1)];
+  }
+  const ids = refs.length > 0 ? refs : config.workflows;
 
   switch (command) {
     case "pull":
@@ -94,27 +204,59 @@ async function main() {
       }
       if (command === "push" && !noTypecheck) await runTypecheck(config.configDir, log);
       let failed = false;
-      for (const id of ids) {
+      const total = ids.length;
+      for (const [i, id] of ids.entries()) {
+        // progress: [2/5] prefix in both modes (dim on a TTY), transient
+        // "pulling …" only on a TTY, (0.4s) duration on pull/push result lines
+        const prefix = total > 1 ? `[${i + 1}/${total}] ` : "";
+        const plog: Log = prefix === "" ? log : {
+          info: (m) => log.info(style.dim(prefix) + m),
+          ok: (m) => log.ok(style.dim(prefix) + m),
+          warn: (m) => log.warn(styleErr.dim(prefix) + m),
+          error: (m) => log.error(styleErr.dim(prefix) + m),
+        };
+        const started = performance.now();
+        const dur = () => " " + style.dim(`(${((performance.now() - started) / 1000).toFixed(1)}s)`);
         try {
           if (command === "pull") {
-            const { name, dir } = await pullWorkflow(api, config.root, id, { commitOnPull: config.commitOnPull }, log);
-            log.info(`pulled "${name}" -> ${dir}`);
+            transient.show(`${prefix}pulling ${id}…`);
+            const { name, dir } = await pullWorkflow(api, config.root, id, { commitOnPull: config.commitOnPull }, plog);
+            plog.ok(`pulled "${name}" -> ${dir}${dur()}`);
           } else if (command === "push") {
-            await pushWorkflow(api, config.root, id, { force, commitOnPush: config.commitOnPush }, log);
+            transient.show(`${prefix}pushing ${id}…`);
+            await pushWorkflow(api, config.root, id, { force, commitOnPush: config.commitOnPush }, { ...plog, ok: (m) => plog.ok(m + dur()) });
           } else {
-            await statusWorkflow(api, config.root, id, log);
+            await statusWorkflow(api, config.root, id, plog);
           }
         } catch (err) {
           failed = true;
-          log.error(`${id}: ${(err as Error).message}`);
+          plog.error(`${id}: ${(err as Error).message}`);
+        } finally {
+          transient.clear();
         }
       }
       if (failed) process.exitCode = 1;
       break;
     }
+    case "list": {
+      const pulled = listWorkflowRefs(config.root, log);
+      for (const r of pulled) {
+        log.info(`${style.bold(r.name)}  ${style.dim(r.id)}  ${style.dim(path.relative(process.cwd(), r.dir) || ".")}`);
+      }
+      if (remoteFlag) {
+        const known = new Set(pulled.map((r) => r.id));
+        for (const wf of await api.listWorkflows()) {
+          if (known.has(wf.id)) continue;
+          log.info(`${style.bold(wf.name)}  ${style.dim(wf.id)}  ${style.dim("(not pulled)")}`);
+        }
+      } else if (pulled.length === 0) {
+        log.info(`no pulled workflows under ${config.root} — try: n8n-decanter list --remote`);
+      }
+      break;
+    }
     case "check": {
-      const dirs = rest.length > 0
-        ? rest.map((id) => {
+      const dirs = refs.length > 0
+        ? refs.map((id) => {
             const dir = findWorkflowDir(config.root, id, log);
             if (!dir) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
             return dir;
@@ -127,13 +269,13 @@ async function main() {
         const { errors, warnings } = validateWorkflowDir(dir);
         for (const w of warnings) log.warn(`${name}: ${w}`);
         for (const e of errors) log.error(`${name}: ${e}`);
-        if (errors.length === 0) log.info(`${name}: OK`);
+        if (errors.length === 0) log.ok(`${name}: OK`);
         errorCount += errors.length;
       }
       if (!noTypecheck) {
         try {
           // explicit ids scope the typecheck output too; bare `check` stays project-wide
-          await runTypecheck(config.configDir, log, rest.length > 0 ? dirs : undefined);
+          await runTypecheck(config.configDir, log, refs.length > 0 ? dirs : undefined);
         } catch (err) {
           log.error((err as Error).message);
           errorCount++;
@@ -143,7 +285,7 @@ async function main() {
       break;
     }
     case "rename": {
-      const [id, ...names] = rest;
+      const [id, ...names] = refs;
       if (!id) throw new Error('rename needs a workflow id: n8n-decanter rename <id> "<old node>" "<new node>" (or --workflow "<new name>")');
       if (workflowFlag) {
         if (names.length !== 1) throw new Error('rename --workflow needs exactly one name: n8n-decanter rename <id> --workflow "<new name>"');
@@ -160,7 +302,7 @@ async function main() {
       break;
     }
     default:
-      console.log(USAGE);
+      console.log(usage());
       throw new Error(`unknown command: ${command}`);
   }
 }

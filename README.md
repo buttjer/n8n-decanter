@@ -77,21 +77,36 @@ offline (no credentials, no network).
 
 ```sh
 n8n-decanter init [dir]             # interactive bootstrap (see Setup)
-n8n-decanter [id...] pull           # remote -> workflows/<Name>/
-n8n-decanter [id...] push [--force] [--no-typecheck]
-n8n-decanter [id...] status         # local vs remote drift report
-n8n-decanter [id...] check          # offline layout-compliance + typecheck
-n8n-decanter <id> rename "<old node>" "<new node>"   # rename a node everywhere
-n8n-decanter <id> rename --workflow "<new name>"     # rename the workflow
-n8n-decanter [id] watch             # push a workflow's nodes on save
+n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
+n8n-decanter [ref...] push [--force] [--no-typecheck]
+n8n-decanter [ref...] status        # local vs remote drift report
+n8n-decanter [ref...] check         # offline layout-compliance + typecheck
+n8n-decanter <ref> rename "<old node>" "<new node>"   # rename a node everywhere
+n8n-decanter <ref> rename --workflow "<new name>"     # rename the workflow
+n8n-decanter [ref] watch            # push a workflow's nodes on save
                                     #   (+ browser live-reload, opt-in)
+n8n-decanter list [--remote]        # pulled workflows: name, id, folder
+                                    #   (--remote adds unpulled ones)
+n8n-decanter completion zsh|bash    # print a shell completion script
 n8n-decanter <node-file> run [fixture.json]   # run a node offline, print items
 n8n-decanter uuid [count]           # lowercase v4 UUID(s) for new node ids
 ```
 
-Without ids, all workflows from the config are processed. The verb may sit
-anywhere among the arguments (`push wf123` == `wf123 push`) — the first token
-matching a known verb is the command; flags may appear in any position too.
+A workflow `<ref>` is its **id, its workflow/folder name, or a unique name
+prefix** — `n8n-decanter "Order Sync" push` and `n8n-decanter order push` both
+work. Matching is case-insensitive and never prompts: an ambiguous or unknown
+name errors with the candidate list. `pull` resolves not-yet-pulled names
+against the server's workflow list; a workflow literally named like a verb
+must be addressed by id. Without refs, all workflows from the config are
+processed. The verb may sit anywhere among the arguments (`push wf123` ==
+`wf123 push`) — the first token matching a known verb is the command; flags
+may appear in any position too.
+
+Output is styled (color, `✓`/`!`/`✗` glyphs, progress) **only when writing to
+a terminal** and respects `NO_COLOR`/`FORCE_COLOR`; piped or redirected output
+is plain line-oriented text, safe for scripts and LLM harnesses. Tab
+completion for verbs, flags, and workflow names: append
+`eval "$(n8n-decanter completion zsh)"` (or `bash`) to your shell rc.
 
 ## How node files work
 

@@ -202,7 +202,7 @@ export async function runTypecheck(startDir: string, log: Log, scopeDirs?: strin
   const scopeArgs = (scopeDirs ?? []).map((d) => path.resolve(d));
   try {
     await execFile(process.execPath, [script, ...scopeArgs], { cwd: tsconfigDir, encoding: "utf8" });
-    log.info("typecheck OK");
+    log.ok("typecheck OK");
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
     const output = ((e.stdout ?? "") + (e.stderr ?? "")).trim();

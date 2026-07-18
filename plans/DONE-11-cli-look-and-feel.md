@@ -1,7 +1,7 @@
 # Plan 11 — CLI look & feel
 
 **Priority:** P1 (style layer, progress, logo) / P2 (name resolution, completion, `list`)
-**Status:** Not started
+**Status:** Done (2026-07-18)
 **Theme:** Make the CLI pleasant for humans — color, progress, name-based
 arguments, shell completion, a small logo — without changing one byte of the
 plain, line-oriented output that LLMs, scripts, and the e2e suite consume.
@@ -150,3 +150,22 @@ today (no more leaked ANSI).
 - Cross-links: [Plan 9](DONE-9-tests-stability-refactoring.md) (unit-test
   harness for the resolver), [Plan 10](OPEN-10-hardening-bigger-refactors.md)
   (`status` exit codes pair naturally with `list`).
+
+## Outcome notes (implementation deviations, 2026-07-18)
+
+- `.decanter.json` holds **no name** (contrary to the sketch above) — the
+  resolver reads names from the folder basename *and* `workflow.json`'s
+  `name`, both addressable.
+- Task 3 landed as three `lib/state.mts` exports composed in the dispatcher:
+  `listWorkflowRefs` (dir scan), pure `matchWorkflowRef` (exact id → exact
+  name → unique prefix, throws on ambiguity), `looksLikeWorkflowId`. An
+  **id-shaped ref that matches nothing passes through unresolved** so
+  `pull`/`status` of a fresh remote id keep working; only name-shaped
+  no-matches error with candidates. `pull` consults `listWorkflows()` before
+  the pass-through.
+- Plan 13's publish build (landed after this plan was written) means the CLI
+  also runs from `dist/`: init's version read walks up from `import.meta.url`
+  to the nearest `package.json` instead of assuming the checkout layout.
+- The watch deep-link (backlog item) shipped here as `link()`'s first
+  consumer; success lines gained a `✓ ` prefix and error lines changed
+  `x ` → `✗ ` (the one piped-output wording change).

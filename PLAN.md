@@ -107,6 +107,37 @@ Ids only — names, folders, node lists are all derived on pull. Optional keys:
 browser live-reload (plans/5) — `browserReload` (`"off"` default, or `"proxy"`)
 and `proxyPort` (default `5679`).
 
+## Workflow refs & CLI output (plans/11)
+
+Every `[id…]` argument in the flows below is really a **ref**: an id, a
+workflow/folder name, or a unique name prefix. Resolution is tiered — exact id
+→ exact name (case-insensitive; folder basename *and* `workflow.json` `name`
+both count, since `.decanter.json` stores no name) → unique prefix — and
+never prompts: several matches in a tier error with the candidate list. An
+**id-shaped ref that matches nothing passes through unresolved** so
+`pull`/`status` of a fresh remote id keep working; `pull` additionally
+resolves unknown names against `GET /api/v1/workflows` (cursor-paginated,
+matched client-side). A workflow literally named like a verb loses to verb
+detection — use the id. Config entries stay ids only.
+
+Discovery surfaces: `list` (one line per pulled workflow: name, id, folder;
+`--remote` appends unpulled remote ones) and `completion zsh|bash`, a printed
+shell script that delegates to the hidden, credentials-free `__complete` verb
+(verbs, flags, local names/ids; silently name-less without a config).
+
+Output follows **one rule: styling and transient output exist only when the
+target stream is a TTY** (`util.styleText` per stream — `NO_COLOR` respected,
+though Node ignores it when `FORCE_COLOR` is set). Piped output is plain
+line-oriented text; no information is carried by color alone. Vocabulary
+(`lib/style.mts`): `✓ ` green success (`Log.ok`), `! ` yellow warn, `✗ ` red
+error (was `x `), dim metadata, bold names, OSC 8 `link()` (plain text+URL
+when piped). Progress — `[2/5]` counters and `(0.4s)` durations — is plain
+text in both modes; the transient `pulling <id>…` rewrite, the `init` logo
+(quadrant-block minifont; piped runs get one `n8n-decanter v<version>` line),
+and hyperlinks are TTY-only. `watch` prints a deep link to
+`<origin>/workflow/<id>` (proxy origin when live-reload runs, upstream
+otherwise).
+
 ## Pull flow (`n8n-decanter pull [id…]`)
 
 For each configured workflow:
@@ -402,6 +433,13 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   pull). Everything that located a node file's `.decanter.json`/
   `workflow.json` as a *sibling* (watch, run, `scripts/typecheck.mts`, the
   template verify hook) also looks one level up from a dir named `code/`.
+- **Name resolution is composed, not monolithic (2026-07-18, plans/11)**:
+  `lib/state.mts` exports `listWorkflowRefs` (dir scan; names from folder
+  basename + `workflow.json`), pure `matchWorkflowRef` (the tiered matcher,
+  throws on ambiguity), and `looksLikeWorkflowId`; the dispatcher composes
+  them per verb (only `pull` consults the API). Version for the `init`
+  banner walks up from `import.meta.url` to the nearest `package.json` —
+  required since plans/13's publish build also runs the CLI from `dist/`.
 - **Nodes deleted remotely** are dropped from `.decanter.json` with a warning;
   their files stay on disk (git is the safety net).
 - **Watch** resolves a workflow by id and watches its `code/` dir and

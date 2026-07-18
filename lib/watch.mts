@@ -7,6 +7,7 @@ import { createPrompt } from "./prompt.mts";
 import { pullWorkflow } from "./pull.mts";
 import { pushSingleNode, pushWorkflow } from "./push.mts";
 import { findWorkflowDir, readState } from "./state.mts";
+import { style } from "./style.mts";
 import type { DecanterConfig, Log, Workflow } from "./types.mts";
 import {
   CODE_DIR,
@@ -95,9 +96,15 @@ export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: str
     structureBaseline = readState(dir)?.lastPulledWorkflowHash;
   }
 
+  // Deep link straight to the watched workflow — through the proxy when it
+  // runs (so live reload works in that tab), the configured upstream otherwise.
+  let editorOrigin = config.host;
   if (config.browserReload === "proxy") {
-    await startProxy({ upstream: config.host, port: config.proxyPort }, log);
+    const proxy = await startProxy({ upstream: config.host, port: config.proxyPort }, log);
+    if (proxy) editorOrigin = `http://127.0.0.1:${proxy.port}`;
   }
+  const editorUrl = `${editorOrigin.replace(/\/+$/, "")}/workflow/${id}`;
+  log.info(`editor: ${style.link(editorUrl, editorUrl)}`);
 
   /** Resolve a file name inside code/ back to its node id (state re-read live). */
   const nodeIdForFile = (fileName: string): string | undefined => {

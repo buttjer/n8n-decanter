@@ -13,6 +13,23 @@ export class N8nApi {
     return this.#request("GET", `/api/v1/workflows/${encodeURIComponent(id)}`) as Promise<Workflow>;
   }
 
+  /**
+   * All workflows, cursor-paginated. Name matching stays client-side — the
+   * server-side `name` filter is exact-match only, which defeats prefix
+   * resolution.
+   */
+  async listWorkflows(): Promise<Workflow[]> {
+    const all: Workflow[] = [];
+    let cursor: string | undefined;
+    do {
+      const query = new URLSearchParams({ limit: "100", ...(cursor !== undefined && { cursor }) });
+      const page = (await this.#request("GET", `/api/v1/workflows?${query}`)) as { data: Workflow[]; nextCursor?: string | null };
+      all.push(...page.data);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor !== undefined);
+    return all;
+  }
+
   async updateWorkflow(id: string, body: WorkflowPut): Promise<Workflow | undefined> {
     return this.#request("PUT", `/api/v1/workflows/${encodeURIComponent(id)}`, body) as Promise<Workflow | undefined>;
   }

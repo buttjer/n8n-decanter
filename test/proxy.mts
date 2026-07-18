@@ -11,6 +11,7 @@ import { createStepRunner } from "./harness.mts";
 const logs: { level: string; msg: string }[] = [];
 const log: Log = {
   info: (m) => logs.push({ level: "info", msg: m }),
+  ok: (m) => logs.push({ level: "ok", msg: m }),
   warn: (m) => logs.push({ level: "warn", msg: m }),
   error: (m) => logs.push({ level: "error", msg: m }),
 };

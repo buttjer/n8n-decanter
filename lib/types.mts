@@ -76,6 +76,8 @@ export interface DecanterConfig {
 
 export interface Log {
   info(message: string): void;
+  /** Success line — rendered as a green `✓ ` prefix (plain `✓ ` when piped). */
+  ok(message: string): void;
   warn(message: string): void;
   error(message: string): void;
 }
