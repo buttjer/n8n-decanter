@@ -4,10 +4,27 @@
 [![npm](https://img.shields.io/npm/v/n8n-decanter)](https://www.npmjs.com/package/n8n-decanter)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Standalone CLI that keeps n8n workflows in git: pull full workflows into a
-folder-per-workflow layout, keep every Code node's source as its own file
-(`.js` lossless, or `.ts` compiled one-way), and push them back.
-See [PLAN.md](PLAN.md) for the design.
+**Work on n8n like a codebase — built for AI coding agents.**
+
+n8n-decanter syncs your n8n instance into a git-friendly, folder-per-workflow
+layout: every Code node's source becomes its own `.js` or `.ts` file,
+editable in your IDE or by your agent, and pushed back through the n8n API.
+
+- **Real version control** — meaningful diffs, PRs, blame; every push and
+  pull is auto-committed.
+- **TypeScript or typed JS** — write nodes in TS (compiled on push); n8n
+  globals (`$input`, `$('…')`, …) are typed in both.
+- **Agent-native** — `init` scaffolds Claude Code / Cursor / Codex configs
+  and verification hooks; offline `check` and `run` give agents a
+  credential-free feedback loop.
+- **Guardrails** — a compliance guard and typecheck gate block broken
+  pushes; a drift guard keeps you from clobbering remote edits.
+- **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
+  tab via a local proxy.
+- **Shared code across workflows** *(planned)* — value imports from
+  `shared/` inlined into `.ts` nodes at push; today imports are type-only.
+
+![VS Code Screenshot](./docs/screenshot.webp)
 
 ## Setup
 
