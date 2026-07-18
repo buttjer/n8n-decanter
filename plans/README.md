@@ -37,6 +37,18 @@ items not yet claimed by one. Recommended order:
    read it); pull mirroring ships feature-detected so it self-activates once
    upstream exposes reads. Gated on a live-instance spike, so it trails the
    offline work.
+9. [Test & stability quick wins](OPEN-9-tests-stability-refactoring.md) —
+   the no-brainer hardening half: fast `node:test` unit tests for the pure
+   core, the corrupt-`.decanter.json` crash fix (one broken state file
+   currently breaks every command), small e2e/proxy coverage gaps, and
+   mechanical dedupes. Fully offline, no decisions needed — can interleave
+   with any other plan.
+10. [Hardening: bigger refactors & decision-gated work](OPEN-10-hardening-bigger-refactors.md) —
+    the rest of the hardening split: behavior changes (timeouts, `status`
+    exit codes, debug switch), the deliberately-diverged dedupes
+    (kebab-rename machinery, `code/`-parent lookup), watch testability, and
+    CI. Each task needs a decision or checking first; lands after Plan 9's
+    tests exist as the safety net.
 
 ## Conventions
 
