@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-18
+
+First public release.
+
 ### Added
 
 - Push, watch, and `status` now report the workflow's **publication state**
@@ -16,13 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   API update to a published workflow — there is no draft-only push), and
   `status` shows `published`/`unpublished` in its header line. Servers that
   don't report an `active` flag are unaffected.
-
-## [0.1.0] - 2026-07-18
-
-First public release.
-
-### Added
-
 - `watch` now also watches **`workflow.json`** and pushes structural edits
   (connections, node settings, …) on save — the IDE becomes a peer editor of
   the n8n UI. A save only pushes cleanly when the remote structure is
