@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Browser live-reload for `watch` (opt-in). Set `"browserReload": "proxy"` in
+  `decanter.config.json` and `watch` boots a transparent reverse proxy on
+  `127.0.0.1:5679` (override with `"proxyPort"`) that forwards everything to
+  your n8n host — auth, assets, and n8n's native `/rest/push` WebSocket — while
+  injecting a small live-reload client into the editor HTML. Open the editor
+  through the proxy URL; each successful single-node push then refreshes the
+  tab automatically, **unless the editor has unsaved changes** — then it logs a
+  console warning and leaves your in-browser work untouched. If the port can't
+  be bound, `watch` warns and keeps syncing without live reload. Works cleanly
+  against a local http n8n; https/remote upstreams are best-effort (Secure
+  cookies don't survive the plain-http hop). Default off.
 - `rename` verb: `n8n-decanter rename <id> "<old node>" "<new node>"` renames
   a node atomically everywhere the old name is load-bearing — `node.name`,
   connection keys and targets, literal `$('…')` references in every node

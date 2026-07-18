@@ -154,7 +154,7 @@ async function main() {
     }
     case "watch": {
       if (rest.length !== 1) throw new Error("watch needs exactly one node file argument");
-      await watchFile(api, rest[0], { force, commitOnPush: config.commitOnPush }, log);
+      await watchFile(api, rest[0], config, { force }, log);
       break;
     }
     default:

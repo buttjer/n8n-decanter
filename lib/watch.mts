@@ -1,17 +1,26 @@
 import { watch } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
+import { startProxy } from "./proxy.mts";
 import { pushSingleNode } from "./push.mts";
 import { readState } from "./state.mts";
-import type { Log } from "./types.mts";
+import type { DecanterConfig, Log } from "./types.mts";
 import { CODE_DIR } from "./util.mts";
 
 /**
  * Fast inner loop: watch one node file and push only that node on change.
  * Watches the directory (not the file) so atomic editor saves keep working.
  * Node files live in <workflow>/code/, so the state file sits one level up.
+ *
+ * With `browserReload: "proxy"` a transparent dev proxy boots first (Plan 5):
+ * each successful single-node push signals the browser tab to refresh (the
+ * broadcast fires from pushSingleNode via lib/proxy's notifyPushed).
  */
-export async function watchFile(api: N8nApi, file: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<void> {
+export async function watchFile(api: N8nApi, file: string, config: DecanterConfig, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
+  const commitOnPush = config.commitOnPush;
+  if (config.browserReload === "proxy") {
+    await startProxy({ upstream: config.host, port: config.proxyPort }, log);
+  }
   const abs = path.resolve(file);
   const dir = path.dirname(abs);
   const name = path.basename(abs);

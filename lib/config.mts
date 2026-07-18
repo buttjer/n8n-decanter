@@ -26,6 +26,8 @@ export function loadConfig(cwd: string = process.cwd(), { requireCredentials = t
         workflows?: string[];
         commitOnPush?: boolean;
         commitOnPull?: boolean;
+        browserReload?: string;
+        proxyPort?: number;
       };
       loadEnv(dir);
       const host = (process.env.N8N_HOST ?? "").replace(/\/+$/, "");
@@ -39,6 +41,8 @@ export function loadConfig(cwd: string = process.cwd(), { requireCredentials = t
         workflows: cfg.workflows ?? [],
         commitOnPush: cfg.commitOnPush !== false,
         commitOnPull: cfg.commitOnPull !== false,
+        browserReload: cfg.browserReload === "proxy" ? "proxy" : "off",
+        proxyPort: typeof cfg.proxyPort === "number" ? cfg.proxyPort : 5679,
         host,
         apiKey,
       };

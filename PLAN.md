@@ -16,8 +16,8 @@ n8n-decanter/
   n8n-decanter.mts        # CLI entry: init | pull | push | status | check |
                           #   rename | watch | run | uuid
   lib/                    # implementation: api, compile, config, git, init,
-                          #   pull, push, rename, run, state, status, util,
-                          #   validate, watch (one .mts each) + types.mts
+                          #   proxy, pull, push, rename, run, state, status,
+                          #   util, validate, watch (one .mts each) + types.mts
                           #   (shared data-model shapes)
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
@@ -102,7 +102,10 @@ code-stripped workflow JSON, to warn about structural UI edits.
 }
 ```
 
-Ids only — names, folders, node lists are all derived on pull.
+Ids only — names, folders, node lists are all derived on pull. Optional keys:
+`commitOnPush`/`commitOnPull` (default `true`, see Push/Pull), and — for watch's
+browser live-reload (plans/5) — `browserReload` (`"off"` default, or `"proxy"`)
+and `proxyPort` (default `5679`).
 
 ## Pull flow (`n8n-decanter pull [id…]`)
 
@@ -216,6 +219,22 @@ Fast inner loop while developing a single node: watch one `.ts`/`.js` file,
 resolve its workflow + node via the directory's `.decanter.json`, and on change
 compile (if TS) and push **only that node** (GET workflow → replace `jsCode` →
 sanitized PUT). Same drift guard as full push.
+
+**Browser live-reload (optional, plans/5).** With `browserReload: "proxy"`,
+watch first boots a transparent reverse proxy on `127.0.0.1:<proxyPort>`
+(default 5679, native `node:http`/`net`/`tls`, no new dep). It pipes every
+request to `host` untouched — auth, assets, and n8n's native `/rest/push`
+WebSocket — and injects a small live-reload client into `text/html` responses
+(buffered, injected before `</body>`; everything else streams through). Open the
+editor via the **proxy URL**; each successful single-node push calls
+`notifyPushed` (a module singleton in `lib/proxy.mts`, also invoked by full
+`push`), which broadcasts a `pushed` SSE event and the client reloads the tab —
+unless the editor has unsaved changes (a synthetic-`beforeunload` dirty probe →
+console warning instead) or a different workflow is open. A port-bind failure
+warns and watch keeps syncing without reload. Clean for a local http `host`;
+https/remote is best-effort (Secure cookies don't survive the plain-http hop).
+**Auth/WebSocket passthrough and the dirty safeguard need a live instance to
+verify** — the offline-testable parts are covered by `test/proxy.mts`.
 
 ## Init flow (`n8n-decanter init [dir]`)
 
@@ -340,6 +359,19 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
 - **Watch** uses native `fs.watch` on the *directory*, filtering for the file
   name (atomic editor saves replace the inode and break plain file watches),
   with 200 ms debounce and overlap protection. No chokidar dependency needed.
+- **Browser live-reload proxy (added 2026-07-18, plans/5)**: `lib/proxy.mts`, a
+  native-Node reverse proxy that watch boots when `browserReload: "proxy"` (see
+  Watch mode). Deliberate deviations from the plan sketch, all to stay
+  dependency-free and self-contained: SSE (not a WebSocket) for the reload
+  channel, the client inlined in the module (no `src/templates/` asset), and a
+  typed `notifyPushed` module singleton instead of `global.__decanterProxy` —
+  no-op without a running proxy, so plain `push` calls it safely. HTML is
+  buffered to inject before `</body>` (`accept-encoding` stripped so it arrives
+  uncompressed); non-HTML and `HEAD` stream through untouched. Dirty detection
+  is a best-effort synthetic-`beforeunload` probe (framework-agnostic but
+  version-sensitive; fails toward *not* reloading). `test/proxy.mts` covers
+  injection, passthrough, client/SSE, and graceful port-bind failure; live
+  auth/WebSocket passthrough is unverified (mock can't answer it).
 - **Piped stdin for init prompts**: `readline/promises` drops lines that
   arrive before `question()` is called and hangs on stdin EOF → init uses a
   small buffering prompt helper so `printf "host\nkey\n" | n8n-decanter init`

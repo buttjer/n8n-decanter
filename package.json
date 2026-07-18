@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.cli.json && node scripts/typecheck.mts",
-    "test": "node test/e2e.mts"
+    "test": "node test/e2e.mts && node test/proxy.mts"
   },
   "engines": {
     "node": ">=22.18"
