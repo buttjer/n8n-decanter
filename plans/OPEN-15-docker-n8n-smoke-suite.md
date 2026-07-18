@@ -126,7 +126,10 @@ dependency, and the suite is invoked only by an explicit
   key creation. If a version bump breaks only the bootstrap, that is
   maintenance; if it breaks tasks 2–5, that is news about n8n-decanter.
 - Dev-machine prereqs (checked 2026-07-18): Docker Desktop is installed on
-  the dev Mac but the daemon must be running; agent sessions need
-  unsandboxed exec for docker (socket + registry access).
+  the dev Mac; the daemon must be running. Agent sessions run docker fully
+  sandboxed — `.claude/settings.local.json` allowlists the
+  `~/.docker/run/docker.sock` unix socket + `~/.docker` reads (verified
+  with an end-to-end pull/run). Registry pulls need no network allowlist
+  entries: they happen inside the daemon, outside the sandbox.
 - Version pin doubles as a compatibility statement: bump the tag, run the
   suite, record the result in PLAN.md's open-questions section.
