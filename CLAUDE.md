@@ -69,11 +69,12 @@ mock server.
   shared data-model types in `lib/types.mts`.
 - Data model (the part that spans files):
   - `workflows/<Name>/workflow.json` — full workflow, each Code node's
-    `jsCode` replaced by a `//@file:<Node>.js` placeholder.
-  - `workflows/<Name>/.decanter.json` — state: node-id → filename map plus
-    sync hashes. `lastPushedHash` means "hash of the *remote* code at last
-    sync (push **or** pull)", not only push. `lastPulledWorkflowHash` is the
-    code-stripped, key-sorted structure hash.
+    `jsCode` replaced by a `//@file:code/<node>.js` placeholder; node sources
+    live kebab-case-named in the folder's `code/` subdir.
+  - `workflows/<Name>/.decanter.json` — state: node-id → file-path map
+    (`code/` prefix included) plus sync hashes. `lastPushedHash` means "hash
+    of the *remote* code at last sync (push **or** pull)", not only push.
+    `lastPulledWorkflowHash` is the code-stripped, key-sorted structure hash.
   - `.js` node files are lossless (byte-identical round-trip). `.ts` files
     are one-way: push compiles via esbuild (`bundle: false`) and appends a
     `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker presence
@@ -84,8 +85,9 @@ mock server.
   2. Drift guard: remote changed since last sync → abort; only this one is
      bypassed by `--force`.
 - Pull never touches `.ts` sources; unmergeable remote changes surface as
-  `<Node>.remote.js` files. Pull re-baselines `lastPushedHash` even on
-  conflict — meaning the next push overwrites remote edits by design.
+  `code/<node>.remote.js` files. Pull re-baselines `lastPushedHash` even on
+  conflict — meaning the next push overwrites remote edits by design. Pull's
+  rename machinery also migrates pre-`code/` flat layouts.
 - Sync hashes are recorded from the PUT *response*, not the request.
 - `template/` is copied by `init` into new sync dirs. Files named
   `X.example` are inert in this repo on purpose (so agent tooling ignores
@@ -99,5 +101,6 @@ n8n Code node source is a *function body* (top-level `return`/`await`), which
 `tsc` rejects in `.ts` files (TS1108). `scripts/typecheck.mts` wraps node
 files in an in-memory `async function` via a custom CompilerHost and maps
 diagnostic lines back; node files are recognized by a `.decanter.json`
-sibling. Files on disk must stay verbatim — never "fix" a node file by
-wrapping it on disk or stripping its top-level return.
+sibling (directly, or in the parent of their `code/` dir). Files on disk must
+stay verbatim — never "fix" a node file by wrapping it on disk or stripping
+its top-level return.

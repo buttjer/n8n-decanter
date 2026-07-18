@@ -3,7 +3,8 @@
 // (top-level `return` / `await`), which plain `tsc` rejects in .ts files
 // (TS1108). This script wraps node files in `async function () { ... }`
 // in memory only — files on disk stay verbatim — and maps diagnostic line
-// numbers back. Node files are recognized by a .decanter.json sibling.
+// numbers back. Node files are recognized by a .decanter.json sibling, or —
+// code/ layout — one in the parent of their code/ dir.
 import { existsSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
@@ -40,7 +41,10 @@ if (!parsed) process.exit(2);
 function isNodeFile(fileName: string): boolean {
   if (fileName.endsWith(".d.ts") || fileName.endsWith(".remote.js")) return false;
   if (!/\.(ts|js)$/.test(fileName)) return false;
-  return existsSync(path.join(path.dirname(fileName), ".decanter.json"));
+  const dir = path.dirname(fileName);
+  if (existsSync(path.join(dir, ".decanter.json"))) return true;
+  // kebab-case layout: node files live in <workflow>/code/, state one level up
+  return path.basename(dir) === "code" && existsSync(path.join(path.dirname(dir), ".decanter.json"));
 }
 
 const wrapped = new Set<string>();

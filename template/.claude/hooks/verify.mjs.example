@@ -18,11 +18,15 @@ const file = payload.tool_input?.file_path;
 if (!file) process.exit(0);
 
 // A node source file is a .ts/.js (not a .remote.js artifact) that lives in a
-// workflow folder — marked by a sibling .decanter.json.
-const isNodeFile =
-  /\.(ts|js)$/.test(file) &&
-  !file.endsWith(".remote.js") &&
-  existsSync(path.join(path.dirname(file), ".decanter.json"));
+// workflow folder's code/ subdir — the .decanter.json sits in the parent
+// (legacy layouts had it as a direct sibling).
+const dir = path.dirname(file);
+const stateDir = existsSync(path.join(dir, ".decanter.json"))
+  ? dir
+  : path.basename(dir) === "code" && existsSync(path.join(path.dirname(dir), ".decanter.json"))
+    ? path.dirname(dir)
+    : null;
+const isNodeFile = /\.(ts|js)$/.test(file) && !file.endsWith(".remote.js") && stateDir !== null;
 if (!isNodeFile) process.exit(0);
 
 // Scope the check to the edited workflow. `check` matches on the workflow id
@@ -30,7 +34,7 @@ if (!isNodeFile) process.exit(0);
 // if the state file is unreadable, fall back to a project-wide check.
 let workflowId;
 try {
-  workflowId = JSON.parse(readFileSync(path.join(path.dirname(file), ".decanter.json"), "utf8")).workflowId;
+  workflowId = JSON.parse(readFileSync(path.join(stateDir, ".decanter.json"), "utf8")).workflowId;
 } catch {}
 const args = typeof workflowId === "string" && workflowId ? ["check", workflowId] : ["check"];
 const res = spawnSync("n8n-decanter", args, { encoding: "utf8" });

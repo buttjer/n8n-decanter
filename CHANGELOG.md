@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** node sources now live in a `code/` subdir inside each
+  workflow folder, named in kebab-case after their node (`Parse Order` →
+  `code/parse-order.js`). `//@file:` placeholders and `.decanter.json`
+  entries carry the `code/` prefix, `.remote.js` conflict artifacts land in
+  `code/` too, and `check`/`push` reject node files outside it. Existing
+  folders migrate automatically on the next `pull` (files are renamed in
+  place).
 - `check <id …>` with explicit workflow ids now scopes the typecheck too:
   only diagnostics from the given workflows' folders are reported and
   counted (the whole project still compiles, so cross-file types keep

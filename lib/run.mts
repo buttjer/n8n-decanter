@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { compileTs } from "./compile.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
-import { FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
+import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -24,11 +24,16 @@ interface Fixture {
 }
 
 /**
- * Locate the node in the sibling workflow.json whose //@file: placeholder
- * points at `basename`, so we can read its run mode. Returns null when there is
- * no workflow.json or no matching node (a bare file can still be run).
+ * Locate the node whose //@file: placeholder points at the given file, so we
+ * can read its run mode. workflow.json sits next to the file, or — code/
+ * layout — one level up. Returns null when there is no workflow.json or no
+ * matching node (a bare file can still be run).
  */
-function findNode(dir: string, basename: string): WorkflowNode | null {
+function findNode(resolved: string): WorkflowNode | null {
+  let dir = path.dirname(resolved);
+  if (!existsSync(path.join(dir, "workflow.json")) && path.basename(dir) === CODE_DIR) {
+    dir = path.dirname(dir);
+  }
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) return null;
   let wf: Workflow;
@@ -37,11 +42,12 @@ function findNode(dir: string, basename: string): WorkflowNode | null {
   } catch {
     return null;
   }
+  const ref = path.relative(dir, resolved).split(path.sep).join("/");
   for (const node of wf.nodes ?? []) {
     if (!isJsCodeNode(node)) continue;
     const jsCode = node.parameters.jsCode ?? "";
     if (!jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) continue;
-    if (jsCode.slice(FILE_PLACEHOLDER_PREFIX.length).trim() === basename) return node;
+    if (jsCode.slice(FILE_PLACEHOLDER_PREFIX.length).trim() === ref) return node;
   }
   return null;
 }
@@ -154,9 +160,8 @@ export async function runNode(file: string, fixturePath: string | undefined, log
   if (!existsSync(resolved)) throw new Error(`node file not found: ${file}`);
   if (!/\.(ts|js)$/.test(resolved)) throw new Error(`not a node source file (need .js or .ts): ${file}`);
 
-  const dir = path.dirname(resolved);
   const basename = path.basename(resolved);
-  const node = findNode(dir, basename);
+  const node = findNode(resolved);
   const mode = node?.parameters?.mode ?? "runOnceForAllItems";
   if (!node) log.warn(`no workflow.json placeholder points at ${basename} — assuming ${mode}`);
 

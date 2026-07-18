@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { readState } from "./state.mts";
 import type { Log, Workflow } from "./types.mts";
-import { FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
+import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
 
 const execFile = promisify(execFileCb);
 
@@ -25,6 +25,9 @@ export function validateNodeFile(dir: string, file: string, label: string = file
   if (!/\.(ts|js)$/.test(file)) {
     errors.push(`${label}: referenced file ${file} must be .js or .ts`);
     return { errors, warnings };
+  }
+  if (!file.startsWith(CODE_DIR + "/") || file.slice(CODE_DIR.length + 1).includes("/")) {
+    errors.push(`${label}: node file ${file} sits outside ${CODE_DIR}/ — node sources live directly in the ${CODE_DIR}/ subdir (a fresh pull migrates old layouts)`);
   }
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) {
@@ -78,8 +81,13 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     coveredRemoteFiles.add(file.replace(/\.(ts|js)$/, ".remote.js"));
   }
 
-  for (const entry of readdirSync(dir)) {
-    if (entry.endsWith(".remote.js") && !coveredRemoteFiles.has(entry)) {
+  const strays = readdirSync(dir).filter((e) => e.endsWith(".remote.js"));
+  const codeDir = path.join(dir, CODE_DIR);
+  if (existsSync(codeDir)) {
+    strays.push(...readdirSync(codeDir).filter((e) => e.endsWith(".remote.js")).map((e) => `${CODE_DIR}/${e}`));
+  }
+  for (const entry of strays) {
+    if (!coveredRemoteFiles.has(entry)) {
       warnings.push(`stray remote copy ${entry} — no placeholder references its node; port or delete it`);
     }
   }

@@ -12,7 +12,7 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
 
 ## Items
 
-- [ ] **Kebab-case code layout** — js node files to kebab-case, moved into a
+- [x] **Kebab-case code layout** — js node files to kebab-case, moved into a
       `workflows/*/code/` subdir.
 - [x] **Id-first argument order** — accept `n8n-decanter.mts [id...] <verb>`
       instead of / in addition to `<verb> [id...]`.

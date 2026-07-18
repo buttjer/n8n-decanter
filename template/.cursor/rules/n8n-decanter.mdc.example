@@ -8,8 +8,8 @@ This repository is managed by **n8n-decanter**. The authoritative contract is
 
 Hard rules (violating any of these corrupts sync state):
 
-- `jsCode` in any `workflow.json` is only a `//@file:<name>` placeholder. Never inline
-  code there — edit the referenced sibling source file.
+- `jsCode` in any `workflow.json` is only a `//@file:code/<name>` placeholder. Never
+  inline code there — edit the referenced source file in the folder's `code/` subdir.
 - Never edit `.decanter.json` (machine state) or any `*.remote.js` (incoming-change
   artifact — port its change into the matching `.ts`, then delete it).
 - Never write a `// @ts-n8n sha256:` line — the tool appends it on push.

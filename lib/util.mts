@@ -3,6 +3,8 @@ import type { JsCodeNode, Workflow, WorkflowNode, WorkflowPut } from "./types.mt
 
 export const CODE_NODE_TYPE = "n8n-nodes-base.code";
 export const FILE_PLACEHOLDER_PREFIX = "//@file:";
+/** Subdir inside a workflow folder that holds the node source files. */
+export const CODE_DIR = "code";
 const MARKER_PREFIX = "// @ts-n8n ";
 
 /** True for Code nodes whose source is JavaScript (the only kind we extract). */
@@ -46,6 +48,17 @@ export function sanitizeFilename(name: string): string {
     .trim()
     .replace(/\.+$/, "");
   return cleaned || "unnamed";
+}
+
+/** Kebab-case node-file name from a node name ("Parse Order" -> "parse-order"). */
+export function kebabCase(name: string): string {
+  const kebab = sanitizeFilename(name)
+    .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1-$2")
+    .replace(/(\p{Lu}+)(\p{Lu}\p{Ll})/gu, "$1-$2")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  return kebab || "unnamed";
 }
 
 const TOP_LEVEL_ORDER = [

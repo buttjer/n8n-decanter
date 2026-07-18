@@ -6,7 +6,8 @@ through a one-line `@AGENTS.md` import in `CLAUDE.md`; other agents can be point
 it (see `SCAFFOLD.md`). Keep project-specific rules here so every agent stays in sync.
 
 This repo holds n8n workflows *decanted* into git-friendly form: one folder per
-workflow containing `workflow.json` plus one source file per Code node. The
+workflow containing `workflow.json` plus a `code/` subdir with one source file
+per Code node. The
 `n8n-decanter` CLI moves content between here and the live n8n instance
 (`pull` / `push`). This document is the contract for creating and editing these files.
 
@@ -17,17 +18,19 @@ node types and parameters, expression syntax, connection semantics, the Code-nod
 runtime. It is **wrong** about how code is stored here. The deviations:
 
 1. **`jsCode` in `workflow.json` never contains code.** Its entire value is a
-   placeholder: `//@file:<filename>` (e.g. `"jsCode": "//@file:Amazon Feed.ts"`).
+   placeholder: `//@file:code/<filename>`
+   (e.g. `"jsCode": "//@file:code/amazon-feed.ts"`).
    Never inline JavaScript into `workflow.json`; edit the referenced file.
-2. **Code node sources are sibling files**, named after the node
-   (sanitized: `/` and `:` → `-`). `.js` files are pushed verbatim (what you
-   write is exactly what runs in n8n). `.ts` files are compiled on push; the
-   local `.ts` is the only source of truth — n8n holds compiled output.
+2. **Code node sources live in the folder's `code/` subdir**, named after the
+   node in kebab-case (`Amazon Feed` → `code/amazon-feed.ts`). `.js` files are
+   pushed verbatim (what you write is exactly what runs in n8n). `.ts` files
+   are compiled on push; the local `.ts` is the only source of truth — n8n
+   holds compiled output.
 3. **Never write a `// @ts-n8n sha256:…` line.** That marker is appended by the
    tool to *compiled* output on push. It must not appear in any repo file.
 4. **`.decanter.json` is machine state** (node-id → filename map, drift-detection
    hashes). Never edit it by hand; never "fix" a hash.
-5. **`<Node>.remote.js` is an incoming-change artifact** written by `pull` when
+5. **`code/<node>.remote.js` is an incoming-change artifact** written by `pull` when
    someone edited a TS-managed node in the n8n UI. Handle it like an incoming
    diff: port the change into the `.ts`, delete the `.remote.js`, then the user
    pushes. Never edit `.remote.js` itself; never push while one exists.
@@ -49,9 +52,9 @@ runtime. It is **wrong** about how code is stored here. The deviations:
 | File | Written by | May the agent edit it? |
 |---|---|---|
 | `workflow.json` | pull + you | Yes — structure, parameters, connections. Placeholders stay placeholders. |
-| `<Node>.js` | pull + you | Yes — this is live node code, verbatim. |
-| `<Node>.ts` | you only | Yes — pull never touches it. |
-| `<Node>.remote.js` | pull only | No — read, port into the `.ts`, delete. |
+| `code/<node>.js` | pull + you | Yes — this is live node code, verbatim. |
+| `code/<node>.ts` | you only | Yes — pull never touches it. |
+| `code/<node>.remote.js` | pull only | No — read, port into the `.ts`, delete. |
 | `.decanter.json` | tool only | No. |
 | `decanter.config.json` | you | Yes — add/remove workflow ids. |
 | `n8n-globals.d.ts` | you | Yes — extend when node code uses a global it doesn't cover yet. |
@@ -72,7 +75,7 @@ A node object:
   "position": [880, 300],
   "parameters": {
     "mode": "runOnceForAllItems", // or "runOnceForEachItem"
-    "jsCode": "//@file:Amazon Feed.ts"
+    "jsCode": "//@file:code/amazon-feed.ts"
   }
 }
 ```
@@ -101,9 +104,9 @@ Rules:
 1. `name` in the node object.
 2. Every reference in `connections` (keys *and* target `"node"` values).
 3. Every `$('Old Name')` in **all** code files of the workflow.
-4. The source file name and its `//@file:` placeholder (keep name-file
-   convention). The tool re-maps by node id on the next pull, but the repo must
-   be self-consistent immediately.
+4. The source file name and its `//@file:` placeholder (keep the kebab-case
+   name-file convention, file stays in `code/`). The tool re-maps by node id
+   on the next pull, but the repo must be self-consistent immediately.
 
 Renaming a **workflow**: change `name` in `workflow.json`; folder rename happens
 on the next pull (or do it yourself, folder names are cosmetic — the id inside
@@ -113,7 +116,7 @@ on the next pull (or do it yourself, folder names are cosmetic — the id inside
 
 1. Add the node object — generate its `id` with `n8n-decanter uuid` (a lowercase
    v4 UUID), placeholder `jsCode`, position, connections.
-2. Create the source file it points at (`.js` or `.ts`, see below).
+2. Create the source file it points at in `code/` (`.js` or `.ts`, see below).
 3. Verify: `n8n-decanter run <file> [fixture.json]` to execute it, then
    `n8n-decanter check` (typecheck + layout).
 

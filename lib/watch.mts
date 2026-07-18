@@ -4,19 +4,27 @@ import type { N8nApi } from "./api.mts";
 import { pushSingleNode } from "./push.mts";
 import { readState } from "./state.mts";
 import type { Log } from "./types.mts";
+import { CODE_DIR } from "./util.mts";
 
 /**
  * Fast inner loop: watch one node file and push only that node on change.
  * Watches the directory (not the file) so atomic editor saves keep working.
+ * Node files live in <workflow>/code/, so the state file sits one level up.
  */
 export async function watchFile(api: N8nApi, file: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<void> {
   const abs = path.resolve(file);
   const dir = path.dirname(abs);
   const name = path.basename(abs);
-  const state = readState(dir);
-  if (!state) throw new Error(`no ${dir}/.decanter.json — is this a pulled workflow folder?`);
-  const entry = Object.entries(state.nodes).find(([, ns]) => ns.file === name);
-  if (!entry) throw new Error(`${name} is not a tracked node file (check .decanter.json)`);
+  let stateDir = dir;
+  let state = readState(stateDir);
+  if (!state && path.basename(dir) === CODE_DIR) {
+    stateDir = path.dirname(dir);
+    state = readState(stateDir);
+  }
+  if (!state) throw new Error(`no .decanter.json in ${dir} or its parent — is this a pulled workflow folder?`);
+  const rel = path.relative(stateDir, abs).split(path.sep).join("/");
+  const entry = Object.entries(state.nodes).find(([, ns]) => ns.file === rel);
+  if (!entry) throw new Error(`${rel} is not a tracked node file (check .decanter.json)`);
   const [nodeId] = entry;
 
   let timer: NodeJS.Timeout | undefined;
@@ -30,7 +38,7 @@ export async function watchFile(api: N8nApi, file: string, { force = false, comm
     }
     running = true;
     try {
-      await pushSingleNode(api, dir, nodeId, { force, commitOnPush }, log);
+      await pushSingleNode(api, stateDir, nodeId, { force, commitOnPush }, log);
     } catch (err) {
       log.error((err as Error).message);
     } finally {
@@ -50,6 +58,6 @@ export async function watchFile(api: N8nApi, file: string, { force = false, comm
   watch(dir, (_event, changed) => {
     if (changed === name) trigger();
   });
-  log.info(`watching ${name} (node ${nodeId}) — Ctrl-C to stop`);
+  log.info(`watching ${rel} (node ${nodeId}) — Ctrl-C to stop`);
   await new Promise(() => {});
 }

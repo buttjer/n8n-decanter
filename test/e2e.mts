@@ -2,7 +2,7 @@
 // Needs to bind a localhost port — sandboxed environments may block this.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -163,17 +163,17 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`, ".env must survive --force");
 });
 
-await step("pull: creates folder, files, placeholders, state", async () => {
+await step("pull: creates folder, kebab-case files in code/, placeholders, state", async () => {
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  assert.equal(read(dir1, "Transform.js"), JS_CODE);
-  assert.equal(read(dir1, "Amazon Feed.js"), "return $input.all();\n");
+  assert.equal(read(dir1, "code", "transform.js"), JS_CODE);
+  assert.equal(read(dir1, "code", "amazon-feed.js"), "return $input.all();\n");
   const wfJson = read(dir1, "workflow.json");
-  assert.match(wfJson, /"\/\/@file:Transform\.js"/);
-  assert.match(wfJson, /"\/\/@file:Amazon Feed\.js"/);
+  assert.match(wfJson, /"\/\/@file:code\/transform\.js"/);
+  assert.match(wfJson, /"\/\/@file:code\/amazon-feed\.js"/);
   const s = state(dir1);
   assert.equal(s.workflowId, "wf123");
-  assert.equal(s.nodes.n2.file, "Transform.js");
+  assert.equal(s.nodes.n2.file, "code/transform.js");
   assert.match(s.nodes.n2.lastPushedHash, /^sha256:[0-9a-f]{64}$/);
   assert.ok(s.lastPulledWorkflowHash);
 });
@@ -186,28 +186,49 @@ await step("push unchanged: byte-identical js round-trip", async () => {
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, JS_CODE);
 });
 
+await step("pre-code/ layout migrates on pull; check flags it before", async () => {
+  // simulate the old flat layout for one node: file at the folder root
+  renameSync(path.join(dir1, "code", "transform.js"), path.join(dir1, "Transform.js"));
+  const s = state(dir1);
+  s.nodes.n2.file = "Transform.js";
+  writeFileSync(path.join(dir1, ".decanter.json"), JSON.stringify(s, null, 2) + "\n");
+  writeFileSync(path.join(dir1, "workflow.json"), read(dir1, "workflow.json").replace("//@file:code/transform.js", "//@file:Transform.js"));
+  let r = await cli("check");
+  assert.equal(r.code, 1, "old layout must fail the compliance check: " + r.out);
+  assert.match(r.out, /sits outside code\//);
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /renamed Transform\.js -> code\/transform\.js/);
+  assert.equal(read(dir1, "code", "transform.js"), JS_CODE);
+  assert.ok(!existsSync(path.join(dir1, "Transform.js")), "old flat file must be gone");
+  assert.equal(state(dir1).nodes.n2.file, "code/transform.js");
+  assert.match(read(dir1, "workflow.json"), /"\/\/@file:code\/transform\.js"/);
+  r = await cli("check");
+  assert.equal(r.code, 0, r.out);
+});
+
 const TS_SOURCE = 'interface FeedRow { sku: string; qty: number }\nconst rows: FeedRow[] = $input.all().map((i) => ({ sku: String(i.json.sku), qty: Number(i.json.qty) }));\nreturn rows.map((r) => ({ json: { ...r } }));\n';
 
 await step("convert node to .ts + push: compiles, appends marker", async () => {
-  unlinkSync(path.join(dir1, "Amazon Feed.js"));
-  writeFileSync(path.join(dir1, "Amazon Feed.ts"), TS_SOURCE);
-  writeFileSync(path.join(dir1, "workflow.json"), read(dir1, "workflow.json").replace("//@file:Amazon Feed.js", "//@file:Amazon Feed.ts"));
+  unlinkSync(path.join(dir1, "code", "amazon-feed.js"));
+  writeFileSync(path.join(dir1, "code", "amazon-feed.ts"), TS_SOURCE);
+  writeFileSync(path.join(dir1, "workflow.json"), read(dir1, "workflow.json").replace("//@file:code/amazon-feed.js", "//@file:code/amazon-feed.ts"));
   const r = await cli("push");
   assert.equal(r.code, 0, r.out);
   const code = remoteNode("wf123", "n3").parameters.jsCode;
   assert.match(code, /\n\/\/ @ts-n8n sha256:[0-9a-f]{64}$/);
   assert.ok(!code.includes("FeedRow[]"), "types must be stripped");
   assert.ok(code.includes("rows.map"), "logic must survive");
-  assert.equal(state(dir1).nodes.n3.file, "Amazon Feed.ts");
+  assert.equal(state(dir1).nodes.n3.file, "code/amazon-feed.ts");
 });
 
 await step("pull after ts push: in sync, .ts untouched, no .remote.js", async () => {
-  const before = read(dir1, "Amazon Feed.ts");
+  const before = read(dir1, "code", "amazon-feed.ts");
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  assert.equal(read(dir1, "Amazon Feed.ts"), before);
-  assert.ok(!existsSync(path.join(dir1, "Amazon Feed.remote.js")));
-  assert.match(read(dir1, "workflow.json"), /"\/\/@file:Amazon Feed\.ts"/);
+  assert.equal(read(dir1, "code", "amazon-feed.ts"), before);
+  assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.remote.js")));
+  assert.match(read(dir1, "workflow.json"), /"\/\/@file:code\/amazon-feed\.ts"/);
 });
 
 await step("remote UI edit on ts node: push aborts, pull surfaces .remote.js", async () => {
@@ -220,7 +241,7 @@ await step("remote UI edit on ts node: push aborts, pull surfaces .remote.js", a
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /edited in the n8n UI/);
-  assert.match(read(dir1, "Amazon Feed.remote.js"), /hotfix from UI/);
+  assert.match(read(dir1, "code", "amazon-feed.remote.js"), /hotfix from UI/);
   // after pull, push is allowed again and restores the TS-compiled version
   r = await cli("push");
   assert.equal(r.code, 0, r.out);
@@ -232,13 +253,13 @@ await step("marker removed remotely (rewrite in UI): .ts never clobbered", async
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /no @ts-n8n marker/);
-  assert.equal(read(dir1, "Amazon Feed.remote.js"), "return [];");
-  assert.equal(read(dir1, "Amazon Feed.ts"), TS_SOURCE);
+  assert.equal(read(dir1, "code", "amazon-feed.remote.js"), "return [];");
+  assert.equal(read(dir1, "code", "amazon-feed.ts"), TS_SOURCE);
   const r2 = await cli("push");
   assert.equal(r2.code, 0, r2.out);
   assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/);
   await cli("pull"); // resync, removes stale .remote.js
-  assert.ok(!existsSync(path.join(dir1, "Amazon Feed.remote.js")));
+  assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.remote.js")));
 });
 
 await step("structural remote edit: push aborts, pull resyncs", async () => {
@@ -255,11 +276,11 @@ await step("structural remote edit: push aborts, pull resyncs", async () => {
 });
 
 await step("status: reports pending local edit, then in sync", async () => {
-  const js = path.join(dir1, "Transform.js");
-  writeFileSync(js, read(dir1, "Transform.js") + "// local tweak\n");
+  const js = path.join(dir1, "code", "transform.js");
+  writeFileSync(js, read(dir1, "code", "transform.js") + "// local tweak\n");
   let r = await cli("status");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /Transform: local changes in Transform\.js — push pending/);
+  assert.match(r.out, /Transform: local changes in code\/transform\.js — push pending/);
   r = await cli("push");
   assert.equal(r.code, 0, r.out);
   assert.match(remoteNode("wf123", "n2").parameters.jsCode, /local tweak/);
@@ -277,17 +298,17 @@ await step("remote workflow + node rename: folder and file follow", async () => 
   const dir2 = wfDir("Order Sync v2");
   assert.ok(existsSync(dir2), "folder renamed");
   assert.ok(!existsSync(dir1), "old folder gone");
-  assert.ok(existsSync(path.join(dir2, "Transform- EU-US.js")), "file renamed with sanitized name");
-  assert.ok(!existsSync(path.join(dir2, "Transform.js")));
-  assert.equal(state(dir2).nodes.n2.file, "Transform- EU-US.js");
-  assert.match(read(dir2, "workflow.json"), /"\/\/@file:Transform- EU-US\.js"/);
+  assert.ok(existsSync(path.join(dir2, "code", "transform-eu-us.js")), "file renamed with kebab-case name");
+  assert.ok(!existsSync(path.join(dir2, "code", "transform.js")));
+  assert.equal(state(dir2).nodes.n2.file, "code/transform-eu-us.js");
+  assert.match(read(dir2, "workflow.json"), /"\/\/@file:code\/transform-eu-us\.js"/);
 });
 
 await step("watch path: pushSingleNode round-trip", async () => {
   const { pushSingleNode } = await import(pathToFileURL(path.join(PROJECT, "lib/push.mts")).href);
   const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   const dir2 = wfDir("Order Sync v2");
-  writeFileSync(path.join(dir2, "Transform- EU-US.js"), "return $input.all(); // watched\n");
+  writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "return $input.all(); // watched\n");
   const api = new N8nApi({ host: env.N8N_HOST, apiKey: "test-key" });
   const log = { info: () => {}, warn: () => {}, error: () => {} };
   await pushSingleNode(api, dir2, "n2", {}, log);
@@ -304,7 +325,7 @@ await step("check: clean tree passes, typecheck skipped without tsconfig", async
 await step("guard: inline code in workflow.json blocks push", async () => {
   const dir2 = wfDir("Order Sync v2");
   const wfJson = read(dir2, "workflow.json");
-  writeFileSync(path.join(dir2, "workflow.json"), wfJson.replace('"//@file:Transform- EU-US.js"', '"return 1;"'));
+  writeFileSync(path.join(dir2, "workflow.json"), wfJson.replace('"//@file:code/transform-eu-us.js"', '"return 1;"'));
   let r = await cli("push");
   assert.equal(r.code, 1, "push must abort on inline code");
   assert.match(r.out, /inline code/);
@@ -317,8 +338,8 @@ await step("guard: inline code in workflow.json blocks push", async () => {
 
 await step("guard: @ts-n8n marker inside a .js file blocks push", async () => {
   const dir2 = wfDir("Order Sync v2");
-  const file = path.join(dir2, "Transform- EU-US.js");
-  const original = read(dir2, "Transform- EU-US.js");
+  const file = path.join(dir2, "code", "transform-eu-us.js");
+  const original = read(dir2, "code", "transform-eu-us.js");
   writeFileSync(file, original + "// @ts-n8n sha256:" + "0".repeat(64) + "\n");
   const r = await cli("push");
   assert.equal(r.code, 1, "push must abort on marker in .js");
@@ -328,11 +349,11 @@ await step("guard: @ts-n8n marker inside a .js file blocks push", async () => {
 
 await step("guard: .remote.js leftovers warn but don't block", async () => {
   const dir2 = wfDir("Order Sync v2");
-  const leftover = path.join(dir2, "Transform- EU-US.remote.js");
+  const leftover = path.join(dir2, "code", "transform-eu-us.remote.js");
   writeFileSync(leftover, "// leftover from a conflict\n");
   const r = await cli("push");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /unresolved remote copy Transform- EU-US\.remote\.js/);
+  assert.match(r.out, /unresolved remote copy code\/transform-eu-us\.remote\.js/);
   unlinkSync(leftover);
 });
 
@@ -344,8 +365,8 @@ await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", 
     exclude: ["**/*.remote.js"],
   }, null, 2));
   const dir2 = wfDir("Order Sync v2");
-  const file = path.join(dir2, "Transform- EU-US.js");
-  const original = read(dir2, "Transform- EU-US.js");
+  const file = path.join(dir2, "code", "transform-eu-us.js");
+  const original = read(dir2, "code", "transform-eu-us.js");
   writeFileSync(file, '// @ts-check\nconst bad = "x" * 2;\nreturn [{ json: { bad } }];\n');
   let r = await cli("push");
   assert.equal(r.code, 1, "push must abort on type error");
@@ -361,30 +382,30 @@ await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", 
 await step("check <id>: scopes layout checks and typecheck to that workflow", async () => {
   // a second, broken workflow that must stay invisible to a scoped check
   const dirB = wfDir("Broken Neighbor");
-  mkdirSync(dirB, { recursive: true });
-  writeFileSync(path.join(dirB, ".decanter.json"), JSON.stringify({ workflowId: "wfBroken", nodes: { b1: { file: "Bad.js" } } }));
+  mkdirSync(path.join(dirB, "code"), { recursive: true });
+  writeFileSync(path.join(dirB, ".decanter.json"), JSON.stringify({ workflowId: "wfBroken", nodes: { b1: { file: "code/bad.js" } } }));
   writeFileSync(path.join(dirB, "workflow.json"), JSON.stringify({
-    nodes: [{ id: "b1", name: "Bad", type: "n8n-nodes-base.code", typeVersion: 2, position: [0, 0], parameters: { jsCode: "//@file:Bad.js" } }],
+    nodes: [{ id: "b1", name: "Bad", type: "n8n-nodes-base.code", typeVersion: 2, position: [0, 0], parameters: { jsCode: "//@file:code/bad.js" } }],
     connections: {},
   }));
-  writeFileSync(path.join(dirB, "Bad.js"), '// @ts-check\nconst bad = "x" * 2;\nreturn [{ json: { bad } }];\n');
+  writeFileSync(path.join(dirB, "code", "bad.js"), '// @ts-check\nconst bad = "x" * 2;\nreturn [{ json: { bad } }];\n');
   let r = await cli("check");
   assert.equal(r.code, 1, "unscoped check must fail on the broken neighbor: " + r.out);
-  assert.match(r.out, /Bad\.js/);
+  assert.match(r.out, /bad\.js/);
   r = await cli("check", "wf123");
   assert.equal(r.code, 0, "scoped check must not see the broken neighbor: " + r.out);
   assert.match(r.out, /Order Sync v2: OK/);
   assert.match(r.out, /typecheck OK/);
   assert.ok(!r.out.includes("Broken Neighbor"), "unrelated workflow leaked into scoped output: " + r.out);
-  assert.ok(!r.out.includes("Bad.js"), "unrelated diagnostics leaked into scoped output: " + r.out);
+  assert.ok(!r.out.includes("bad.js"), "unrelated diagnostics leaked into scoped output: " + r.out);
   // a type error in the scoped workflow itself must still surface
   const dir2 = wfDir("Order Sync v2");
-  const file = path.join(dir2, "Transform- EU-US.js");
-  const original = read(dir2, "Transform- EU-US.js");
+  const file = path.join(dir2, "code", "transform-eu-us.js");
+  const original = read(dir2, "code", "transform-eu-us.js");
   writeFileSync(file, '// @ts-check\nconst broken = "x" * 2;\nreturn [{ json: { broken } }];\n');
   r = await cli("check", "wf123");
   assert.equal(r.code, 1, "scoped check must still catch errors in its own workflow");
-  assert.match(r.out, /Transform- EU-US\.js/);
+  assert.match(r.out, /transform-eu-us\.js/);
   writeFileSync(file, original);
   rmSync(dirB, { recursive: true, force: true });
 });
@@ -393,7 +414,7 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   const dir2 = wfDir("Order Sync v2");
   writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: true, commitOnPull: true }, null, 2));
   // outside a git repo: push succeeds and warns
-  writeFileSync(path.join(dir2, "Transform- EU-US.js"), "return $input.all(); // v-git-1\n");
+  writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "return $input.all(); // v-git-1\n");
   let r = await cli("push");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /skipping commit/);
@@ -403,7 +424,7 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   await execFile("git", ["-C", TMP, "config", "user.name", "e2e"]);
   await execFile("git", ["-C", TMP, "config", "commit.gpgsign", "false"]);
   writeFileSync(path.join(TMP, "unrelated.txt"), "not part of any workflow\n");
-  writeFileSync(path.join(dir2, "Transform- EU-US.js"), "return $input.all(); // v-git-2\n");
+  writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "return $input.all(); // v-git-2\n");
   r = await cli("push");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /committed: decanter: pushed "Order Sync v2" \(wf123\)/);
@@ -496,6 +517,14 @@ await step("run: each-item mode (from workflow.json) loops per input item", asyn
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /runOnceForEachItem/);
   assert.deepEqual(runOutput(r.out), [{ json: { n: 4, i: 0 } }, { json: { n: 10, i: 1 } }]);
+});
+
+await step("run: resolves workflow.json from the parent of code/", async () => {
+  writeFileSync(path.join(TMP, "fx-run.json"), JSON.stringify({ input: [{ json: { a: 1 } }, { json: { a: 2 } }] }));
+  const r = await cli("run", path.join("workflows", "Order Sync v2", "code", "transform-eu-us.js"), "fx-run.json");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!r.out.includes("no workflow.json placeholder"), "must find the node via the parent workflow.json: " + r.out);
+  assert.match(r.out, /returned 2 items/);
 });
 
 await step("run: missing $() fixture data errors clearly", async () => {

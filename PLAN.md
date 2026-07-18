@@ -54,18 +54,22 @@ n8n-decanter/
 workflows/
   <n8n folder path>/            # only if the API exposes it, see Open questions
     <Workflow Name>/
-      workflow.json             # full workflow, jsCode replaced by "//@file:<Node Name>.js"
-      <Node Name>.js            # JSDoc-typed Code node (lossless)
-      <Node Name>.ts            # TS Code node (one-way)
-      <Node Name>.remote.js     # written by pull on conflict/UI-edit, visible on purpose
-      .decanter.json                # state, see below
+      workflow.json             # full workflow, jsCode replaced by "//@file:code/<node-name>.js"
+      code/
+        <node-name>.js          # JSDoc-typed Code node (lossless)
+        <node-name>.ts          # TS Code node (one-way)
+        <node-name>.remote.js   # written by pull on conflict/UI-edit, visible on purpose
+      .decanter.json            # state, see below
 ```
 
 - Workflow **id** lives in `workflow.json` itself → folder name is cosmetic.
   Pull matches folders by id and renames the folder when the workflow was renamed.
-- Node files are named after the node name, sanitized (`/`, `:` → `-`). Node **id**
-  (stable in the workflow JSON) is the real key; `.decanter.json` maps node-id → filename,
-  so node renames rename the file instead of orphaning it.
+- Node files live in the folder's `code/` subdir and are named after the node
+  name in **kebab-case** (`Parse Order` → `code/parse-order.js`; workflow folder
+  names stay human-readable). Node **id** (stable in the workflow JSON) is the
+  real key; `.decanter.json` maps node-id → file path (with the `code/` prefix),
+  so node renames rename the file instead of orphaning it — the same rename
+  machinery migrates pre-`code/` flat layouts on the next pull.
 - `workflow.json` is pretty-printed with stable key order → clean diffs.
 - No per-file header comments needed: which workflow/node a file belongs to is
   resolved from `.decanter.json` + the placeholders in `workflow.json`.
@@ -76,7 +80,7 @@ workflows/
 {
   "workflowId": "0cXNQKKzmO0pXiCq",
   "nodes": {
-    "<node-id>": { "file": "Amazon Feed.ts", "lastPushedHash": "sha256:…" }
+    "<node-id>": { "file": "code/amazon-feed.ts", "lastPushedHash": "sha256:…" }
   },
   "lastPulledWorkflowHash": "sha256:…"
 }
@@ -110,11 +114,12 @@ For each configured workflow:
    - **Marker present** → TS-managed:
      - `hash(remote jsCode minus marker) == hash(compile(local .ts))` → in sync, skip.
      - hashes differ, local compiled hash == `lastPushedHash` → **UI edit**: write
-       `<Node>.remote.js`, print warning, leave `.ts` untouched.
+       `code/<node>.remote.js`, print warning, leave `.ts` untouched.
      - both differ → **conflict**: same as above, louder warning.
-   - **No marker** → plain/JSDoc JS: write `<Node>.js` verbatim (overwrite; git
-     history is the safety net).
-   - Node renamed → rename the file, update `.decanter.json`.
+   - **No marker** → plain/JSDoc JS: write `code/<node>.js` verbatim (overwrite;
+     git history is the safety net).
+   - Node renamed → rename the file, update `.decanter.json` (also how flat
+     pre-`code/` layouts migrate).
 4. Write `workflow.json` with each `jsCode` replaced by `//@file:<filename>`.
 5. Update `.decanter.json` hashes.
 
@@ -152,7 +157,8 @@ Errors (block push / exit 1):
 - Code node in `workflow.json` with inline `jsCode` instead of a `//@file:`
   placeholder (hand edit or bad merge).
 - Placeholder referencing a missing file, a `*.remote.js` conflict artifact,
-  or anything that isn't `.js`/`.ts`.
+  anything that isn't `.js`/`.ts`, or a file outside the `code/` subdir
+  (pre-`code/` layouts — a fresh pull migrates them).
 - A `.js` node file ending with an `@ts-n8n` marker line (would be
   misidentified as TS-managed on the next pull).
 - Missing/corrupt `workflow.json` or `.decanter.json`.
@@ -237,7 +243,8 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
   `return` in `.ts` files (TS1108; `.js` under checkJs is tolerated). The
   script wraps node files in `async function () { … }` in memory via a custom
   CompilerHost — files on disk stay verbatim — and maps diagnostic lines back
-  (−1). Node files are recognized by a `.decanter.json` sibling. Known wart:
+  (−1). Node files are recognized by a `.decanter.json` sibling — directly, or
+  in the parent of their `code/` dir. Known wart:
   IDE tsservers don't apply the wrapper, so editors show a spurious TS1108 on
   top-level `return` in `.ts` node files.
 
@@ -270,19 +277,32 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
 - **`lastPushedHash` really means "remote code hash at last sync"** (push *or*
   pull). Pull updates it even when surfacing a UI edit/conflict — otherwise
   push would stay blocked forever after the warned pull. Consequence: after a
-  warned pull, push *will* overwrite the remote edits; `<Node>.remote.js` +
-  git history are the safety net. This matches the "pull first" guard message.
+  warned pull, push *will* overwrite the remote edits; `code/<node>.remote.js`
+  + git history are the safety net. This matches the "pull first" guard message.
 - **Sync hashes are recorded from the PUT *response*** (server-canonical
   form), not the request body, to avoid false drift when the server
   normalizes the workflow.
 - **Extension transitions are never auto-renamed.** Remote marker appears but
   locally there's only a `.js` (or no file): remote code goes to
-  `<Node>.remote.js` + warning, nothing is silently relabeled as TS source.
+  `code/<node>.remote.js` + warning, nothing is silently relabeled as TS source.
   Reverse (local `.ts`, remote without marker — e.g. node re-created in the
   UI): remote goes to `.remote.js`, the `.ts` is never clobbered.
 - **Filename sanitization** (open question resolved by decision):
   `/ \ : * ? " < > |` → `-`, control chars stripped, trailing dots stripped,
   empty → `unnamed`. Same-name collisions get `-<first 8 chars of node id>`.
+  Workflow *folders* use the sanitized name as-is (human-readable); node
+  *files* additionally go through kebab-case (see next bullet).
+- **Kebab-case `code/` layout (added 2026-07-18, backlog)**: node sources live
+  in `<workflow>/code/`, named `kebabCase(sanitizeFilename(node name))` —
+  camelCase/acronym boundaries split, Unicode letters kept, non-alphanumerics
+  collapsed to `-` (`Transform: EU/US` → `code/transform-eu-us.js`). The
+  `//@file:` placeholders and `.decanter.json` `file` entries carry the
+  `code/` prefix (always `/`-separated). Migration is free: the existing
+  node-rename machinery in pull renames old flat files into `code/`, and the
+  compliance guard hard-errors on node files outside `code/` (pointing at
+  pull). Everything that located a node file's `.decanter.json`/
+  `workflow.json` as a *sibling* (watch, run, `scripts/typecheck.mts`, the
+  template verify hook) also looks one level up from a dir named `code/`.
 - **Nodes deleted remotely** are dropped from `.decanter.json` with a warning;
   their files stay on disk (git is the safety net).
 - **Watch** uses native `fs.watch` on the *directory*, filtering for the file

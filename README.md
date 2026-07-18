@@ -65,17 +65,22 @@ token matching a known verb is the command, everything else stays positional.
 
 ## How node files work
 
-- `<Node>.js` — lossless: pulled/pushed byte-identical. Type-checked via
+Node sources live in a `code/` subdir inside the workflow folder, named in
+kebab-case after their node (`Parse Order` → `code/parse-order.js`).
+Layouts from older versions (files at the folder root) migrate automatically
+on the next `pull`.
+
+- `code/<node>.js` — lossless: pulled/pushed byte-identical. Type-checked via
   JSDoc + `checkJs`.
-- `<Node>.ts` — one-way: local file is the source of truth. `push` compiles it
-  (esbuild, comments stripped) and appends a
+- `code/<node>.ts` — one-way: local file is the source of truth. `push`
+  compiles it (esbuild, comments stripped) and appends a
   `// @ts-n8n sha256:...` marker line; `pull` never touches the `.ts`.
-  To convert a node, replace `<Node>.js` with `<Node>.ts` and change its
-  `//@file:` placeholder in `workflow.json` to the `.ts` name.
-- `<Node>.remote.js` — written by `pull` when the remote code changed in ways
-  it can't merge (UI edit of a TS-managed node, conflict, missing local `.ts`).
-  Port the changes manually, then push; the file is removed on the next
-  in-sync pull.
+  To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
+  its `//@file:` placeholder in `workflow.json` to the `.ts` name.
+- `code/<node>.remote.js` — written by `pull` when the remote code changed in
+  ways it can't merge (UI edit of a TS-managed node, conflict, missing local
+  `.ts`). Port the changes manually, then push; the file is removed on the
+  next in-sync pull.
 - `.decanter.json` — per-folder state (node-id → file map, sync hashes).
   Commit it; don't edit it.
 
@@ -86,8 +91,9 @@ edits, with `.remote.js` + git as the safety net.
 
 Push also runs a **compliance guard** first (standalone: `check`, which needs
 no credentials): inline code without a `//@file:` placeholder, placeholders
-pointing at missing/`.remote.js`/non-`.js`/`.ts` files, or an `@ts-n8n`
-marker inside a `.js` file all abort the push — `--force` does not bypass
+pointing at missing/`.remote.js`/non-`.js`/`.ts` files or at files outside
+`code/`, or an `@ts-n8n` marker inside a `.js` file all abort the push —
+`--force` does not bypass
 these, only the drift guard. Unresolved `.remote.js` leftovers warn without
 blocking. The typecheck runs as a blocking push gate too (`--no-typecheck` to
 skip; auto-skipped when no `tsconfig.json` is found).
@@ -97,8 +103,9 @@ skip; auto-skipped when no `tsconfig.json` is found).
 n8n Code node source is a function body (top-level `return`/`await`), which
 plain `tsc` rejects in `.ts` files (TS1108). `npm run typecheck` therefore
 runs [scripts/typecheck.mts](scripts/typecheck.mts), which wraps node files in
-an `async function` in memory (sibling `.decanter.json` marks a folder's files
-as node files) and maps diagnostics back to real line numbers. Known
+an `async function` in memory (a `.decanter.json` next to the file — or in the
+parent of its `code/` dir — marks it as a node file) and maps diagnostics back
+to real line numbers. Known
 limitation: the IDE's own tsserver doesn't apply the wrapper, so editors show
 a spurious TS1108 on top-level `return` in `.ts` node files.
 
