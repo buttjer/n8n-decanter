@@ -126,6 +126,10 @@ task sketch above, all deliberate:
   dirtiness. The client also skips reload when a *different* workflow id is open.
 * **Config knobs** `browserReload` (`"off"`|`"proxy"`, default off) and
   `proxyPort` (default 5679) parsed in `lib/config.mts`.
+* **`watch` is now workflow-id-scoped** (breaking, decided while landing this):
+  `watch <id>` watches the whole `code/` dir and pushes whichever node you save,
+  instead of a single node file — browser-reload is workflow-scoped, so a
+  single-node watch was the wrong granularity. See PLAN.md "Watch mode".
 
 Verified offline by `test/proxy.mts` (in `npm test`): HTML injection before
 `</body>` with recomputed content-length, `accept-encoding` stripped for

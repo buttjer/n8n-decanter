@@ -213,12 +213,15 @@ Offline by design — `push` propagates.
 cosmetic and follows on the next pull (same rename machinery as remote
 renames).
 
-## Watch mode (`n8n-decanter watch <file>`)
+## Watch mode (`n8n-decanter <id> watch`)
 
-Fast inner loop while developing a single node: watch one `.ts`/`.js` file,
-resolve its workflow + node via the directory's `.decanter.json`, and on change
-compile (if TS) and push **only that node** (GET workflow → replace `jsCode` →
-sanitized PUT). Same drift guard as full push.
+Fast inner loop while developing a workflow: resolve its folder by id and watch
+the `code/` dir; on every save map the changed file back to its node (via
+`.decanter.json`, re-read each time so a mid-session rename still resolves) and
+push **only that node** (GET workflow → replace `jsCode` → sanitized PUT). Same
+drift guard as full push. Takes exactly one workflow id — or none when the
+config lists a single workflow. (Was single-node-*file* scoped until plans/5's
+browser live-reload made watching a whole workflow the natural fit.)
 
 **Browser live-reload (optional, plans/5).** With `browserReload: "proxy"`,
 watch first boots a transparent reverse proxy on `127.0.0.1:<proxyPort>`
@@ -356,9 +359,13 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   template verify hook) also looks one level up from a dir named `code/`.
 - **Nodes deleted remotely** are dropped from `.decanter.json` with a warning;
   their files stay on disk (git is the safety net).
-- **Watch** uses native `fs.watch` on the *directory*, filtering for the file
-  name (atomic editor saves replace the inode and break plain file watches),
-  with 200 ms debounce and overlap protection. No chokidar dependency needed.
+- **Watch** resolves a workflow by id and watches its `code/` dir with native
+  `fs.watch`, mapping each changed file back to its node (state re-read per
+  change, so mid-session renames resolve) and pushing just that node. Atomic
+  editor saves replace the inode and break plain *file* watches, so it watches
+  the dir and filters to tracked node files; 200 ms debounce, per-run overlap
+  guard, a dirty set so saves landing during a push aren't lost. No chokidar
+  dependency. (Workflow-id scope since plans/5 — a single node file before.)
 - **Browser live-reload proxy (added 2026-07-18, plans/5)**: `lib/proxy.mts`, a
   native-Node reverse proxy that watch boots when `browserReload: "proxy"` (see
   Watch mode). Deliberate deviations from the plan sketch, all to stay

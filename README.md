@@ -53,7 +53,7 @@ node n8n-decanter.mts [id...] status         # local vs remote drift report
 node n8n-decanter.mts [id...] check          # offline layout-compliance + typecheck
 node n8n-decanter.mts <id> rename "<old node>" "<new node>"   # rename a node everywhere
 node n8n-decanter.mts <id> rename --workflow "<new name>"     # rename the workflow
-node n8n-decanter.mts <node-file> watch      # push one node on every save
+node n8n-decanter.mts [id] watch             # push a workflow's nodes on save
                                              #   (+ browser live-reload, opt-in)
 node n8n-decanter.mts <node-file> run [fixture.json]   # run a node offline, print items
 node n8n-decanter.mts uuid [count]           # lowercase v4 UUID(s) for new node ids

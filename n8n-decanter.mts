@@ -12,7 +12,7 @@ import { findWorkflowDir, listWorkflowDirs } from "./lib/state.mts";
 import { statusWorkflow } from "./lib/status.mts";
 import type { Log } from "./lib/types.mts";
 import { runTypecheck, validateWorkflowDir } from "./lib/validate.mts";
-import { watchFile } from "./lib/watch.mts";
+import { watchWorkflow } from "./lib/watch.mts";
 
 const log: Log = {
   info: (m) => console.log(m),
@@ -29,7 +29,8 @@ const USAGE = `Usage:
   n8n-decanter [id...] check [--no-typecheck]   offline layout-compliance check
   n8n-decanter <id> rename "<old node>" "<new node>"   rename a node everywhere (offline)
   n8n-decanter <id> rename --workflow "<new name>"     rename the workflow itself
-  n8n-decanter <node-file> watch [--force]
+  n8n-decanter [id] watch [--force]   watch a workflow's code/, push each node on save
+                                   (browser live-reload optional, see decanter.config.json)
   n8n-decanter <node-file> run [fixture.json]   run a node locally (offline)
   n8n-decanter uuid [count]        print lowercase v4 UUID(s) for new node ids
 
@@ -153,8 +154,8 @@ async function main() {
       break;
     }
     case "watch": {
-      if (rest.length !== 1) throw new Error("watch needs exactly one node file argument");
-      await watchFile(api, rest[0], config, { force }, log);
+      if (ids.length !== 1) throw new Error("watch needs exactly one workflow id (pass it, or list a single workflow in decanter.config.json)");
+      await watchWorkflow(api, config, ids[0], { force }, log);
       break;
     }
     default:

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `watch` now takes a **workflow id** and watches every Code
+  node in that workflow's `code/` dir, pushing whichever node you save
+  (previously it took a single node file and watched only that one). Run
+  `n8n-decanter <id> watch`, or omit the id when `decanter.config.json` lists
+  exactly one workflow. This matches the new browser live-reload, which is
+  workflow-scoped.
 - The compliance guard (`check`, the push gate, watch) now also enforces
   structural integrity: dangling connection sources/targets, duplicate node
   names or ids, orphan `.js`/`.ts` files no `//@file:` placeholder references
