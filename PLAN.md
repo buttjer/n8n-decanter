@@ -13,11 +13,12 @@ n8n-decanter/
   .env                    # N8N_HOST, N8N_API_KEY (gitignored; written by init)
   .env.example
   decanter.config.json
-  n8n-decanter.mts        # CLI entry: init | pull | push | status | check | watch
+  n8n-decanter.mts        # CLI entry: init | pull | push | status | check |
+                          #   rename | watch | run | uuid
   lib/                    # implementation: api, compile, config, git, init,
-                          #   pull, push, run, state, status, util, validate,
-                          #   watch (one .mts each) + types.mts (shared
-                          #   data-model shapes)
+                          #   pull, push, rename, run, state, status, util,
+                          #   validate, watch (one .mts each) + types.mts
+                          #   (shared data-model shapes)
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
@@ -162,6 +163,17 @@ Errors (block push / exit 1):
 - A `.js` node file ending with an `@ts-n8n` marker line (would be
   misidentified as TS-managed on the next pull).
 - Missing/corrupt `workflow.json` or `.decanter.json`.
+- Structural integrity (added 2026-07-18, plans/2): dangling connection
+  sources/targets (every key in `wf.connections` and every `{ node: … }`
+  target must name a real node), duplicate node names or ids, orphan
+  `.js`/`.ts` files no placeholder references (`.d.ts` and `*.remote.js`
+  exempt; only the folder root and `code/` are scanned — other subdirs are
+  reserved for future artifacts like `executions/`/`fixtures/`, plans 3/7),
+  and dangling literal `$('…')` references in node source files *and* in
+  expression parameters. The `$('…')` scan is a deliberate regex heuristic
+  (shared `findNodeRefs`/`renameNodeRefs` in `lib/util.mts`): literal
+  single-argument calls only; `$(var)`, multi-arg, and `${…}` templates are
+  skipped.
 
 Warnings (don't block):
 
@@ -179,6 +191,24 @@ file's sibling `.decanter.json` (ids, not folder names, are what `check`
 resolves) and runs `check <id>`, so an unrelated broken workflow can't block
 an edit. Watch validates only its own node file and never typechecks (fast
 inner loop).
+
+## Rename (`n8n-decanter rename <id> "<old>" "<new>"`)
+
+Added 2026-07-18 (plans/2). Renames a node atomically everywhere the old name
+is load-bearing, replacing the manual 4-step dance: `node.name`, connection
+keys and `{ node: … }` targets, literal `$('…')` references in every node
+source file and expression parameter (via the same shared regex as the
+guard), the kebab-case source filename plus its `.remote.js` sibling (never
+across extensions; collisions fall back to `-<first 8 of node id>`), the
+`//@file:` placeholder, and the `.decanter.json` entry. `.remote.js`
+*contents* are never rewritten — they mirror remote code. Refuses unknown,
+colliding, empty, and unchanged names; re-runs the compliance guard
+afterwards and fails loudly (files stay written; git is the safety net).
+Offline by design — `push` propagates.
+
+`rename <id> --workflow "<new name>"` sets `wf.name` only: the folder is
+cosmetic and follows on the next pull (same rename machinery as remote
+renames).
 
 ## Watch mode (`n8n-decanter watch <file>`)
 
@@ -261,6 +291,8 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
 6. ✅ **init** — interactive bootstrap, see Init flow. (Added after v1 of this
    plan.)
 7. ✅ **compliance guard + `check`** — see Compliance guard. (Added after v1.)
+8. ✅ **structural validation + `rename`** — connection/uniqueness/orphan/
+   `$('…')` checks in the guard, atomic rename verb. (2026-07-18, plans/2.)
 
 ## Implementation notes (decisions & observations from the 2026-07-17 build)
 
@@ -345,6 +377,13 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   malformed tree. The guard's checks live in `lib/validate.mts`, shared by
   push (full validation), watch (per-node subset, no typecheck), and `check`.
   `check` loads config without requiring credentials.
+- **Structural guard + `rename` (added 2026-07-18, plans/2)**: the guard's
+  new integrity checks and `rename` share one `$('…')` regex
+  (`findNodeRefs`/`renameNodeRefs` in `lib/util.mts`), kept exported for the
+  planned `run`/`simulate` work (plans 3/7). The e2e mock originally renamed
+  a node without updating `connections`; the connection-integrity check
+  caught it — real n8n rewrites connections on rename, the mock now mirrors
+  that.
 - **`shared/` caveat — types yes, runtime helpers not yet**: node files can
   safely use *type-only* imports from `shared/` (erased at compile time, and
   `.js` files can use JSDoc `@typedef` imports). But **value imports compile

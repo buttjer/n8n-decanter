@@ -9,7 +9,7 @@ items not yet claimed by one. Recommended order:
    feedback green-by-default and scoped to the workflow being edited. Everything
    else the reviewer asked for only pays off once green is the default state, so
    this goes first.
-2. [Offline validation + rename](OPEN-2-offline-validation-and-rename.md) — turn the
+2. [Offline validation + rename](DONE-2-offline-validation-and-rename.md) — turn the
    most fragile manual invariants (renames, connection integrity, orphan files,
    `$('…')` references) into machine-checked ones, then add an atomic `rename`.
 3. [Local run/diff fidelity](OPEN-3-local-run-and-diff-fidelity.md) — make offline

@@ -1,7 +1,7 @@
 # Plan 2 — Offline validation + rename
 
 **Priority:** P1 (validator) / P2 (rename)
-**Status:** Not started
+**Status:** Done (2026-07-18)
 **Theme:** convert the repo's most fragile manual invariants into machine-checked
 ones, then make renames atomic.
 
@@ -85,3 +85,20 @@ anything is left dangling.
   command — both user-facing, add entries under `[Unreleased]`.
 - The new checks may surface pre-existing issues in already-pulled workflows;
   that's the point, but call it out in the CHANGELOG as a **Changed** guard.
+
+## Implementation notes (2026-07-18)
+
+- Task A4 grew beyond spec: dangling `$('…')` is also checked in **expression
+  parameters** of every node (the n8n UI rewrites those on rename too), not
+  just node source files. Same literal-only heuristic.
+- With [Plan 3](OPEN-3-local-run-and-diff-fidelity.md)/[Plan 7](OPEN-7-engine-true-simulation-suite.md)
+  in mind: the `$('…')` scan/rewrite lives in `lib/util.mts`
+  (`findNodeRefs`/`renameNodeRefs`, one shared regex) for reuse by
+  `run`/`simulate`; the orphan-file scan covers only the folder root and
+  `code/` — other subdirs (`executions/`, `fixtures/`) are reserved for those
+  plans and explicitly exempt (e2e-asserted).
+- `rename` skips `.remote.js` files when rewriting `$('…')` refs — they
+  mirror *remote* code and must stay verbatim. The file rename moves the
+  `.remote.js` sibling along, though.
+- Rename filename collisions fall back to the pull-side convention
+  (`<kebab>-<first 8 of node id>`).

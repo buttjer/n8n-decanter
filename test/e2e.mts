@@ -293,6 +293,8 @@ await step("remote workflow + node rename: folder and file follow", async () => 
   const wf = db.get("wf123");
   wf.name = "Order Sync v2";
   wf.nodes.find((n: any) => n.id === "n2").name = "Transform: EU/US";
+  // n8n rewrites connections on rename; the mock must mirror that
+  wf.connections.Webhook.main[0][0].node = "Transform: EU/US";
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   const dir2 = wfDir("Order Sync v2");
@@ -534,6 +536,145 @@ await step("run: missing $() fixture data errors clearly", async () => {
   const r = await cli("run", path.join("runtest3", "Ref.js"));
   assert.equal(r.code, 1);
   assert.match(r.out, /node "Up" has no fixture data/);
+});
+
+await step("guard: dangling connection blocks check and push", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  const wfJson = read(dir2, "workflow.json");
+  const wf = JSON.parse(wfJson);
+  wf.connections.Ghost = { main: [[{ node: "Nowhere", type: "main", index: 0 }]] };
+  writeFileSync(path.join(dir2, "workflow.json"), JSON.stringify(wf, null, 2));
+  let r = await cli("check", "--no-typecheck");
+  assert.equal(r.code, 1, "check must fail on dangling connections: " + r.out);
+  assert.match(r.out, /source "Ghost" is not a node/);
+  assert.match(r.out, /targets missing node "Nowhere"/);
+  r = await cli("push");
+  assert.equal(r.code, 1, "push must abort on dangling connections");
+  assert.match(r.out, /does not comply/);
+  writeFileSync(path.join(dir2, "workflow.json"), wfJson);
+});
+
+await step("guard: duplicate node names/ids block check", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  const wfJson = read(dir2, "workflow.json");
+  const wf = JSON.parse(wfJson);
+  const set = wf.nodes.find((n: any) => n.id === "n4");
+  set.name = "Webhook";
+  set.id = "n1";
+  writeFileSync(path.join(dir2, "workflow.json"), JSON.stringify(wf, null, 2));
+  const r = await cli("check", "--no-typecheck");
+  assert.equal(r.code, 1, "check must fail on duplicates: " + r.out);
+  assert.match(r.out, /duplicate node name "Webhook"/);
+  assert.match(r.out, /duplicate node id "n1"/);
+  writeFileSync(path.join(dir2, "workflow.json"), wfJson);
+});
+
+await step("guard: orphan code files error; reserved subdirs and .d.ts ignored", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  writeFileSync(path.join(dir2, "code", "orphan.js"), "return [];\n");
+  writeFileSync(path.join(dir2, "stray.ts"), "export {};\n");
+  // future artifact dirs (plans 3/7: executions/, fixtures/) must not trip the guard
+  mkdirSync(path.join(dir2, "executions"), { recursive: true });
+  writeFileSync(path.join(dir2, "executions", "not-code.js"), "// captured\n");
+  writeFileSync(path.join(dir2, "code", "types.d.ts"), "type Row = { id: number };\n");
+  const r = await cli("check", "--no-typecheck");
+  assert.equal(r.code, 1, "check must fail on orphans: " + r.out);
+  assert.match(r.out, /orphan code file code\/orphan\.js/);
+  assert.match(r.out, /orphan code file stray\.ts/);
+  assert.ok(!r.out.includes("not-code.js"), "files under executions/ must be ignored: " + r.out);
+  assert.ok(!r.out.includes("types.d.ts"), ".d.ts files are not orphans: " + r.out);
+  unlinkSync(path.join(dir2, "code", "orphan.js"));
+  unlinkSync(path.join(dir2, "stray.ts"));
+  unlinkSync(path.join(dir2, "code", "types.d.ts"));
+  rmSync(path.join(dir2, "executions"), { recursive: true });
+  const r2 = await cli("check", "--no-typecheck");
+  assert.equal(r2.code, 0, r2.out);
+});
+
+await step("guard: dangling $('…') in code and parameters blocks check", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  const codeFile = path.join(dir2, "code", "transform-eu-us.js");
+  const original = read(dir2, "code", "transform-eu-us.js");
+  writeFileSync(codeFile, "const gone = $('Deleted Node').all();\nconst dyn = $(someVar);\nreturn $input.all();\n");
+  const wfJson = read(dir2, "workflow.json");
+  const wf = JSON.parse(wfJson);
+  wf.nodes.find((n: any) => n.id === "n4").parameters = { value: "={{ $('Also Gone').first().json.x }}" };
+  writeFileSync(path.join(dir2, "workflow.json"), JSON.stringify(wf, null, 2));
+  const r = await cli("check", "--no-typecheck");
+  assert.equal(r.code, 1, "check must fail on dangling refs: " + r.out);
+  assert.match(r.out, /transform-eu-us\.js references \$\('Deleted Node'\) — no node by that name/);
+  assert.match(r.out, /node "Set": a parameter references \$\('Also Gone'\)/);
+  assert.ok(!r.out.includes("someVar"), "non-literal $(…) must be skipped: " + r.out);
+  writeFileSync(codeFile, original);
+  writeFileSync(path.join(dir2, "workflow.json"), wfJson);
+});
+
+await step("rename: node update spans connections, $('…') refs, params, file, state", async () => {
+  const dir2 = wfDir("Order Sync v2");
+  // wire up everything that must follow the rename: a connection into the
+  // node, a $('…') ref in another node's code, an expression parameter, and
+  // a stale .remote.js sibling
+  const wfBefore = JSON.parse(read(dir2, "workflow.json"));
+  wfBefore.connections["Transform: EU/US"] = { main: [[{ node: "Amazon Feed", type: "main", index: 0 }]] };
+  wfBefore.nodes.find((n: any) => n.id === "n4").parameters = { value: "={{ $('Amazon Feed').first().json.sku }}" };
+  writeFileSync(path.join(dir2, "workflow.json"), JSON.stringify(wfBefore, null, 2));
+  writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "const feed = $('Amazon Feed').all();\nreturn feed;\n");
+  writeFileSync(path.join(dir2, "code", "amazon-feed.remote.js"), "// stale remote copy\n");
+
+  const r = await cli("rename", "wf123", "Amazon Feed", "Amazon Export");
+  assert.equal(r.code, 0, r.out);
+  const wf = JSON.parse(read(dir2, "workflow.json"));
+  assert.ok(wf.nodes.some((n: any) => n.name === "Amazon Export"), "node renamed");
+  assert.equal(wf.connections["Transform: EU/US"].main[0][0].node, "Amazon Export", "connection target follows");
+  assert.equal(wf.nodes.find((n: any) => n.id === "n4").parameters.value, "={{ $('Amazon Export').first().json.sku }}", "expression parameter follows");
+  assert.match(read(dir2, "code", "transform-eu-us.js"), /\$\('Amazon Export'\)/);
+  assert.ok(existsSync(path.join(dir2, "code", "amazon-export.ts")), "file renamed");
+  assert.ok(!existsSync(path.join(dir2, "code", "amazon-feed.ts")), "old file gone");
+  assert.ok(existsSync(path.join(dir2, "code", "amazon-export.remote.js")), ".remote.js sibling follows");
+  assert.equal(state(dir2).nodes.n3.file, "code/amazon-export.ts");
+  assert.match(read(dir2, "workflow.json"), /"\/\/@file:code\/amazon-export\.ts"/);
+  unlinkSync(path.join(dir2, "code", "amazon-export.remote.js"));
+
+  const rCheck = await cli("check", "--no-typecheck");
+  assert.equal(rCheck.code, 0, rCheck.out);
+  // the rewritten code still runs, with fixture data keyed by the NEW name
+  writeFileSync(path.join(TMP, "fx-rename.json"), JSON.stringify({ nodes: { "Amazon Export": [{ json: { sku: "a-1" } }] } }));
+  const rRun = await cli("run", path.join("workflows", "Order Sync v2", "code", "transform-eu-us.js"), "fx-rename.json");
+  assert.equal(rRun.code, 0, rRun.out);
+  assert.match(rRun.out, /returned 1 item/);
+  // push propagates name + connections to the remote
+  const rPush = await cli("push");
+  assert.equal(rPush.code, 0, rPush.out);
+  assert.equal(remoteNode("wf123", "n3").name, "Amazon Export");
+  assert.equal(db.get("wf123").connections["Transform: EU/US"].main[0][0].node, "Amazon Export");
+});
+
+await step("rename: guards refuse unknown, colliding, and same names", async () => {
+  let r = await cli("rename", "wf123", "Nope", "X");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /no node named "Nope"/);
+  r = await cli("rename", "wf123", "Webhook", "Amazon Export");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /already exists/);
+  r = await cli("rename", "wf123", "Webhook", "Webhook");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /already named/);
+  r = await cli("rename", "wf123", "Webhook");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /old and new node name/);
+});
+
+await step("rename --workflow: local name change, folder follows on pull", async () => {
+  const r = await cli("rename", "wf123", "--workflow", "Order Sync Final");
+  assert.equal(r.code, 0, r.out);
+  assert.equal(JSON.parse(read(wfDir("Order Sync v2"), "workflow.json")).name, "Order Sync Final");
+  let r2 = await cli("push");
+  assert.equal(r2.code, 0, r2.out);
+  assert.equal(db.get("wf123").name, "Order Sync Final");
+  r2 = await cli("pull");
+  assert.equal(r2.code, 0, r2.out);
+  assert.ok(existsSync(wfDir("Order Sync Final")), "folder renamed on pull");
+  assert.ok(!existsSync(wfDir("Order Sync v2")), "old folder gone");
 });
 
 server.close();

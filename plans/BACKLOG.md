@@ -18,7 +18,7 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
       instead of / in addition to `<verb> [id...]`.
 - [ ] **LLM semantic validation** — LLM-based *semantic* workflow validation as
       a command. Split out of the validator idea —
-      [Plan 2](OPEN-2-offline-validation-and-rename.md) covers only the offline
+      [Plan 2](DONE-2-offline-validation-and-rename.md) covers only the offline
       structural subset and explicitly defers this.
 - [ ] **Bundle shared code into TS pushes** — `bundle: true` for `.ts` node
       compiles so value imports from `shared/` get inlined into the pushed code

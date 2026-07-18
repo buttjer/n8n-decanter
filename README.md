@@ -51,6 +51,8 @@ node n8n-decanter.mts pull [id...]           # remote -> workflows/<Name>/
 node n8n-decanter.mts push [id...] [--force] [--no-typecheck]
 node n8n-decanter.mts status [id...]         # local vs remote drift report
 node n8n-decanter.mts check [id...]          # offline layout-compliance + typecheck
+node n8n-decanter.mts rename <id> "<old node>" "<new node>"   # rename a node everywhere
+node n8n-decanter.mts rename <id> --workflow "<new name>"     # rename the workflow
 node n8n-decanter.mts watch <node-file>      # push one node on every save
 node n8n-decanter.mts run <node-file> [fixture.json]   # run a node offline, print items
 node n8n-decanter.mts uuid [count]           # lowercase v4 UUID(s) for new node ids
@@ -92,11 +94,19 @@ edits, with `.remote.js` + git as the safety net.
 Push also runs a **compliance guard** first (standalone: `check`, which needs
 no credentials): inline code without a `//@file:` placeholder, placeholders
 pointing at missing/`.remote.js`/non-`.js`/`.ts` files or at files outside
-`code/`, or an `@ts-n8n` marker inside a `.js` file all abort the push —
-`--force` does not bypass
+`code/`, an `@ts-n8n` marker inside a `.js` file, dangling connection
+sources/targets, duplicate node names or ids, orphan `.js`/`.ts` files
+nothing references, and dangling literal `$('…')` references (in node source
+and in expression parameters) all abort the push — `--force` does not bypass
 these, only the drift guard. Unresolved `.remote.js` leftovers warn without
 blocking. The typecheck runs as a blocking push gate too (`--no-typecheck` to
 skip; auto-skipped when no `tsconfig.json` is found).
+
+**Renaming a node** by hand means touching four places at once (name,
+connections, `$('…')` references, filename) — use
+`rename <id> "<old>" "<new>"` instead: it rewrites all of them atomically,
+refuses colliding names, and re-validates the folder afterwards. It works
+offline; `push` propagates the rename to n8n.
 
 ## Type checking
 

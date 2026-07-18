@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { readState } from "./state.mts";
 import type { Log, Workflow } from "./types.mts";
-import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
+import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, isJsCodeNode, splitMarker } from "./util.mts";
 
 const execFile = promisify(execFileCb);
 
@@ -44,10 +44,27 @@ export function validateNodeFile(dir: string, file: string, label: string = file
   return { errors, warnings };
 }
 
+/** Dangling literal `$('…')` references in one string of source/expression text. */
+function danglingRefs(text: string, nodeNames: Set<string>): string[] {
+  return findNodeRefs(text).filter((name) => !nodeNames.has(name));
+}
+
+/** Every string inside a node's parameters, skipping the jsCode placeholder. */
+function parameterStrings(value: unknown, skipKey?: string): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap((v) => parameterStrings(v));
+  if (value && typeof value === "object") {
+    return Object.entries(value).flatMap(([k, v]) => (k === skipKey ? [] : parameterStrings(v)));
+  }
+  return [];
+}
+
 /**
  * Validate a pulled workflow folder against the decanter layout:
  * every Code node behind a //@file: placeholder, referenced files present and
- * well-formed, no marker inside .js files; warn on *.remote.js leftovers.
+ * well-formed, no marker inside .js files, unique node names/ids, connection
+ * integrity, no orphan code files, no dangling literal $('…') references;
+ * warn on *.remote.js leftovers.
  */
 export function validateWorkflowDir(dir: string): ValidationResult {
   const errors: string[] = [];
@@ -66,8 +83,43 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     return { errors, warnings };
   }
 
+  const nodes = wf.nodes ?? [];
+  const nodeNames = new Set(nodes.map((n) => n.name));
+
+  // Uniqueness: duplicate names corrupt connections and $('…') resolution,
+  // duplicate ids corrupt the id→file map.
+  for (const key of ["name", "id"] as const) {
+    const seen = new Set<string>();
+    for (const node of nodes) {
+      const value = node[key];
+      if (seen.has(value)) errors.push(`duplicate node ${key} "${value}" — node ${key}s must be unique`);
+      seen.add(value);
+    }
+  }
+
+  // Connection integrity: every source key and every target must be a real node.
+  const connectionErrors = new Set<string>();
+  for (const [source, byType] of Object.entries(wf.connections ?? {})) {
+    if (!nodeNames.has(source)) connectionErrors.add(`connections: source "${source}" is not a node in this workflow`);
+    if (!byType || typeof byType !== "object") continue;
+    for (const [type, groups] of Object.entries(byType as Record<string, unknown>)) {
+      if (!Array.isArray(groups)) continue;
+      for (const group of groups) {
+        if (!Array.isArray(group)) continue;
+        for (const target of group) {
+          const targetNode = (target as { node?: unknown } | null)?.node;
+          if (typeof targetNode === "string" && !nodeNames.has(targetNode)) {
+            connectionErrors.add(`connections: "${source}" (${type}) targets missing node "${targetNode}"`);
+          }
+        }
+      }
+    }
+  }
+  errors.push(...connectionErrors);
+
+  const referencedFiles = new Set<string>();
   const coveredRemoteFiles = new Set<string>();
-  for (const node of wf.nodes ?? []) {
+  for (const node of nodes) {
     if (!isJsCodeNode(node)) continue;
     const jsCode = node.parameters.jsCode;
     if (!jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) {
@@ -78,17 +130,45 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     const result = validateNodeFile(dir, file, `node "${node.name}"`);
     errors.push(...result.errors);
     warnings.push(...result.warnings);
+    referencedFiles.add(file);
     coveredRemoteFiles.add(file.replace(/\.(ts|js)$/, ".remote.js"));
+
+    // Dangling $('…') in the node's source (marker line can't contain a ref).
+    const filePath = path.join(dir, file);
+    if (existsSync(filePath)) {
+      for (const name of danglingRefs(readFileSync(filePath, "utf8"), nodeNames)) {
+        errors.push(`node "${node.name}": ${file} references $('${name}') — no node by that name`);
+      }
+    }
   }
 
-  const strays = readdirSync(dir).filter((e) => e.endsWith(".remote.js"));
-  const codeDir = path.join(dir, CODE_DIR);
-  if (existsSync(codeDir)) {
-    strays.push(...readdirSync(codeDir).filter((e) => e.endsWith(".remote.js")).map((e) => `${CODE_DIR}/${e}`));
+  // Dangling $('…') inside expression parameters of any node (the n8n UI
+  // rewrites these on rename; a dangling one breaks at run time).
+  for (const node of nodes) {
+    const texts = parameterStrings(node.parameters, "jsCode");
+    const dangling = new Set(texts.flatMap((t) => danglingRefs(t, nodeNames)));
+    for (const name of dangling) {
+      errors.push(`node "${node.name}": a parameter references $('${name}') — no node by that name`);
+    }
   }
-  for (const entry of strays) {
-    if (!coveredRemoteFiles.has(entry)) {
-      warnings.push(`stray remote copy ${entry} — no placeholder references its node; port or delete it`);
+
+  // Orphans and strays. Only the folder root and code/ are scanned: other
+  // subdirs are reserved for future artifacts (executions/, fixtures/ — see
+  // plans 3 and 7) and must not trip the guard.
+  const codeDir = path.join(dir, CODE_DIR);
+  const entries = readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => e.name);
+  if (existsSync(codeDir)) {
+    entries.push(...readdirSync(codeDir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => `${CODE_DIR}/${e.name}`));
+  }
+  for (const entry of entries) {
+    if (entry.endsWith(".remote.js")) {
+      if (!coveredRemoteFiles.has(entry)) {
+        warnings.push(`stray remote copy ${entry} — no placeholder references its node; port or delete it`);
+      }
+    } else if (/\.(ts|js)$/.test(entry) && !entry.endsWith(".d.ts") && !referencedFiles.has(entry)) {
+      errors.push(`orphan code file ${entry} — no ${FILE_PLACEHOLDER_PREFIX} placeholder references it; delete it or point a Code node at it`);
     }
   }
   return { errors, warnings };

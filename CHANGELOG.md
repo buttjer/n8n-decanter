@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The compliance guard (`check`, the push gate, watch) now also enforces
+  structural integrity: dangling connection sources/targets, duplicate node
+  names or ids, orphan `.js`/`.ts` files no `//@file:` placeholder references
+  (`.d.ts`, `.remote.js`, and subdirs other than `code/` are exempt), and
+  dangling literal `$('…')` references in node source files and expression
+  parameters are all errors now. These checks may flag pre-existing issues
+  in already-pulled workflows — that's the point; fix them or the push stays
+  blocked (`--force` does not bypass the guard).
 - **Breaking:** node sources now live in a `code/` subdir inside each
   workflow folder, named in kebab-case after their node (`Parse Order` →
   `code/parse-order.js`). `//@file:` placeholders and `.decanter.json`
@@ -38,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `rename` verb: `n8n-decanter rename <id> "<old node>" "<new node>"` renames
+  a node atomically everywhere the old name is load-bearing — `node.name`,
+  connection keys and targets, literal `$('…')` references in every node
+  source file and expression parameter, the kebab-case source filename (plus
+  its `.remote.js` sibling), the `//@file:` placeholder, and the
+  `.decanter.json` entry. Refuses names that already exist; validates the
+  result and fails loudly if anything is left dangling. Offline — `push`
+  propagates. `rename <id> --workflow "<new name>"` renames the workflow
+  itself (the folder follows on the next pull).
 - Id-first argument order: the verb may come after its arguments
   (`n8n-decanter.mts wf123 push` == `n8n-decanter.mts push wf123`). The first
   token matching a known verb is taken as the command; everything else,

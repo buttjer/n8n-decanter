@@ -6,6 +6,7 @@ import { loadConfig } from "./lib/config.mts";
 import { init } from "./lib/init.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
+import { renameNode, renameWorkflow } from "./lib/rename.mts";
 import { runNode } from "./lib/run.mts";
 import { findWorkflowDir, listWorkflowDirs } from "./lib/state.mts";
 import { statusWorkflow } from "./lib/status.mts";
@@ -26,6 +27,8 @@ const USAGE = `Usage:
   n8n-decanter push [id...] [--force] [--no-typecheck]
   n8n-decanter status [id...]
   n8n-decanter check [id...] [--no-typecheck]   offline layout-compliance check
+  n8n-decanter rename <id> "<old node>" "<new node>"   rename a node everywhere (offline)
+  n8n-decanter rename <id> --workflow "<new name>"     rename the workflow itself
   n8n-decanter watch <node-file> [--force]
   n8n-decanter run <node-file> [fixture.json]   run a node locally (offline)
   n8n-decanter uuid [count]        print lowercase v4 UUID(s) for new node ids
@@ -36,12 +39,13 @@ is the same as "n8n-decanter push wf123".
 Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 
-const VERBS = new Set(["init", "pull", "push", "status", "check", "watch", "run", "uuid", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "help"]);
 
 async function main() {
   const args = process.argv.slice(2);
   const force = args.includes("--force");
   const noTypecheck = args.includes("--no-typecheck");
+  const workflowFlag = args.includes("--workflow");
   const positional = args.filter((a) => !a.startsWith("--"));
   // id-first support: the first token matching a known verb is the command,
   // wherever it sits — `push wf123` and `wf123 push` are equivalent.
@@ -75,7 +79,7 @@ async function main() {
     return;
   }
 
-  const config = loadConfig(process.cwd(), { requireCredentials: command !== "check" });
+  const config = loadConfig(process.cwd(), { requireCredentials: command !== "check" && command !== "rename" });
   const api = new N8nApi(config);
   const ids = rest.length > 0 ? rest : config.workflows;
 
@@ -134,6 +138,18 @@ async function main() {
         }
       }
       if (errorCount > 0) process.exitCode = 1;
+      break;
+    }
+    case "rename": {
+      const [id, ...names] = rest;
+      if (!id) throw new Error('rename needs a workflow id: n8n-decanter rename <id> "<old node>" "<new node>" (or --workflow "<new name>")');
+      if (workflowFlag) {
+        if (names.length !== 1) throw new Error('rename --workflow needs exactly one name: n8n-decanter rename <id> --workflow "<new name>"');
+        renameWorkflow(config.root, id, names[0], log);
+      } else {
+        if (names.length !== 2) throw new Error('rename needs the old and new node name: n8n-decanter rename <id> "<old node>" "<new node>"');
+        renameNode(config.root, id, names[0], names[1], log);
+      }
       break;
     }
     case "watch": {

@@ -50,6 +50,35 @@ export function sanitizeFilename(name: string): string {
   return cleaned || "unnamed";
 }
 
+/**
+ * Literal single-argument `$('Name')` / `$("Name")` / `$(`Name`)` calls.
+ * Heuristic on purpose (no parse): non-literal args like `$(var)`, multi-arg
+ * calls, template literals with `${…}`, and the legacy `$node["Name"]` form
+ * don't match and are left alone.
+ */
+const NODE_REF_RE = /\$\(\s*(['"`])((?:\\.|(?!\1)[^\\\n])*)\1\s*\)/g;
+
+const unescapeRef = (raw: string) => raw.replace(/\\(.)/g, "$1");
+
+/** Distinct node names referenced via literal `$('…')` in a piece of source. */
+export function findNodeRefs(source: string): string[] {
+  const names = new Set<string>();
+  for (const m of source.matchAll(NODE_REF_RE)) {
+    const name = unescapeRef(m[2]);
+    if (!name.includes("${")) names.add(name);
+  }
+  return [...names];
+}
+
+/** Rewrite literal `$('old')` references to the new name, keeping each call's quote style. */
+export function renameNodeRefs(source: string, oldName: string, newName: string): string {
+  return source.replace(NODE_REF_RE, (whole, quote: string, raw: string) => {
+    if (unescapeRef(raw) !== oldName) return whole;
+    const escaped = newName.replace(/\\/g, "\\\\").replaceAll(quote, `\\${quote}`);
+    return `$(${quote}${escaped}${quote})`;
+  });
+}
+
 /** Kebab-case node-file name from a node name ("Parse Order" -> "parse-order"). */
 export function kebabCase(name: string): string {
   const kebab = sanitizeFilename(name)
