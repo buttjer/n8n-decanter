@@ -41,6 +41,15 @@ leave the box unchecked and append a short parenthetical status instead. Don't
 delete, reword, or reorder the user's entries, and don't add ideas of your own
 unasked.
 
+## Agent tooling
+
+When adding agentic/LLM-facing material for this repo (a skill, recipe,
+hook, instruction file), **never add it for one agent only** (e.g. just a
+Claude `SKILL.md`): put the substance in the tool-agnostic root `AGENTS.md`
+(same convention as the template's sync-dir `AGENTS.md` — Codex/opencode
+read it natively) and keep per-agent files (`.claude/skills/*`, opencode
+config, …) as thin pointers to it, so every agent stays in sync.
+
 ## Commands
 
 ```sh
