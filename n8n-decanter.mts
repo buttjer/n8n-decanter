@@ -29,8 +29,9 @@ const USAGE = `Usage:
   n8n-decanter [id...] check [--no-typecheck]   offline layout-compliance check
   n8n-decanter <id> rename "<old node>" "<new node>"   rename a node everywhere (offline)
   n8n-decanter <id> rename --workflow "<new name>"     rename the workflow itself
-  n8n-decanter [id] watch [--force]   watch a workflow's code/, push each node on save
-                                   (browser live-reload optional, see decanter.config.json)
+  n8n-decanter [id] watch [--force]   watch code/ + workflow.json, push on save
+                                   (starts with a safety commit + pull; structural
+                                   conflicts prompt; browser live-reload optional)
   n8n-decanter <node-file> run [fixture.json]   run a node locally (offline)
   n8n-decanter uuid [count]        print lowercase v4 UUID(s) for new node ids
 

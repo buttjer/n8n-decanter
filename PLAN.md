@@ -16,9 +16,9 @@ n8n-decanter/
   n8n-decanter.mts        # CLI entry: init | pull | push | status | check |
                           #   rename | watch | run | uuid
   lib/                    # implementation: api, compile, config, git, init,
-                          #   proxy, pull, push, rename, run, state, status,
-                          #   util, validate, watch (one .mts each) + types.mts
-                          #   (shared data-model shapes)
+                          #   prompt, proxy, pull, push, rename, run, state,
+                          #   status, util, validate, watch (one .mts each)
+                          #   + types.mts (shared data-model shapes)
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
@@ -192,7 +192,8 @@ file-less diagnostics (broken tsconfig) always surface. The template's
 PostToolUse verify hook leans on this — it reads `workflowId` from the edited
 file's sibling `.decanter.json` (ids, not folder names, are what `check`
 resolves) and runs `check <id>`, so an unrelated broken workflow can't block
-an edit. Watch validates only its own node file and never typechecks (fast
+an edit. Watch validates only its own node file on code saves — structural
+saves run the full compliance guard via push — and never typechecks (fast
 inner loop).
 
 ## Rename (`n8n-decanter rename <id> "<old>" "<new>"`)
@@ -215,13 +216,48 @@ renames).
 
 ## Watch mode (`n8n-decanter <id> watch`)
 
-Fast inner loop while developing a workflow: resolve its folder by id and watch
-the `code/` dir; on every save map the changed file back to its node (via
-`.decanter.json`, re-read each time so a mid-session rename still resolves) and
-push **only that node** (GET workflow → replace `jsCode` → sanitized PUT). Same
-drift guard as full push. Takes exactly one workflow id — or none when the
-config lists a single workflow. (Was single-node-*file* scoped until plans/5's
-browser live-reload made watching a whole workflow the natural fit.)
+Fast inner loop while developing a workflow: resolve its folder by id and
+watch both the `code/` dir and `workflow.json`. Takes exactly one workflow
+id — or none when the config lists a single workflow. (Was
+single-node-*file* scoped until plans/5's browser live-reload made watching a
+whole workflow the natural fit; structural watch added 2026-07-18, plans/12.)
+
+**Watch start = snapshot commit + pull.** Before the watchers arm, watch
+makes a safety commit of the workflow folder (regardless of
+`commitOnPush`/`commitOnPull` — it's the data-loss guard, not sync
+bookkeeping; no-op on a clean tree), then pulls, so every session begins
+committed and in sync with remote. Order is the guarantee: pull overwrites
+plain `.js` files and `workflow.json` with remote unconditionally, so the
+commit must land first. If the snapshot fails (no git), the startup pull is
+skipped rather than pulling over an unsnapshotted tree. A structural conflict
+already present at start (local and remote both moved) warns that remote wins
+the working tree and git holds the local version.
+
+**Code saves** map the changed file back to its node (via `.decanter.json`,
+re-read each time so a mid-session rename still resolves) and push **only
+that node** (GET workflow → replace `jsCode` → sanitized PUT) — remote
+structure is preserved by construction; per-node drift guard as before.
+
+**`workflow.json` saves** push the structure via a full push (compliance
+guard + placeholder resolution + full drift guard; still no typecheck), gated
+by a 3-way check against the **session baseline** — the structure hash both
+sides agreed on at the session's last sync point. The baseline lives in
+memory because single-node pushes re-baseline `lastPulledWorkflowHash` from
+their PUT responses, silently absorbing n8n-UI structural edits into
+`.decanter.json`; the in-memory copy keeps them detectable (a warning fires
+right after the node push that reveals one). Per save: local == baseline →
+skip (the anti-loop guard: covers formatting-only saves and watch's own pull
+rewrite); remote == baseline → push; both moved → interactive conflict
+prompt — `[m]erge` writes a diff-friendly `workflow.remote.json` (`//@file:`
+placeholders substituted only where the remote code still matches the last
+sync; the guard warns while it exists) for manual reconciliation, `[l]ocal`
+force-pushes over the remote changes, `[r]emote` pulls over the local file
+(git holds the previous version), Enter skips until the next save. Non-TTY
+sessions log the conflict and skip; `--force` resolves as keep-local without
+prompting. Known footguns, accepted: `git checkout` rewriting
+`workflow.json` triggers a structural push or prompt (same class as node
+files), and only the PUT-whitelisted fields propagate — local edits to e.g.
+`active` or tags silently don't push.
 
 **Browser live-reload (optional, plans/5).** With `browserReload: "proxy"`,
 watch first boots a transparent reverse proxy on `127.0.0.1:<proxyPort>`
@@ -359,13 +395,18 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   template verify hook) also looks one level up from a dir named `code/`.
 - **Nodes deleted remotely** are dropped from `.decanter.json` with a warning;
   their files stay on disk (git is the safety net).
-- **Watch** resolves a workflow by id and watches its `code/` dir with native
-  `fs.watch`, mapping each changed file back to its node (state re-read per
-  change, so mid-session renames resolve) and pushing just that node. Atomic
-  editor saves replace the inode and break plain *file* watches, so it watches
-  the dir and filters to tracked node files; 200 ms debounce, per-run overlap
-  guard, a dirty set so saves landing during a push aren't lost. No chokidar
-  dependency. (Workflow-id scope since plans/5 — a single node file before.)
+- **Watch** resolves a workflow by id and watches its `code/` dir and
+  `workflow.json` with native `fs.watch`, mapping each changed code file back
+  to its node (state re-read per change, so mid-session renames resolve) and
+  pushing just that node; `workflow.json` saves take the structural 3-way
+  path (see Watch mode). Atomic editor saves replace the inode and break
+  plain *file* watches, so it watches the dirs and filters by name; 200 ms
+  debounce, per-run overlap guard, a dirty set so saves landing during a push
+  aren't lost — a pending structural push subsumes queued node pushes (full
+  push covers all nodes). No chokidar dependency. (Workflow-id scope since
+  plans/5 — a single node file before; structural watch since plans/12, which
+  also dropped the "no Code nodes to watch" error — a code-less workflow is
+  watchable for structure.)
 - **Browser live-reload proxy (added 2026-07-18, plans/5)**: `lib/proxy.mts`, a
   native-Node reverse proxy that watch boots when `browserReload: "proxy"` (see
   Watch mode). Deliberate deviations from the plan sketch, all to stay

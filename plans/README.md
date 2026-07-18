@@ -53,6 +53,11 @@ items not yet claimed by one. Recommended order:
     logo strictly TTY-gated; workflow-name arguments, shell completion, and a
     `list` verb. Piped output stays plain and line-oriented (LLM/script safe —
     and fixes today's ANSI leak into pipes).
+12. [Structural watch](INPROGRESS-12-structural-watch.md) — watch also pushes
+    `workflow.json` saves, gated by a 3-way conflict check (session baseline)
+    with interactive merge / keep-local / keep-remote resolution; every watch
+    session starts with a safety commit + pull. Implemented; live-instance
+    verification pending.
 
 ## Conventions
 

@@ -64,7 +64,7 @@ function parameterStrings(value: unknown, skipKey?: string): string[] {
  * every Code node behind a //@file: placeholder, referenced files present and
  * well-formed, no marker inside .js files, unique node names/ids, connection
  * integrity, no orphan code files, no dangling literal $('…') references;
- * warn on *.remote.js leftovers.
+ * warn on *.remote.js / workflow.remote.json leftovers.
  */
 export function validateWorkflowDir(dir: string): ValidationResult {
   const errors: string[] = [];
@@ -165,6 +165,9 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     } else if (/\.(ts|js)$/.test(entry) && !entry.endsWith(".d.ts") && !referencedFiles.has(entry)) {
       errors.push(`orphan code file ${entry} — no ${FILE_PLACEHOLDER_PREFIX} placeholder references it; delete it or point a Code node at it`);
     }
+  }
+  if (existsSync(path.join(dir, "workflow.remote.json"))) {
+    warnings.push("unresolved structural conflict workflow.remote.json — reconcile into workflow.json, then delete it");
   }
   return { errors, warnings };
 }

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `watch` now also watches **`workflow.json`** and pushes structural edits
+  (connections, node settings, …) on save — the IDE becomes a peer editor of
+  the n8n UI. A save only pushes cleanly when the remote structure is
+  unchanged since the last sync; if both sides changed, an interactive
+  prompt offers **[m]erge** (writes a diff-friendly `workflow.remote.json`
+  to reconcile manually), **[l]ocal** (force-push over the remote changes),
+  **[r]emote** (pull over the local file; the previous version stays in
+  git), or Enter to skip. Non-interactive sessions log the conflict and
+  skip; `--force` resolves as keep-local without asking. n8n-UI structural
+  edits detected after a node push produce an early warning. `check` warns
+  while an unreconciled `workflow.remote.json` exists.
+
+### Changed
+
+- `watch` starts every session with a **safety commit + pull** of the
+  workflow folder: local state is committed first (even with
+  `commitOnPush`/`commitOnPull` off — it's the data-loss guard, skipped on a
+  clean tree), then the workflow is pulled so watch begins from a committed,
+  in-sync baseline. Without git, the startup pull is skipped with a warning
+  instead of risking uncommitted edits.
+- `watch` no longer refuses workflows without Code nodes — they are
+  watchable for structural (`workflow.json`) changes.
+
 ### Fixed
 
 - One corrupt `.decanter.json` no longer breaks every command for every

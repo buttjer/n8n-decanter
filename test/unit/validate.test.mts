@@ -128,6 +128,12 @@ describe("validateWorkflowDir", () => {
     assert.deepEqual(errors, []);
     assert.deepEqual(warnings, ["stray remote copy code/gone.remote.js — no placeholder references its node; port or delete it"]);
   });
+
+  it("warns on an unresolved workflow.remote.json", () => {
+    const { warnings, errors } = validateWorkflowDir(scaffold({ files: { "workflow.remote.json": "{}\n" } }));
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warnings, ["unresolved structural conflict workflow.remote.json — reconcile into workflow.json, then delete it"]);
+  });
 });
 
 describe("validateNodeFile", () => {
