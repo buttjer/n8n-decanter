@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- One corrupt `.decanter.json` no longer breaks every command for every
+  workflow: `pull`/`push`/`status`/`watch` now skip the broken folder with a
+  warning, and `check` (and the push gate) report a scoped
+  "corrupt .decanter.json (…)" compliance error for that folder — previously
+  a raw `SyntaxError` aborted the whole command, healthy workflows included.
+- Malformed `decanter.config.json`, and malformed `workflow.json` in
+  `rename`, now fail with an error naming the offending file instead of
+  leaking a bare JSON `SyntaxError`.
+- `watch`: pushing a node whose `.decanter.json` entry disappeared
+  mid-session (e.g. removed by a concurrent pull) now fails with a clear
+  "pull first" error instead of a `TypeError`.
+
 ### Changed
 
 - **Breaking:** `watch` now takes a **workflow id** and watches every Code

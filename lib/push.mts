@@ -7,8 +7,8 @@ import { notifyPushed } from "./proxy.mts";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
 import {
-  FILE_PLACEHOLDER_PREFIX,
   isJsCodeNode,
+  placeholderFile,
   sanitizeForPut,
   sha256,
   splitMarker,
@@ -81,15 +81,16 @@ function recordSync(state: DecanterState, confirmed: Workflow): void {
 }
 
 export async function pushWorkflow(api: N8nApi, root: string, id: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
-  const dir = findWorkflowDir(root, id);
+  const dir = findWorkflowDir(root, id, log);
   if (!dir) throw new Error(`workflow ${id} not found under ${root} — pull it first`);
   assertCompliant(validateWorkflowDir(dir), log, `"${path.basename(dir)}"`);
   const state = readState(dir)!;
   const wf = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as Workflow;
 
   for (const node of wf.nodes) {
-    if (!isJsCodeNode(node) || !node.parameters.jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) continue;
-    const file = node.parameters.jsCode.slice(FILE_PLACEHOLDER_PREFIX.length).trim();
+    if (!isJsCodeNode(node)) continue;
+    const file = placeholderFile(node);
+    if (file === null) continue;
     node.parameters.jsCode = (await buildNodeCode(dir, file)).jsCode;
     state.nodes[node.id] = { ...state.nodes[node.id], file };
   }
@@ -108,8 +109,10 @@ export async function pushWorkflow(api: N8nApi, root: string, id: string, { forc
 
 /** Push a single node's code (watch mode): GET, swap jsCode, PUT. */
 export async function pushSingleNode(api: N8nApi, dir: string, nodeId: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<void> {
-  const state = readState(dir)!;
+  const state = readState(dir);
+  if (!state) throw new Error(`missing .decanter.json in ${dir} — pull first`);
   const nodeState = state.nodes[nodeId];
+  if (!nodeState) throw new Error(`node ${nodeId} has no entry in ${dir}/.decanter.json — pull first`);
   assertCompliant(validateNodeFile(dir, nodeState.file), log, nodeState.file);
   const { jsCode } = await buildNodeCode(dir, nodeState.file);
 

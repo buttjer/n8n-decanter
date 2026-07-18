@@ -2,40 +2,34 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
-import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, isJsCodeNode, kebabCase, renameNodeRefs, stableWorkflowJson } from "./util.mts";
+import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, forEachConnectionTarget, isJsCodeNode, kebabCase, placeholderFile, renameNodeRefs, stableWorkflowJson } from "./util.mts";
 import { validateWorkflowDir } from "./validate.mts";
 
-function loadWorkflow(root: string, id: string): { dir: string; wf: Workflow } {
-  const dir = findWorkflowDir(root, id);
+function loadWorkflow(root: string, id: string, log: Log): { dir: string; wf: Workflow } {
+  const dir = findWorkflowDir(root, id, log);
   if (!dir) throw new Error(`workflow ${id} not found under ${root} — pull it first`);
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) throw new Error(`missing workflow.json in ${dir} — pull first`);
-  return { dir, wf: JSON.parse(readFileSync(wfFile, "utf8")) as Workflow };
+  try {
+    return { dir, wf: JSON.parse(readFileSync(wfFile, "utf8")) as Workflow };
+  } catch (err) {
+    throw new Error(`${wfFile}: invalid JSON (${(err as Error).message})`);
+  }
 }
 
 /** Rename `old` -> `new` in connection keys and every `{ node: … }` target. */
 function renameInConnections(connections: Record<string, unknown>, oldName: string, newName: string): number {
   let changes = 0;
-  for (const [source, byType] of Object.entries(connections)) {
-    if (byType && typeof byType === "object") {
-      for (const groups of Object.values(byType as Record<string, unknown>)) {
-        if (!Array.isArray(groups)) continue;
-        for (const group of groups) {
-          if (!Array.isArray(group)) continue;
-          for (const target of group) {
-            if (target && typeof target === "object" && (target as { node?: unknown }).node === oldName) {
-              (target as { node: string }).node = newName;
-              changes++;
-            }
-          }
-        }
-      }
-    }
-    if (source === oldName) {
-      connections[newName] = connections[oldName];
-      delete connections[oldName];
+  forEachConnectionTarget(connections, (target) => {
+    if (target.node === oldName) {
+      (target as { node: string }).node = newName;
       changes++;
     }
+  });
+  if (Object.hasOwn(connections, oldName)) {
+    connections[newName] = connections[oldName];
+    delete connections[oldName];
+    changes++;
   }
   return changes;
 }
@@ -68,8 +62,9 @@ function renameInParameters(value: unknown, oldName: string, newName: string, sk
 
 /** Move the renamed node's source file to its new kebab-case name (plus .remote.js sibling). */
 function renameNodeFile(dir: string, node: WorkflowNode, newName: string, log: Log): void {
-  if (!isJsCodeNode(node) || !node.parameters.jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) return;
-  const current = node.parameters.jsCode.slice(FILE_PLACEHOLDER_PREFIX.length).trim();
+  if (!isJsCodeNode(node)) return;
+  const current = placeholderFile(node);
+  if (current === null) return;
   const ext = path.extname(current);
   let base = kebabCase(newName);
   let wanted = `${CODE_DIR}/${base}${ext}`;
@@ -105,7 +100,7 @@ export function renameNode(root: string, id: string, oldName: string, newName: s
   newName = newName.trim();
   if (!newName) throw new Error("new node name must not be empty");
   if (newName === oldName) throw new Error(`node is already named "${oldName}"`);
-  const { dir, wf } = loadWorkflow(root, id);
+  const { dir, wf } = loadWorkflow(root, id, log);
   const node = wf.nodes.find((n) => n.name === oldName);
   if (!node) throw new Error(`no node named "${oldName}" in "${wf.name}" (nodes: ${wf.nodes.map((n) => `"${n.name}"`).join(", ")})`);
   if (wf.nodes.some((n) => n.name === newName)) throw new Error(`a node named "${newName}" already exists in "${wf.name}"`);
@@ -122,8 +117,9 @@ export function renameNode(root: string, id: string, oldName: string, newName: s
   // snapshots mirror remote code and stay untouched).
   let fileChanges = 0;
   for (const n of wf.nodes) {
-    if (!isJsCodeNode(n) || !n.parameters.jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) continue;
-    const file = n.parameters.jsCode.slice(FILE_PLACEHOLDER_PREFIX.length).trim();
+    if (!isJsCodeNode(n)) continue;
+    const file = placeholderFile(n);
+    if (file === null) continue;
     const filePath = path.join(dir, file);
     if (!existsSync(filePath)) continue;
     const source = readFileSync(filePath, "utf8");
@@ -149,7 +145,7 @@ export function renameNode(root: string, id: string, oldName: string, newName: s
 export function renameWorkflow(root: string, id: string, newName: string, log: Log): void {
   newName = newName.trim();
   if (!newName) throw new Error("new workflow name must not be empty");
-  const { dir, wf } = loadWorkflow(root, id);
+  const { dir, wf } = loadWorkflow(root, id, log);
   if (wf.name === newName) throw new Error(`workflow is already named "${newName}"`);
   const oldName = wf.name;
   wf.name = newName;

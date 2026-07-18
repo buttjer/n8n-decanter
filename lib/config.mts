@@ -2,16 +2,22 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { DecanterConfig } from "./types.mts";
 
-/** Parse KEY=VALUE lines from .env (if present) into process.env, not overriding existing vars. */
-export function loadEnv(dir: string): void {
-  const file = path.join(dir, ".env");
-  if (!existsSync(file)) return;
+/** Parse KEY=VALUE lines (optional `export`, quotes stripped) from an env file. */
+export function parseEnvFile(file: string): Record<string, string> {
+  const values: Record<string, string> = {};
+  if (!existsSync(file)) return values;
   for (const line of readFileSync(file, "utf8").split("\n")) {
     const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
     if (!m || m[0].trimStart().startsWith("#")) continue;
-    let value = m[2];
-    if (/^(['"]).*\1$/.test(value)) value = value.slice(1, -1);
-    if (process.env[m[1]] === undefined) process.env[m[1]] = value;
+    values[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
+  }
+  return values;
+}
+
+/** Load .env (if present) into process.env, not overriding existing vars. */
+export function loadEnv(dir: string): void {
+  for (const [key, value] of Object.entries(parseEnvFile(path.join(dir, ".env")))) {
+    if (process.env[key] === undefined) process.env[key] = value;
   }
 }
 
@@ -21,7 +27,13 @@ export function loadConfig(cwd: string = process.cwd(), { requireCredentials = t
   for (;;) {
     const file = path.join(dir, "decanter.config.json");
     if (existsSync(file)) {
-      const cfg = JSON.parse(readFileSync(file, "utf8")) as {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(readFileSync(file, "utf8"));
+      } catch (err) {
+        throw new Error(`${file}: invalid JSON (${(err as Error).message})`);
+      }
+      const cfg = parsed as {
         root?: string;
         workflows?: string[];
         commitOnPush?: boolean;

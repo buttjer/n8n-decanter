@@ -37,7 +37,7 @@ items not yet claimed by one. Recommended order:
    read it); pull mirroring ships feature-detected so it self-activates once
    upstream exposes reads. Gated on a live-instance spike, so it trails the
    offline work.
-9. [Test & stability quick wins](OPEN-9-tests-stability-refactoring.md) —
+9. [Test & stability quick wins](DONE-9-tests-stability-refactoring.md) —
    the no-brainer hardening half: fast `node:test` unit tests for the pure
    core, the corrupt-`.decanter.json` crash fix (one broken state file
    currently breaks every command), small e2e/proxy coverage gaps, and

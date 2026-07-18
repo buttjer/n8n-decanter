@@ -134,6 +134,6 @@ today (no more leaked ANSI).
 - **PLAN.md**: name-based addressing and the new verbs change the CLI surface
   — raise the PLAN.md update with the user at implementation time (per
   CLAUDE.md), not before.
-- Cross-links: [Plan 9](OPEN-9-tests-stability-refactoring.md) (unit-test
+- Cross-links: [Plan 9](DONE-9-tests-stability-refactoring.md) (unit-test
   harness for the resolver), [Plan 10](OPEN-10-hardening-bigger-refactors.md)
   (`status` exit codes pair naturally with `list`).

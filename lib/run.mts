@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { compileTs } from "./compile.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
-import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, isJsCodeNode, splitMarker } from "./util.mts";
+import { CODE_DIR, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -44,10 +44,7 @@ function findNode(resolved: string): WorkflowNode | null {
   }
   const ref = path.relative(dir, resolved).split(path.sep).join("/");
   for (const node of wf.nodes ?? []) {
-    if (!isJsCodeNode(node)) continue;
-    const jsCode = node.parameters.jsCode ?? "";
-    if (!jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) continue;
-    if (jsCode.slice(FILE_PLACEHOLDER_PREFIX.length).trim() === ref) return node;
+    if (isJsCodeNode(node) && placeholderFile(node) === ref) return node;
   }
   return null;
 }

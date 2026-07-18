@@ -5,7 +5,7 @@
 **Theme:** The half of the tests/stability/refactoring work that changes
 user-visible behavior, needs design care because existing copies deliberately
 diverge, or needs a user decision / real-world checking before starting.
-The no-brainer half is [Plan 9](OPEN-9-tests-stability-refactoring.md), which
+The no-brainer half is [Plan 9](DONE-9-tests-stability-refactoring.md), which
 should land first — its unit tests are the safety net for the refactors here.
 
 ## Why
@@ -28,7 +28,7 @@ three buckets that shouldn't be rushed:
 
 ## Source
 
-Split out of [Plan 9](OPEN-9-tests-stability-refactoring.md) (2026-07-18,
+Split out of [Plan 9](DONE-9-tests-stability-refactoring.md) (2026-07-18,
 same user request: "more tests, stability and refactoring" — this file holds
 the "bigger things / decision making / checking beforehand" part). No Plan 0
 entry graduates here.

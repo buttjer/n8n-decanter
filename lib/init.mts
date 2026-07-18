@@ -2,21 +2,10 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
+import { parseEnvFile } from "./config.mts";
 import type { Log } from "./types.mts";
 
 const TEMPLATE_DIR = fileURLToPath(new URL("../template", import.meta.url));
-
-function parseEnvFile(file: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  if (!existsSync(file)) return values;
-  for (const line of readFileSync(file, "utf8").split("\n")) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
-    if (m && !m[0].trimStart().startsWith("#")) {
-      values[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
-    }
-  }
-  return values;
-}
 
 function copyTemplate(srcDir: string, destDir: string, { force = false, protect = new Set() }: { force?: boolean; protect?: Set<string> } = {}): string[] {
   const overwritten: string[] = [];

@@ -114,7 +114,7 @@ async function main() {
     case "check": {
       const dirs = rest.length > 0
         ? rest.map((id) => {
-            const dir = findWorkflowDir(config.root, id);
+            const dir = findWorkflowDir(config.root, id, log);
             if (!dir) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
             return dir;
           })

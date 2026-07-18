@@ -26,7 +26,7 @@ function writeIfChanged(file: string, content: string): boolean {
 /** Locate/create the workflow folder, renaming it if the workflow was renamed. */
 function ensureWorkflowDir(root: string, wf: Workflow, log: Log): { dir: string; previousDir?: string } {
   const wanted = sanitizeFilename(wf.name);
-  const existing = findWorkflowDir(root, wf.id);
+  const existing = findWorkflowDir(root, wf.id, log);
   if (!existing) {
     const dir = path.join(root, wanted);
     mkdirSync(dir, { recursive: true });

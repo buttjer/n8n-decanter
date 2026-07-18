@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { readState } from "./state.mts";
 import type { Log, Workflow } from "./types.mts";
-import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, isJsCodeNode, splitMarker } from "./util.mts";
+import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, forEachConnectionTarget, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
 
 const execFile = promisify(execFileCb);
 
@@ -69,7 +69,11 @@ function parameterStrings(value: unknown, skipKey?: string): string[] {
 export function validateWorkflowDir(dir: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
-  if (!readState(dir)) errors.push("missing .decanter.json — pull first");
+  try {
+    if (!readState(dir)) errors.push("missing .decanter.json — pull first");
+  } catch (err) {
+    errors.push((err as Error).message); // "corrupt .decanter.json (…)"
+  }
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) {
     errors.push("missing workflow.json — pull first");
@@ -99,34 +103,25 @@ export function validateWorkflowDir(dir: string): ValidationResult {
 
   // Connection integrity: every source key and every target must be a real node.
   const connectionErrors = new Set<string>();
-  for (const [source, byType] of Object.entries(wf.connections ?? {})) {
+  for (const source of Object.keys(wf.connections ?? {})) {
     if (!nodeNames.has(source)) connectionErrors.add(`connections: source "${source}" is not a node in this workflow`);
-    if (!byType || typeof byType !== "object") continue;
-    for (const [type, groups] of Object.entries(byType as Record<string, unknown>)) {
-      if (!Array.isArray(groups)) continue;
-      for (const group of groups) {
-        if (!Array.isArray(group)) continue;
-        for (const target of group) {
-          const targetNode = (target as { node?: unknown } | null)?.node;
-          if (typeof targetNode === "string" && !nodeNames.has(targetNode)) {
-            connectionErrors.add(`connections: "${source}" (${type}) targets missing node "${targetNode}"`);
-          }
-        }
-      }
-    }
   }
+  forEachConnectionTarget(wf.connections ?? {}, (target, source, type) => {
+    if (typeof target.node === "string" && !nodeNames.has(target.node)) {
+      connectionErrors.add(`connections: "${source}" (${type}) targets missing node "${target.node}"`);
+    }
+  });
   errors.push(...connectionErrors);
 
   const referencedFiles = new Set<string>();
   const coveredRemoteFiles = new Set<string>();
   for (const node of nodes) {
     if (!isJsCodeNode(node)) continue;
-    const jsCode = node.parameters.jsCode;
-    if (!jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) {
+    const file = placeholderFile(node);
+    if (file === null) {
       errors.push(`node "${node.name}": inline code in workflow.json — node code belongs in its own file behind a ${FILE_PLACEHOLDER_PREFIX} placeholder (a fresh pull extracts it)`);
       continue;
     }
-    const file = jsCode.slice(FILE_PLACEHOLDER_PREFIX.length).trim();
     const result = validateNodeFile(dir, file, `node "${node.name}"`);
     errors.push(...result.errors);
     warnings.push(...result.warnings);

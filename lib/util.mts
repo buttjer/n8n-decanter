@@ -39,6 +39,36 @@ export function withMarker(compiledJs: string): { jsCode: string; hash: string }
   return { jsCode: body + MARKER_PREFIX + sha256(body), hash: sha256(body) };
 }
 
+/** File a `//@file:` placeholder points at, or null for inline code. */
+export function placeholderFile(node: JsCodeNode): string | null {
+  const jsCode = node.parameters.jsCode;
+  if (!jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) return null;
+  return jsCode.slice(FILE_PLACEHOLDER_PREFIX.length).trim();
+}
+
+/**
+ * Walk every `{ node: … }` target in a connections object (the four-level
+ * source → type → group → target nesting), calling `cb` for each target
+ * object. Non-object levels are skipped defensively.
+ */
+export function forEachConnectionTarget(
+  connections: Record<string, unknown>,
+  cb: (target: { node?: unknown }, source: string, type: string) => void,
+): void {
+  for (const [source, byType] of Object.entries(connections)) {
+    if (!byType || typeof byType !== "object") continue;
+    for (const [type, groups] of Object.entries(byType as Record<string, unknown>)) {
+      if (!Array.isArray(groups)) continue;
+      for (const group of groups) {
+        if (!Array.isArray(group)) continue;
+        for (const target of group) {
+          if (target && typeof target === "object") cb(target as { node?: unknown }, source, type);
+        }
+      }
+    }
+  }
+}
+
 /** Sanitize a workflow/node name for use as a file or folder name. */
 export function sanitizeFilename(name: string): string {
   const cleaned = name

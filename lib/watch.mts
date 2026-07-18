@@ -19,7 +19,7 @@ import { CODE_DIR } from "./util.mts";
  * notifyPushed in lib/proxy).
  */
 export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: string, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
-  const found = findWorkflowDir(config.root, id);
+  const found = findWorkflowDir(config.root, id, log);
   if (!found) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
   const dir = found; // narrowed to string; the nested flush() closure needs a non-null binding
   const codeDir = path.join(dir, CODE_DIR);

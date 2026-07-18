@@ -44,8 +44,10 @@ unasked.
 ## Commands
 
 ```sh
-npm test              # e2e suite (test/e2e.mts) — spins up a mock n8n API on a
-                      #   localhost port; sandboxes that block port binding break it
+npm test              # unit tests (node:test, test/unit/) + e2e suite
+                      #   (test/e2e.mts) + proxy suite (test/proxy.mts); e2e and
+                      #   proxy bind localhost ports — sandboxes that block port
+                      #   binding break them (unit tests run fine sandboxed)
 npm run typecheck     # tsc -p tsconfig.cli.json (CLI sources) + scripts/
                       #   typecheck.mts (node files — NOT plain tsc, see below)
 node n8n-decanter.mts <init|pull|push|status|check|watch> …

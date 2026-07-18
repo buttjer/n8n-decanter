@@ -15,7 +15,7 @@ async function localHash(dir: string, file: string): Promise<string | null> {
 
 export async function statusWorkflow(api: N8nApi, root: string, id: string, log: Log): Promise<void> {
   const remote = await api.getWorkflow(id);
-  const dir = findWorkflowDir(root, id);
+  const dir = findWorkflowDir(root, id, log);
   if (!dir) {
     log.warn(`${remote.name} (${id}): not pulled yet`);
     return;

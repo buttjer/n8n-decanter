@@ -6,6 +6,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { notifyPushed, startProxy } from "../lib/proxy.mts";
 import type { Log } from "../lib/types.mts";
+import { createStepRunner } from "./harness.mts";
 
 const logs: { level: string; msg: string }[] = [];
 const log: Log = {
@@ -26,6 +27,9 @@ const upstream = http.createServer((req, res) => {
   if (req.url === "/asset.js") {
     return void res.writeHead(200, { "content-type": "application/javascript" }).end('console.log("upstream asset");');
   }
+  if (req.url === "/nobody") {
+    return void res.writeHead(200, { "content-type": "text/html" }).end("<p>bare fragment");
+  }
   res.writeHead(404).end("nope");
 });
 
@@ -35,31 +39,22 @@ interface Res {
   headers: http.IncomingHttpHeaders;
   body: string;
 }
-function get(url: string): Promise<Res> {
+function request(url: string, method = "GET"): Promise<Res> {
   return new Promise((resolve, reject) => {
     http
-      .get(url, (res) => {
+      .request(url, { method }, (res) => {
         let body = "";
         res.setEncoding("utf8");
         res.on("data", (c) => (body += c));
         res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
       })
-      .on("error", reject);
+      .on("error", reject)
+      .end();
   });
 }
+const get = (url: string) => request(url);
 
-let passed = 0;
-async function step(name: string, fn: () => Promise<void> | void): Promise<void> {
-  try {
-    await fn();
-    passed++;
-    console.log(`ok   ${name}`);
-  } catch (err) {
-    console.error(`FAIL ${name}\n${(err as Error).stack}`);
-    upstream.close();
-    process.exit(1);
-  }
-}
+const { step, passedCount } = createStepRunner({ onFail: () => upstream.close() });
 
 // ---------- run ----------
 await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
@@ -135,7 +130,34 @@ await step("startProxy returns null and warns when the port is taken", async () 
   await new Promise<void>((resolve) => blocker.close(() => resolve()));
 });
 
+await step("HTML without </body> gets the client appended at the end", async () => {
+  const r = await get(`${base}/nobody`);
+  assert.equal(r.status, 200);
+  assert.ok(r.body.startsWith("<p>bare fragment"), r.body);
+  assert.ok(r.body.endsWith('<script src="/__decanter/client.js" defer></script>'), "tag appended: " + r.body);
+});
+
+await step("HEAD passes through without injection", async () => {
+  const r = await request(`${base}/`, "HEAD");
+  assert.equal(r.status, 200);
+  assert.match(String(r.headers["content-type"]), /text\/html/);
+  assert.equal(r.body, "", "HEAD must carry no body");
+});
+
+await step("upstream request failure → 502 plain-text error", async () => {
+  // port 9 (discard) on localhost: nothing listens there, connect fails fast
+  const dead = await startProxy({ upstream: "http://127.0.0.1:9", port: 0 }, log);
+  assert.ok(dead, "proxy must bind even when the upstream is dead");
+  logs.length = 0;
+  const r = await get(`http://127.0.0.1:${dead!.port}/`);
+  assert.equal(r.status, 502);
+  assert.match(String(r.headers["content-type"]), /text\/plain/);
+  assert.equal(r.body, "decanter proxy: upstream error");
+  assert.ok(logs.some((l) => l.level === "error" && /upstream request failed/.test(l.msg)), "logs the upstream failure");
+  await dead!.close();
+});
+
 await handle.close();
 await new Promise<void>((resolve) => upstream.close(() => resolve()));
-console.log(`\n${passed} proxy checks passed`);
+console.log(`\n${passedCount()} proxy checks passed`);
 process.exit(0);

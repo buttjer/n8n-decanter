@@ -1,13 +1,18 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { DecanterState } from "./types.mts";
+import type { DecanterState, Log } from "./types.mts";
 
 export const STATE_FILE = ".decanter.json";
 
+/** Missing state is null; corrupt state throws a clear, file-naming error. */
 export function readState(dir: string): DecanterState | null {
   const file = path.join(dir, STATE_FILE);
   if (!existsSync(file)) return null;
-  return JSON.parse(readFileSync(file, "utf8")) as DecanterState;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as DecanterState;
+  } catch (err) {
+    throw new Error(`corrupt ${STATE_FILE} (${(err as Error).message})`);
+  }
 }
 
 export function writeState(dir: string, state: DecanterState): void {
@@ -38,7 +43,18 @@ export function listWorkflowDirs(root: string): string[] {
   return found.sort();
 }
 
-/** Find the workflow folder for an id by scanning .decanter.json files. */
-export function findWorkflowDir(root: string, workflowId: string): string | null {
-  return listWorkflowDirs(root).find((dir) => readState(dir)?.workflowId === workflowId) ?? null;
+/**
+ * Find the workflow folder for an id by scanning .decanter.json files.
+ * A corrupt state file only skips its own folder (warned via `log`) — it must
+ * not take down commands for every other workflow.
+ */
+export function findWorkflowDir(root: string, workflowId: string, log?: Log): string | null {
+  for (const dir of listWorkflowDirs(root)) {
+    try {
+      if (readState(dir)?.workflowId === workflowId) return dir;
+    } catch (err) {
+      log?.warn(`${dir}: ${(err as Error).message} — skipping this folder`);
+    }
+  }
+  return null;
 }

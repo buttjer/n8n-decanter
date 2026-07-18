@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { createStepRunner } from "./harness.mts";
 
 const execFile = promisify(execFileCb);
 const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -81,20 +82,12 @@ const wfDir = (name: string) => path.join(ROOT, name);
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
 const state = (dir: string) => JSON.parse(read(dir, ".decanter.json"));
 const remoteNode = (id: string, nid: string) => db.get(id).nodes.find((n: any) => n.id === nid);
-let passed = 0;
-function step(name: string, fn: () => unknown) {
-  return Promise.resolve()
-    .then(fn)
-    .then(() => {
-      passed++;
-      console.log(`ok   ${name}`);
-    })
-    .catch((err) => {
-      console.error(`FAIL ${name}\n${err.stack}\n\nwork dir kept: ${TMP}`);
-      server.close();
-      process.exit(1);
-    });
-}
+const { step, passedCount } = createStepRunner({
+  onFail: () => {
+    console.error(`work dir kept: ${TMP}`);
+    server.close();
+  },
+});
 
 // ---------- run ----------
 rmSync(TMP, { recursive: true, force: true });
@@ -683,6 +676,151 @@ await step("rename --workflow: local name change, folder follows on pull", async
   assert.ok(!existsSync(wfDir("Order Sync v2")), "old folder gone");
 });
 
+const dirF = wfDir("Order Sync Final");
+
+await step("ts conflict: local .ts and remote both changed → CONFLICT + .remote.js", async () => {
+  const tsFile = path.join(dirF, "code", "amazon-export.ts");
+  writeFileSync(tsFile, read(dirF, "code", "amazon-export.ts").replace("return rows.map", "const extra = 1;\nreturn rows.map"));
+  const node = remoteNode("wf123", "n3");
+  node.parameters.jsCode = node.parameters.jsCode.replace("rows.map", "rows.slice(0, 1).map");
+  const r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /CONFLICT — both code\/amazon-export\.ts and the remote code changed since last sync/);
+  assert.match(read(dirF, "code", "amazon-export.remote.js"), /slice\(0, 1\)/);
+  assert.match(read(dirF, "code", "amazon-export.ts"), /const extra = 1/); // .ts never clobbered
+  // pull re-baselined lastPushedHash: the next push overwrites the remote edit by design
+  let r2 = await cli("push");
+  assert.equal(r2.code, 0, r2.out);
+  assert.match(r2.out, /unresolved remote copy/);
+  assert.ok(!remoteNode("wf123", "n3").parameters.jsCode.includes("slice(0, 1)"), "push restored the TS-compiled version");
+  r2 = await cli("pull"); // resync removes the now-stale .remote.js
+  assert.equal(r2.code, 0, r2.out);
+  assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")));
+});
+
+await step("status: remote-drift, CONFLICT, and missing-file branches", async () => {
+  const js = path.join(dirF, "code", "transform-eu-us.js");
+  const original = read(dirF, "code", "transform-eu-us.js");
+  const node = remoteNode("wf123", "n2");
+  const remoteOriginal = node.parameters.jsCode;
+  // remote-only edit → pull hint
+  node.parameters.jsCode = remoteOriginal + "// remote edit\n";
+  let r = await cli("status");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Transform: EU\/US: changed remotely — pull/);
+  // both sides changed → CONFLICT
+  writeFileSync(js, original + "// local edit\n");
+  r = await cli("status");
+  assert.match(r.out, /Transform: EU\/US: CONFLICT — changed both locally and remotely/);
+  // local file missing → warning
+  renameSync(js, js + ".away");
+  r = await cli("status");
+  assert.match(r.out, /Transform: EU\/US: local file code\/transform-eu-us\.js missing/);
+  renameSync(js + ".away", js);
+  // restore both sides to the synced state
+  writeFileSync(js, original);
+  node.parameters.jsCode = remoteOriginal;
+  r = await cli("status");
+  assert.match(r.out, /Transform: EU\/US: in sync/);
+});
+
+await step("push: aborts when a remote Code node is unknown locally", async () => {
+  db.get("wf123").nodes.push({ id: "n5", name: "Report", type: "n8n-nodes-base.code", typeVersion: 2, position: [880, 0], parameters: { jsCode: "return $input.all();\n" } });
+  let r = await cli("push");
+  assert.equal(r.code, 1, "push must abort on an unknown remote Code node: " + r.out);
+  assert.match(r.out, /node "Report" exists remotely but is unknown locally/);
+  assert.match(r.out, /pull first/);
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.equal(read(dirF, "code", "report.js"), "return $input.all();\n");
+  assert.equal(state(dirF).nodes.n5.file, "code/report.js");
+});
+
+await step("pull: kebab-name collision gets the -<id8> suffix", async () => {
+  db.get("wf123").nodes.push({ id: "n6collide", name: "Report!", type: "n8n-nodes-base.code", typeVersion: 2, position: [880, 200], parameters: { jsCode: "return [];\n" } });
+  const r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.equal(state(dirF).nodes.n6collide.file, "code/report-n6collid.js");
+  assert.equal(read(dirF, "code", "report-n6collid.js"), "return [];\n");
+  assert.match(read(dirF, "workflow.json"), /"\/\/@file:code\/report-n6collid\.js"/);
+});
+
+await step("rename: kebab collision falls back to -<id8>; .remote.js content untouched", async () => {
+  // "Transform EU US" kebabs to the same base as "Transform: EU/US" (n2's file)
+  writeFileSync(path.join(dirF, "code", "report.remote.js"), "const x = $('Report');\n");
+  const r = await cli("rename", "wf123", "Report", "Transform EU US");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(existsSync(path.join(dirF, "code", "transform-eu-us-n5.js")), "collision suffix used");
+  assert.ok(!existsSync(path.join(dirF, "code", "report.js")), "old file gone");
+  assert.equal(state(dirF).nodes.n5.file, "code/transform-eu-us-n5.js");
+  // the sibling followed the rename, but its content is a remote snapshot — never rewritten
+  assert.equal(read(dirF, "code", "transform-eu-us-n5.remote.js"), "const x = $('Report');\n");
+  unlinkSync(path.join(dirF, "code", "transform-eu-us-n5.remote.js"));
+  const rPush = await cli("push");
+  assert.equal(rPush.code, 0, rPush.out);
+  assert.equal(remoteNode("wf123", "n5").name, "Transform EU US");
+});
+
+await step("node deleted remotely: status warns, pull drops state, file kept", async () => {
+  const wf = db.get("wf123");
+  wf.nodes = wf.nodes.filter((n: any) => n.id !== "n6collide");
+  let r = await cli("status");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /code\/report-n6collid\.js: node n6collide deleted remotely/);
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /node n6collide \("code\/report-n6collid\.js"\) no longer exists remotely — removing from state/);
+  assert.ok(existsSync(path.join(dirF, "code", "report-n6collid.js")), "file kept — git is the safety net");
+  assert.equal(state(dirF).nodes.n6collide, undefined);
+  // the kept file is an orphan now; the guard flags it until it's removed
+  r = await cli("check", "--no-typecheck");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /orphan code file code\/report-n6collid\.js/);
+  unlinkSync(path.join(dirF, "code", "report-n6collid.js"));
+});
+
+await step("pull: workflow rename to an occupied folder name warns, keeps the folder", async () => {
+  mkdirSync(wfDir("Occupied"), { recursive: true });
+  writeFileSync(path.join(wfDir("Occupied"), "note.txt"), "not a workflow\n");
+  db.get("wf123").name = "Occupied";
+  let r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /workflow renamed to "Occupied" but .* already exists — keeping/);
+  assert.ok(existsSync(dirF), "old folder kept");
+  db.get("wf123").name = "Order Sync Final";
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  rmSync(wfDir("Occupied"), { recursive: true, force: true });
+});
+
+await step("corrupt .decanter.json: scoped guard error, other workflows unaffected", async () => {
+  const dirC = wfDir("Corrupted");
+  mkdirSync(path.join(dirC, "code"), { recursive: true });
+  writeFileSync(path.join(dirC, ".decanter.json"), "{ definitely not json");
+  writeFileSync(path.join(dirC, "workflow.json"), JSON.stringify({ nodes: [], connections: {} }));
+  // check: a scoped error for the broken folder; the healthy workflow still passes
+  let r = await cli("check", "--no-typecheck");
+  assert.equal(r.code, 1, "check must fail on the corrupt state file: " + r.out);
+  assert.match(r.out, /Corrupted: corrupt \.decanter\.json \(/);
+  assert.match(r.out, /Order Sync Final: OK/);
+  // status/pull/push of the healthy workflow keep working
+  r = await cli("status");
+  assert.equal(r.code, 0, "status must survive a corrupt neighbor: " + r.out);
+  assert.match(r.out, /skipping this folder/);
+  r = await cli("pull");
+  assert.equal(r.code, 0, "pull must survive a corrupt neighbor: " + r.out);
+  r = await cli("push");
+  assert.equal(r.code, 0, "push must survive a corrupt neighbor: " + r.out);
+  // a scoped check of the healthy workflow warns about the skipped folder but
+  // reports no guard error ("x …" line) for it and stays green
+  r = await cli("check", "wf123", "--no-typecheck");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /skipping this folder/);
+  const errorLines = stripAnsi(r.out).split("\n").filter((l) => l.startsWith("x "));
+  assert.deepEqual(errorLines, [], "corrupt neighbor's guard error leaked into scoped output: " + r.out);
+  rmSync(dirC, { recursive: true, force: true });
+});
+
 server.close();
 rmSync(TMP, { recursive: true, force: true });
-console.log(`\n${passed} steps passed`);
+console.log(`\n${passedCount()} steps passed`);
