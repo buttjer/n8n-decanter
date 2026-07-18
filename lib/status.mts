@@ -2,15 +2,18 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
+import { unifiedDiff } from "./diff.mts";
 import { findWorkflowDir, readState } from "./state.mts";
+import { style } from "./style.mts";
 import type { Log, Workflow } from "./types.mts";
 import { isJsCodeNode, publicationState, sha256, splitMarker, workflowStructureHash } from "./util.mts";
 
-async function localHash(dir: string, file: string): Promise<string | null> {
+/** The comparable local body: file content for .js, the compiled JS for .ts. */
+async function localBody(dir: string, file: string): Promise<string | null> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) return null;
-  if (file.endsWith(".ts")) return sha256(await compileTs(filePath));
-  return sha256(readFileSync(filePath, "utf8"));
+  if (file.endsWith(".ts")) return compileTs(filePath);
+  return readFileSync(filePath, "utf8");
 }
 
 export interface StatusResult {
@@ -23,7 +26,7 @@ export interface StatusResult {
   remoteDrift: boolean;
 }
 
-export async function statusWorkflow(api: N8nApi, root: string, id: string, log: Log): Promise<StatusResult> {
+export async function statusWorkflow(api: N8nApi, root: string, id: string, log: Log, { diff = false }: { diff?: boolean } = {}): Promise<StatusResult> {
   const remote = await api.getWorkflow(id);
   const dir = findWorkflowDir(root, id, log);
   if (!dir) {
@@ -62,18 +65,35 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
       drift();
       continue;
     }
-    const remoteHash = sha256(splitMarker(node.parameters.jsCode).body);
-    const local = await localHash(dir, nodeState.file);
+    const remoteBody = splitMarker(node.parameters.jsCode).body;
+    const remoteHash = sha256(remoteBody);
+    const body = await localBody(dir, nodeState.file);
+    const local = body === null ? null : sha256(body);
+    // --diff: the same bodies the hashes compare — for .ts that is the
+    // compiled JS, which is what push would put on the remote
+    const printDiff = (): void => {
+      if (!diff || body === null) return;
+      log.info(`    ${style.dim("--- remote (n8n)")}`);
+      log.info(`    ${style.dim(`+++ local (${nodeState.file})`)}`);
+      for (const line of unifiedDiff(remoteBody, body)) {
+        const styled = line.startsWith("+") ? style.green(line) : line.startsWith("-") ? style.red(line) : style.dim(line);
+        log.info(`    ${styled}`);
+      }
+    };
     const last = nodeState.lastPushedHash;
     if (local === null) log.warn(`${label}: local file ${nodeState.file} missing`);
     else if (local === remoteHash) log.ok(`${label}: in sync (${nodeState.file})`);
-    else if (remoteHash === last) log.info(`${label}: local changes in ${nodeState.file} — push pending`);
-    else if (local === last) {
+    else if (remoteHash === last) {
+      log.info(`${label}: local changes in ${nodeState.file} — push pending`);
+      printDiff();
+    } else if (local === last) {
       log.warn(`${label}: changed remotely — pull`);
       drift();
+      printDiff();
     } else {
       log.error(`${label}: CONFLICT — changed both locally and remotely`);
       drift();
+      printDiff();
     }
   }
   for (const [nodeId, nodeState] of Object.entries(state.nodes)) {

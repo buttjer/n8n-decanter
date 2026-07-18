@@ -12,7 +12,7 @@ items not yet claimed by one. Recommended order:
 2. [Offline validation + rename](DONE-2-offline-validation-and-rename.md) — turn the
    most fragile manual invariants (renames, connection integrity, orphan files,
    `$('…')` references) into machine-checked ones, then add an atomic `rename`.
-3. [Local run/diff fidelity](OPEN-3-local-run-and-diff-fidelity.md) — make offline
+3. [Local run/diff fidelity](INPROGRESS-3-local-run-and-diff-fidelity.md) — make offline
    iteration trustworthy: seed staticData in `run`, add `status --diff`, and pull
    real execution datasets as fixtures.
 4. [Editor node diagnostics](INPROGRESS-4-editor-node-diagnostics.md) — a TS

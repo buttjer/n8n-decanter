@@ -211,12 +211,17 @@ Two offline tools, always available (no credentials, no network, no live n8n):
     {
       "input":  [{ "json": { "sku": "A1" } }],
       "nodes":  { "Fetch Products": [{ "json": { "id": 1 } }] },
-      "env":    { "REGION": "eu" }
+      "env":    { "REGION": "eu" },
+      "staticData": { "global": { "cursor": 42 } }
     }
     ```
 
     `input` feeds `$input`/`$json`; `nodes` backs `$('Node Name')`; without a
     fixture the input defaults to a single empty item.
+    `$getWorkflowStaticData` is seeded from `workflow.json`'s `staticData`
+    (`global` and this node's `node:` slice); a fixture `staticData` replaces
+    the matching slice (`"node"` = the node being run). Mutations are visible
+    during the run but never persisted — `run` is offline.
   - Run mode (`runOnceForAllItems` / `runOnceForEachItem`) is read from the node
     in `workflow.json`, so each-item nodes are looped once per input item.
 - JSON validity of `workflow.json` after every structural edit.
@@ -226,7 +231,8 @@ Two offline tools, always available (no credentials, no network, no live n8n):
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
   `n8n-decanter run <file> [fixture]`, `n8n-decanter uuid [n]`. These never touch
   the network.
-- **Reads remote, no writes:** `n8n-decanter status` — safe to run, but it does
+- **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line
+  diffs; exits 1 on conflict/remote drift) — safe to run, but it does
   contact the instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
   pull` / `push` / `watch` read/write the real instance and `push` deploys.

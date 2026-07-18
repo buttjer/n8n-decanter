@@ -144,7 +144,10 @@ Exit codes: `status` exits **1 on conflict/remote drift** — anything where a
 pull is needed or a push would clobber remote work (CONFLICT, remote-only
 structure/code changes, remote nodes unknown locally or deleted, not pulled
 yet); local-only "push pending" edits exit 0 (plans/10 decision, 2026-07-18:
-the normal dev state must stay green). `DEBUG=1` prints stack traces on
+the normal dev state must stay green). `status --diff` (plans/3 B) adds a
+unified line diff under each drifted node — `-` remote, `+` local, `.ts`
+nodes diffed as their compiled JS (what the sync hashes compare) — via the
+zero-dep LCS differ in `lib/diff.mts`. `DEBUG=1` prints stack traces on
 errors; the default is the one-line message.
 
 ## Pull flow (`n8n-decanter pull [id…]`)
@@ -442,6 +445,13 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   pull). Everything that located a node file's `.decanter.json`/
   `workflow.json` as a *sibling* (watch, run, `scripts/typecheck.mts`, the
   template verify hook) also looks one level up from a dir named `code/`.
+- **`run` staticData (2026-07-18, plans/3 A)**: `$getWorkflowStaticData` is
+  seeded from `workflow.json`'s `staticData` using n8n's own key scheme
+  (`global`, `node:<node name>`); string-form staticData (the DB-serialized
+  shape some API responses carry) is parsed. A fixture `staticData` field
+  (`{ global?, node? }` — `node` meaning the node being run) replaces the
+  matching slice whole, no merging. Mutations are visible during the run,
+  never persisted — `run` stays offline.
 - **Name resolution is composed, not monolithic (2026-07-18, plans/11)**:
   `lib/state.mts` exports `listWorkflowRefs` (dir scan; names from folder
   basename + `workflow.json`), pure `matchWorkflowRef` (the tiered matcher,

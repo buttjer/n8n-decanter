@@ -679,6 +679,39 @@ await step("run: resolves workflow.json from the parent of code/", async () => {
   assert.match(r.out, /returned 2 items/);
 });
 
+await step("run: $getWorkflowStaticData seeds from workflow.json, fixture overrides", async () => {
+  const rd = path.join(TMP, "runtest-static");
+  mkdirSync(rd, { recursive: true });
+  writeFileSync(path.join(rd, "workflow.json"), JSON.stringify({
+    nodes: [{ id: "sd", name: "SD", type: "n8n-nodes-base.code", typeVersion: 2, position: [0, 0],
+      parameters: { jsCode: "//@file:SD.js" } }],
+    staticData: { global: { counter: 41 }, "node:SD": { seen: ["a"] } },
+  }));
+  writeFileSync(path.join(rd, "SD.js"),
+    "const g = $getWorkflowStaticData('global');\nconst n = $getWorkflowStaticData('node');\nreturn [{ json: { counter: g.counter, seen: n.seen } }];\n");
+  let r = await cli("run", path.join("runtest-static", "SD.js"));
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { counter: 41, seen: ["a"] } }]);
+  // fixture overrides per slice; the untouched slice keeps the workflow seed
+  writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ staticData: { global: { counter: 99 } } }));
+  r = await cli("run", path.join("runtest-static", "SD.js"), path.join("runtest-static", "fx.json"));
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { counter: 99, seen: ["a"] } }]);
+  // a bare file without workflow.json gets empty objects, not a ReferenceError
+  const bare = path.join(TMP, "runtest-bare");
+  mkdirSync(bare, { recursive: true });
+  writeFileSync(path.join(bare, "bare.js"),
+    "return [{ json: { empty: Object.keys($getWorkflowStaticData('global')).length === 0 } }];\n");
+  r = await cli("run", path.join("runtest-bare", "bare.js"));
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { empty: true } }]);
+  // invalid scope errors clearly
+  writeFileSync(path.join(bare, "badscope.js"), "return $getWorkflowStaticData('nope');\n");
+  r = await cli("run", path.join("runtest-bare", "badscope.js"));
+  assert.equal(r.code, 1);
+  assert.match(r.out, /type must be "global" or "node"/);
+});
+
 await step("run: missing $() fixture data errors clearly", async () => {
   const rd = path.join(TMP, "runtest3");
   mkdirSync(rd, { recursive: true });
@@ -875,6 +908,32 @@ await step("status: remote-drift, CONFLICT, and missing-file branches", async ()
   r = await cli("status");
   assert.equal(r.code, 0, "in sync must exit 0: " + r.out);
   assert.match(r.out, /Transform: EU\/US: in sync/);
+});
+
+await step("status --diff: line diffs for drifted nodes only", async () => {
+  const js = path.join(dirF, "code", "transform-eu-us.js");
+  const original = read(dirF, "code", "transform-eu-us.js");
+  const node = remoteNode("wf123", "n2");
+  const remoteOriginal = node.parameters.jsCode;
+  // local-only edit → "+" lines under the push-pending node, exit stays 0
+  writeFileSync(js, original + "// diff me\n");
+  let r = await cli("status", "--diff");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /--- remote \(n8n\)/);
+  assert.match(r.out, /\+\+\+ local \(code\/transform-eu-us\.js\)/);
+  assert.match(r.out, /@@ /);
+  assert.match(r.out, /^\s+\+\/\/ diff me$/m);
+  writeFileSync(js, original);
+  // remote-only edit → "-" lines, and the drift still exits 1
+  node.parameters.jsCode = remoteOriginal + "// remote extra\n";
+  r = await cli("status", "--diff");
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /^\s+-\/\/ remote extra$/m);
+  node.parameters.jsCode = remoteOriginal;
+  // in sync again → no diff blocks at all
+  r = await cli("status", "--diff");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!r.out.includes("--- remote"), "no diff for in-sync nodes: " + r.out);
 });
 
 await step("push: aborts when a remote Code node is unknown locally", async () => {

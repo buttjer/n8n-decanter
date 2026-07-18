@@ -44,7 +44,8 @@ const usage = (): string => {
                                    ${d("(--force re-copies template files over existing ones)")}
   ${b("n8n-decanter")} [ref...] ${b("pull")}       ${d("pull workflows (default: all in decanter.config.json)")}
   ${b("n8n-decanter")} [ref...] ${b("push")} [--force] [--no-typecheck]
-  ${b("n8n-decanter")} [ref...] ${b("status")}     ${d("drift report; exits 1 on conflict/remote drift")}
+  ${b("n8n-decanter")} [ref...] ${b("status")} [--diff]   ${d("drift report (--diff shows line diffs);")}
+                                   ${d("exits 1 on conflict/remote drift")}
   ${b("n8n-decanter")} [ref...] ${b("check")} [--no-typecheck]   ${d("offline layout-compliance check")}
   ${b("n8n-decanter")} <ref> ${b("rename")} "<old node>" "<new node>"   ${d("rename a node everywhere (offline)")}
   ${b("n8n-decanter")} <ref> ${b("rename")} --workflow "<new name>"     ${d("rename the workflow itself")}
@@ -104,6 +105,7 @@ async function main() {
   const noTypecheck = args.includes("--no-typecheck");
   const workflowFlag = args.includes("--workflow");
   const remoteFlag = args.includes("--remote");
+  const diffFlag = args.includes("--diff");
   const positional = args.filter((a) => !a.startsWith("--"));
   // id-first support: the first token matching a known verb is the command,
   // wherever it sits — `push wf123` and `wf123 push` are equivalent.
@@ -148,7 +150,7 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--help");
+    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireCredentials: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -227,7 +229,7 @@ async function main() {
             transient.show(`${prefix}pushing ${id}…`);
             await pushWorkflow(api, config.root, id, { force, commitOnPush: config.commitOnPush }, { ...plog, ok: (m) => plog.ok(m + dur()) });
           } else {
-            const { remoteDrift } = await statusWorkflow(api, config.root, id, plog);
+            const { remoteDrift } = await statusWorkflow(api, config.root, id, plog, { diff: diffFlag });
             drifted ||= remoteDrift;
           }
         } catch (err) {

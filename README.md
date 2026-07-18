@@ -79,7 +79,8 @@ offline (no credentials, no network).
 n8n-decanter init [dir]             # interactive bootstrap (see Setup)
 n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
 n8n-decanter [ref...] push [--force] [--no-typecheck]
-n8n-decanter [ref...] status        # drift report; exits 1 on conflict/remote drift
+n8n-decanter [ref...] status [--diff]   # drift report (--diff: line diffs);
+                                    #   exits 1 on conflict/remote drift
 n8n-decanter [ref...] check         # offline layout-compliance + typecheck
 n8n-decanter <ref> rename "<old node>" "<new node>"   # rename a node everywhere
 n8n-decanter <ref> rename --workflow "<new name>"     # rename the workflow
@@ -110,9 +111,13 @@ completion for verbs, flags, and workflow names: append
 
 `status` exits 1 when a pull is needed or a push would clobber remote work
 (CONFLICT, remote-only changes, not pulled yet); local-only pending edits
-exit 0 — scripts and CI can gate on it like on `check`. API requests time
-out after 30 s (set `"requestTimeoutMs"` in `decanter.config.json` for slow
-instances), and `DEBUG=1` prints full stack traces on errors.
+exit 0 — scripts and CI can gate on it like on `check`. `status --diff`
+shows the actual line diff under each drifted node, so you see what a push
+would overwrite before running it. API requests time out after 30 s (set
+`"requestTimeoutMs"` in `decanter.config.json` for slow instances), and
+`DEBUG=1` prints full stack traces on errors. `run` fakes the full Code-node
+context including `$getWorkflowStaticData`, seeded from `workflow.json` and
+overridable per fixture.
 
 ## How node files work
 

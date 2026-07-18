@@ -47,6 +47,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   probe gives up after 10 seconds.
 - `DEBUG=1` prints the full stack trace when a command fails — the default
   stays the one-line error message.
+- `run` now provides **`$getWorkflowStaticData('global' | 'node')`**, seeded
+  from `workflow.json`'s `staticData` (the `global` and the node's own
+  `node:` slice) — previously any node using it died with a ReferenceError.
+  A fixture `staticData` field (`{ "global": …, "node": … }`) replaces the
+  matching slice; mutations are visible during the run but never persisted
+  (`run` stays offline). The template's fixture docs cover the new field.
+- **`status --diff`** — prints a unified line diff (`--- remote (n8n)` vs
+  `+++ local`) under every drifted node: what a push would change, what a
+  pull would bring, or both sides of a CONFLICT. `.ts` nodes diff their
+  compiled JS — exactly what the sync hashes compare. In-sync nodes print
+  nothing extra.
 
 ### Changed
 
