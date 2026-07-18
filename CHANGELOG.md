@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-18
+
+First public release.
+
 ### Added
 
 - `watch` now also watches **`workflow.json`** and pushes structural edits

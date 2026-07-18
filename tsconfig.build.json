@@ -1,0 +1,22 @@
+{
+  // Publish-only build (npm prepack): Node refuses to type-strip .mts files
+  // under node_modules, so the npm tarball ships compiled dist/ instead of
+  // the raw sources. Dev stays build-free — this config is never needed to
+  // run the CLI from a checkout. Mirrors tsconfig.cli.json's options minus
+  // the composite/declaration machinery, plus emit.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "rewriteRelativeImportExtensions": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": false
+  },
+  "include": ["n8n-decanter.mts", "lib/**/*.mts", "scripts/typecheck.mts"]
+}

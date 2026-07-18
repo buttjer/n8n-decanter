@@ -194,7 +194,10 @@ export async function runTypecheck(startDir: string, log: Log, scopeDirs?: strin
     log.info("no tsconfig.json found — skipping typecheck");
     return;
   }
-  const script = fileURLToPath(new URL("../scripts/typecheck.mts", import.meta.url));
+  // dev runs the .mts sources directly; the published package ships compiled
+  // .mjs (Node won't type-strip under node_modules), so mirror our own extension
+  const ext = import.meta.url.endsWith(".mjs") ? ".mjs" : ".mts";
+  const script = fileURLToPath(new URL(`../scripts/typecheck${ext}`, import.meta.url));
   // absolute paths: the script resolves its arguments against tsconfigDir's cwd
   const scopeArgs = (scopeDirs ?? []).map((d) => path.resolve(d));
   try {

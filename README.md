@@ -1,5 +1,9 @@
 # n8n-decanter
 
+[![CI](https://github.com/buttjer/n8n-decanter/actions/workflows/ci.yml/badge.svg)](https://github.com/buttjer/n8n-decanter/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/n8n-decanter)](https://www.npmjs.com/package/n8n-decanter)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Standalone CLI that keeps n8n workflows in git: pull full workflows into a
 folder-per-workflow layout, keep every Code node's source as its own file
 (`.js` lossless, or `.ts` compiled one-way), and push them back.
@@ -8,7 +12,11 @@ See [PLAN.md](PLAN.md) for the design.
 ## Setup
 
 Requires Node >= 22.18 — the CLI is TypeScript (`.mts`), executed natively
-via Node's type stripping; there is no build step.
+via Node's type stripping; there is no build step. **On older Node the CLI
+fails at startup with a confusing `SyntaxError`** rather than a clean version
+message: npm's `engines` field only *warns* at install time (unless you set
+`engine-strict`). If you see a syntax error pointing into a `.mts` file,
+check `node --version` first.
 
 ```sh
 npm install
@@ -39,7 +47,9 @@ run nodes locally — `package.json` (with a `typecheck` script + the `typescrip
 devDep), `tsconfig.json`, and `n8n-globals.d.ts` — plus a Claude Code
 PostToolUse hook that runs `check` after node edits. Verification routes through
 the CLI, so `n8n-decanter` must be on the sync dir's PATH: install it globally
-(`npm i -g n8n-decanter`) or `npm link` it. Once it's published to npm you can
+(`npm i -g n8n-decanter`) or `npm link` it (from a git checkout, run
+`npm run build` once first — the installed bin is the compiled `dist/`, since
+Node won't type-strip `.mts` under `node_modules`). Once it's published to npm you can
 instead add it to the sync dir's `devDependencies`. The verbs `check`, `run`,
 and `uuid` are fully offline (no credentials, no network).
 
@@ -155,3 +165,7 @@ Still unverified, from PLAN.md — check once `.env` points at the real host:
   (`parentFolderId`/project). Until then the layout is flat under `root`.
 - Whether `PUT` preserves fields that are neither sent nor whitelisted
   (tags, pinned data) — round-trip an untouched workflow and diff.
+
+---
+
+*Not affiliated with or endorsed by n8n GmbH.*
