@@ -474,6 +474,31 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   *functions* into nodes needs `bundle: true` (inline `shared/` into the
   compiled node, keep n8n globals external) — a candidate milestone 8; until
   then the guard against it is n8n failing at runtime, not the CLI.
+- **n8n 2.x publish semantics (researched 2026-07-18 in the n8n source)**:
+  n8n 2.x splits workflows into a draft (`versionId`) and a published version
+  (`activeVersionId`) — UI Save = draft, UI Publish = live. The public API is
+  blunter than the UI:
+  - `PUT /workflows/:id` hardcodes `publishIfActive: true` server-side →
+    pushing to a *published* workflow **auto-publishes immediately**; there
+    is no draft-only update on a published workflow via the public API. An
+    *unpublished* workflow only gets its draft updated and stays unpublished.
+  - `GET` returns the **draft** — pull can pick up unpublished UI edits, and
+    the next push to a published workflow publishes them along.
+  - The PUT also hardcodes `forceSave: true`, and the body schema has no
+    checksum field (`versionId` is readOnly) → **n8n's own optimistic
+    locking is unreachable through the public API**; decanter's drift guard
+    is the only conflict protection, which is why it exists.
+  - Surfaced in decanter (2026-07-18): `publicationState` in `lib/util.mts`
+    reads the `active` flag; push result lines append `— published: code is
+    live now` / `— unpublished: draft only`, watch warns at start on a
+    published workflow, `status` shows the state. Servers without an
+    `active` field (mocks, exotic versions) get unchanged output.
+  - Upstream: PR n8n-io/n8n#31954 (`publishBehavior: "skip"` on
+    `WorkflowService.update`) was closed unmerged and never exposed the
+    choice to API clients anyway; draft-only pushes need a new upstream
+    change (feature request candidate). Staged rollouts today require
+    unpublish → push → publish (triggers down in between) or a staging-copy
+    workflow.
 
 ## Open questions (verify against a live instance)
 
