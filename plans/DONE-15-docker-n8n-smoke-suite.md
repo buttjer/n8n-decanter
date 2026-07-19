@@ -9,7 +9,10 @@ verified. Task 8 CI job **verified via `workflow_dispatch`** the same day:
 already — the "once public" gate was unnecessary). The pinData half of
 task 5 is out of this plan's scope by user decision (2026-07-19):
 seeding-route ideas parked in [Plan 0](BACKLOG.md) for a separate analysis
-session — the backlog item stays open independently)
+session — the backlog item stays open independently. **Update 2026-07-19:**
+that pinData half landed after all via
+[Plan 18](DONE-18-pindata-smoke-seeding.md) — public-API seeding, one more
+smoke step, backlog item closed)
 **Theme:** An opt-in integration suite for *developing this tool*: spin up a
 real n8n in Docker, drive the CLI against it, and prove the things no mock
 can — that bundled nodes execute in the real Code-node sandbox, and that the

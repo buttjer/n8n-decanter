@@ -82,6 +82,12 @@ items not yet claimed by one. Recommended order:
     hygiene on top of Plan 13: 100%-TypeScript language stats via
     `.gitattributes`, SECURITY.md, stale-docs fix, remote branch cleanup;
     records the history/secrets audit verdicts (history kept, no rewrite).
+18. [pinData smoke seeding](DONE-18-pindata-smoke-seeding.md) — closes the
+    pinData half of the tags/pinned-data round-trip check: the public API
+    *can* write `pinData` on n8n ≥ 2.30.7 (the recorded "cannot" was a
+    stale 1.x-era claim), so the smoke suite seeds it via the API and
+    asserts it survives an untouched pull→push round-trip. Scoped to
+    n8n ≥ 2.30.7 only — no fallback seeding route.
 
 ## Conventions
 

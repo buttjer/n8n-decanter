@@ -660,7 +660,11 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   Resolved by decision, see Implementation notes.
 - ~~Whether `PUT` preserves workflow fields that are neither sent nor
   whitelisted (tags, pinned data) on an untouched round-trip.~~ **Verified
-  against n8n 2.30.7 (2026-07-19, plans/15 smoke suite): tags survive an
-  untouched pull→push round-trip** (asserted weekly by the suite), and
-  pinned data is preserved *by construction* — the 2.x GET returns
-  `pinData`, the PUT whitelist never sends it, so the server keeps its copy.
+  against n8n 2.30.7 (2026-07-19, plans/15 + plans/18 smoke suite): both
+  tags and pinned data survive an untouched pull→push round-trip** (asserted
+  weekly by the suite). Pinned data was upgraded from "preserved *by
+  construction*" to live-verified on 2026-07-19: the plans/18 smoke step
+  seeds `pinData` via the public API — which *can* write it on
+  n8n ≥ 2.30.7 (the earlier "cannot" note was a stale 1.x-era claim) —
+  and the round-trip leaves it intact, since the PUT whitelist never sends
+  it and the server keeps its stored copy.

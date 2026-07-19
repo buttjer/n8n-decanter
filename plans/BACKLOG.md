@@ -85,13 +85,20 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
       instance to verify). (graduated to
       [Plan 8](OPEN-8-folder-hierarchy-in-sync-layout.md) — API research done:
       placement is write-only, so the plan inverts to push-driven placement)
-- [ ] **Tags/pinned-data round-trip check** — verify against the live instance
+- [x] **Tags/pinned-data round-trip check** — verify against the live instance
       that PUT preserves tags/pinned data on an untouched pull→push round-trip
       (open question in PLAN.md). (tags half **verified** 2026-07-19 by the
       [Plan 15](DONE-15-docker-n8n-smoke-suite.md) smoke suite against
-      n8n 2.30.7; pinData still open — the public API cannot set it, needs
-      the UI or internal REST)
-      - [ ] **pinData seeding routes — collect only, decide later** (user,
+      n8n 2.30.7; pinData half **verified** 2026-07-19 by the
+      [Plan 18](DONE-18-pindata-smoke-seeding.md) smoke step against
+      n8n 2.30.7, seeded via the **public API** — the earlier "the public
+      API cannot set it" note was a stale 1.x-era claim; on n8n ≥ 2.30.7
+      the public API accepts and persists `pinData` on create and update)
+      - [x] **pinData seeding routes — collect only, decide later** (resolved
+            2026-07-19 by the [Plan 18](DONE-18-pindata-smoke-seeding.md)
+            analysis + live run: **public-API seeding, n8n ≥ 2.30.7 only —
+            no fallback route**; the research disproved the premise, so none
+            of the candidates below was needed) (user,
             2026-07-19: all options plus any new ones to be analysed together
             in a separate session; nothing here is chosen). Candidates so
             far, roughly by invasiveness: **internal REST** — the UI's

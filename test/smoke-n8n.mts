@@ -378,6 +378,30 @@ try {
     assert.ok(Array.isArray(tags) && tags.some((t: any) => t.name === "smoke-tag"), `tags survived: ${JSON.stringify(tags)}`);
   });
 
+  await step("pinData: public-API seeding survives an untouched pull→push round-trip", async () => {
+    // Plan 18's live probe: n8n >= 2.30.7 accepts pinData on the public-API
+    // PUT (the recorded "cannot set it" was a 1.x-era claim); a failure here
+    // throws with the server's status+body — that is the disproof signal.
+    const seed = { Webhook: [{ json: { smoke: "pinned" } }] };
+    const remote = await api("GET", `/api/v1/workflows/${wfId}`);
+    await api("PUT", `/api/v1/workflows/${wfId}`, {
+      name: remote.name,
+      nodes: remote.nodes,
+      connections: remote.connections,
+      settings: remote.settings ?? {},
+      pinData: seed,
+    });
+    let got = await api("GET", `/api/v1/workflows/${wfId}`);
+    assert.deepEqual(got.pinData, seed, `public API persists seeded pinData: ${JSON.stringify(got.pinData)}`);
+    // decanter's PUT never sends pinData — the server must keep its stored copy
+    let r = await cli(wfId, "pull");
+    assert.equal(r.code, 0, r.out);
+    r = await cli(wfId, "push");
+    assert.equal(r.code, 0, r.out);
+    got = await api("GET", `/api/v1/workflows/${wfId}`);
+    assert.deepEqual(got.pinData, seed, `pinData survives the round-trip: ${JSON.stringify(got.pinData)}`);
+  });
+
   await step("structural watch: clean push, no phantom re-push, conflict detected", async () => {
     // Plan 12 residue: does the real PUT response's structure hash match the
     // local file (baseline = response hash — a mismatch means every no-op
