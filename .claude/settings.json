@@ -2,42 +2,39 @@
   "permissions": {
     "allow": [
       "Bash(node n8n-decanter.mts *)",
-      "Bash(npm test *)",
-      "Bash(find *)",
-      "Bash(npm run test *)",
       "Bash(node test/*)",
-      "Bash(tail *)",
-      "Bash(echo *)",
-      "Bash(npm view *)",
+      "Bash(npm test *)",
       "Bash(npm run *)",
+      "Bash(npm view *)",
       "Bash(npx tsc *)",
       "Bash(git status *)",
       "Bash(git diff *)",
       "Bash(git log *)",
       "Bash(git show *)",
+      "Bash(git --no-pager log *)",
+      "Bash(git --no-pager diff *)",
+      "Bash(git --no-pager branch)",
+      "Bash(git worktree *)",
       "Bash(ls *)",
       "Bash(grep *)",
+      "Bash(find *)",
       "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(echo *)",
+      "Bash(printf *)",
       "Bash(jq *)",
       "Bash(command -v *)",
-      "Bash(mkdir -p *)",
-      "Bash(printf:*)",
-      "Bash(node t.mts:*)",
-      "Bash(npx -y -p typescript@5.6 tsc:*)",
-      "Bash(mkdir:*)",
-      "Bash(chmod:*)",
-      "Bash(echo \"scoped exit: $?\")",
-      "Bash(echo \"unscoped exit: $?\")",
-      "Bash(echo \"TEST EXIT: ${PIPESTATUS[0]}\")",
-      "Bash(npm test 2>&1 | tail -20; echo \"TEST EXIT: ${PIPESTATUS[0]}\")",
-      "Bash(npm test 2>&1 | tail -40; echo \"TEST EXIT: ${PIPESTATUS[0]}\")",
-      "Bash(curl -sL \"https://api.github.com/repos/n8n-io/n8n/git/trees/master?recursive=1\")",
+      "Bash(mkdir *)",
+      "Bash(chmod *)",
       "Bash(curl -sL https://raw.githubusercontent.com/n8n-io/*)",
       "Bash(curl -sL \"https://raw.githubusercontent.com/n8n-io/*\")",
+      "Bash(curl -sL https://api.github.com/repos/n8n-io/*)",
       "Bash(curl -sL \"https://api.github.com/repos/n8n-io/*\")",
-      "Read(//tmp/claude-501/**)",
-      "Read(//private/tmp/claude-501/**)",
-      "Bash(curl -s 'http://127.0.0.1:59264/api/v1/executions?includeData=true&limit=1' -H 'X-N8N-API-KEY: __CMDSUB_OUTPUT__')"
+      "WebFetch(domain:docs.n8n.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git branch *)",
+      "Bash(docker version *)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -48,7 +45,26 @@
   },
   "sandbox": {
     "network": {
+      "allowedDomains": [
+        "*.npmjs.org",
+        "docs.n8n.io",
+        "raw.githubusercontent.com",
+        "api.github.com",
+        "github.com"
+      ],
+      "allowUnixSockets": [
+        "~/.docker/run/docker.sock"
+      ],
       "allowLocalBinding": true
-    }
+    },
+    "filesystem": {
+      "allowWrite": [
+        "~/.npm"
+      ]
+    },
+    "excludedCommands": [
+      "git worktree *",
+      "docker *"
+    ]
   }
 }
