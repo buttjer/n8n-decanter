@@ -56,12 +56,12 @@ later.
    0.2.0 ships `decanter-ts-plugin` suppressing TS1108/1375/1378 (Plan 4);
    the false positives only exist until the scaffolded plugin loads
    (workspace TypeScript + `npm install`).
-4. [ ] Stale remote branch cleanup (verify each PR is merged/closed first):
-   delete `chore/git-workflow`, `chore/release-procedure`, and dependabot
-   branches of merged/closed PRs; **keep**
-   `dependabot/npm_and_yarn/typescript-7.0.2` (open PR #5). The
-   auto-delete-head-branches repo setting joins Plan 13's settings step
-   after the flip.
+4. [x] Stale remote branch cleanup — turned out already done: every branch
+   of a merged PR was gone on GitHub (head-branch auto-delete is evidently
+   active); only stale local tracking refs remained, pruned 2026-07-19 via
+   `git fetch --prune`. Remote now: `main`,
+   `dependabot/npm_and_yarn/typescript-7.0.2` (open PR #5), this PR's
+   branch.
 5. [x] Cross-links: plans/README.md entry, Plan 13 notes.
 
 ## Acceptance / verification
