@@ -14,16 +14,20 @@ n8n-decanter/
   .env.example
   decanter.config.json
   n8n-decanter.mts        # CLI entry: init | pull | push | status | check |
-                          #   rename | watch | run | uuid
-  lib/                    # implementation: api, compile, config, git, init,
-                          #   prompt, proxy, pull, push, rename, run, state,
-                          #   status, util, validate, watch (one .mts each)
+                          #   rename | watch | run | list | executions |
+                          #   uuid | completion
+  lib/                    # implementation: api, compile, config, diff,
+                          #   executions, git, init, prompt, proxy, pull,
+                          #   push, rename, run, state, status, style, util,
+                          #   validate, watch (one .mts each)
                           #   + types.mts (shared data-model shapes)
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
                           #   added here later is copied too
-  test/e2e.mts            # mock-API end-to-end test (npm test)
+  test/                   # e2e.mts (mock-API e2e) + proxy.mts + unit/ — all
+                          #   npm test; smoke-n8n.mts (opt-in Docker smoke,
+                          #   plans/15); harness.mts (shared step runner)
   tsconfig.json           # workflow node files: allowJs + checkJs, includes workflows/
   tsconfig.cli.json       # the CLI's own .mts sources: strict NodeNext, no emit
   n8n-globals.d.ts        # ambient types: $, $input, DateTime, …
