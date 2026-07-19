@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-20
+
+### Added
+
+- **Interactive workflow picker** — running bare `n8n-decanter` (no verb, no
+  arguments) in an inited project on a terminal now opens a picker instead of
+  printing usage: type to filter, `↑`/`↓` to move, pulled workflows shown
+  green, not-yet-pulled remote ones yellow with a `(not pulled)` marker
+  (appended live once the server list loads; skipped without credentials).
+  `Enter` on a pulled workflow offers status/pull/push/watch/check (`↑↓` +
+  `Enter`, or a letter to cycle matching verbs); `Enter` on an unpulled
+  workflow pulls it directly. `Esc` quits, `Ctrl-C` interrupts (exit 130).
+  The chosen verb behaves exactly like typing the command. Piped output and
+  directories without a `decanter.config.json` keep printing usage — scripts
+  and LLM harnesses never see the picker. The `completion zsh|bash` verb
+  stays: shell tab completion and the picker cover different moments.
+
 ## [0.2.1] - 2026-07-19
 
 ### Added

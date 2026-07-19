@@ -85,6 +85,10 @@ offline (no credentials, no network).
 ## Commands
 
 ```sh
+n8n-decanter                        # interactive picker (terminal, inited
+                                    #   project): filter workflows by typing —
+                                    #   pulled green, unpulled remote yellow —
+                                    #   then pick a verb (unpulled: Enter pulls)
 n8n-decanter init [dir]             # interactive bootstrap (see Setup)
 n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
 n8n-decanter [ref...] push [--force] [--no-typecheck]
@@ -120,8 +124,10 @@ may appear in any position too.
 
 Output is styled (color, `✓`/`!`/`✗` glyphs, progress) **only when writing to
 a terminal** and respects `NO_COLOR`/`FORCE_COLOR`; piped or redirected output
-is plain line-oriented text, safe for scripts and LLM harnesses. Tab
-completion for verbs, flags, and workflow names: append
+is plain line-oriented text, safe for scripts and LLM harnesses. The
+interactive picker follows the same rule: it exists only on a terminal —
+a piped bare `n8n-decanter` prints plain usage text. For shell tab
+completion of verbs, flags, and workflow names, append
 `eval "$(n8n-decanter completion zsh)"` (or `bash`) to your shell rc.
 
 `status` exits 1 when a pull is needed or a push would clobber remote work

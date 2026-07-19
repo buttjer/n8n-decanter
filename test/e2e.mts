@@ -220,6 +220,15 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`, ".env must survive --force");
 });
 
+await step("bare invocation piped: usage, never the interactive picker", async () => {
+  // Plan 19's picker is TTY-gated; this whole suite runs the CLI piped, so a
+  // bare run in an inited project must keep printing plain usage text
+  const r = await cli();
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^Usage:/);
+  assert.ok(!r.out.includes("type to filter"), "picker UI leaked into piped output");
+});
+
 await step("pull: creates folder, kebab-case files in code/, placeholders, state", async () => {
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
