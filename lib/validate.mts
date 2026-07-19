@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { checkNodeImports, findBundleContext, scanNodeImports } from "./compile.mts";
 import { readState } from "./state.mts";
 import type { Log, Workflow } from "./types.mts";
 import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, forEachConnectionTarget, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
@@ -34,8 +35,29 @@ export function validateNodeFile(dir: string, file: string, label: string = file
     errors.push(`${label}: referenced file ${file} is missing`);
     return { errors, warnings };
   }
-  if (file.endsWith(".js") && splitMarker(readFileSync(filePath, "utf8")).marker) {
-    errors.push(`${label}: ${file} ends with an @ts-n8n marker — that line is reserved for compiled TS pushes and would make the node look TS-managed on the next pull; remove it`);
+  if (file.endsWith(".js")) {
+    const jsSource = readFileSync(filePath, "utf8");
+    if (splitMarker(jsSource).marker) {
+      errors.push(`${label}: ${file} ends with an @ts-n8n marker — that line is reserved for compiled TS pushes and would make the node look TS-managed on the next pull; remove it`);
+    }
+    // .js is pushed verbatim — an import would reach n8n unbundled and fail
+    // at runtime (imports are a .ts feature, bundled on push; plans/14)
+    if (scanNodeImports(jsSource).specifiers.length > 0) {
+      errors.push(`${label}: ${file} has an import — .js nodes run verbatim in n8n, where import/require fail; convert the node to .ts (imports are bundled on push) or inline the code`);
+    }
+  }
+  if (file.endsWith(".ts")) {
+    // bundling rules (plans/14), offline lexical subset: same checker the
+    // compiler runs, so check and push can't disagree
+    const { specifiers, body } = scanNodeImports(readFileSync(filePath, "utf8"));
+    if (specifiers.length > 0) {
+      for (const p of checkNodeImports(filePath, specifiers, findBundleContext(dir))) {
+        errors.push(`${label}: ${p}`);
+      }
+    }
+    if (/^import[ \t]/m.test(body)) {
+      warnings.push(`${label}: ${file} has an import below the first statement — only imports at the top of the file are bundled; the push compile will fail on it`);
+    }
   }
   const remoteSibling = file.replace(/\.(ts|js)$/, ".remote.js");
   if (existsSync(path.join(dir, remoteSibling))) {
@@ -202,7 +224,7 @@ export async function runTypecheck(startDir: string, log: Log, scopeDirs?: strin
   const scopeArgs = (scopeDirs ?? []).map((d) => path.resolve(d));
   try {
     await execFile(process.execPath, [script, ...scopeArgs], { cwd: tsconfigDir, encoding: "utf8" });
-    log.info("typecheck OK");
+    log.ok("typecheck OK");
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
     const output = ((e.stdout ?? "") + (e.stderr ?? "")).trim();

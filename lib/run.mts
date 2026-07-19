@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { compileTs } from "./compile.mts";
+import { nodeFileContextDir } from "./state.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
-import { CODE_DIR, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
+import { isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -21,32 +22,54 @@ interface Fixture {
   workflow?: unknown;
   execution?: unknown;
   prevNode?: unknown;
+  /** Overrides the workflow.json staticData seed, per slice. `node` means the node being run. */
+  staticData?: { global?: unknown; node?: unknown };
 }
 
 /**
- * Locate the node whose //@file: placeholder points at the given file, so we
- * can read its run mode. workflow.json sits next to the file, or — code/
- * layout — one level up. Returns null when there is no workflow.json or no
- * matching node (a bare file can still be run).
+ * Locate the node whose //@file: placeholder points at the given file (for
+ * its run mode) plus the workflow's staticData. workflow.json sits next to
+ * the file, or — code/ layout — one level up. `node` is null when there is
+ * no workflow.json or no matching node (a bare file can still be run).
  */
-function findNode(resolved: string): WorkflowNode | null {
-  let dir = path.dirname(resolved);
-  if (!existsSync(path.join(dir, "workflow.json")) && path.basename(dir) === CODE_DIR) {
-    dir = path.dirname(dir);
-  }
+function findNodeContext(resolved: string): { node: WorkflowNode | null; staticData: unknown } {
+  const dir = nodeFileContextDir(resolved, "workflow.json");
+  if (dir === null) return { node: null, staticData: undefined };
   const wfFile = path.join(dir, "workflow.json");
-  if (!existsSync(wfFile)) return null;
   let wf: Workflow;
   try {
     wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
   } catch {
-    return null;
+    return { node: null, staticData: undefined };
   }
   const ref = path.relative(dir, resolved).split(path.sep).join("/");
-  for (const node of wf.nodes ?? []) {
-    if (isJsCodeNode(node) && placeholderFile(node) === ref) return node;
+  const node = (wf.nodes ?? []).find((n) => isJsCodeNode(n) && placeholderFile(n) === ref) ?? null;
+  return { node, staticData: wf.staticData };
+}
+
+/**
+ * The two staticData slices a node can see. Workflow JSON stores them as
+ * `{ global: …, "node:<node name>": … }` (n8n's own key scheme); a fixture's
+ * `staticData.global` / `staticData.node` replaces the matching slice whole.
+ * The returned objects are mutable during the run — like in n8n — but `run`
+ * never persists them (offline by design).
+ */
+function staticDataSlices(raw: unknown, nodeName: string | undefined, fixture: Fixture): { global: Record<string, unknown>; node: Record<string, unknown> } {
+  let parsed = raw;
+  if (typeof parsed === "string") {
+    // the API may deliver staticData in its DB-serialized string form
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = undefined;
+    }
   }
-  return null;
+  const seed = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
+  const slice = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+  return {
+    global: slice(fixture.staticData?.global ?? seed.global),
+    node: slice(fixture.staticData?.node ?? (nodeName === undefined ? undefined : seed[`node:${nodeName}`])),
+  };
 }
 
 /** Load and shape a fixture file; every field is optional. */
@@ -87,7 +110,8 @@ function makeNodeRef(items: unknown[]) {
  * Build the globals an n8n Code node sees. `perItem` overrides the each-item
  * fields ($json, $binary, $itemIndex, $input.item) for "Run Once for Each Item".
  */
-async function buildGlobals(fixture: Fixture, log: Log) {
+async function buildGlobals(fixture: Fixture, log: Log, context: { nodeName?: string; staticData?: unknown } = {}) {
+  const staticData = staticDataSlices(context.staticData, context.nodeName, fixture);
   const input = (fixture.input ?? [{ json: {} }]).map(asItem);
   const nodes: Record<string, ReturnType<typeof makeNodeRef>> = {};
   for (const [name, items] of Object.entries(fixture.nodes ?? {})) {
@@ -132,6 +156,12 @@ async function buildGlobals(fixture: Fixture, log: Log) {
     Duration,
     Interval,
     $workflow: fixture.workflow ?? { id: "local", name: "local", active: false },
+    $getWorkflowStaticData: (type: string) => {
+      if (type !== "global" && type !== "node") {
+        throw new Error(`$getWorkflowStaticData: type must be "global" or "node", got ${JSON.stringify(type)}`);
+      }
+      return staticData[type];
+    },
     $execution: fixture.execution ?? { id: "local", mode: "test" },
     $prevNode: fixture.prevNode ?? { name: "", outputIndex: 0, runIndex: 0 },
     $jmespath: (data: unknown, expr: unknown) => {
@@ -158,16 +188,16 @@ export async function runNode(file: string, fixturePath: string | undefined, log
   if (!/\.(ts|js)$/.test(resolved)) throw new Error(`not a node source file (need .js or .ts): ${file}`);
 
   const basename = path.basename(resolved);
-  const node = findNode(resolved);
+  const { node, staticData } = findNodeContext(resolved);
   const mode = node?.parameters?.mode ?? "runOnceForAllItems";
   if (!node) log.warn(`no workflow.json placeholder points at ${basename} — assuming ${mode}`);
 
   const code = resolved.endsWith(".ts")
-    ? await compileTs(resolved)
+    ? await compileTs(resolved, log)
     : splitMarker(readFileSync(resolved, "utf8")).body;
 
   const fixture = loadFixture(fixturePath, log);
-  const globals = await buildGlobals(fixture, log);
+  const globals = await buildGlobals(fixture, log, { nodeName: node?.name, staticData });
 
   log.info(`running ${basename} (${mode})${fixturePath ? ` with fixture ${path.basename(fixturePath)}` : ""}`);
   log.info("─".repeat(48));

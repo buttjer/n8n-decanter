@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { findWorkflowDir, readState, writeState } from "./state.mts";
+import { findWorkflowDir, readState, renameNodeFilePair, writeState } from "./state.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
 import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, forEachConnectionTarget, isJsCodeNode, kebabCase, placeholderFile, renameNodeRefs, stableWorkflowJson } from "./util.mts";
 import { validateWorkflowDir } from "./validate.mts";
@@ -60,28 +60,26 @@ function renameInParameters(value: unknown, oldName: string, newName: string, sk
   return { value, changes };
 }
 
-/** Move the renamed node's source file to its new kebab-case name (plus .remote.js sibling). */
+/**
+ * Move the renamed node's source file to its new kebab-case name (plus
+ * .remote.js sibling). Collision handling is against the disk (unlike pull's
+ * per-pull name set): an occupied target falls back to the `-<id8>` suffix,
+ * a double collision throws for the user to resolve.
+ */
 function renameNodeFile(dir: string, node: WorkflowNode, newName: string, log: Log): void {
   if (!isJsCodeNode(node)) return;
   const current = placeholderFile(node);
   if (current === null) return;
   const ext = path.extname(current);
   let base = kebabCase(newName);
-  let wanted = `${CODE_DIR}/${base}${ext}`;
-  if (wanted === current) return;
-  if (existsSync(path.join(dir, wanted))) {
+  if (`${CODE_DIR}/${base}${ext}` === current) return;
+  if (existsSync(path.join(dir, `${CODE_DIR}/${base}${ext}`))) {
     base = `${base}-${node.id.slice(0, 8)}`;
-    wanted = `${CODE_DIR}/${base}${ext}`;
-    if (existsSync(path.join(dir, wanted))) throw new Error(`cannot rename ${current}: both kebab-case targets exist (${wanted})`);
-  }
-  const renames: Array<[string, string]> = [[current, wanted], [current.replace(/\.(ts|js)$/, ".remote.js"), `${CODE_DIR}/${base}.remote.js`]];
-  for (const [from, to] of renames) {
-    const fromPath = path.join(dir, from);
-    if (from !== to && existsSync(fromPath) && !existsSync(path.join(dir, to))) {
-      renameSync(fromPath, path.join(dir, to));
-      log.info(`renamed ${from} -> ${to}`);
+    if (existsSync(path.join(dir, `${CODE_DIR}/${base}${ext}`))) {
+      throw new Error(`cannot rename ${current}: both kebab-case targets exist (${CODE_DIR}/${base}${ext})`);
     }
   }
+  const wanted = renameNodeFilePair(dir, current, base, ext, log);
   node.parameters.jsCode = FILE_PLACEHOLDER_PREFIX + wanted;
   const state = readState(dir);
   if (state?.nodes[node.id]) {

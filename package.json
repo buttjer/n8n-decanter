@@ -1,7 +1,7 @@
 {
   "name": "n8n-decanter",
-  "version": "0.1.0",
-  "description": "Keep n8n workflows in git: pull Code nodes into per-workflow folders, push them back.",
+  "version": "0.2.0",
+  "description": "Work on n8n like a codebase — built for AI coding agents",
   "keywords": [
     "n8n",
     "workflow",
@@ -33,7 +33,8 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.cli.json && node scripts/typecheck.mts",
-    "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/proxy.mts"
+    "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/proxy.mts",
+    "test:smoke": "node test/smoke-n8n.mts"
   },
   "engines": {
     "node": ">=22.18"

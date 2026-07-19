@@ -1,7 +1,8 @@
 # Plan 4 — Editor plugin to suppress spurious node-file diagnostics
 
 **Priority:** P2
-**Status:** Not started
+**Status:** In progress (implemented + unit/e2e tested; manual editor
+verification pending — see Acceptance)
 **Theme:** stop the editor's tsserver from flagging legal n8n node source
 (top-level `return`/`await`) as errors, without touching files on disk.
 
@@ -67,6 +68,24 @@ workspace-relative path and the bundled tsserver actually loads from it (watch
 for the "Enable/Configure workspace plugins" trust prompt on first open). ~20
 minutes. If relative paths don't resolve, switch to Option B before proceeding.
 
+**Spike result (2026-07-18): Option A is impossible as written.**
+`typescript.tsserver.pluginPaths` is a **machine-scoped** setting (verified in
+VS Code's `typescript-language-features` package.json: `"scope": "machine"`) —
+workspace `.vscode/settings.json` values are ignored for security, so a sync
+dir cannot point the bundled tsserver at a checked-in plugin folder. Also,
+tsserver rejects non-bare plugin names (`parsePackageName(...).rest` check:
+"only package name is allowed plugin name"), ruling out a relative-path
+`"plugins"` entry. tsserver resolves tsconfig-listed plugins from its **peer
+`node_modules`** (`tsserver.js/../../..`) plus `pluginProbeLocations` — so the
+plugin loads when the *workspace* TypeScript (the template's existing
+`typescript` devDependency) runs tsserver and the plugin is reachable from the
+sync dir's `node_modules`. That yields **Option A′** below (chosen): a `file:`
+devDependency on a checked-in plugin folder + `typescript.tsdk` (which *is*
+workspace-settable, behind a one-time "Use workspace version" consent). Still
+no npm publish, fully offline, versioned with the sync dir; the one added
+requirement is `npm install` in the sync dir — already implied by the
+template's `package.json` shipping `typescript`.
+
 ### 2. Write the language-service plugin
 
 A TS language-service plugin decorates the language service and filters
@@ -75,75 +94,57 @@ editor's tsserver — `tsc` and our wrapper script are unaffected.
 
 Recognition rule mirrors `isNodeFile` in `scripts/typecheck.mts` (keep identical
 so the two definitions don't drift): extension `.ts`/`.js`, not `*.d.ts`, not
-`*.remote.js`, and a `.decanter.json` sibling exists.
+`*.remote.js`, and a `.decanter.json` sibling exists **directly, or — `code/`
+layout — in the parent of the file's `code/` dir**. (An earlier sketch here
+checked only the direct sibling; that would have missed every real node file,
+which all live in `code/`.)
 
-`decanter-ts-plugin/index.js` (CommonJS, no deps beyond the host's `typescript`):
-
-```js
-function init({ typescript: ts }) {
-  const FILTERED = new Set([1108, 1375, 1378]);
-
-  function create(info) {
-    const ls = info.languageService;
-
-    // Sibling .decanter.json check via the host's filesystem.
-    const fileExists = (p) =>
-      info.languageServiceHost.fileExists
-        ? info.languageServiceHost.fileExists(p)
-        : ts.sys.fileExists(p);
-    function isNodeFile(fileName) {
-      if (fileName.endsWith(".d.ts") || fileName.endsWith(".remote.js")) return false;
-      if (!/\.(ts|js)$/.test(fileName)) return false;
-      const dir = fileName.slice(0, fileName.lastIndexOf("/"));
-      return fileExists(dir + "/.decanter.json");
-    }
-
-    const proxy = Object.create(null);
-    for (const k of Object.keys(ls)) {
-      proxy[k] = (...args) => ls[k].apply(ls, args);
-    }
-    const filterFor = (fileName, diags) =>
-      isNodeFile(fileName) ? diags.filter((d) => !FILTERED.has(d.code)) : diags;
-
-    proxy.getSemanticDiagnostics = (fileName) =>
-      filterFor(fileName, ls.getSemanticDiagnostics(fileName));
-    proxy.getSyntacticDiagnostics = (fileName) =>
-      filterFor(fileName, ls.getSyntacticDiagnostics(fileName));
-
-    return proxy;
-  }
-
-  return { create };
-}
-module.exports = init;
-```
+Implementation: `template/decanter-ts-plugin/index.js.example` (CommonJS, no
+deps beyond the host's `typescript`). Shape: `init({ typescript }) → { create }`;
+`create(info)` returns a proxy of `info.languageService` whose
+`getSemanticDiagnostics` / `getSyntacticDiagnostics` drop codes 1108/1375/1378
+for recognized node files, everything else delegating untouched. The
+`.decanter.json` probe uses `info.languageServiceHost.fileExists`, falling back
+to `ts.sys.fileExists`.
 
 Filter **both** `getSemanticDiagnostics` and `getSyntacticDiagnostics`: grammar
 errors like 1108 surface through different channels depending on TS
-version/code path, and covering both is cheap and safe. (Spike sub-item: confirm
-which channel actually carries 1108 in the target TS versions so we don't
-over-broaden.)
+version/code path, and covering both is cheap and safe. (Spike sub-item
+resolved: on TS 5.x, 1108 and 1378 arrive via **semantic** diagnostics — they
+are grammar errors raised in the checker — as asserted by the real-language-
+service unit test, which would flag a channel move in a future TS version.)
 
 ### 3. Distribution — pick the load path
 
-**Option A (recommended): self-contained folder + `pluginPaths`.** Ship the
-plugin as a checked-in folder in the sync dir and point VS Code at it — no npm
-publish, no install step, fully offline, versioned with the sync dir.
+**Option A′ (chosen): checked-in folder + `file:` dep + workspace TS.** The
+original Option A (`pluginPaths` via `.vscode/settings.json`) is dead — the
+setting is machine-scoped (see Task 1 spike result). A′ keeps its virtues (no
+npm publish, offline, versioned with the sync dir) at the cost of the `npm
+install` the template already implies:
 
 - `template/decanter-ts-plugin/index.js.example` → `decanter-ts-plugin/index.js`
 - `template/decanter-ts-plugin/package.json.example` → `{ "name":
-  "decanter-ts-plugin", "main": "index.js" }`
+  "decanter-ts-plugin", "private": true, "version": "0.0.0",
+  "main": "index.js" }`
+- `template/package.json.example`: `devDependencies` gains
+  `"decanter-ts-plugin": "file:./decanter-ts-plugin"` — `npm install` symlinks
+  the checked-in folder into `node_modules`, where tsserver's package
+  resolution finds it.
 - `template/tsconfig.json.example`: add
-  `"plugins": [{ "name": "decanter-ts-plugin" }]`
+  `"plugins": [{ "name": "decanter-ts-plugin" }]` (editor-only; `tsc` and
+  `scripts/typecheck.mts` ignore `plugins`).
 - `template/.vscode/settings.json.example` → `.vscode/settings.json` with
-  `"typescript.tsserver.pluginPaths": ["./decanter-ts-plugin"]`
+  `"typescript.tsdk": "node_modules/typescript/lib"` — makes VS Code offer the
+  workspace TypeScript (whose peer `node_modules` is the sync dir's, so the
+  plugin resolves). One-time user consent: "TypeScript: Select TypeScript
+  Version" → *Use Workspace Version*. JetBrains IDEs use the project's
+  TypeScript from `node_modules` by default and load tsconfig plugins from
+  there without extra config.
 
-**Option B (fallback): publish as an npm package.** Publish `decanter-ts-plugin`
-(or ship it inside `n8n-decanter` and reference by subpath), add it to
-`template/package.json.example` `devDependencies`, same `"plugins"` entry. Loads
-automatically from `node_modules` but requires `npm install` in the sync dir and
-a publish/release pipeline. Prefer A: the sync dir is a data/config dir, not
-necessarily an npm project.
+**Option B (fallback, not needed): publish as an npm package.** Publish
+`decanter-ts-plugin` (or ship it inside `n8n-decanter` and reference by
+subpath), add it to `template/package.json.example` `devDependencies`, same
+`"plugins"` entry. Requires a publish/release pipeline; A′ avoids that.
 
 ### 4. Template `.example` mechanics (already verified)
 
@@ -156,26 +157,34 @@ end in `.example`. Materialization to `decanter-ts-plugin/index.js` and
 
 ## Acceptance / verification
 
-- **Unit test** of the recognition + filter logic: import the plugin's
-  `isNodeFile` / filter helper (or a small extracted module) and assert 1108 is
-  stripped for a file with a `.decanter.json` sibling and preserved for one
-  without. The e2e suite is CLI-driven and cannot exercise tsserver, so keep the
-  plugin core testable in isolation.
-- **e2e:** extend the `init` assertions so the new template files materialize
-  (`decanter-ts-plugin/index.js`, `.vscode/settings.json`, tsconfig gains the
-  `plugins` entry).
-- **Manual (the real proof):** open a synced node file with a top-level
-  `return`/`await` in VS Code; confirm 1108/1375/1378 are gone while a genuine
-  type error (e.g. `const n: number = "x"`) still shows. Use the `verify` skill /
-  document the manual step.
+- **Unit test** (`test/unit/ts-plugin.test.mts`): loads the plugin from its
+  template `.example` file (copied to a temp dir as `index.js`, `require`d via
+  `createRequire`) and exercises it two ways: (a) recognition/delegation against
+  a stubbed language service — `code/`-layout and flat-sibling files filtered,
+  no-sibling / `.d.ts` / `.remote.js` / Windows-separator cases, non-diagnostic
+  methods delegate; (b) against a **real** `ts.createLanguageService` over
+  in-memory node files — proves 1108/1378 actually fire un-proxied (pinning
+  which channel carries them) and disappear proxied while a genuine type error
+  survives. The e2e suite is CLI-driven and cannot exercise tsserver, so the
+  plugin core stays testable in isolation.
+- **e2e:** already covered with no edit — the `init` step walks the entire
+  `template/` tree and asserts every file materializes (name `.example`-stripped,
+  content byte-identical), which includes `decanter-ts-plugin/*`,
+  `.vscode/settings.json`, and the updated tsconfig/package.json.
+- **Manual (the real proof, still pending):** open a synced node file with a
+  top-level `return`/`await` in VS Code; accept *Use Workspace Version* when
+  prompted (after `npm install`); confirm 1108/1375/1378 are gone while a
+  genuine type error (e.g. `const n: number = "x"`) still shows. Flip Status to
+  Done once this passes.
 
 ## Rollout order
 
-1. Spike Option A load path (Task 1). If it fails, switch to Option B.
+1. ~~Spike Option A load path (Task 1).~~ Done — A impossible (machine-scoped
+   setting), A′ chosen.
 2. Write the plugin + unit test (Task 2).
-3. Add template files + extend init e2e assertions (Tasks 3–4).
-4. Manual editor verification.
-5. Docs (see Notes); propose PLAN.md updates to the user.
+3. Add template files (Task 3–4; e2e needs no edit, see Acceptance).
+4. Docs (see Notes); propose PLAN.md updates to the user.
+5. Manual editor verification → flip Status to Done.
 
 ## Notes
 

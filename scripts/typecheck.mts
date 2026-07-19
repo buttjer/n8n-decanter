@@ -5,9 +5,10 @@
 // in memory only — files on disk stay verbatim — and maps diagnostic line
 // numbers back. Node files are recognized by a .decanter.json sibling, or —
 // code/ layout — one in the parent of their code/ dir.
-import { existsSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { scanNodeImports } from "../lib/compile.mts";
+import { nodeFileContextDir } from "../lib/state.mts";
 
 const PREFIX = "async function __n8nNode() {\n";
 const SUFFIX = "\n}\nvoid __n8nNode;\n";
@@ -41,20 +42,22 @@ if (!parsed) process.exit(2);
 function isNodeFile(fileName: string): boolean {
   if (fileName.endsWith(".d.ts") || fileName.endsWith(".remote.js")) return false;
   if (!/\.(ts|js)$/.test(fileName)) return false;
-  const dir = path.dirname(fileName);
-  if (existsSync(path.join(dir, ".decanter.json"))) return true;
-  // kebab-case layout: node files live in <workflow>/code/, state one level up
-  return path.basename(dir) === "code" && existsSync(path.join(path.dirname(dir), ".decanter.json"));
+  // .decanter.json sibling, or — kebab-case layout — in the parent of code/
+  return nodeFileContextDir(fileName) !== null;
 }
 
-const wrapped = new Set<string>();
+// Wrapped node files map to their import-block line count: imports must stay
+// at module scope (plans/14 bundling), so the wrapper is inserted *after*
+// them — lines up to importLines are unshifted, later lines shift by one.
+const wrapped = new Map<string, number>();
 const host = ts.createCompilerHost(parsed.options);
 const originalReadFile = host.readFile.bind(host);
 host.readFile = (fileName) => {
   const text = originalReadFile(fileName);
   if (text === undefined || !isNodeFile(fileName)) return text;
-  wrapped.add(path.resolve(fileName));
-  return PREFIX + text + SUFFIX;
+  const { importBlock, body, importLines } = scanNodeImports(text);
+  wrapped.set(path.resolve(fileName), importLines);
+  return importBlock + PREFIX + body + SUFFIX;
 };
 
 const program = ts.createProgram(parsed.fileNames, parsed.options, host);
@@ -68,9 +71,10 @@ for (const d of ts.getPreEmitDiagnostics(program)) {
   }
   if (!inScope(d.file.fileName)) continue;
   const { line, character } = d.file.getLineAndCharacterOfPosition(d.start!);
-  const shift = wrapped.has(path.resolve(d.file.fileName)) ? 1 : 0;
-  const displayLine = line + 1 - shift;
-  if (shift && displayLine < 1) continue; // diagnostic on the injected wrapper itself
+  const importLines = wrapped.get(path.resolve(d.file.fileName));
+  let displayLine = line + 1;
+  if (importLines !== undefined && displayLine > importLines) displayLine -= 1;
+  if (importLines !== undefined && displayLine < 1) continue; // diagnostic on the injected wrapper itself
   const rel = path.relative(process.cwd(), d.file.fileName);
   const category = ts.DiagnosticCategory[d.category].toLowerCase();
   console.error(`${rel}(${displayLine},${character + 1}): ${category} TS${d.code}: ${message}`);

@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-19
+
+### Added
+
+- The template now ships **`decanter-ts-plugin/`**, a TypeScript
+  language-service plugin that stops the editor from flagging legal n8n node
+  source — top-level `return`/`await` — with false TS1108/TS1375/TS1378
+  errors, while every other diagnostic (and every non-node file) stays live.
+  Wired via the sync dir's `tsconfig.json` `plugins` entry and a
+  `file:./decanter-ts-plugin` devDependency; `.vscode/settings.json` (new)
+  points VS Code at the workspace TypeScript so tsserver can load it — run
+  `npm install` and accept *Use Workspace Version* once (JetBrains IDEs use
+  the project TypeScript by default). `n8n-decanter check` is unaffected and
+  stays authoritative.
+- **Workflow-name arguments**: `pull`/`push`/`status`/`check`/`rename`/`watch`
+  now take a workflow's name (or a unique name prefix) wherever they took an
+  id — `n8n-decanter "Order Sync" push`. Matching is case-insensitive and
+  never prompts: ambiguous or unknown names error with the candidate list.
+  `pull` also resolves names of not-yet-pulled workflows against the server's
+  workflow list. A workflow literally named like a verb must be addressed by
+  id (the verb wins argument detection).
+- `list` verb — one line per pulled workflow (name, id, folder), offline;
+  `list --remote` additionally shows remote workflows not pulled yet. The
+  discovery surface for what a ref can address.
+- `completion zsh|bash` prints a shell tab-completion script (append to your
+  rc file) covering verbs, flags, and local workflow names/ids, backed by a
+  hidden credentials-free `__complete` verb.
+- Progress indication: multi-workflow `pull`/`push`/`status` prefix each line
+  with a `[2/5]` counter, pull/push result lines get a `(0.4s)` duration
+  suffix, and on a terminal a transient `pulling <id>…` line shows while the
+  network call runs (piped output only ever gets the result lines).
+- `init` greets with a small ASCII logo + version on a terminal; piped runs
+  print a plain `n8n-decanter v<version>` line instead.
+- `watch` prints a deep link straight to the watched workflow's editor page —
+  through the live-reload proxy when it is running, the configured n8n host
+  otherwise — as a clickable OSC 8 hyperlink on supporting terminals.
+- n8n API requests now **time out after 30 seconds** instead of hanging the
+  CLI forever on an unresponsive instance; raise `"requestTimeoutMs"` in
+  `decanter.config.json` for slow instances. `init`'s best-effort credential
+  probe gives up after 10 seconds.
+- `DEBUG=1` prints the full stack trace when a command fails — the default
+  stays the one-line error message.
+- `run` now provides **`$getWorkflowStaticData('global' | 'node')`**, seeded
+  from `workflow.json`'s `staticData` (the `global` and the node's own
+  `node:` slice) — previously any node using it died with a ReferenceError.
+  A fixture `staticData` field (`{ "global": …, "node": … }`) replaces the
+  matching slice; mutations are visible during the run but never persisted
+  (`run` stays offline). The template's fixture docs cover the new field.
+- **`status --diff`** — prints a unified line diff (`--- remote (n8n)` vs
+  `+++ local`) under every drifted node: what a push would change, what a
+  pull would bring, or both sides of a CONFLICT. `.ts` nodes diff their
+  compiled JS — exactly what the sync hashes compare. In-sync nodes print
+  nothing extra.
+- **`.ts` nodes can import now** — shared code from inside the sync dir and
+  opted-in npm packages — and push **bundles the imports into the compiled
+  node**: the pushed code is self-contained and runs on any instance,
+  n8n Cloud included, with no server-side module configuration. Put helpers
+  and types in `shared/*.ts` and import them relatively (types *and*
+  values); npm packages bundle after a normal install in the sync dir plus a
+  `"bundleDependencies": ["zod", …]` opt-in in `decanter.config.json`
+  (pure-JS packages only). Rules, enforced by `check` and the compiler:
+  imports at the top of the file, relative imports stay inside the sync dir,
+  Node builtins and unlisted packages are errors. Nodes without imports
+  compile byte-identically to before — no drift noise on upgrade.
+  Previously *any* import — even `import type` — failed the push compile
+  outright ("Top-level return cannot be used inside an ECMAScript module").
+  Editing a shared file marks every importing node push-pending in `status`
+  (`--diff` shows the inlined change); pushing propagates it. Oversized
+  compiles (> 100 KB) warn. The template ships `shared/example-helpers.ts`
+  and updated agent guidance.
+
+### Changed
+
+- `workflow.json` stays lean on n8n 2.x: `pull` now keeps the file to the
+  workflow itself — the server-side copy of the published version
+  (`activeVersion`, which duplicates every node's code) and sharing metadata
+  (`shared`) are left out. Your code exists exactly once (in `code/`), and
+  git diffs show your edits instead of publish churn. Nothing is lost:
+  neither field can be pushed anyway.
+- **Breaking:** `status` now exits **1 when a pull is needed or a push would
+  clobber remote work** — on a CONFLICT, remote-only changes (structure or
+  node code), remote code nodes unknown locally, remotely deleted nodes, or a
+  workflow not pulled yet. Local-only "push pending" edits still exit 0.
+  Scripts that relied on `status` always exiting 0 must check output instead.
+
+- CLI output is styled — color, `✓`/`!`/`✗` glyphs, bold names, dim
+  metadata — **only when the stream is a terminal**, honoring `NO_COLOR` and
+  `FORCE_COLOR`; piped/redirected output stays plain line-oriented text (no
+  information is carried by color alone). Error lines now start with `✗ `
+  (was `x `), success lines with `✓ `.
+
+### Fixed
+
+- ANSI escape codes no longer leak into piped output — previously the two
+  hardcoded warn/error colors were emitted unconditionally, polluting logs,
+  scripts, and LLM harness transcripts.
+- `init` from the npm-installed package no longer fails to find `template/`:
+  it resolved the directory relative to the compiled `dist/lib/`, a location
+  that exists in a git checkout but not in the published tarball. The
+  template (and the version banner) now resolve via the nearest
+  `package.json`, which works in both layouts.
+- The compliance guard now rejects a `.js` node containing an `import` —
+  `.js` nodes are pushed verbatim, so the import would reach n8n unbundled
+  and fail at runtime; the error points to `.ts` (where imports are bundled)
+  or inlining.
+
 ## [0.1.0] - 2026-07-18
 
 First public release.

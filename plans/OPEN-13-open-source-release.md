@@ -67,6 +67,12 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
 - [x] **Tarball smoke test:** `npm pack`, installed into a clean prefix,
       `n8n-decanter uuid` runs from the installed bin (36 files, 43.5 kB,
       no raw `.mts`, no repo-internal files).
+- [ ] **Re-run the tarball smoke incl. `init` before publishing** — the
+      first pass only exercised `uuid` and missed that `init` resolved
+      `template/` relative to `dist/lib/`, which the tarball doesn't contain
+      (found + fixed 2026-07-18, `packageRootFrom` in `lib/init.mts`,
+      unit-tested for both layouts). Verify: pack → install into a clean
+      prefix → `n8n-decanter init <tmp>` copies the template.
 
 ## Manual steps left (user)
 
@@ -91,7 +97,49 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
    security): secret scanning **+ push protection**, Dependabot alerts
    (the config file is already committed), CodeQL default setup (JS/TS).
    Optional later: OpenSSF Scorecard action + badge.
-3. **Branch protection on `main`:** require the CI check green before merge.
+3. **Branch protection on `main`:** create the `protect-main` ruleset.
+   Attempted 2026-07-19: the API 403s on a Free-plan *private* repo
+   ("Upgrade to GitHub Pro or make this repository public") — creation
+   isn't even possible before the flip, so run this right after going
+   public. Check names are ci.yml's job display names (`Node 22`/`Node 24`);
+   approvals stay 0 (solo — GitHub blocks approving your own PR); bypass
+   list stays empty. Also set repo merge settings: squash-only,
+   auto-delete head branches.
+
+   ```sh
+   gh api repos/buttjer/n8n-decanter/rulesets -X POST --input - <<'EOF'
+   {
+     "name": "protect-main",
+     "target": "branch",
+     "enforcement": "active",
+     "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+     "rules": [
+       { "type": "deletion" },
+       { "type": "non_fast_forward" },
+       { "type": "required_linear_history" },
+       { "type": "pull_request",
+         "parameters": {
+           "required_approving_review_count": 0,
+           "dismiss_stale_reviews_on_push": false,
+           "require_code_owner_review": false,
+           "require_last_push_approval": false,
+           "required_review_thread_resolution": false
+         } },
+       { "type": "required_status_checks",
+         "parameters": {
+           "strict_required_status_checks_policy": false,
+           "required_status_checks": [
+             { "context": "Node 22" },
+             { "context": "Node 24" }
+           ]
+         } }
+     ]
+   }
+   EOF
+   ```
+
+   Optional in the same step: a tag ruleset for `v*` (block deletion +
+   updates) so release tags are immutable.
 4. **npm account:** enable 2FA. Prefer **trusted publishing** (OIDC from
    GitHub Actions, configured on npmjs.com under the package's settings) or
    `npm publish --provenance` — verified-build badge. The `repository` field

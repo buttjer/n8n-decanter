@@ -1,7 +1,7 @@
 # Plan 10 — Hardening: bigger refactors & decision-gated work
 
 **Priority:** P2 (task 7: P3)
-**Status:** Not started
+**Status:** Done (2026-07-18; task 7 deferred by user decision)
 **Theme:** The half of the tests/stability/refactoring work that changes
 user-visible behavior, needs design care because existing copies deliberately
 diverge, or needs a user decision / real-world checking before starting.
@@ -73,7 +73,7 @@ entry graduates here.
    - Then add the missing tests: watch debounce coalescing and the
      queued-while-running re-push (real file writes against a stub api), and
      the proxy's WebSocket-upgrade round-trip (raw TCP echo upstream).
-   - **Coordinate with [Plan 5](OPEN-5-browser-refresh-after-push.md)**: its
+   - **Coordinate with [Plan 5](DONE-5-browser-refresh-after-push.md)**: its
      in-flight watch/proxy integration touches the same code.
 6. **CI workflow** — GitHub Actions running `npm run typecheck` + `npm test`
    on push/PR. The e2e suite binds a localhost port, which GH runners allow.
@@ -105,3 +105,38 @@ entry graduates here.
 - **Ordering**: land after (or interleaved behind) Plan 9 — its unit tests
   are the safety net here. Task 5 should sequence with Plan 5's remaining
   work to avoid churning `lib/watch.mts` twice.
+
+## Decisions & outcome (2026-07-18)
+
+All decisions taken with the user in one round; implemented same day.
+
+1. **Timeouts: 30 s default + `requestTimeoutMs` config knob** (no live
+   measurement was possible, so conservative-default-plus-knob won).
+   Implemented in `N8nApi.#request` via `AbortSignal.timeout` (also covers
+   body streaming); timeout errors name the knob. Init's credential probe is
+   fixed at 10 s — no config exists at init time, and the probe is non-fatal.
+2. **`status` exits 1 on conflict/remote drift** — CONFLICT, remote-only
+   structure/code changes, remote nodes unknown locally or deleted remotely,
+   and not-pulled-yet all count; local-only "push pending" and a missing
+   local file do not (normal dev state / local problem). `statusWorkflow`
+   returns `{ remoteDrift }`; the dispatcher maps it to the exit code.
+   CHANGELOG carries the **Breaking:** entry.
+3. **Debug switch: `DEBUG=1` env var** (no new CLI surface) — `main().catch`
+   prints `err.stack` when set, the one-line message otherwise.
+4. **Kebab-rename unified** as `renameNodeFilePair` in `lib/state.mts`; the
+   deliberate divergences stayed at the callers: pull keeps its per-pull
+   `usedNames` collision set (remote is authoritative, skipped renames are
+   silent), rename keeps its on-disk collision check with the double-collision
+   throw.
+5. **Watch returns a `WatchHandle`** (`close()` shuts watchers, debounce
+   timer, and proxy; the CLI keeps awaiting forever). Shared
+   `nodeFileContextDir(filePath, marker)` in `lib/state.mts` adopted by
+   `run.mts findNode` (marker `workflow.json`) and `scripts/typecheck.mts
+   isNodeFile` (marker `.decanter.json`); watch's own lookup is inverse
+   (id → dir) and stayed. New tests: e2e watch step (debounce coalescing,
+   queued-while-running re-push, close()), proxy WebSocket-upgrade
+   round-trip against a raw TCP echo upstream.
+6. **CI** — already satisfied by Plan 13's `.github/workflows/ci.yml`
+   (typecheck + tests, Node 22/24 matrix); nothing to do here.
+7. **e2e `node:test` migration deferred** by user decision — the custom step
+   runner stays.

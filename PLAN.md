@@ -48,6 +48,21 @@ n8n-decanter/
 
   Presence of the marker ⇒ node is TS-managed (self-describing, no config entry).
   Pull strips the marker line before hashing/comparing.
+- **Git workflow (decided 2026-07-19): protected main, merge = release.** No
+  direct commits to main; short-lived branches, squash-merged via PR (linear
+  main, one commit per PR). Merging a PR with a non-empty `[Unreleased]`
+  changelog section *is* a release: that PR rolls the changelog and bumps the
+  version; the squash commit gets tagged `vX.Y.Z`. Internal-only PRs (no
+  changelog entry) merge without a bump — user-facing work never sits
+  unreleased on main. Full scheme in CLAUDE.md ("Git workflow & releases");
+  GitHub ruleset enforcement waits for the repo going public (plans/OPEN-13).
+- **n8n 2.x only (user decision 2026-07-19).** The tool targets the n8n 2.x
+  line exclusively — the draft/publish model is treated as the native model,
+  no 1.x compatibility hedges. Continuously verified against a pinned real
+  2.x instance by the plans/15 smoke suite. A consequence recorded the same
+  day: the 2.x public API *does* offer `POST /api/v1/workflows`, so
+  repo-born workflows are possible (backlog: "Create workflows from the
+  repo").
 
 ## Synced content layout
 
@@ -103,9 +118,55 @@ code-stripped workflow JSON, to warn about structural UI edits.
 ```
 
 Ids only — names, folders, node lists are all derived on pull. Optional keys:
-`commitOnPush`/`commitOnPull` (default `true`, see Push/Pull), and — for watch's
+`commitOnPush`/`commitOnPull` (default `true`, see Push/Pull),
+`requestTimeoutMs` (default `30000` — per-request timeout on all n8n API
+calls, plans/10; init's credential probe is fixed at 10 s),
+`bundleDependencies` (default `[]` — npm packages `.ts` nodes may import;
+bundled into the compiled node on push, plans/14; read at compile time by an
+upward config search so `run` stays config-optional), and — for watch's
 browser live-reload (plans/5) — `browserReload` (`"off"` default, or `"proxy"`)
 and `proxyPort` (default `5679`).
+
+## Workflow refs & CLI output (plans/11)
+
+Every `[id…]` argument in the flows below is really a **ref**: an id, a
+workflow/folder name, or a unique name prefix. Resolution is tiered — exact id
+→ exact name (case-insensitive; folder basename *and* `workflow.json` `name`
+both count, since `.decanter.json` stores no name) → unique prefix — and
+never prompts: several matches in a tier error with the candidate list. An
+**id-shaped ref that matches nothing passes through unresolved** so
+`pull`/`status` of a fresh remote id keep working; `pull` additionally
+resolves unknown names against `GET /api/v1/workflows` (cursor-paginated,
+matched client-side). A workflow literally named like a verb loses to verb
+detection — use the id. Config entries stay ids only.
+
+Discovery surfaces: `list` (one line per pulled workflow: name, id, folder;
+`--remote` appends unpulled remote ones) and `completion zsh|bash`, a printed
+shell script that delegates to the hidden, credentials-free `__complete` verb
+(verbs, flags, local names/ids; silently name-less without a config).
+
+Output follows **one rule: styling and transient output exist only when the
+target stream is a TTY** (`util.styleText` per stream — `NO_COLOR` respected,
+though Node ignores it when `FORCE_COLOR` is set). Piped output is plain
+line-oriented text; no information is carried by color alone. Vocabulary
+(`lib/style.mts`): `✓ ` green success (`Log.ok`), `! ` yellow warn, `✗ ` red
+error (was `x `), dim metadata, bold names, OSC 8 `link()` (plain text+URL
+when piped). Progress — `[2/5]` counters and `(0.4s)` durations — is plain
+text in both modes; the transient `pulling <id>…` rewrite, the `init` logo
+(quadrant-block minifont; piped runs get one `n8n-decanter v<version>` line),
+and hyperlinks are TTY-only. `watch` prints a deep link to
+`<origin>/workflow/<id>` (proxy origin when live-reload runs, upstream
+otherwise).
+
+Exit codes: `status` exits **1 on conflict/remote drift** — anything where a
+pull is needed or a push would clobber remote work (CONFLICT, remote-only
+structure/code changes, remote nodes unknown locally or deleted, not pulled
+yet); local-only "push pending" edits exit 0 (plans/10 decision, 2026-07-18:
+the normal dev state must stay green). `status --diff` (plans/3 B) adds a
+unified line diff under each drifted node — `-` remote, `+` local, `.ts`
+nodes diffed as their compiled JS (what the sync hashes compare) — via the
+zero-dep LCS differ in `lib/diff.mts`. `DEBUG=1` prints stack traces on
+errors; the default is the one-line message.
 
 ## Pull flow (`n8n-decanter pull [id…]`)
 
@@ -124,7 +185,12 @@ For each configured workflow:
      git history is the safety net).
    - Node renamed → rename the file, update `.decanter.json` (also how flat
      pre-`code/` layouts migrate).
-4. Write `workflow.json` with each `jsCode` replaced by `//@file:<filename>`.
+4. Write `workflow.json` with each `jsCode` replaced by `//@file:<filename>`,
+   keeping the file to the workflow itself: the n8n 2.x derived fields
+   `activeVersion` (a server-side copy of the published version, code
+   included) and `shared` (sharing metadata) are left out — code exists
+   exactly once (in `code/`), and diffs show your changes, not publish
+   churn. Neither field is pushable (PUT whitelist), so nothing is lost.
 5. Update `.decanter.json` hashes.
 
 ## Push flow (`n8n-decanter push [id…]`)
@@ -327,14 +393,23 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
 - `npm run typecheck` → `tsc -p tsconfig.cli.json && node
   scripts/typecheck.mts`. The first half strict-checks the CLI's own `.mts`
   sources. The second checks node files and is **not** plain `tsc --noEmit`:
-  node code is a function body, and `tsc` rejects top-level
-  `return` in `.ts` files (TS1108; `.js` under checkJs is tolerated). The
+  node code is a function body, and `tsc` rejects top-level `return` (TS1108)
+  — in checkJs `.js` and `.ts` files alike; the wrapper, not the file type,
+  is what makes typecheck pass. The
   script wraps node files in `async function () { … }` in memory via a custom
   CompilerHost — files on disk stay verbatim — and maps diagnostic lines back
   (−1). Node files are recognized by a `.decanter.json` sibling — directly, or
-  in the parent of their `code/` dir. Known wart:
-  IDE tsservers don't apply the wrapper, so editors show a spurious TS1108 on
-  top-level `return` in `.ts` node files.
+  in the parent of their `code/` dir.
+- Editor tsservers don't apply the wrapper, so the template ships
+  **`decanter-ts-plugin/`** — a tsserver language-service plugin that drops
+  exactly TS1108/TS1375/TS1378 on node files (same recognition rule as the
+  wrapper; every other diagnostic and every non-node file untouched). Loaded
+  via the sync-dir tsconfig `plugins` entry plus a `file:./decanter-ts-plugin`
+  devDependency; VS Code must run the *workspace* TypeScript
+  (`.vscode/settings.json` sets `typescript.tsdk`, one-time "Use Workspace
+  Version" consent) because `typescript.tsserver.pluginPaths` is
+  machine-scoped and the bundled tsserver can't resolve workspace plugins.
+  JetBrains IDEs use the project TypeScript by default. (plans/4)
 
 ## Milestones
 
@@ -361,8 +436,8 @@ pull, byte-identical `.js` round-trip, TS convert + marker, UI-edit and
 conflict surfacing, structural drift abort, status, renames, single-node push.
 
 - **Top-level `return`**: node code is a function body. esbuild
-  (`transform`, `format: "cjs"`) accepts it; `tsc` rejects it in `.ts` files
-  (TS1108) but tolerates it in checkJs `.js` files → `scripts/typecheck.mts`
+  (`transform`, `format: "cjs"`) accepts it; `tsc` rejects it (TS1108) in
+  checkJs `.js` and `.ts` files alike → `scripts/typecheck.mts`
   wrapper (see Type checking).
 - **`lastPushedHash` really means "remote code hash at last sync"** (push *or*
   pull). Pull updates it even when surfacing a UI edit/conflict — otherwise
@@ -393,6 +468,20 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   pull). Everything that located a node file's `.decanter.json`/
   `workflow.json` as a *sibling* (watch, run, `scripts/typecheck.mts`, the
   template verify hook) also looks one level up from a dir named `code/`.
+- **`run` staticData (2026-07-18, plans/3 A)**: `$getWorkflowStaticData` is
+  seeded from `workflow.json`'s `staticData` using n8n's own key scheme
+  (`global`, `node:<node name>`); string-form staticData (the DB-serialized
+  shape some API responses carry) is parsed. A fixture `staticData` field
+  (`{ global?, node? }` — `node` meaning the node being run) replaces the
+  matching slice whole, no merging. Mutations are visible during the run,
+  never persisted — `run` stays offline.
+- **Name resolution is composed, not monolithic (2026-07-18, plans/11)**:
+  `lib/state.mts` exports `listWorkflowRefs` (dir scan; names from folder
+  basename + `workflow.json`), pure `matchWorkflowRef` (the tiered matcher,
+  throws on ambiguity), and `looksLikeWorkflowId`; the dispatcher composes
+  them per verb (only `pull` consults the API). Version for the `init`
+  banner walks up from `import.meta.url` to the nearest `package.json` —
+  required since plans/13's publish build also runs the CLI from `dist/`.
 - **Nodes deleted remotely** are dropped from `.decanter.json` with a warning;
   their files stay on disk (git is the safety net).
 - **Watch** resolves a workflow by id and watches its `code/` dir and
@@ -466,14 +555,35 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   a node without updating `connections`; the connection-integrity check
   caught it — real n8n rewrites connections on rename, the mock now mirrors
   that.
-- **`shared/` caveat — types yes, runtime helpers not yet**: node files can
-  safely use *type-only* imports from `shared/` (erased at compile time, and
-  `.js` files can use JSDoc `@typedef` imports). But **value imports compile
-  to `require()` calls that fail inside n8n** — Code nodes can't load local
-  files, and `compileTs` runs esbuild with `bundle: false`. Shipping shared
-  *functions* into nodes needs `bundle: true` (inline `shared/` into the
-  compiled node, keep n8n globals external) — a candidate milestone 8; until
-  then the guard against it is n8n failing at runtime, not the CLI.
+- **`shared/` code in `.ts` nodes is bundled on push (plans/14, 2026-07-18)**.
+  This replaces an earlier, wrong note claiming type-only imports worked and
+  value imports failed at n8n runtime — in truth esbuild rejects *any*
+  top-level import (even `import type`) next to a top-level `return`, so
+  `.ts` nodes could import nothing at all; only JSDoc `@typedef` in `.js`
+  nodes ever worked. Mechanism (`lib/compile.mts`): hoist the leading import
+  block, wrap the body in an async arrow **assigned onto a plain shim
+  object** (`__n8n_node.default = …` — deliberately no `export` in the
+  entry), esbuild-bundle as an iife (`absWorkingDir` = sync root →
+  machine-stable output and hashes), rewrite esbuild's `__copyProps`
+  CJS-interop helper to eager data assignment, prepend the shim var, append
+  `return __n8n_node.default();` — the artifact remains a function body, so
+  the marker, `run`, and push contracts are untouched, and n8n globals pass
+  through as free identifiers. The export-free entry and the interop rewrite
+  are load-bearing (verified against real n8n 2.30.7, plans/15): **n8n's
+  task-runner sandbox neuters getter property descriptors** — reading a
+  `defineProperty`-getter yields undefined — and esbuild lowers module
+  exports and CJS interop to exactly such getters. **No-import nodes keep
+  the plain-transform output byte-identically** (zero drift on upgrade).
+  Rules (shared by
+  `check` and the compiler): imports at the top of the file only; relative
+  imports stay inside the sync dir; npm packages opt in per package via
+  config `bundleDependencies` (pure JS only — no native addons); Node
+  builtins always error (bundling can't include them; runtime allowance is
+  the instance's `NODE_FUNCTION_ALLOW_BUILTIN` policy). Shared edits
+  surface as push-pending drift on every importing node — that is the
+  propagation mechanism. `.js` nodes never bundle (lossless tier); the
+  typecheck wrapper inserts its function header *after* the import block so
+  imports stay module-scoped and diagnostic lines keep mapping.
 - **n8n 2.x publish semantics (researched 2026-07-18 in the n8n source)**:
   n8n 2.x splits workflows into a draft (`versionId`) and a published version
   (`activeVersionId`) — UI Save = draft, UI Publish = live. The public API is
@@ -502,13 +612,17 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
 
 ## Open questions (verify against a live instance)
 
-- Does this n8n version's public API expose folder placement
-  (`parentFolderId`/project) on `GET /workflows/:id`? Check the raw response of a
-  workflow that sits inside a folder. If not exposed → flat layout under `root`,
-  hierarchy deferred. **Still open — needs live API.**
+- ~~Does this n8n version's public API expose folder placement
+  (`parentFolderId`/project) on `GET /workflows/:id`?~~ **Answered for n8n
+  2.30 (2026-07-19, raw GET via the plans/15 smoke rig): no placement field
+  in the response** (`parentFolderId`/`project` absent) — flat layout stands;
+  [Plan 8](plans/OPEN-8-folder-hierarchy-in-sync-layout.md)'s push-driven
+  inversion is confirmed. Re-check on version bumps via the smoke suite.
 - ~~Node name characters that need filename sanitization beyond `/` and `:`.~~
   Resolved by decision, see Implementation notes.
-- Whether `PUT` preserves workflow fields that are neither sent nor whitelisted
-  (tags, pinned data) — confirm nothing is lost on a pull→push round-trip of an
-  untouched workflow. **Still open — needs live API** (the mock can't answer
-  server-side behavior).
+- ~~Whether `PUT` preserves workflow fields that are neither sent nor
+  whitelisted (tags, pinned data) on an untouched round-trip.~~ **Verified
+  against n8n 2.30.7 (2026-07-19, plans/15 smoke suite): tags survive an
+  untouched pull→push round-trip** (asserted weekly by the suite), and
+  pinned data is preserved *by construction* — the 2.x GET returns
+  `pinData`, the PUT whitelist never sends it, so the server keeps its copy.

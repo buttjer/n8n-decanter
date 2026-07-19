@@ -19,8 +19,11 @@ const ROOT = path.join(TMP, "workflows");
 // ---------- mock n8n ----------
 const ALLOWED_PUT = ["name", "nodes", "connections", "settings", "staticData"];
 const db = new Map<string, any>();
+let putCount = 0; // total PUTs served — watch steps assert deltas
+let slowPutMs = 0; // when > 0, PUT responses are delayed (queued-push test)
 const server = http.createServer((req, res) => {
   if (req.headers["x-n8n-api-key"] !== "test-key") return void res.writeHead(401).end("unauthorized");
+  if (req.url === "/api/v1/workflows/wf-hang") return; // never responds (timeout step)
   if (req.method === "GET" && req.url!.startsWith("/api/v1/workflows?")) {
     return void res
       .writeHead(200, { "content-type": "application/json" })
@@ -40,8 +43,13 @@ const server = http.createServer((req, res) => {
       const sent = JSON.parse(body);
       const unknown = Object.keys(sent).filter((k) => !ALLOWED_PUT.includes(k));
       if (unknown.length > 0) return void res.writeHead(400).end("request/body must NOT have additional properties: " + unknown.join(","));
-      Object.assign(wf, sent, { updatedAt: new Date().toISOString() });
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
+      putCount++;
+      const respond = () => {
+        Object.assign(wf, sent, { updatedAt: new Date().toISOString() });
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
+      };
+      if (slowPutMs > 0) setTimeout(respond, slowPutMs);
+      else respond();
     });
   }
 });
@@ -64,19 +72,29 @@ db.set("wf123", {
   pinData: {},
   tags: [],
   versionId: "aaa",
+  // n8n 2.x derived fields — pull must keep them OUT of workflow.json
+  activeVersion: { versionId: "aaa", nodes: [{ id: "n2", parameters: { jsCode: JS_CODE } }], workflowPublishHistory: [] },
+  shared: [{ createdAt: "2026-07-01T00:00:00.000Z", role: "workflow:owner" }],
 });
 
 // ---------- helpers ----------
 let env: NodeJS.ProcessEnv;
 async function cli(...args: string[]) {
   // async on purpose: the mock server lives in this process, a sync exec would deadlock
+  let out: string;
+  let code: number;
   try {
     const { stdout, stderr } = await execFile(process.execPath, [CLI, ...args], { cwd: TMP, env, encoding: "utf8" });
-    return { out: stdout + stderr, code: 0 };
+    out = stdout + stderr;
+    code = 0;
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; code?: number };
-    return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
+    out = (e.stdout ?? "") + (e.stderr ?? "");
+    code = e.code ?? 1;
   }
+  // styling is TTY-gated (Plan 11): piped output must never carry escapes
+  assert.ok(!out.includes("\x1b"), `ANSI escape leaked into piped output of "${args.join(" ")}": ${JSON.stringify(out.slice(0, 300))}`);
+  return { out, code };
 }
 const wfDir = (name: string) => path.join(ROOT, name);
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
@@ -135,6 +153,9 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.equal(JSON.parse(read(target, "decanter.config.json")).root, "./workflows");
   assert.match(read(target, ".gitignore"), /^\.env$/m);
   assert.match(stdout + stderr, /credentials verified/);
+  // piped init prints a plain version line instead of the TTY logo
+  assert.match(stdout + stderr, /n8n-decanter v\d+\.\d+\.\d+/);
+  assert.ok(!(stdout + stderr).includes("\x1b"), "init must not emit ANSI when piped");
   // re-init must not clobber user edits to template-provided files
   const probe = materialize(templateFiles.find((f) => materialize(f) !== ".env")!);
   writeFileSync(path.join(target, probe), "user content\n");
@@ -159,6 +180,10 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
 await step("pull: creates folder, kebab-case files in code/, placeholders, state", async () => {
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
+  // 2.x derived fields stay out of workflow.json — the file holds the
+  // workflow itself, code exists exactly once (in code/)
+  assert.ok(!read(dir1, "workflow.json").includes("activeVersion"), "activeVersion stripped");
+  assert.ok(!read(dir1, "workflow.json").includes('"shared"'), "shared stripped");
   assert.equal(read(dir1, "code", "transform.js"), JS_CODE);
   assert.equal(read(dir1, "code", "amazon-feed.js"), "return $input.all();\n");
   const wfJson = read(dir1, "workflow.json");
@@ -307,7 +332,7 @@ await step("watch path: pushSingleNode round-trip", async () => {
   const dir2 = wfDir("Order Sync v2");
   writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "return $input.all(); // watched\n");
   const api = new N8nApi({ host: env.N8N_HOST, apiKey: "test-key" });
-  const log = { info: () => {}, warn: () => {}, error: () => {} };
+  const log = { info: () => {}, ok: () => {}, warn: () => {}, error: () => {} };
   await pushSingleNode(api, dir2, "n2", {}, log);
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, "return $input.all(); // watched\n");
 });
@@ -316,6 +341,56 @@ await step("watch: takes a workflow id, errors on an unknown one before watching
   const r = await cli("watch", "nope");
   assert.equal(r.code, 1);
   assert.match(r.out, /workflow nope not found/);
+});
+
+await step("watch: debounce coalesces, queued save re-pushes, close() stops", async () => {
+  // in-process (like the pushSingleNode step): the WatchHandle exists for this
+  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
+  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
+  const dir2 = wfDir("Order Sync v2");
+  const js = path.join(dir2, "code", "transform-eu-us.js");
+  const original = read(dir2, "code", "transform-eu-us.js");
+  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
+  const config = {
+    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
+    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+  };
+  const logs: string[] = [];
+  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // TMP is not a git repo yet at this point — watch skips the startup pull
+  const handle = await watchWorkflow(api, config, "wf123", {}, log);
+  const before = putCount;
+  try {
+    // two rapid saves coalesce into a single push of the final content
+    writeFileSync(js, "return $input.all(); // debounce-1\n");
+    await sleep(30);
+    writeFileSync(js, "return $input.all(); // debounce-2\n");
+    await sleep(900);
+    assert.equal(putCount - before, 1, "rapid saves must coalesce into one push:\n" + logs.join("\n"));
+    assert.match(remoteNode("wf123", "n2").parameters.jsCode, /debounce-2/);
+    // a save landing while a push is in flight is queued and re-pushed
+    slowPutMs = 300;
+    writeFileSync(js, "return $input.all(); // queued-1\n");
+    await sleep(320); // debounce fired, PUT held open
+    writeFileSync(js, "return $input.all(); // queued-2\n");
+    await sleep(1500);
+    slowPutMs = 0;
+    assert.equal(putCount - before, 3, "queued save must trigger a follow-up push:\n" + logs.join("\n"));
+    assert.match(remoteNode("wf123", "n2").parameters.jsCode, /queued-2/);
+    // restore the synced content through watch itself, then stop
+    writeFileSync(js, original);
+    await sleep(900);
+    assert.equal(putCount - before, 4, "restore push:\n" + logs.join("\n"));
+  } finally {
+    slowPutMs = 0;
+    await handle.close();
+  }
+  writeFileSync(js, original + "// after-close\n");
+  await sleep(600);
+  assert.equal(putCount - before, 4, "no push after close()");
+  writeFileSync(js, original); // silent restore — the watcher is closed
+  assert.equal(remoteNode("wf123", "n2").parameters.jsCode, original);
 });
 
 await step("check: clean tree passes, typecheck skipped without tsconfig", async () => {
@@ -472,13 +547,94 @@ await step("id-first argument order: `<id> <verb>` == `<verb> <id>`", async () =
   assert.match(r.out, /unknown command: wf123/);
 });
 
-const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+await step("name refs: exact name and case-insensitive prefix resolve; unknown name lists candidates", async () => {
+  let r = await cli("Order Sync v2", "status");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /structure: in sync/);
+  r = await cli("order sy", "check", "--no-typecheck"); // unique case-insensitive prefix
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Order Sync v2: OK/);
+  r = await cli("Order Sync v2", "push", "--no-typecheck"); // name push ≡ id push
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /pushed "Order Sync v2" \(wf123\)/);
+  // name-shaped ref with no match must error with the candidate list — no prompt
+  r = await cli("No Such Flow", "status");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /no workflow matches "No Such Flow"/);
+  assert.match(r.out, /"Order Sync v2"/);
+});
+
+await step("list: name, id, and folder per pulled workflow; --remote adds unpulled ones", async () => {
+  let r = await cli("list");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Order Sync v2  wf123  workflows[/\\]Order Sync v2/);
+  db.set("wf777", { ...structuredClone(db.get("wf123")), id: "wf777", name: "Unpulled Flow" });
+  try {
+    r = await cli("list", "--remote");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Unpulled Flow  wf777  \(not pulled\)/);
+    assert.match(r.out, /Order Sync v2  wf123/);
+  } finally {
+    db.delete("wf777");
+  }
+});
+
+await step("completion: prints shell scripts; __complete emits verbs, flags, names, ids", async () => {
+  let r = await cli("completion", "zsh");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /compdef _n8n_decanter n8n-decanter/);
+  r = await cli("completion", "bash");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /complete -F _n8n_decanter n8n-decanter/);
+  const bashScript = path.join(TMP, "completion.bash");
+  writeFileSync(bashScript, r.out);
+  try {
+    await execFile("bash", ["-n", bashScript]); // syntax-check when bash exists
+  } catch (err) {
+    if ((err as { code?: string }).code !== "ENOENT") throw err;
+  }
+  r = await cli("completion");
+  assert.equal(r.code, 1, "completion without a shell must fail");
+  r = await cli("__complete");
+  assert.equal(r.code, 0, r.out);
+  const words = r.out.trim().split("\n");
+  for (const w of ["pull", "push", "watch", "list", "--force", "wf123", "Order Sync v2"]) {
+    assert.ok(words.includes(w), `__complete must emit "${w}": ${r.out}`);
+  }
+  assert.ok(!words.includes("__complete"), "__complete must not advertise itself");
+});
+
+await step("api timeout: a hung instance aborts with a clear error", async () => {
+  const cfg = read(TMP, "decanter.config.json");
+  writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ ...JSON.parse(cfg), requestTimeoutMs: 300 }));
+  try {
+    const r = await cli("status", "wf-hang");
+    assert.equal(r.code, 1, "timeout must exit 1: " + r.out);
+    assert.match(r.out, /timed out after 0\.3s/);
+    assert.match(r.out, /requestTimeoutMs/);
+  } finally {
+    writeFileSync(path.join(TMP, "decanter.config.json"), cfg);
+  }
+});
+
+await step("DEBUG=1 prints the stack trace on errors", async () => {
+  let r = await cli("definitely-not-a-verb");
+  assert.equal(r.code, 1);
+  assert.ok(!r.out.includes("    at "), "no stack without DEBUG: " + r.out);
+  try {
+    await execFile(process.execPath, [CLI, "definitely-not-a-verb"], { cwd: TMP, env: { ...env, DEBUG: "1" }, encoding: "utf8" });
+    assert.fail("must exit non-zero");
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string };
+    assert.match((e.stdout ?? "") + (e.stderr ?? ""), /    at /, "DEBUG=1 must include the stack");
+  }
+});
+
 const runOutput = (out: string) => {
   // The printed items are the last JSON array on stdout; cli() appends stderr
   // (e.g. warnings) afterwards, so bound the slice by the final closing bracket.
-  const clean = stripAnsi(out);
-  const start = clean.indexOf("[", clean.indexOf("returned"));
-  return JSON.parse(clean.slice(start, clean.lastIndexOf("]") + 1));
+  const start = out.indexOf("[", out.indexOf("returned"));
+  return JSON.parse(out.slice(start, out.lastIndexOf("]") + 1));
 };
 
 await step("uuid: prints lowercase v4 uuids", async () => {
@@ -528,6 +684,39 @@ await step("run: resolves workflow.json from the parent of code/", async () => {
   assert.equal(r.code, 0, r.out);
   assert.ok(!r.out.includes("no workflow.json placeholder"), "must find the node via the parent workflow.json: " + r.out);
   assert.match(r.out, /returned 2 items/);
+});
+
+await step("run: $getWorkflowStaticData seeds from workflow.json, fixture overrides", async () => {
+  const rd = path.join(TMP, "runtest-static");
+  mkdirSync(rd, { recursive: true });
+  writeFileSync(path.join(rd, "workflow.json"), JSON.stringify({
+    nodes: [{ id: "sd", name: "SD", type: "n8n-nodes-base.code", typeVersion: 2, position: [0, 0],
+      parameters: { jsCode: "//@file:SD.js" } }],
+    staticData: { global: { counter: 41 }, "node:SD": { seen: ["a"] } },
+  }));
+  writeFileSync(path.join(rd, "SD.js"),
+    "const g = $getWorkflowStaticData('global');\nconst n = $getWorkflowStaticData('node');\nreturn [{ json: { counter: g.counter, seen: n.seen } }];\n");
+  let r = await cli("run", path.join("runtest-static", "SD.js"));
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { counter: 41, seen: ["a"] } }]);
+  // fixture overrides per slice; the untouched slice keeps the workflow seed
+  writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ staticData: { global: { counter: 99 } } }));
+  r = await cli("run", path.join("runtest-static", "SD.js"), path.join("runtest-static", "fx.json"));
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { counter: 99, seen: ["a"] } }]);
+  // a bare file without workflow.json gets empty objects, not a ReferenceError
+  const bare = path.join(TMP, "runtest-bare");
+  mkdirSync(bare, { recursive: true });
+  writeFileSync(path.join(bare, "bare.js"),
+    "return [{ json: { empty: Object.keys($getWorkflowStaticData('global')).length === 0 } }];\n");
+  r = await cli("run", path.join("runtest-bare", "bare.js"));
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { empty: true } }]);
+  // invalid scope errors clearly
+  writeFileSync(path.join(bare, "badscope.js"), "return $getWorkflowStaticData('nope');\n");
+  r = await cli("run", path.join("runtest-bare", "badscope.js"));
+  assert.equal(r.code, 1);
+  assert.match(r.out, /type must be "global" or "node"/);
 });
 
 await step("run: missing $() fixture data errors clearly", async () => {
@@ -700,21 +889,103 @@ await step("ts conflict: local .ts and remote both changed → CONFLICT + .remot
   assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")));
 });
 
+await step("bundle: shared/ value import inlines on push, drifts on shared edit, runs offline", async () => {
+  // the typecheck-gate step left a tsconfig in TMP — extend it with shared/
+  const tsc = JSON.parse(read(TMP, "tsconfig.json"));
+  tsc.include.push("shared/**/*.ts");
+  tsc.compilerOptions.esModuleInterop = true;
+  writeFileSync(path.join(TMP, "tsconfig.json"), JSON.stringify(tsc, null, 2));
+  mkdirSync(path.join(TMP, "shared"), { recursive: true });
+  writeFileSync(path.join(TMP, "shared", "money.ts"),
+    "export interface Line { qty: number; price: number }\nexport function total(lines: Line[]): number {\n  return lines.reduce((s, l) => s + l.qty * l.price, 0);\n}\n");
+  const tsFile = path.join(dirF, "code", "amazon-export.ts");
+  const originalTs = read(dirF, "code", "amazon-export.ts");
+  writeFileSync(tsFile,
+    'import { total, type Line } from "../../../shared/money";\nconst lines: Line[] = $input.all().map((i) => ({ qty: Number(i.json.qty), price: Number(i.json.price) }));\nreturn [{ json: { total: total(lines) } }];\n');
+  // full pipeline — including the typecheck wrapper handling the import block
+  let r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  const code = remoteNode("wf123", "n3").parameters.jsCode;
+  assert.match(code, /function total/, "helper inlined into the pushed node");
+  assert.match(code, /shared\/money\.ts/, "sync-root-relative module label");
+  assert.match(code, /return __n8n_node\.default\(\);\n\/\/ @ts-n8n sha256:/, "re-enter footer + marker");
+  // pull: PUT-response hash matches the compiled local → in sync, no artifact
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")), "no conflict artifact");
+  // shared edit → importing node drifts as push-pending; --diff shows the inlined change
+  writeFileSync(path.join(TMP, "shared", "money.ts"),
+    read(TMP, "shared", "money.ts").replace("s + l.qty * l.price", "s + l.qty * l.price + 1"));
+  r = await cli("status", "--diff");
+  assert.equal(r.code, 0, "shared edit is local-only drift: " + r.out);
+  assert.match(r.out, /Amazon Export: local changes in code\/amazon-export\.ts — push pending/);
+  assert.match(r.out, /\+.*l\.price \+ 1/, "diff shows the inlined shared change");
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(remoteNode("wf123", "n3").parameters.jsCode, /l\.price \+ 1/, "push propagates the shared edit");
+  // run executes the importing node offline: (2*10+1) + (1*5+1) = 27
+  writeFileSync(path.join(TMP, "fx-bundle.json"),
+    JSON.stringify({ input: [{ json: { qty: 2, price: 10 } }, { json: { qty: 1, price: 5 } }] }));
+  r = await cli("run", path.join("workflows", "Order Sync Final", "code", "amazon-export.ts"), "fx-bundle.json");
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { total: 27 } }]);
+  // restore the import-free node for the steps that follow
+  writeFileSync(tsFile, originalTs);
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+});
+
+await step("bundle: builtins and unlisted npm packages error; bundleDependencies opts in", async () => {
+  const tsFile = path.join(dirF, "code", "amazon-export.ts");
+  const originalTs = read(dirF, "code", "amazon-export.ts");
+  const cfg = read(TMP, "decanter.config.json");
+  try {
+    // Node builtin → compliance guard refuses offline, push refuses too
+    writeFileSync(tsFile, 'import { createHash } from "node:crypto";\nreturn [{ json: { h: String(createHash) } }];\n');
+    let r = await cli("check", "--no-typecheck");
+    assert.equal(r.code, 1, "check must flag a builtin import: " + r.out);
+    assert.match(r.out, /Node builtin "node:crypto"/);
+    r = await cli("push", "--no-typecheck");
+    assert.equal(r.code, 1, "push must refuse a builtin import");
+    // unlisted npm package → error names the opt-in key
+    writeFileSync(tsFile, 'import { add } from "tiny-add";\nreturn [{ json: { n: add(1, 2) } }];\n');
+    r = await cli("check", "--no-typecheck");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /bundleDependencies/);
+    // opt in (config) + install (fake node_modules) → bundles and runs
+    const pkg = path.join(TMP, "node_modules", "tiny-add");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ name: "tiny-add", version: "1.0.0", main: "index.js" }));
+    writeFileSync(path.join(pkg, "index.js"), "exports.add = (a, b) => a + b;\n");
+    writeFileSync(path.join(TMP, "decanter.config.json"),
+      JSON.stringify({ ...JSON.parse(cfg), bundleDependencies: ["tiny-add"] }, null, 2));
+    r = await cli("push", "--no-typecheck"); // untyped fake package — skip the type gate
+    assert.equal(r.code, 0, r.out);
+    assert.match(remoteNode("wf123", "n3").parameters.jsCode, /a \+ b/, "package code inlined");
+  } finally {
+    writeFileSync(path.join(TMP, "decanter.config.json"), cfg);
+    writeFileSync(tsFile, originalTs);
+  }
+  const r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+});
+
 await step("status: remote-drift, CONFLICT, and missing-file branches", async () => {
   const js = path.join(dirF, "code", "transform-eu-us.js");
   const original = read(dirF, "code", "transform-eu-us.js");
   const node = remoteNode("wf123", "n2");
   const remoteOriginal = node.parameters.jsCode;
-  // remote-only edit → pull hint
+  // remote-only edit → pull hint, and remote drift exits 1
   node.parameters.jsCode = remoteOriginal + "// remote edit\n";
   let r = await cli("status");
-  assert.equal(r.code, 0, r.out);
+  assert.equal(r.code, 1, "remote drift must exit 1: " + r.out);
   assert.match(r.out, /Transform: EU\/US: changed remotely — pull/);
-  // both sides changed → CONFLICT
+  // both sides changed → CONFLICT, exits 1
   writeFileSync(js, original + "// local edit\n");
   r = await cli("status");
+  assert.equal(r.code, 1, "CONFLICT must exit 1: " + r.out);
   assert.match(r.out, /Transform: EU\/US: CONFLICT — changed both locally and remotely/);
-  // local file missing → warning
+  // local file missing → warning (a local problem, not remote drift)
   renameSync(js, js + ".away");
   r = await cli("status");
   assert.match(r.out, /Transform: EU\/US: local file code\/transform-eu-us\.js missing/);
@@ -723,7 +994,34 @@ await step("status: remote-drift, CONFLICT, and missing-file branches", async ()
   writeFileSync(js, original);
   node.parameters.jsCode = remoteOriginal;
   r = await cli("status");
+  assert.equal(r.code, 0, "in sync must exit 0: " + r.out);
   assert.match(r.out, /Transform: EU\/US: in sync/);
+});
+
+await step("status --diff: line diffs for drifted nodes only", async () => {
+  const js = path.join(dirF, "code", "transform-eu-us.js");
+  const original = read(dirF, "code", "transform-eu-us.js");
+  const node = remoteNode("wf123", "n2");
+  const remoteOriginal = node.parameters.jsCode;
+  // local-only edit → "+" lines under the push-pending node, exit stays 0
+  writeFileSync(js, original + "// diff me\n");
+  let r = await cli("status", "--diff");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /--- remote \(n8n\)/);
+  assert.match(r.out, /\+\+\+ local \(code\/transform-eu-us\.js\)/);
+  assert.match(r.out, /@@ /);
+  assert.match(r.out, /^\s+\+\/\/ diff me$/m);
+  writeFileSync(js, original);
+  // remote-only edit → "-" lines, and the drift still exits 1
+  node.parameters.jsCode = remoteOriginal + "// remote extra\n";
+  r = await cli("status", "--diff");
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /^\s+-\/\/ remote extra$/m);
+  node.parameters.jsCode = remoteOriginal;
+  // in sync again → no diff blocks at all
+  r = await cli("status", "--diff");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!r.out.includes("--- remote"), "no diff for in-sync nodes: " + r.out);
 });
 
 await step("push: aborts when a remote Code node is unknown locally", async () => {
@@ -767,7 +1065,7 @@ await step("node deleted remotely: status warns, pull drops state, file kept", a
   const wf = db.get("wf123");
   wf.nodes = wf.nodes.filter((n: any) => n.id !== "n6collide");
   let r = await cli("status");
-  assert.equal(r.code, 0, r.out);
+  assert.equal(r.code, 1, "remotely deleted node counts as remote drift: " + r.out);
   assert.match(r.out, /code\/report-n6collid\.js: node n6collide deleted remotely/);
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
@@ -818,7 +1116,7 @@ await step("corrupt .decanter.json: scoped guard error, other workflows unaffect
   r = await cli("check", "wf123", "--no-typecheck");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /skipping this folder/);
-  const errorLines = stripAnsi(r.out).split("\n").filter((l) => l.startsWith("x "));
+  const errorLines = r.out.split("\n").filter((l) => l.startsWith("✗ "));
   assert.deepEqual(errorLines, [], "corrupt neighbor's guard error leaked into scoped output: " + r.out);
   rmSync(dirC, { recursive: true, force: true });
 });

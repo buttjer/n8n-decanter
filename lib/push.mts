@@ -27,11 +27,11 @@ function assertCompliant({ errors, warnings }: ValidationResult, log: Log, what:
 }
 
 /** Turn a node source file into the jsCode payload (+ hash of the marker-less body). */
-export async function buildNodeCode(dir: string, file: string): Promise<{ jsCode: string; hash: string }> {
+export async function buildNodeCode(dir: string, file: string, log?: Log): Promise<{ jsCode: string; hash: string }> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) throw new Error(`referenced node file missing: ${filePath}`);
   if (file.endsWith(".ts")) {
-    return withMarker(await compileTs(filePath));
+    return withMarker(await compileTs(filePath, log));
   }
   const jsCode = readFileSync(filePath, "utf8");
   return { jsCode, hash: sha256(jsCode) };
@@ -99,7 +99,7 @@ export async function pushWorkflow(api: N8nApi, root: string, id: string, { forc
     if (!isJsCodeNode(node)) continue;
     const file = placeholderFile(node);
     if (file === null) continue;
-    node.parameters.jsCode = (await buildNodeCode(dir, file)).jsCode;
+    node.parameters.jsCode = (await buildNodeCode(dir, file, log)).jsCode;
     state.nodes[node.id] = { ...state.nodes[node.id], file };
   }
 
@@ -109,7 +109,7 @@ export async function pushWorkflow(api: N8nApi, root: string, id: string, { forc
   const confirmed = await api.updateWorkflow(id, sanitizeForPut(wf));
   recordSync(state, confirmed ?? wf);
   writeState(dir, state);
-  log.info(`pushed "${wf.name}" (${id})${liveNote(confirmed ?? remote)}`);
+  log.ok(`pushed "${wf.name}" (${id})${liveNote(confirmed ?? remote)}`);
   notifyPushed(id);
   if (commitOnPush) await commitWorkflowDir(dir, `decanter: pushed "${wf.name}" (${id})`, log);
   return { dir, name: wf.name };
@@ -122,7 +122,7 @@ export async function pushSingleNode(api: N8nApi, dir: string, nodeId: string, {
   const nodeState = state.nodes[nodeId];
   if (!nodeState) throw new Error(`node ${nodeId} has no entry in ${dir}/.decanter.json — pull first`);
   assertCompliant(validateNodeFile(dir, nodeState.file), log, nodeState.file);
-  const { jsCode } = await buildNodeCode(dir, nodeState.file);
+  const { jsCode } = await buildNodeCode(dir, nodeState.file, log);
 
   const remote = await api.getWorkflow(state.workflowId);
   assertNoDrift(driftProblems(remote, state, new Set([nodeId])), force, log);
@@ -134,7 +134,7 @@ export async function pushSingleNode(api: N8nApi, dir: string, nodeId: string, {
   const confirmed = await api.updateWorkflow(state.workflowId, sanitizeForPut(remote));
   recordSync(state, confirmed ?? remote);
   writeState(dir, state);
-  log.info(`pushed node "${node.name}" -> workflow "${remote.name}"${liveNote(confirmed ?? remote)}`);
+  log.ok(`pushed node "${node.name}" -> workflow "${remote.name}"${liveNote(confirmed ?? remote)}`);
   notifyPushed(state.workflowId);
   if (commitOnPush) {
     await commitWorkflowDir(dir, `decanter: pushed "${remote.name}" / node "${node.name}" (${state.workflowId})`, log);

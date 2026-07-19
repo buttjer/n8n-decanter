@@ -1,0 +1,7 @@
+{
+  "name": "decanter-ts-plugin",
+  "private": true,
+  "version": "0.0.0",
+  "description": "tsserver plugin: suppress false TS1108/TS1375/TS1378 on n8n Code node files",
+  "main": "index.js"
+}

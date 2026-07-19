@@ -167,6 +167,23 @@ describe("validateNodeFile", () => {
     assert.match(errors[0], /code\/main\.js ends with an @ts-n8n marker/);
   });
 
+  it("errors on an import in a .js node — verbatim tier, imports never bundle", () => {
+    const dir = scaffold({ files: { "code/main.js": 'import { x } from "../shared/x";\nreturn [x];\n' } });
+    const { errors } = validateNodeFile(dir, "code/main.js");
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /\.js nodes run verbatim in n8n.*convert the node to \.ts/);
+  });
+
+  it("errors on a builtin/unlisted import in a .ts node, warns on a mid-file import", () => {
+    const dir = scaffold({
+      state: JSON.stringify({ workflowId: "wf1", nodes: { n2: { file: "code/main.ts" } } }),
+      files: { "code/main.ts": 'import { createHash } from "node:crypto";\nconst x = 1;\nimport late from "./x";\nreturn [x];\n' },
+    });
+    const { errors, warnings } = validateNodeFile(dir, "code/main.ts");
+    assert.ok(errors.some((e) => /Node builtin "node:crypto"/.test(e)), errors.join("\n"));
+    assert.ok(warnings.some((w) => /import below the first statement/.test(w)), warnings.join("\n"));
+  });
+
   it("warns on an unresolved .remote.js sibling", () => {
     const dir = scaffold({ files: { "code/main.remote.js": "// remote\n" } });
     const { errors, warnings } = validateNodeFile(dir, "code/main.js");

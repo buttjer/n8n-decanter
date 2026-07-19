@@ -29,7 +29,7 @@ replay the workflow against a captured execution, diff the outputs.
   engine using executions data as a mock/dry run? Also making sure nothing is
   really written through APIs or similar. Keep in mind executions data can be
   flawed or change in the future."
-- Depends on [Plan 3](OPEN-3-local-run-and-diff-fidelity.md) task C (execution
+- Depends on [Plan 3](INPROGRESS-3-local-run-and-diff-fidelity.md) task C (execution
   datasets pulled to `workflows/<Name>/executions/<execId>.json`) as the
   fixture source; the spike can start from one hand-captured execution JSON.
 

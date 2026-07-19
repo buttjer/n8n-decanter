@@ -21,8 +21,13 @@ editable in your IDE or by your agent, and pushed back through the n8n API.
   pushes; a drift guard keeps you from clobbering remote edits.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
-- **Shared code across workflows** *(planned)* — value imports from
-  `shared/` inlined into `.ts` nodes at push; today imports are type-only.
+- **Shared code and small libraries** — `.ts` nodes import helpers/types
+  from `shared/` and opted-in npm packages; push bundles them into
+  self-contained nodes that run anywhere, n8n Cloud included.
+- **Built for n8n 2.x** — the draft/publish model is a first-class citizen
+  (push tells you whether code went live or stayed a draft), and every
+  behavior that touches the API is verified against a real n8n 2.x instance
+  by an automated integration suite.
 
 ![VS Code Screenshot](./docs/screenshot.webp)
 
@@ -36,10 +41,14 @@ message: npm's `engines` field only *warns* at install time (unless you set
 check `node --version` first.
 
 ```sh
-npm install
-node n8n-decanter.mts init [dir]   # prompts for host + API key, writes .env,
-                                   # copies template/, scaffolds config + .gitignore
+npm install -g n8n-decanter
+n8n-decanter init [dir]   # prompts for host + API key, writes .env,
+                          # copies template/, scaffolds config + .gitignore
 ```
+
+From a git checkout instead: `npm link` (run `npm run build` once first — the
+installed bin is the compiled `dist/`), or invoke `node n8n-decanter.mts …`
+directly, no build needed.
 
 `init` copies everything in [template/](template/); files named `X.example`
 land as `X` (the suffix keeps agent configs inert in this repo, live in the
@@ -64,34 +73,56 @@ run nodes locally — `package.json` (with a `typecheck` script + the `typescrip
 devDep), `tsconfig.json`, and `n8n-globals.d.ts` — plus a Claude Code
 PostToolUse hook that runs `check` after node edits. Verification routes through
 the CLI, so `n8n-decanter` must be on the sync dir's PATH: install it globally
-(`npm i -g n8n-decanter`) or `npm link` it (from a git checkout, run
-`npm run build` once first — the installed bin is the compiled `dist/`, since
-Node won't type-strip `.mts` under `node_modules`). Once it's published to npm you can
-instead add it to the sync dir's `devDependencies`. The verbs `check`, `run`,
-and `uuid` are fully offline (no credentials, no network).
+(`npm i -g n8n-decanter`), add it to the sync dir's `devDependencies`, or
+`npm link` a git checkout (build it first — Node won't type-strip `.mts`
+under `node_modules`). The verbs `check`, `run`, and `uuid` are fully
+offline (no credentials, no network).
 
 ## Commands
 
 ```sh
-node n8n-decanter.mts init [dir]             # interactive bootstrap (see Setup)
-node n8n-decanter.mts [id...] pull           # remote -> workflows/<Name>/
-node n8n-decanter.mts [id...] push [--force] [--no-typecheck]
-node n8n-decanter.mts [id...] status         # local vs remote drift report
-node n8n-decanter.mts [id...] check          # offline layout-compliance + typecheck
-node n8n-decanter.mts <id> rename "<old node>" "<new node>"   # rename a node everywhere
-node n8n-decanter.mts <id> rename --workflow "<new name>"     # rename the workflow
-node n8n-decanter.mts [id] watch             # push a workflow's nodes on save
-                                             #   (+ browser live-reload, opt-in)
-node n8n-decanter.mts <node-file> run [fixture.json]   # run a node offline, print items
-node n8n-decanter.mts uuid [count]           # lowercase v4 UUID(s) for new node ids
-npm run typecheck                            # CLI sources (tsc) + workflow node files
-npm test                                     # e2e against a mock n8n API
-                                             # (binds a localhost port)
+n8n-decanter init [dir]             # interactive bootstrap (see Setup)
+n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
+n8n-decanter [ref...] push [--force] [--no-typecheck]
+n8n-decanter [ref...] status [--diff]   # drift report (--diff: line diffs);
+                                    #   exits 1 on conflict/remote drift
+n8n-decanter [ref...] check         # offline layout-compliance + typecheck
+n8n-decanter <ref> rename "<old node>" "<new node>"   # rename a node everywhere
+n8n-decanter <ref> rename --workflow "<new name>"     # rename the workflow
+n8n-decanter [ref] watch            # push a workflow's nodes on save
+                                    #   (+ browser live-reload, opt-in)
+n8n-decanter list [--remote]        # pulled workflows: name, id, folder
+                                    #   (--remote adds unpulled ones)
+n8n-decanter completion zsh|bash    # print a shell completion script
+n8n-decanter <node-file> run [fixture.json]   # run a node offline, print items
+n8n-decanter uuid [count]           # lowercase v4 UUID(s) for new node ids
 ```
 
-Without ids, all workflows from the config are processed. The verb may sit
-anywhere among the arguments (`push wf123` == `wf123 push`) — the first token
-matching a known verb is the command; flags may appear in any position too.
+A workflow `<ref>` is its **id, its workflow/folder name, or a unique name
+prefix** — `n8n-decanter "Order Sync" push` and `n8n-decanter order push` both
+work. Matching is case-insensitive and never prompts: an ambiguous or unknown
+name errors with the candidate list. `pull` resolves not-yet-pulled names
+against the server's workflow list; a workflow literally named like a verb
+must be addressed by id. Without refs, all workflows from the config are
+processed. The verb may sit anywhere among the arguments (`push wf123` ==
+`wf123 push`) — the first token matching a known verb is the command; flags
+may appear in any position too.
+
+Output is styled (color, `✓`/`!`/`✗` glyphs, progress) **only when writing to
+a terminal** and respects `NO_COLOR`/`FORCE_COLOR`; piped or redirected output
+is plain line-oriented text, safe for scripts and LLM harnesses. Tab
+completion for verbs, flags, and workflow names: append
+`eval "$(n8n-decanter completion zsh)"` (or `bash`) to your shell rc.
+
+`status` exits 1 when a pull is needed or a push would clobber remote work
+(CONFLICT, remote-only changes, not pulled yet); local-only pending edits
+exit 0 — scripts and CI can gate on it like on `check`. `status --diff`
+shows the actual line diff under each drifted node, so you see what a push
+would overwrite before running it. API requests time out after 30 s (set
+`"requestTimeoutMs"` in `decanter.config.json` for slow instances), and
+`DEBUG=1` prints full stack traces on errors. `run` fakes the full Code-node
+context including `$getWorkflowStaticData`, seeded from `workflow.json` and
+overridable per fixture.
 
 ## How node files work
 
@@ -101,12 +132,23 @@ Layouts from older versions (files at the folder root) migrate automatically
 on the next `pull`.
 
 - `code/<node>.js` — lossless: pulled/pushed byte-identical. Type-checked via
-  JSDoc + `checkJs`.
+  JSDoc + `checkJs`. **No `import`s** — yes, `import` is standard JavaScript,
+  but a `.js` node is pushed verbatim into n8n, where Code nodes cannot load
+  modules; `check` rejects it. Imports are a `.ts`-only feature (bundled on
+  push, next bullets).
 - `code/<node>.ts` — one-way: local file is the source of truth. `push`
   compiles it (esbuild, comments stripped) and appends a
   `// @ts-n8n sha256:...` marker line; `pull` never touches the `.ts`.
   To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
   its `//@file:` placeholder in `workflow.json` to the `.ts` name.
+- `shared/*.ts` — helpers and types **imported by `.ts` nodes** (values and
+  types); push bundles the imports into the compiled node, so the pushed
+  code is self-contained and runs anywhere — n8n Cloud included, no
+  `NODE_FUNCTION_ALLOW_*` setup. Small npm packages bundle the same way:
+  install them in the sync dir and list them under `"bundleDependencies"`
+  in `decanter.config.json` (pure JS only; builtins and unlisted packages
+  are compile errors, imports must sit at the top of the file). `.js` nodes
+  stay import-free — that tier is byte-lossless by contract.
 - `code/<node>.remote.js` — written by `pull` when the remote code changed in
   ways it can't merge (UI edit of a TS-managed node, conflict, missing local
   `.ts`). Port the changes manually, then push; the file is removed on the
@@ -173,16 +215,5 @@ The CLI's own `.mts` sources are checked separately by `tsc -p
 tsconfig.cli.json` (strict; the first half of `npm run typecheck`). That
 config is not the root `tsconfig.json`, which belongs to the workflow node
 files above.
-
-## Open questions (need a live n8n instance)
-
-Still unverified, from PLAN.md — check once `.env` points at the real host:
-
-- Whether `GET /api/v1/workflows/:id` exposes folder placement
-  (`parentFolderId`/project). Until then the layout is flat under `root`.
-- Whether `PUT` preserves fields that are neither sent nor whitelisted
-  (tags, pinned data) — round-trip an untouched workflow and diff.
-
----
 
 *Not affiliated with or endorsed by n8n GmbH.*

@@ -26,7 +26,7 @@ export interface JsCodeNode extends WorkflowNode {
 export interface Workflow {
   id: string;
   name: string;
-  /** Publication state (n8n 2.x publish model; activation toggle on 1.x). Read-only via API. */
+  /** Publication state (n8n 2.x publish model). Read-only via API. */
   active?: boolean;
   nodes: WorkflowNode[];
   connections: Record<string, unknown>;
@@ -70,12 +70,16 @@ export interface DecanterConfig {
   browserReload: "off" | "proxy";
   /** Port the browser-reload proxy binds on 127.0.0.1 (browserReload: "proxy"). */
   proxyPort: number;
+  /** Per-request timeout for n8n API calls, milliseconds (default 30 000). */
+  requestTimeoutMs: number;
   host: string;
   apiKey: string;
 }
 
 export interface Log {
   info(message: string): void;
+  /** Success line — rendered as a green `✓ ` prefix (plain `✓ ` when piped). */
+  ok(message: string): void;
   warn(message: string): void;
   error(message: string): void;
 }

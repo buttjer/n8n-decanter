@@ -1,5 +1,8 @@
 node_modules/
 .env
+/.worktrees/
+.claude/settings.local.json
+.claude/.cc-writes/
 .DS_Store
 /dist/
 /decanter.config.json

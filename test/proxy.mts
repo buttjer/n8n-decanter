@@ -3,7 +3,7 @@
 // harness can't run it. Binds localhost ports — sandboxes may block that.
 import assert from "node:assert/strict";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import net, { type AddressInfo } from "node:net";
 import { notifyPushed, startProxy } from "../lib/proxy.mts";
 import type { Log } from "../lib/types.mts";
 import { createStepRunner } from "./harness.mts";
@@ -11,6 +11,7 @@ import { createStepRunner } from "./harness.mts";
 const logs: { level: string; msg: string }[] = [];
 const log: Log = {
   info: (m) => logs.push({ level: "info", msg: m }),
+  ok: (m) => logs.push({ level: "ok", msg: m }),
   warn: (m) => logs.push({ level: "warn", msg: m }),
   error: (m) => logs.push({ level: "error", msg: m }),
 };
@@ -155,6 +156,55 @@ await step("upstream request failure → 502 plain-text error", async () => {
   assert.equal(r.body, "decanter proxy: upstream error");
   assert.ok(logs.some((l) => l.level === "error" && /upstream request failed/.test(l.msg)), "logs the upstream failure");
   await dead!.close();
+});
+
+await step("websocket upgrade round-trips through the proxy", async () => {
+  // raw TCP upstream: answer the upgrade handshake, then echo every byte —
+  // enough to prove the proxy pipes both directions after the 101
+  const wsUpstream = net.createServer((sock) => {
+    let buf = "";
+    const onHandshake = (chunk: Buffer) => {
+      buf += chunk.toString("latin1");
+      if (buf.includes("\r\n\r\n")) {
+        sock.off("data", onHandshake);
+        sock.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n");
+        sock.on("data", (d) => sock.write(d)); // echo
+      }
+    };
+    sock.on("data", onHandshake);
+  });
+  await new Promise<void>((resolve) => wsUpstream.listen(0, "127.0.0.1", () => resolve()));
+  const wsPort = (wsUpstream.address() as AddressInfo).port;
+  const wsProxy = await startProxy({ upstream: `http://127.0.0.1:${wsPort}`, port: 0 }, log);
+  assert.ok(wsProxy, "proxy must bind for the ws test");
+  const received = await new Promise<string>((resolve, reject) => {
+    const sock = net.connect(wsProxy!.port, "127.0.0.1");
+    let data = "";
+    let payloadSent = false;
+    sock.on("data", (chunk) => {
+      data += chunk.toString("latin1");
+      if (!payloadSent && data.includes("\r\n\r\n")) {
+        payloadSent = true;
+        sock.write("ping-payload"); // past the handshake: raw bytes both ways
+      }
+      if (data.includes("ping-payload")) {
+        sock.destroy();
+        resolve(data);
+      }
+    });
+    sock.on("error", reject);
+    sock.on("connect", () => {
+      sock.write(
+        "GET /rest/push HTTP/1.1\r\nHost: proxy\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n" +
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+      );
+    });
+    setTimeout(() => reject(new Error("no ws echo within 3s; got: " + JSON.stringify(data))), 3000).unref();
+  });
+  assert.match(received, /101 Switching Protocols/);
+  assert.match(received, /ping-payload/, "payload echoed back through the tunnel");
+  await wsProxy!.close();
+  await new Promise<void>((resolve) => wsUpstream.close(() => resolve()));
 });
 
 await handle.close();

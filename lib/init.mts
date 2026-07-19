@@ -3,9 +3,57 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnvFile } from "./config.mts";
 import { createPrompt } from "./prompt.mts";
+import { style } from "./style.mts";
 import type { Log } from "./types.mts";
 
-const TEMPLATE_DIR = fileURLToPath(new URL("../template", import.meta.url));
+/**
+ * Nearest ancestor of `startDir` holding a package.json — the package root.
+ * Works from the checkout (lib/ → repo root) *and* from the published build
+ * (dist/lib/ → package root): dist/ ships no package.json, so a plain
+ * `../template` URL would resolve to the nonexistent dist/template in the
+ * npm tarball (release blocker found 2026-07-18). Exported for tests.
+ */
+export function packageRootFrom(startDir: string): string {
+  let dir = path.resolve(startDir);
+  for (;;) {
+    if (existsSync(path.join(dir, "package.json"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return path.resolve(startDir); // fs root — let the template lookup fail loudly
+    dir = parent;
+  }
+}
+
+const PACKAGE_ROOT = packageRootFrom(path.dirname(fileURLToPath(import.meta.url)));
+const TEMPLATE_DIR = path.join(PACKAGE_ROOT, "template");
+
+/** Own package version (banner); tolerant of an unreadable package.json. */
+function cliVersion(): string {
+  try {
+    return (JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8")) as { version?: string }).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+// Wordmark in the 2×2 quadrant-block minifont (Block Elements). The top row's
+// leading offset is load-bearing (ascenders of 8/d/t) — keep it verbatim.
+// Columns 0-5 are the "n8n" part (brand red on a TTY), the rest "decanter".
+const LOGO_ROWS = [
+  "  ▄▖     ▌        ▗",
+  "▛▌▙▌▛▌  ▛▌█▌▛▘▀▌▛▌▜▘█▌▛▘",
+  "▌▌▙▌▌▌  ▙▌▙▖▙▖█▌▌▌▐▖▙▖▌",
+];
+
+/** TTY: logo + tagline + version. Piped: one plain, stable version line. */
+function printBanner(log: Log): void {
+  const version = cliVersion();
+  if (!process.stdout.isTTY) {
+    log.info(`n8n-decanter v${version}`);
+    return;
+  }
+  for (const row of LOGO_ROWS) console.log(style.red(row.slice(0, 6)) + style.bold(row.slice(6)));
+  console.log(style.dim(`n8n workflows ⇄ agentic code · v${version}`));
+}
 
 function copyTemplate(srcDir: string, destDir: string, { force = false, protect = new Set() }: { force?: boolean; protect?: Set<string> } = {}): string[] {
   const overwritten: string[] = [];
@@ -33,6 +81,7 @@ function copyTemplate(srcDir: string, destDir: string, { force = false, protect 
 
 /** Interactive bootstrap: prompt for credentials, write .env, copy template/. */
 export async function init(targetDir: string | undefined, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
+  printBanner(log);
   const dir = path.resolve(targetDir ?? ".");
   mkdirSync(dir, { recursive: true });
   const envFile = path.join(dir, ".env");
@@ -85,11 +134,14 @@ export async function init(targetDir: string | undefined, { force = false }: { f
   try {
     const res = await fetch(`${host}/api/v1/workflows?limit=1`, {
       headers: { "X-N8N-API-KEY": apiKey, accept: "application/json" },
+      // best-effort probe: fail fast on a black-holed host rather than hanging init
+      signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) log.info(`credentials verified against ${host}`);
     else log.warn(`credential check failed (${res.status} ${res.statusText}) — .env written anyway`);
   } catch (err) {
     const e = err as Error & { cause?: { code?: string } };
-    log.warn(`could not reach ${host} (${e.cause?.code ?? e.message}) — .env written anyway`);
+    const reason = e.name === "TimeoutError" ? "timed out after 10s" : e.cause?.code ?? e.message;
+    log.warn(`could not reach ${host} (${reason}) — .env written anyway`);
   }
 }

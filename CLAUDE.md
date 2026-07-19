@@ -31,6 +31,32 @@ Internal refactors and test-only changes get no entry. Prefix breaking
 changes with **Breaking:**. On release, rename `[Unreleased]` to
 `[<version>] - <date>` and start a fresh `[Unreleased]`.
 
+## Git workflow & releases
+
+- **main is protected — never commit to or push main directly.** Every change
+  lands via PR from a short-lived branch (`feat/…`, `fix/…`, `docs/…`,
+  `chore/…`), squash-merged so main stays linear: one commit per PR.
+- **Merging a PR with a non-empty `[Unreleased]` section is a release.** That
+  PR itself rolls `[Unreleased]` → `[x.y.z] - <date>` and bumps
+  `package.json` (semver; while 0.x: breaking → minor, everything else →
+  patch). After merge, tag the squash commit `vX.Y.Z` on main and push the
+  tag (once the package is on npm — plans/OPEN-13 — publishing joins this
+  step). Internal-only PRs (no `[Unreleased]` entries per the Changelog
+  rules) merge without a version bump — so user-facing work never sits
+  unreleased on main.
+- CI (typecheck + `npm test`) must be green before merge.
+- Parallel features: use `git worktree`, one branch per worktree, living in
+  the gitignored `.worktrees/` dir (`git worktree add -b feat/x
+  .worktrees/feat-x main`). Each worktree needs its own `npm install`.
+  Concurrent `npm test` across worktrees is safe (tests bind ephemeral
+  ports); concurrent `test:smoke` is not (fixed Docker container name).
+  **Never run `git clean -fdx`/`-fdX` from the repo root** — it deletes
+  `.worktrees/` including uncommitted work; clean inside subdirs (e.g.
+  `dist/`) instead.
+- GitHub-side enforcement (require PR + green CI, block force-push) needs a
+  ruleset, which the Free plan only enforces on public repos — enable it
+  when the repo goes public (plans/OPEN-13).
+
 ## Backlog
 
 `plans/` is the backlog (see `plans/README.md` for conventions);
@@ -55,10 +81,16 @@ config, …) as thin pointers to it, so every agent stays in sync.
 ```sh
 npm test              # unit tests (node:test, test/unit/) + e2e suite
                       #   (test/e2e.mts) + proxy suite (test/proxy.mts); e2e and
-                      #   proxy bind localhost ports — sandboxes that block port
-                      #   binding break them (unit tests run fine sandboxed)
+                      #   proxy bind localhost ports, and one e2e step uses
+                      #   fs.watch (macOS FSEvents) — sandboxes that block port
+                      #   binding or FSEvents break them (unit tests run fine
+                      #   sandboxed)
 npm run typecheck     # tsc -p tsconfig.cli.json (CLI sources) + scripts/
                       #   typecheck.mts (node files — NOT plain tsc, see below)
+npm run test:smoke    # OPT-IN, dev-only: real n8n in Docker (test/smoke-n8n.mts,
+                      #   plans/15); needs a running Docker daemon; never part
+                      #   of npm test
+
 node n8n-decanter.mts <init|pull|push|status|check|watch> …
 ```
 

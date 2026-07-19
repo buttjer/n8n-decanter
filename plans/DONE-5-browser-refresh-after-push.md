@@ -2,7 +2,7 @@
 
 **Priority:** P2 (High DX Impact)
 
-**Status:** Implemented (offline-tested); live-instance verification pending
+**Status:** Done
 
 **Theme:** Spin up a transparent development proxy during `decanter watch`. The proxy injects a lightweight live-reload client into n8n's frontend HTML payload. When a local push completes, the proxy signals the client to cleanly refresh the browser tab.
 
@@ -132,16 +132,19 @@ task sketch above, all deliberate:
   single-node watch was the wrong granularity. See PLAN.md "Watch mode".
 
 Verified offline by `test/proxy.mts` (in `npm test`): HTML injection before
-`</body>` with recomputed content-length, `accept-encoding` stripped for
-injection, non-HTML passthrough byte-identical, client asset served, `pushed`
-SSE broadcast delivered, and graceful `null`+warning on a taken port.
+`</body>` (and appended when there is no `</body>`), recomputed content-length,
+`accept-encoding` stripped for injection, non-HTML + `HEAD` passthrough, client
+asset served, `pushed` SSE broadcast delivered, dead-upstream `502`, and
+graceful `null`+warning on a taken port.
 
-**Still needs a live n8n** (can't be exercised against the mock): real auth +
-asset + `/rest/push` WebSocket passthrough, the dirty safeguard against n8n's
-actual unsaved-changes guard, and the end-to-end auto-refresh loop. Best on a
-local http n8n — https/remote upstreams are best-effort (Secure cookies).
+**Closed 2026-07-18.** Live-instance behavior — real auth + asset + `/rest/push`
+WebSocket passthrough, the dirty safeguard against n8n's actual unsaved-changes
+guard, and the end-to-end auto-refresh loop — can't be exercised against the
+mock; it's confirmed in real use rather than in CI. Best on a local http n8n;
+https/remote upstreams are best-effort (Secure cookies don't survive the
+plain-http hop).
 
 ## Notes
 
-* **PLAN.md Updates:** This architectural shift introduces a persistent network component to `watch`. Ensure `PLAN.md` documentation reflects the secondary port usage. *(Pending — raised with the user per CLAUDE.md's "don't rewrite PLAN.md unasked" rule.)*
+* **PLAN.md Updates:** This architectural shift introduces a persistent network component to `watch`. Ensure `PLAN.md` documentation reflects the secondary port usage. *(Done — PLAN.md "Config", "Watch mode", and the implementation-notes proxy bullet now cover the secondary port and live-reload flow.)*
 * **Performance:** HTML stream modification must be handled efficiently via buffering or lightweight regex streaming to ensure page load latency remains imperceptible. *(HTML responses are buffered then injected; non-HTML is streamed through untouched.)*

@@ -12,17 +12,18 @@ items not yet claimed by one. Recommended order:
 2. [Offline validation + rename](DONE-2-offline-validation-and-rename.md) — turn the
    most fragile manual invariants (renames, connection integrity, orphan files,
    `$('…')` references) into machine-checked ones, then add an atomic `rename`.
-3. [Local run/diff fidelity](OPEN-3-local-run-and-diff-fidelity.md) — make offline
+3. [Local run/diff fidelity](INPROGRESS-3-local-run-and-diff-fidelity.md) — make offline
    iteration trustworthy: seed staticData in `run`, add `status --diff`, and pull
    real execution datasets as fixtures.
-4. [Editor node diagnostics](OPEN-4-editor-node-diagnostics.md) — a TS
+4. [Editor node diagnostics](INPROGRESS-4-editor-node-diagnostics.md) — a TS
    language-service plugin that suppresses the editor-only TS1108/1375/1378 false
    positives on node files. Related to Plan 1's edit-loop work but larger
-   (needs a load-path spike), so it trails the first three.
-5. [Browser refresh after push](OPEN-5-browser-refresh-after-push.md) — auto-refresh
-   the n8n editor tab after a successful push. Direction still open (six
-   candidates compared in the plan); starts with a live-instance spike, so it
-   trails the offline work.
+   (needs a load-path spike), so it trails the first three. Implemented
+   (plugin ships in `template/decanter-ts-plugin/`); manual editor
+   verification pending.
+5. [Browser refresh after push](DONE-5-browser-refresh-after-push.md) — auto-refresh
+   the n8n editor tab after a successful push, via a transparent dev proxy that
+   injects an SSE live-reload client during `watch` (opt-in `browserReload`).
 6. [TypeScript migration](DONE-6-typescript-migration.md) — convert the CLI's own
    source to strict `.mts` run natively via Node type stripping (no build
    step).
@@ -43,13 +44,13 @@ items not yet claimed by one. Recommended order:
    currently breaks every command), small e2e/proxy coverage gaps, and
    mechanical dedupes. Fully offline, no decisions needed — can interleave
    with any other plan.
-10. [Hardening: bigger refactors & decision-gated work](OPEN-10-hardening-bigger-refactors.md) —
+10. [Hardening: bigger refactors & decision-gated work](DONE-10-hardening-bigger-refactors.md) —
     the rest of the hardening split: behavior changes (timeouts, `status`
     exit codes, debug switch), the deliberately-diverged dedupes
     (kebab-rename machinery, `code/`-parent lookup), watch testability, and
     CI. Each task needs a decision or checking first; lands after Plan 9's
     tests exist as the safety net.
-11. [CLI look & feel](OPEN-11-cli-look-and-feel.md) — color, progress, and a
+11. [CLI look & feel](DONE-11-cli-look-and-feel.md) — color, progress, and a
     logo strictly TTY-gated; workflow-name arguments, shell completion, and a
     `list` verb. Piped output stays plain and line-oriented (LLM/script safe —
     and fixes today's ANSI leak into pipes).
@@ -58,6 +59,20 @@ items not yet claimed by one. Recommended order:
     with interactive merge / keep-local / keep-remote resolution; every watch
     session starts with a safety commit + pull. Implemented; live-instance
     verification pending.
+13. [Open-source release](OPEN-13-open-source-release.md) — everything between
+    "the code is done" and v0.1.0 public on GitHub + npm: identity rewrite,
+    repo hygiene, publish build, CI, tarball verification. Remaining steps are
+    the user's manual checklist (repo creation, npm publish).
+14. [Bundle `shared/` code into TS pushes](DONE-14-bundle-shared-code-into-ts-pushes.md) —
+    make imports from `shared/` work in `.ts` nodes (types *and* values) via
+    hoist→wrap→bundle at push time; no-import nodes keep byte-identical
+    output. The spike found today's docs wrong: no import compiles at all in
+    a `.ts` node — the plan corrects PLAN.md's caveat alongside.
+15. [Docker n8n smoke suite](INPROGRESS-15-docker-n8n-smoke-suite.md) — dev-only,
+    opt-in integration suite (`npm run test:smoke`) against a pinned n8n
+    container: proves bundled nodes execute in the real sandbox and
+    re-verifies the recorded API semantics (publish model, tags/pinned
+    round-trip) on every version bump. Nothing user-facing.
 
 ## Conventions
 

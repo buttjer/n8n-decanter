@@ -40,6 +40,7 @@ export function loadConfig(cwd: string = process.cwd(), { requireCredentials = t
         commitOnPull?: boolean;
         browserReload?: string;
         proxyPort?: number;
+        requestTimeoutMs?: number;
       };
       loadEnv(dir);
       const host = (process.env.N8N_HOST ?? "").replace(/\/+$/, "");
@@ -55,6 +56,7 @@ export function loadConfig(cwd: string = process.cwd(), { requireCredentials = t
         commitOnPull: cfg.commitOnPull !== false,
         browserReload: cfg.browserReload === "proxy" ? "proxy" : "off",
         proxyPort: typeof cfg.proxyPort === "number" ? cfg.proxyPort : 5679,
+        requestTimeoutMs: typeof cfg.requestTimeoutMs === "number" && cfg.requestTimeoutMs > 0 ? cfg.requestTimeoutMs : 30_000,
         host,
         apiKey,
       };
