@@ -54,11 +54,12 @@ items not yet claimed by one. Recommended order:
     logo strictly TTY-gated; workflow-name arguments, shell completion, and a
     `list` verb. Piped output stays plain and line-oriented (LLM/script safe —
     and fixes today's ANSI leak into pipes).
-12. [Structural watch](INPROGRESS-12-structural-watch.md) — watch also pushes
+12. [Structural watch](DONE-12-structural-watch.md) — watch also pushes
     `workflow.json` saves, gated by a 3-way conflict check (session baseline)
     with interactive merge / keep-local / keep-remote resolution; every watch
-    session starts with a safety commit + pull. Implemented; live-instance
-    verification pending.
+    session starts with a safety commit + pull. Done — live verification
+    via the Plan 15 smoke suite, a scripted pty `[r]` drive, and a
+    user-confirmed browser reload.
 13. [Open-source release](OPEN-13-open-source-release.md) — everything between
     "the code is done" and v0.1.0 public on GitHub + npm: identity rewrite,
     repo hygiene, publish build, CI, tarball verification. Remaining steps are
@@ -68,7 +69,7 @@ items not yet claimed by one. Recommended order:
     hoist→wrap→bundle at push time; no-import nodes keep byte-identical
     output. The spike found today's docs wrong: no import compiles at all in
     a `.ts` node — the plan corrects PLAN.md's caveat alongside.
-15. [Docker n8n smoke suite](INPROGRESS-15-docker-n8n-smoke-suite.md) — dev-only,
+15. [Docker n8n smoke suite](DONE-15-docker-n8n-smoke-suite.md) — dev-only,
     opt-in integration suite (`npm run test:smoke`) against a pinned n8n
     container: proves bundled nodes execute in the real sandbox and
     re-verifies the recorded API semantics (publish model, tags/pinned

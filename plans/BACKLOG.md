@@ -78,7 +78,7 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
 - [ ] **Tags/pinned-data round-trip check** — verify against the live instance
       that PUT preserves tags/pinned data on an untouched pull→push round-trip
       (open question in PLAN.md). (tags half **verified** 2026-07-19 by the
-      [Plan 15](INPROGRESS-15-docker-n8n-smoke-suite.md) smoke suite against
+      [Plan 15](DONE-15-docker-n8n-smoke-suite.md) smoke suite against
       n8n 2.30.7; pinData still open — the public API cannot set it, needs
       the UI or internal REST)
       - [ ] **pinData seeding routes — collect only, decide later** (user,

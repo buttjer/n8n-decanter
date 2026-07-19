@@ -1,12 +1,15 @@
 # Plan 15 — Docker n8n smoke suite (dev-only)
 
 **Priority:** P2
-**Status:** In progress (2026-07-19: implemented — 15 steps green against
+**Status:** Done (2026-07-19: implemented — 15 steps green against
 n8n 2.30.7, incl. a real Plan 14 sandbox bug found and fixed; task 6 watch
 spot-check done — no PUT structure normalization observed, conflict path
-verified. Open: pinData half of task 5 → seeding-route ideas parked in
-[Plan 0](BACKLOG.md) for a separate analysis session (user, 2026-07-19);
-CI dispatch verification once the repo is public)
+verified. Task 8 CI job **verified via `workflow_dispatch`** the same day:
+`n8n smoke (docker)` green on the ubuntu runner (worked on the private repo
+already — the "once public" gate was unnecessary). The pinData half of
+task 5 is out of this plan's scope by user decision (2026-07-19):
+seeding-route ideas parked in [Plan 0](BACKLOG.md) for a separate analysis
+session — the backlog item stays open independently)
 **Theme:** An opt-in integration suite for *developing this tool*: spin up a
 real n8n in Docker, drive the CLI against it, and prove the things no mock
 can — that bundled nodes execute in the real Code-node sandbox, and that the
@@ -35,7 +38,7 @@ dependency, and the suite is invoked only by an explicit
 - [DECISIONS-NEEDED](DECISIONS-NEEDED.md) entry 1 (2026-07-18), decided:
   go, dev-only scope.
 - Absorbs the live-verification residue of
-  [Plan 12](INPROGRESS-12-structural-watch.md),
+  [Plan 12](DONE-12-structural-watch.md),
   [Plan 14](DONE-14-bundle-shared-code-into-ts-pushes.md), the
   tags/pinned backlog item, and feeds
   [Plan 3](INPROGRESS-3-local-run-and-diff-fidelity.md) C's spike.
