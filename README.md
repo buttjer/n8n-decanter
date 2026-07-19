@@ -19,6 +19,10 @@ editable in your IDE or by your agent, and pushed back through the n8n API.
   credential-free feedback loop.
 - **Guardrails** — a compliance guard and typecheck gate block broken
   pushes; a drift guard keeps you from clobbering remote edits.
+- **Real execution data on tap** — `executions` fetches recent run JSON into
+  a gitignored temp dir, so agents see actual payload shapes (and build
+  accurate `run` fixtures) instead of guessing; `executions clean` removes
+  it when done.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
 - **Shared code and small libraries** — `.ts` nodes import helpers/types
@@ -91,6 +95,12 @@ n8n-decanter <ref> rename "<old node>" "<new node>"   # rename a node everywhere
 n8n-decanter <ref> rename --workflow "<new name>"     # rename the workflow
 n8n-decanter [ref] watch            # push a workflow's nodes on save
                                     #   (+ browser live-reload, opt-in)
+n8n-decanter [ref...] executions [--status=success|error|waiting] [--limit=N]
+                                    # fetch recent execution data (run JSON)
+                                    #   into workflows/<Name>/executions/
+                                    #   (gitignored temp files; a numeric arg
+                                    #   fetches that one execution by id)
+n8n-decanter [ref...] executions clean   # delete fetched execution data (offline)
 n8n-decanter list [--remote]        # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones)
 n8n-decanter completion zsh|bash    # print a shell completion script
@@ -123,6 +133,14 @@ would overwrite before running it. API requests time out after 30 s (set
 `DEBUG=1` prints full stack traces on errors. `run` fakes the full Code-node
 context including `$getWorkflowStaticData`, seeded from `workflow.json` and
 overridable per fixture.
+
+`executions` is read-only against the API and writes each execution as
+`workflows/<Name>/executions/<execId>.json` — real run data (the items every
+node produced), meant as temporary reference for building `run` fixtures.
+The dir is written self-gitignored (run data can contain credentials/PII and
+must never land in git); executions reflect the *published* workflow version
+(n8n 2.x), so treat them as convenience data, not ground truth, and remove
+them with `executions clean` when done.
 
 ## How node files work
 

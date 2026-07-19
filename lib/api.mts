@@ -1,4 +1,4 @@
-import type { Workflow, WorkflowPut } from "./types.mts";
+import type { Execution, Workflow, WorkflowPut } from "./types.mts";
 
 export class N8nApi {
   #host: string;
@@ -30,6 +30,27 @@ export class N8nApi {
       cursor = page.nextCursor ?? undefined;
     } while (cursor !== undefined);
     return all;
+  }
+
+  /**
+   * Recent executions with full run data, newest first. Read-only by design —
+   * the executions API is never written through. `limit` caps the single page
+   * (the API allows up to 250); no pagination on purpose, "recent" is the use
+   * case.
+   */
+  async listExecutions({ workflowId, status, limit = 5 }: { workflowId?: string; status?: string; limit?: number }): Promise<Execution[]> {
+    const query = new URLSearchParams({
+      includeData: "true",
+      limit: String(limit),
+      ...(workflowId !== undefined && { workflowId }),
+      ...(status !== undefined && { status }),
+    });
+    const page = (await this.#request("GET", `/api/v1/executions?${query}`)) as { data: Execution[] };
+    return page.data;
+  }
+
+  async getExecution(id: string): Promise<Execution> {
+    return this.#request("GET", `/api/v1/executions/${encodeURIComponent(id)}?includeData=true`) as Promise<Execution>;
   }
 
   async updateWorkflow(id: string, body: WorkflowPut): Promise<Workflow | undefined> {

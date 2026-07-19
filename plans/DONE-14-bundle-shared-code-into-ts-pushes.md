@@ -256,7 +256,7 @@ Rules that keep it sane (all guard/compile errors, not silent behavior):
   results; `transform` confirmed to reject even pure `import type` +
   top-level `return`; typecheck wrapper confirmed to emit TS1232 on wrapped
   imports (plus TS2307 because `shared/` isn't in the program — task 4).
-- **Cross-links**: [Plan 3](INPROGRESS-3-local-run-and-diff-fidelity.md)
+- **Cross-links**: [Plan 3](DONE-3-local-run-and-diff-fidelity.md)
   (`status --diff` readability of bundled output),
   [Plan 4](INPROGRESS-4-editor-node-diagnostics.md) (ts-plugin must keep
   suppressing on module-shaped node files),

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
+import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
 import { init } from "./lib/init.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
@@ -52,6 +53,11 @@ const usage = (): string => {
   ${b("n8n-decanter")} [ref] ${b("watch")} [--force]   ${d("watch code/ + workflow.json, push on save")}
                                    ${d("(starts with a safety commit + pull; structural")}
                                    ${d("conflicts prompt; browser live-reload optional)")}
+  ${b("n8n-decanter")} [ref...] ${b("executions")} [--status=success|error|waiting] [--limit=N]
+                                   ${d("fetch recent execution data (real run JSON) into")}
+                                   ${d("workflows/<Name>/executions/ — gitignored temp files;")}
+                                   ${d("a numeric argument fetches that one execution by id")}
+  ${b("n8n-decanter")} [ref...] ${b("executions clean")}   ${d("delete fetched execution data (offline)")}
   ${b("n8n-decanter list")} [--remote]      ${d("pulled workflows: name, id, folder")}
                                    ${d("(--remote adds workflows not pulled yet)")}
   ${b("n8n-decanter completion")} zsh|bash  ${d("print a shell completion script for your rc file")}
@@ -68,7 +74,7 @@ Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 };
 
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "list", "completion", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "list", "executions", "completion", "__complete", "help"]);
 /** Verbs whose workflow arguments go through name resolution. */
 const REF_VERBS = new Set(["pull", "push", "status", "check", "watch"]);
 
@@ -100,7 +106,23 @@ const COMPLETION_SCRIPTS: Record<string, string> = {
 };
 
 async function main() {
-  const args = process.argv.slice(2);
+  // --status/--limit take a value (--limit=5 or --limit 5); they're peeled
+  // off first so the boolean-flag and positional logic below stays untouched.
+  const valueFlags = new Map<string, string>();
+  const args: string[] = [];
+  {
+    const raw = process.argv.slice(2);
+    for (let i = 0; i < raw.length; i++) {
+      const m = raw[i].match(/^--(status|limit)(?:=(.*))?$/);
+      if (!m) {
+        args.push(raw[i]);
+        continue;
+      }
+      const value = m[2] ?? raw[++i];
+      if (value === undefined || value === "") throw new Error(`--${m[1]} needs a value (e.g. --${m[1]}=${m[1] === "limit" ? "5" : "success"})`);
+      valueFlags.set(m[1], value);
+    }
+  }
   const force = args.includes("--force");
   const noTypecheck = args.includes("--no-typecheck");
   const workflowFlag = args.includes("--workflow");
@@ -150,7 +172,7 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--help");
+    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--status=", "--limit=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireCredentials: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -161,7 +183,8 @@ async function main() {
     return;
   }
 
-  const offline = command === "check" || command === "rename" || (command === "list" && !remoteFlag);
+  const offline = command === "check" || command === "rename" || (command === "list" && !remoteFlag)
+    || (command === "executions" && rest.includes("clean"));
   const config = loadConfig(process.cwd(), { requireCredentials: !offline });
   const api = new N8nApi(config);
 
@@ -287,6 +310,46 @@ async function main() {
         }
       }
       if (errorCount > 0) process.exitCode = 1;
+      break;
+    }
+    case "executions": {
+      // grammar: "clean" may sit anywhere (like the verb itself); a purely
+      // numeric argument is an execution id (n8n execution ids are integers,
+      // workflow ids are 16-char alphanumeric tokens) — everything else is a
+      // workflow ref. A workflow literally named "clean" or like a number
+      // must be addressed by id, same rule as verb-named workflows.
+      const params = rest.filter((a) => a !== "clean");
+      const wfIds: string[] = [];
+      for (const r of params.filter((a) => !/^\d+$/.test(a))) wfIds.push(await resolveRef(r));
+      if (rest.includes("clean")) {
+        cleanExecutions(config.root, wfIds, log);
+        break;
+      }
+      const limitRaw = valueFlags.get("limit");
+      const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
+      if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 250)) {
+        throw new Error("--limit must be an integer between 1 and 250 (the executions API page cap)");
+      }
+      const status = valueFlags.get("status");
+      const execIds = params.filter((a) => /^\d+$/.test(a));
+      if (execIds.length === 0 && wfIds.length === 0) {
+        if (config.workflows.length === 0) {
+          throw new Error('no workflow ids: pass them as arguments or list them in decanter.config.json "workflows"');
+        }
+        wfIds.push(...config.workflows);
+      }
+      let failed = false;
+      const attempt = async (label: string, fn: () => Promise<void>) => {
+        try {
+          await fn();
+        } catch (err) {
+          failed = true;
+          log.error(`${label}: ${(err as Error).message}`);
+        }
+      };
+      for (const e of execIds) await attempt(`execution ${e}`, () => fetchExecutionById(api, config.root, e, log));
+      for (const id of wfIds) await attempt(id, () => fetchExecutions(api, config.root, id, { status, limit }, log));
+      if (failed) process.exitCode = 1;
       break;
     }
     case "rename": {

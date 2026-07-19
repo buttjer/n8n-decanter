@@ -29,6 +29,24 @@ const server = http.createServer((req, res) => {
       .writeHead(200, { "content-type": "application/json" })
       .end(JSON.stringify({ data: [...db.values()], nextCursor: null }));
   }
+  if (req.method === "GET" && req.url!.startsWith("/api/v1/executions")) {
+    const one = req.url!.match(/^\/api\/v1\/executions\/(\d+)\?/);
+    if (one) {
+      const exec = EXECUTIONS.find((e) => String(e.id) === one[1]);
+      if (!exec) return void res.writeHead(404).end("not found");
+      return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(exec));
+    }
+    const params = new URL(req.url!, "http://localhost").searchParams;
+    let list = EXECUTIONS;
+    const wfId = params.get("workflowId");
+    if (wfId) list = list.filter((e) => e.workflowId === wfId);
+    const status = params.get("status");
+    if (status) list = list.filter((e) => e.status === status);
+    const limit = Number(params.get("limit") ?? 10);
+    return void res
+      .writeHead(200, { "content-type": "application/json" })
+      .end(JSON.stringify({ data: list.slice(0, limit), nextCursor: null }));
+  }
   const m = req.url!.match(/^\/api\/v1\/workflows\/([^/]+)$/);
   if (!m) return void res.writeHead(404).end("nope");
   const wf = db.get(m[1]);
@@ -53,6 +71,30 @@ const server = http.createServer((req, res) => {
     });
   }
 });
+
+// Shape mirrors the Plan 15 smoke-verified 2.x response: items under
+// data.resultData.runData["<Node Name>"][0].data.main[0][], newest first,
+// per-execution workflowVersionId (executions run the *published* version).
+const EXECUTIONS = [
+  {
+    id: 202, status: "error", mode: "webhook", workflowId: "wf123", workflowVersionId: "aaa",
+    startedAt: "2026-07-19T10:05:00.000Z", stoppedAt: "2026-07-19T10:05:01.000Z",
+    data: { resultData: { runData: { Webhook: [{ data: { main: [[{ json: { order: 7 }, pairedItem: { item: 0 } }]] } }] }, error: { message: "boom" } } },
+  },
+  {
+    id: 201, status: "success", mode: "webhook", workflowId: "wf123", workflowVersionId: "aaa",
+    startedAt: "2026-07-19T10:00:00.000Z", stoppedAt: "2026-07-19T10:00:01.000Z",
+    data: { resultData: { runData: {
+      Webhook: [{ data: { main: [[{ json: { order: 1, total: "9.5" }, pairedItem: { item: 0 } }]] } }],
+      Transform: [{ data: { main: [[{ json: { order: 1, total: 9.5 }, pairedItem: { item: 0 } }]] } }],
+    } } },
+  },
+  {
+    id: 100, status: "success", mode: "manual", workflowId: "wf-other", workflowVersionId: "zzz",
+    startedAt: "2026-07-19T09:00:00.000Z", stoppedAt: "2026-07-19T09:00:01.000Z",
+    data: { resultData: { runData: {} } },
+  },
+];
 
 const JS_CODE = "// @ts-check\nconst items = $input.all();\nfor (const item of items) {\n  item.json.total = Number(item.json.total ?? 0);\n}\nreturn items;\n";
 db.set("wf123", {
@@ -152,6 +194,7 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.ok(existsSync(path.join(target, "workflows")), "workflows dir copied");
   assert.equal(JSON.parse(read(target, "decanter.config.json")).root, "./workflows");
   assert.match(read(target, ".gitignore"), /^\.env$/m);
+  assert.match(read(target, ".gitignore"), /^workflows\/\*\/executions\/$/m);
   assert.match(stdout + stderr, /credentials verified/);
   // piped init prints a plain version line instead of the TTY logo
   assert.match(stdout + stderr, /n8n-decanter v\d+\.\d+\.\d+/);
@@ -1119,6 +1162,68 @@ await step("corrupt .decanter.json: scoped guard error, other workflows unaffect
   const errorLines = r.out.split("\n").filter((l) => l.startsWith("✗ "));
   assert.deepEqual(errorLines, [], "corrupt neighbor's guard error leaked into scoped output: " + r.out);
   rmSync(dirC, { recursive: true, force: true });
+});
+
+await step("executions: fetches run JSON into a self-gitignored dir; filters pass through", async () => {
+  const exDir = path.join(dirF, "executions");
+  let r = await cli("executions", "wf123");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(existsSync(path.join(exDir, "201.json")));
+  assert.ok(existsSync(path.join(exDir, "202.json")));
+  // self-ignoring dir: run data may hold credentials/PII and must never
+  // reach git, even in sync dirs whose root .gitignore predates the verb
+  assert.equal(read(exDir, ".gitignore"), "*\n");
+  const captured = JSON.parse(read(exDir, "201.json"));
+  assert.equal(captured.data.resultData.runData.Transform[0].data.main[0][0].json.total, 9.5);
+  assert.match(r.out, /2 executions -> .*executions \(gitignored/);
+
+  // --status narrows (= form); the other-workflow execution never leaks in
+  rmSync(exDir, { recursive: true, force: true });
+  r = await cli("executions", "Order Sync Final", "--status=error");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(existsSync(path.join(exDir, "202.json")));
+  assert.ok(!existsSync(path.join(exDir, "201.json")));
+
+  // --limit caps the page (space form); newest-first means 202 only
+  rmSync(exDir, { recursive: true, force: true });
+  r = await cli("executions", "wf123", "--limit", "1");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(existsSync(path.join(exDir, "202.json")));
+  assert.ok(!existsSync(path.join(exDir, "201.json")));
+  r = await cli("executions", "wf123", "--limit", "0");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /--limit must be an integer between 1 and 250/);
+
+  // a numeric argument fetches that one execution, routed by its workflowId
+  rmSync(exDir, { recursive: true, force: true });
+  r = await cli("executions", "201");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(existsSync(path.join(exDir, "201.json")));
+  // an execution of a not-pulled workflow errors with guidance, exit 1
+  r = await cli("executions", "100");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /belongs to workflow wf-other, which is not pulled/);
+  r = await cli("executions", "999");
+  assert.equal(r.code, 1, "unknown execution id must fail");
+});
+
+await step("executions clean: removes the dirs, credentials-free", async () => {
+  const exDir = path.join(dirF, "executions");
+  assert.ok(existsSync(exDir), "previous step left fetched data");
+  const savedEnv = env;
+  env = { ...savedEnv };
+  delete env.N8N_HOST;
+  delete env.N8N_API_KEY;
+  try {
+    let r = await cli("executions", "clean", "order sync final"); // name ref, case-insensitive
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(exDir));
+    r = await cli("executions", "clean");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /no executions\/ dirs to clean/);
+  } finally {
+    env = savedEnv;
+  }
 });
 
 server.close();

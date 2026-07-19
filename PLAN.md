@@ -77,6 +77,8 @@ workflows/
         <node-name>.ts          # TS Code node (one-way)
         <node-name>.remote.js   # written by pull on conflict/UI-edit, visible on purpose
       .decanter.json            # state, see below
+      executions/               # optional: fetched run data (plans/3) — temp,
+        <execId>.json           #   self-gitignored, never synced back
 ```
 
 - Workflow **id** lives in `workflow.json` itself → folder name is cosmetic.
@@ -238,7 +240,8 @@ Errors (block push / exit 1):
   target must name a real node), duplicate node names or ids, orphan
   `.js`/`.ts` files no placeholder references (`.d.ts` and `*.remote.js`
   exempt; only the folder root and `code/` are scanned — other subdirs are
-  reserved for future artifacts like `executions/`/`fixtures/`, plans 3/7),
+  reserved for artifacts like `executions/` (live since plans/3 C) and
+  `fixtures/` (plans/7)),
   and dangling literal `$('…')` references in node source files *and* in
   expression parameters. The `$('…')` scan is a deliberate regex heuristic
   (shared `findNodeRefs`/`renameNodeRefs` in `lib/util.mts`): literal
@@ -280,6 +283,40 @@ Offline by design — `push` propagates.
 `rename <id> --workflow "<new name>"` sets `wf.name` only: the folder is
 cosmetic and follows on the next pull (same rename machinery as remote
 renames).
+
+## Execution datasets (`n8n-decanter [ref…] executions`, plans/3 C)
+
+Added 2026-07-19. Fetches recent executions with full run data
+(`GET /api/v1/executions?includeData=true`, filtered by `workflowId`;
+`--status=success|error|waiting` and `--limit=N` — default 5, API page cap
+250 — pass through to the API) into
+`workflows/<Name>/executions/<execId>.json`, verbatim and pretty-printed. A
+purely numeric argument is an execution id (`GET /executions/{id}`), routed
+to its workflow's folder via the response's `workflowId`. Read-only against
+the API by design — nothing under `executions/` is ever synced back.
+
+Purpose: **temporary reference data so agents (and humans) see real payload
+shapes** — items live under
+`data.resultData.runData["<Node>"][0].data.main[0][]` — instead of guessing
+when writing `run` fixtures or debugging nodes; also the designated fixture
+source for the simulation suite (plans/7). `executions clean` (offline)
+deletes the dirs — for the given refs, or every pulled workflow.
+
+Two decisions from the 2026-07-18 review (plans/3):
+
+- **Standalone verb, not part of `pull`** — fetching on every pull would be
+  scope creep and a surprise network/data cost.
+- **Never in git.** Run data can contain credentials/PII, and `executions/`
+  sits inside the commit-on-pull/push pathspec — so the verb writes each dir
+  *self-ignoring* (`executions/.gitignore` containing `*`, robust for
+  pre-existing sync dirs and custom roots), and init's scaffolded root
+  `.gitignore` lists `workflows/*/executions/` as well.
+
+Caveat (recorded in plans/3, smoke-verified): executions run the *published*
+workflow version (per-execution `workflowVersionId`, n8n 2.x) — possibly
+older than the draft/repo state. Convenience data, not ground truth.
+`run --from-execution` (auto-building a fixture from a captured execution)
+was deliberately deferred to the backlog — agents read the JSON directly.
 
 ## Watch mode (`n8n-decanter <id> watch`)
 

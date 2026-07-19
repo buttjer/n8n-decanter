@@ -35,6 +35,20 @@ export interface Workflow {
   [key: string]: unknown;
 }
 
+/**
+ * One execution as returned by GET /executions with includeData=true (extra
+ * fields pass through). Items live under
+ * `data.resultData.runData["<Node Name>"][0].data.main[0][]` with `.json`
+ * payloads; `workflowVersionId` names the *published* version that ran
+ * (n8n 2.x — executions never run the draft).
+ */
+export interface Execution {
+  id: number | string;
+  status?: string;
+  workflowId?: string;
+  [key: string]: unknown;
+}
+
 /** The subset of a workflow the PUT endpoint accepts (see sanitizeForPut). */
 export interface WorkflowPut {
   name: string;
