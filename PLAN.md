@@ -48,6 +48,14 @@ n8n-decanter/
 
   Presence of the marker ⇒ node is TS-managed (self-describing, no config entry).
   Pull strips the marker line before hashing/comparing.
+- **Git workflow (decided 2026-07-19): protected main, merge = release.** No
+  direct commits to main; short-lived branches, squash-merged via PR (linear
+  main, one commit per PR). Merging a PR with a non-empty `[Unreleased]`
+  changelog section *is* a release: that PR rolls the changelog and bumps the
+  version; the squash commit gets tagged `vX.Y.Z`. Internal-only PRs (no
+  changelog entry) merge without a bump — user-facing work never sits
+  unreleased on main. Full scheme in CLAUDE.md ("Git workflow & releases");
+  GitHub ruleset enforcement waits for the repo going public (plans/OPEN-13).
 
 ## Synced content layout
 
