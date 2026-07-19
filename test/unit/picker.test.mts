@@ -92,12 +92,12 @@ describe("workflow stage", () => {
 
   it("enter on an unpulled workflow pulls directly", () => {
     const step = reduceKey(state({ cursor: 2 }), { name: "return" });
-    assert.deepEqual(step, { done: true, result: { verb: "pull", id: "ccc333" } });
+    assert.deepEqual(step, { done: true, result: { verb: "pull", id: "ccc333", name: "Backup" } });
   });
 
   it("enter selects within the filtered list, not the full one", () => {
     const step = reduceKey(state({ query: "backup" }), { name: "return" });
-    assert.deepEqual(step, { done: true, result: { verb: "pull", id: "ccc333" } });
+    assert.deepEqual(step, { done: true, result: { verb: "pull", id: "ccc333", name: "Backup" } });
   });
 
   it("enter with no match is a no-op", () => {
@@ -132,7 +132,7 @@ describe("verb stage", () => {
 
   it("enter runs the highlighted verb on the selected workflow", () => {
     const s = next(reduceKey(verbState(), { name: "w", sequence: "w" }));
-    assert.deepEqual(reduceKey(s, { name: "return" }), { done: true, result: { verb: "watch", id: "aaa111" } });
+    assert.deepEqual(reduceKey(s, { name: "return" }), { done: true, result: { verb: "watch", id: "aaa111", name: "Billing Sync" } });
   });
 
   it("esc returns to the workflow stage", () => {
@@ -143,5 +143,41 @@ describe("verb stage", () => {
 
   it("ctrl-c interrupts here too", () => {
     assert.deepEqual(reduceKey(verbState(), { name: "c", ctrl: true, sequence: "\x03" }), { done: true, result: "interrupted" });
+  });
+
+  it("enter carries the workflow name for the trace line", () => {
+    assert.deepEqual(reduceKey(verbState(), { name: "return" }), {
+      done: true,
+      result: { verb: "status", id: "aaa111", name: "Billing Sync" },
+    });
+  });
+});
+
+describe("resume (picker loop re-entry)", () => {
+  it("re-opens the verb menu of a pulled workflow, cursor on the last verb", () => {
+    const s = initialState(entries, false, { resume: { id: "bbb222", verb: "push" } });
+    assert.equal(s.stage, "verb");
+    assert.equal(s.selected?.id, "bbb222");
+    assert.equal(PICKER_VERBS[s.verbCursor], "push");
+  });
+
+  it("falls back to the list with the cursor on a still-unpulled workflow", () => {
+    const s = initialState(entries, false, { resume: { id: "ccc333", verb: "pull" } });
+    assert.equal(s.stage, "workflow");
+    assert.equal(s.cursor, 2);
+  });
+
+  it("ignores an unknown resume id and an unknown verb", () => {
+    const gone = initialState(entries, false, { resume: { id: "zzz999", verb: "status" } });
+    assert.equal(gone.stage, "workflow");
+    assert.equal(gone.cursor, 0);
+    const oddVerb = initialState(entries, false, { resume: { id: "aaa111", verb: "list" } });
+    assert.equal(oddVerb.stage, "verb");
+    assert.equal(oddVerb.verbCursor, 0);
+  });
+
+  it("passes the remote-failure notice through", () => {
+    const s = initialState(entries, false, { notice: "remote list unavailable (boom)" });
+    assert.equal(s.notice, "remote list unavailable (boom)");
   });
 });

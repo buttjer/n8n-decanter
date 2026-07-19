@@ -45,7 +45,7 @@ const LOGO_ROWS = [
 ];
 
 /** TTY: logo + tagline + version. Piped: one plain, stable version line. */
-function printBanner(log: Log): void {
+export function printBanner(log: Log): void {
   const version = cliVersion();
   if (!process.stdout.isTTY) {
     log.info(`n8n-decanter v${version}`);

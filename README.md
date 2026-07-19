@@ -88,7 +88,9 @@ offline (no credentials, no network).
 n8n-decanter                        # interactive picker (terminal, inited
                                     #   project): filter workflows by typing —
                                     #   pulled green, unpulled remote yellow —
-                                    #   then pick a verb (unpulled: Enter pulls)
+                                    #   then run verbs (unpulled: Enter pulls);
+                                    #   stays in the workflow's menu between
+                                    #   verbs, Esc backs out, Esc Esc quits
 n8n-decanter init [dir]             # interactive bootstrap (see Setup)
 n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
 n8n-decanter [ref...] push [--force] [--no-typecheck]

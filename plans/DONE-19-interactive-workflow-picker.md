@@ -124,3 +124,15 @@ narrow by typing, act.
   pull) — same caveat style as Plan 17's pending notes. The yellow/unpulled
   render path is unit-covered (`mergeRemote`, `(not pulled)` suffix) but has
   not been watched live.
+- **Follow-up (2026-07-20, user request — released in 0.2.3):** the "run
+  once, exit" non-goal was overturned. The picker is now a session loop
+  (`pickerLoop` + the verb switch extracted into `dispatch()`): after a verb
+  finishes or fails, the same workflow's verb menu re-opens with the cursor
+  on the verb just run; the remote list is fetched once per session, the
+  local list re-scanned each round; exit code = last verb. Also added: dim
+  `░` skeleton placeholder rows while the remote list loads, the init logo
+  banner on picker start, and a stdin-EOF → quit guard (a closed input
+  can't wedge the process). Verified by the extended pty drive (resume
+  menu ×2 renders, name-based trace line, skeleton + failure notice,
+  exit 1 after a failed last verb / 0 on plain quit) plus 5 new unit tests
+  on `initialState` resume handling.

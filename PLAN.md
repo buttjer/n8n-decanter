@@ -149,20 +149,28 @@ detection — use the id. Config entries stay ids only.
 
 Discovery surfaces, primary first: the **interactive picker** — bare
 `n8n-decanter` (no verb, no refs, no flags) on a TTY (stdin *and* stdout) in
-an inited project opens a type-to-filter list (`lib/picker.mts`): pulled
-workflows green, unpulled remote ones yellow with a literal `(not pulled)`
-suffix (never color alone), remote entries appended asynchronously as
-`GET /workflows` lands (skipped without credentials; failures degrade to a
-dim notice). Enter on a pulled workflow opens a verb menu
-(status/pull/push/watch/check; a letter cycles matching verbs, so `p`
-alternates pull/push); Enter on an unpulled one runs `pull` directly. The
-picker only produces `{verb, id}` and re-enters the normal dispatcher path —
-identical semantics to typing the command. Esc quits (exit 0), Ctrl-C
-interrupts (exit 130); raw mode and cursor are always restored. Any other
-bare invocation — piped, or no config in reach — prints usage unchanged, so
+an inited project opens with the init logo banner, then a type-to-filter
+list (`lib/picker.mts`): pulled workflows green, unpulled remote ones yellow
+with a literal `(not pulled)` suffix (never color alone), remote entries
+appended asynchronously as `GET /workflows` lands (skipped without
+credentials; failures degrade to a dim notice) — while loading, dim `░`
+skeleton rows of varied widths mark where they will appear. Enter on a
+pulled workflow opens a verb menu (status/pull/push/watch/check; a letter
+cycles matching verbs, so `p` alternates pull/push); Enter on an unpulled
+one runs `pull` directly. The picker only produces `{verb, id}` and
+re-enters the normal dispatcher path (`dispatch()`, the extracted verb
+switch) — identical semantics to typing the command. The session is a
+loop: after a verb finishes (or fails — errors log and return), the same
+workflow's verb menu re-opens with the cursor on the verb just run; the
+local list is re-scanned each round (a pull just added a folder) while the
+remote list is fetched once per session. Esc steps back to the workflow
+list, Esc there quits; Ctrl-C interrupts (exit 130); the exit code
+otherwise reflects the last verb run. Raw mode and cursor are always
+restored, and stdin EOF quits rather than wedging. Any other bare
+invocation — piped, or no config in reach — prints usage unchanged, so
 scripts and LLM harnesses never meet the picker. The pure state machine
-(filter, key reducer, scroll window) is exported for unit tests; only
-`runPicker` touches the terminal. Secondary surfaces: `list` (one line per
+(filter, key reducer, scroll window, resume) is exported for unit tests;
+only `runPicker` touches the terminal. Secondary surfaces: `list` (one line per
 pulled workflow: name, id, folder; `--remote` appends unpulled remote ones)
 and `completion zsh|bash`, a printed shell script that delegates to the
 hidden, credentials-free `__complete` verb (verbs, flags, local names/ids;

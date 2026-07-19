@@ -4,8 +4,8 @@ import path from "node:path";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
-import { init } from "./lib/init.mts";
-import { runPicker } from "./lib/picker.mts";
+import { init, printBanner } from "./lib/init.mts";
+import { mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { renameNode, renameWorkflow } from "./lib/rename.mts";
@@ -13,7 +13,7 @@ import { runNode } from "./lib/run.mts";
 import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef } from "./lib/state.mts";
 import { statusWorkflow } from "./lib/status.mts";
 import { style, styleErr, transientLine } from "./lib/style.mts";
-import type { Log } from "./lib/types.mts";
+import type { DecanterConfig, Log } from "./lib/types.mts";
 import { runTypecheck, validateWorkflowDir } from "./lib/validate.mts";
 import { watchWorkflow } from "./lib/watch.mts";
 
@@ -43,7 +43,8 @@ const usage = (): string => {
   const d = style.dim;
   return `Usage:
   ${b("n8n-decanter")}                       ${d("interactive picker (TTY, inited project):")}
-                                   ${d("choose a workflow, then a verb")}
+                                   ${d("choose a workflow, then verbs — stays in")}
+                                   ${d("the workflow's menu until Esc")}
   ${b("n8n-decanter init")} [dir] [--force]   ${d("interactive setup: .env, starter files, config")}
                                    ${d("(--force re-copies template files over existing ones)")}
   ${b("n8n-decanter")} [ref...] ${b("pull")}       ${d("pull workflows (default: all in decanter.config.json)")}
@@ -135,8 +136,8 @@ async function main() {
   // id-first support: the first token matching a known verb is the command,
   // wherever it sits — `push wf123` and `wf123 push` are equivalent.
   const verbIndex = positional.findIndex((a) => VERBS.has(a));
-  let command = verbIndex === -1 ? positional[0] : positional[verbIndex];
-  let rest = positional.filter((_, i) => i !== verbIndex);
+  const command = verbIndex === -1 ? positional[0] : positional[verbIndex];
+  const rest = positional.filter((_, i) => i !== verbIndex);
 
   // Bare invocation on a TTY in an inited project → interactive picker
   // (Plan 19). Piped runs and config-less directories fall through to
@@ -149,19 +150,8 @@ async function main() {
       // no decanter.config.json in reach — bare invocation stays usage()
     }
     if (pickerConfig !== undefined) {
-      const local = listWorkflowRefs(pickerConfig.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true }));
-      const remote = pickerConfig.host !== "" && pickerConfig.apiKey !== ""
-        ? new N8nApi(pickerConfig).listWorkflows().then((ws) => ws.map((w) => ({ id: w.id, name: w.name })))
-        : undefined;
-      const picked = await runPicker(local, remote);
-      if (picked === "quit") return;
-      if (picked === "interrupted") {
-        process.exitCode = 130;
-        return;
-      }
-      log.info(style.dim(`❯ ${picked.verb} ${picked.id}`));
-      command = picked.verb;
-      rest = [picked.id];
+      await pickerLoop(pickerConfig);
+      return;
     }
   }
 
@@ -213,6 +203,70 @@ async function main() {
     return;
   }
 
+  await dispatch(command, rest, { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, valueFlags });
+}
+
+interface Flags {
+  force: boolean;
+  noTypecheck: boolean;
+  workflowFlag: boolean;
+  remoteFlag: boolean;
+  diffFlag: boolean;
+  valueFlags: Map<string, string>;
+}
+
+/** Flag defaults for picker-launched verbs (no CLI flags in play). */
+const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, workflowFlag: false, remoteFlag: false, diffFlag: false, valueFlags: new Map() };
+
+/**
+ * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
+ * back in the same workflow's verb menu until Esc (workflow list, then quit)
+ * or Ctrl-C. The remote list is fetched once and cached across iterations; a
+ * verb error is logged and returns to the menu instead of ending the session.
+ * The process exit code reflects the last verb run.
+ */
+async function pickerLoop(config: DecanterConfig): Promise<void> {
+  printBanner(log);
+  let remoteCache: Array<{ id: string; name: string }> | undefined;
+  let remoteNotice: string | undefined;
+  let remotePending: Promise<Array<{ id: string; name: string }>> | undefined =
+    config.host !== "" && config.apiKey !== ""
+      ? new N8nApi(config).listWorkflows().then((ws) => ws.map((w) => ({ id: w.id, name: w.name })))
+      : undefined;
+  remotePending?.then((ws) => {
+    remoteCache = ws;
+    remotePending = undefined;
+  }).catch((err: Error) => {
+    remoteNotice = `remote list unavailable (${err.message.split("\n")[0]})`;
+    remotePending = undefined;
+  });
+  let resume: PickerResume | undefined;
+  for (;;) {
+    // re-listed each round: a pull just added a folder (or renamed one)
+    const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true }));
+    const entries = remoteCache !== undefined ? mergeRemote(local, remoteCache) : local;
+    const picked = await runPicker(entries, remotePending, { resume, notice: remoteNotice });
+    if (picked === "quit") return;
+    if (picked === "interrupted") {
+      process.exitCode = 130;
+      return;
+    }
+    log.info(style.dim(`❯ ${picked.verb} ${picked.name}`));
+    process.exitCode = 0;
+    try {
+      await dispatch(picked.verb, [picked.id], PICKER_FLAGS);
+    } catch (err) {
+      process.exitCode = 1;
+      log.error((err as Error).message);
+    }
+    console.log("");
+    resume = { id: picked.id, verb: picked.verb };
+  }
+}
+
+/** Config-needing verbs: load config, resolve refs, run the verb switch. */
+async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
+  const { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, valueFlags } = flags;
   const offline = command === "check" || command === "rename" || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"));
   const config = loadConfig(process.cwd(), { requireCredentials: !offline });

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-20
+
+### Changed
+
+- **The picker is now a session** — after a verb finishes (or fails: the
+  error is logged and you're back in the menu), the picker returns to the
+  same workflow's verb menu with the cursor on the verb you just ran, so
+  `status` → `pull` needs no re-picking. `Esc` steps back to the workflow
+  list (freshly re-scanned, so a just-pulled workflow shows green), `Esc`
+  there quits; the exit code reflects the last verb run. The remote
+  workflow list is fetched once per session.
+
+### Added
+
+- While the remote workflow list loads, the picker shows light-gray `░`
+  placeholder rows of varied widths where the entries will appear, instead
+  of a "loading" line.
+- The picker opens with the n8n-decanter logo banner (same as `init`).
+
 ## [0.2.2] - 2026-07-20
 
 ### Added
