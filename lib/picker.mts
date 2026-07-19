@@ -38,12 +38,28 @@ export interface PickerState {
   notice?: string;
 }
 
-export type PickerResult = { verb: string; id: string } | "quit" | "interrupted";
+export type PickerResult = { verb: string; id: string; name: string } | "quit" | "interrupted";
 
 export type PickerStep = { done: false; state: PickerState } | { done: true; result: PickerResult };
 
-export function initialState(entries: PickerEntry[], loadingRemote: boolean): PickerState {
-  return { stage: "workflow", entries, query: "", cursor: 0, verbCursor: 0, loadingRemote };
+/** Re-entry point after a verb ran: the picker loop resumes that workflow's menu. */
+export interface PickerResume {
+  id: string;
+  verb: string;
+}
+
+export function initialState(
+  entries: PickerEntry[],
+  loadingRemote: boolean,
+  opts: { resume?: PickerResume; notice?: string } = {},
+): PickerState {
+  const base: PickerState = { stage: "workflow", entries, query: "", cursor: 0, verbCursor: 0, loadingRemote, notice: opts.notice };
+  const entry = opts.resume ? entries.find((e) => e.id === opts.resume!.id) : undefined;
+  if (!entry) return base;
+  // resumed workflow still unpulled (its pull failed): back on the list, cursor on it
+  if (!entry.pulled) return { ...base, cursor: entries.indexOf(entry) };
+  const verbIndex = PICKER_VERBS.indexOf(opts.resume!.verb as (typeof PICKER_VERBS)[number]);
+  return { ...base, stage: "verb", selected: entry, verbCursor: Math.max(0, verbIndex) };
 }
 
 /** Case-insensitive substring match on name and id; empty query matches all. */
@@ -89,7 +105,7 @@ function reduceWorkflowKey(state: PickerState, key: PickerKey): PickerStep {
     case "enter": {
       const entry = filtered[state.cursor];
       if (!entry) return { done: false, state };
-      if (!entry.pulled) return { done: true, result: { verb: "pull", id: entry.id } };
+      if (!entry.pulled) return { done: true, result: { verb: "pull", id: entry.id, name: entry.name } };
       return { done: false, state: { ...state, stage: "verb", selected: entry, verbCursor: 0 } };
     }
     case "backspace":
@@ -109,7 +125,7 @@ function reduceVerbKey(state: PickerState, key: PickerKey): PickerStep {
       return { done: false, state: { ...state, verbCursor: Math.min(PICKER_VERBS.length - 1, state.verbCursor + 1) } };
     case "return":
     case "enter":
-      return { done: true, result: { verb: PICKER_VERBS[state.verbCursor], id: state.selected!.id } };
+      return { done: true, result: { verb: PICKER_VERBS[state.verbCursor], id: state.selected!.id, name: state.selected!.name } };
   }
   // a letter jumps to the next verb starting with it, cycling through
   // matches ("p" alternates pull/push) — no collision-free hotkeys needed
@@ -126,6 +142,10 @@ function reduceVerbKey(state: PickerState, key: PickerKey): PickerStep {
 // ---------- terminal IO (TTY only, untested by CI — keep this part thin) ----------
 
 const LIST_HEIGHT = 10;
+
+// Placeholder rows shown where remote workflows will appear while the list
+// loads: light-gray blocks shaped like "name  id", varied widths on purpose.
+const SKELETON_WIDTHS: ReadonlyArray<readonly [number, number]> = [[14, 8], [9, 8], [17, 8]];
 
 const truncate = (text: string, max: number): string => (text.length > max ? text.slice(0, max - 1) + "…" : text);
 
@@ -151,9 +171,13 @@ function renderLines(state: PickerState): string[] {
     // "(not pulled)" in words, not only color — NO_COLOR/monochrome safety
     lines.push(`${pointer} ${name}  ${d(e.id)}${e.pulled ? "" : `  ${d("(not pulled)")}`}`);
   }
-  if (filtered.length === 0) lines.push(d(state.entries.length === 0 ? "  nothing pulled yet" : "  no match"));
+  if (filtered.length === 0 && !state.loadingRemote) lines.push(d(state.entries.length === 0 ? "  nothing pulled yet" : "  no match"));
   if (end < filtered.length) lines.push(d(`  … ${filtered.length - end} more`));
-  if (state.loadingRemote) lines.push(d("loading remote workflows…"));
+  if (state.loadingRemote) {
+    for (const [nameWidth, idWidth] of SKELETON_WIDTHS) {
+      lines.push(`  ${d("░".repeat(nameWidth))}  ${d("░".repeat(idWidth))}`);
+    }
+  }
   if (state.notice) lines.push(d(state.notice));
   const enterHint = filtered[state.cursor]?.pulled === false ? "enter pull" : "enter select";
   lines.push(d(`↑↓ move · ${enterHint} · esc quit`));
@@ -162,14 +186,17 @@ function renderLines(state: PickerState): string[] {
 
 /**
  * Run the picker on the current TTY. `remote` (when credentials exist) is
- * already in flight; its workflows are appended as they arrive. Resolves with
- * the chosen verb+id, or "quit" (Esc) / "interrupted" (Ctrl-C).
+ * already in flight; its workflows are appended as they arrive. `resume`
+ * re-opens a workflow's verb menu (the picker loop passes the last run).
+ * Resolves with the chosen verb+id+name, or "quit" (Esc) / "interrupted"
+ * (Ctrl-C).
  */
 export async function runPicker(
   local: PickerEntry[],
   remote: Promise<Array<{ id: string; name: string }>> | undefined,
+  opts: { resume?: PickerResume; notice?: string } = {},
 ): Promise<PickerResult> {
-  let state = initialState(local, remote !== undefined);
+  let state = initialState(local, remote !== undefined, opts);
   let prevLines = 0;
   const repaint = (): void => {
     const lines = renderLines(state);
@@ -195,8 +222,16 @@ export async function runPicker(
   process.once("exit", restore); // belt and braces: never leave the terminal raw
   let finished = false;
   let onKeypress: ((str: string | undefined, key: PickerKey | undefined) => void) | undefined;
+  let onEnd: (() => void) | undefined;
   try {
     return await new Promise<PickerResult>((resolve) => {
+      // stdin EOF can't happen on a real keyboard, but a closed input (pty
+      // teardown, misuse) must quit instead of wedging the process forever
+      onEnd = () => {
+        finished = true;
+        resolve("quit");
+      };
+      stdin.once("end", onEnd);
       onKeypress = (_str, key) => {
         const step = reduceKey(state, key ?? {});
         if (step.done) {
@@ -225,6 +260,7 @@ export async function runPicker(
   } finally {
     finished = true;
     if (onKeypress) stdin.removeListener("keypress", onKeypress);
+    if (onEnd) stdin.removeListener("end", onEnd);
     erase();
     restore();
     process.removeListener("exit", restore);
