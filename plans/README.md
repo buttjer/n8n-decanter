@@ -78,7 +78,7 @@ items not yet claimed by one. Recommended order:
     round-trip) on every version bump. Nothing user-facing.
 16. Documentation website — reserved (plan drafted in a parallel session,
     not yet committed).
-17. [Public trust pass](INPROGRESS-17-public-trust-pass.md) — pre-release
+17. [Public trust pass](DONE-17-public-trust-pass.md) — pre-release
     hygiene on top of Plan 13: 100%-TypeScript language stats via
     `.gitattributes`, SECURITY.md, stale-docs fix, remote branch cleanup;
     records the history/secrets audit verdicts (history kept, no rewrite).
