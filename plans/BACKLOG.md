@@ -35,6 +35,26 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
 - [ ] **`add` verb** — scaffold a Code node (uuid → node object → `//@file:`
       placeholder → source file) in one step. Lower priority than `rename`;
       node creation is rarer than renaming.
+- [ ] **`publish` / `unpublish` verbs** (2026-07-19) — `POST
+      /api/v1/workflows/:id/activate` (and deactivate) close the draft→live
+      loop from the CLI. Semantics to respect (PLAN.md, smoke-verified):
+      this only matters for **unpublished** workflows — a push to an
+      already-published workflow auto-publishes (`publishIfActive: true`
+      server-side), there is no draft-only push to a live workflow. So
+      `publish` = "take this draft live"; `unpublish` = back to draft-only.
+- [ ] **Version-aware `status`** (2026-07-19) — the 2.x GET exposes
+      `versionId` (draft) and `activeVersionId` (published): `status` can say
+      "published version is older than the draft" instead of the binary
+      published/unpublished line. Cheap; pairs with the `publish` verb.
+- [ ] **Stale-fixture warning for executions** (2026-07-19) — executions
+      record the `workflowVersionId` they ran (published version); when
+      [Plan 3](INPROGRESS-3-local-run-and-diff-fidelity.md) C captures
+      fixtures, warn if that version is older than the current draft — the
+      recorded data may not match the code being tested.
+- [ ] **Recommend scoped API keys** (2026-07-19) — n8n 2.x API keys carry
+      scopes; init/template docs should recommend a minimal-scope key
+      (workflow read/update/list + what the user needs) instead of a
+      full-access one. Docs-only, no code.
 - [ ] **Create workflows from the repo** (2026-07-19; n8n 2.x-only scope) —
       the 2.x public API has `POST /api/v1/workflows` (verified by the
       Plan 15 smoke suite; 1.x had no create, hence PLAN.md's "workflows are

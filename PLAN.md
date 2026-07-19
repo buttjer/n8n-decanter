@@ -56,6 +56,13 @@ n8n-decanter/
   changelog entry) merge without a bump — user-facing work never sits
   unreleased on main. Full scheme in CLAUDE.md ("Git workflow & releases");
   GitHub ruleset enforcement waits for the repo going public (plans/OPEN-13).
+- **n8n 2.x only (user decision 2026-07-19).** The tool targets the n8n 2.x
+  line exclusively — the draft/publish model is treated as the native model,
+  no 1.x compatibility hedges. Continuously verified against a pinned real
+  2.x instance by the plans/15 smoke suite. A consequence recorded the same
+  day: the 2.x public API *does* offer `POST /api/v1/workflows`, so
+  repo-born workflows are possible (backlog: "Create workflows from the
+  repo").
 
 ## Synced content layout
 
@@ -178,7 +185,12 @@ For each configured workflow:
      git history is the safety net).
    - Node renamed → rename the file, update `.decanter.json` (also how flat
      pre-`code/` layouts migrate).
-4. Write `workflow.json` with each `jsCode` replaced by `//@file:<filename>`.
+4. Write `workflow.json` with each `jsCode` replaced by `//@file:<filename>`,
+   keeping the file to the workflow itself: the n8n 2.x derived fields
+   `activeVersion` (a server-side copy of the published version, code
+   included) and `shared` (sharing metadata) are left out — code exists
+   exactly once (in `code/`), and diffs show your changes, not publish
+   churn. Neither field is pushable (PUT whitelist), so nothing is lost.
 5. Update `.decanter.json` hashes.
 
 ## Push flow (`n8n-decanter push [id…]`)
@@ -600,13 +612,17 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
 
 ## Open questions (verify against a live instance)
 
-- Does this n8n version's public API expose folder placement
-  (`parentFolderId`/project) on `GET /workflows/:id`? Check the raw response of a
-  workflow that sits inside a folder. If not exposed → flat layout under `root`,
-  hierarchy deferred. **Still open — needs live API.**
+- ~~Does this n8n version's public API expose folder placement
+  (`parentFolderId`/project) on `GET /workflows/:id`?~~ **Answered for n8n
+  2.30 (2026-07-19, raw GET via the plans/15 smoke rig): no placement field
+  in the response** (`parentFolderId`/`project` absent) — flat layout stands;
+  [Plan 8](plans/OPEN-8-folder-hierarchy-in-sync-layout.md)'s push-driven
+  inversion is confirmed. Re-check on version bumps via the smoke suite.
 - ~~Node name characters that need filename sanitization beyond `/` and `:`.~~
   Resolved by decision, see Implementation notes.
-- Whether `PUT` preserves workflow fields that are neither sent nor whitelisted
-  (tags, pinned data) — confirm nothing is lost on a pull→push round-trip of an
-  untouched workflow. **Still open — needs live API** (the mock can't answer
-  server-side behavior).
+- ~~Whether `PUT` preserves workflow fields that are neither sent nor
+  whitelisted (tags, pinned data) on an untouched round-trip.~~ **Verified
+  against n8n 2.30.7 (2026-07-19, plans/15 smoke suite): tags survive an
+  untouched pull→push round-trip** (asserted weekly by the suite), and
+  pinned data is preserved *by construction* — the 2.x GET returns
+  `pinData`, the PUT whitelist never sends it, so the server keeps its copy.

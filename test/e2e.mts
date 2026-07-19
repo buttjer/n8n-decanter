@@ -72,6 +72,9 @@ db.set("wf123", {
   pinData: {},
   tags: [],
   versionId: "aaa",
+  // n8n 2.x derived fields — pull must keep them OUT of workflow.json
+  activeVersion: { versionId: "aaa", nodes: [{ id: "n2", parameters: { jsCode: JS_CODE } }], workflowPublishHistory: [] },
+  shared: [{ createdAt: "2026-07-01T00:00:00.000Z", role: "workflow:owner" }],
 });
 
 // ---------- helpers ----------
@@ -177,6 +180,10 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
 await step("pull: creates folder, kebab-case files in code/, placeholders, state", async () => {
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
+  // 2.x derived fields stay out of workflow.json — the file holds the
+  // workflow itself, code exists exactly once (in code/)
+  assert.ok(!read(dir1, "workflow.json").includes("activeVersion"), "activeVersion stripped");
+  assert.ok(!read(dir1, "workflow.json").includes('"shared"'), "shared stripped");
   assert.equal(read(dir1, "code", "transform.js"), JS_CODE);
   assert.equal(read(dir1, "code", "amazon-feed.js"), "return $input.all();\n");
   const wfJson = read(dir1, "workflow.json");

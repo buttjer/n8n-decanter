@@ -21,8 +21,13 @@ editable in your IDE or by your agent, and pushed back through the n8n API.
   pushes; a drift guard keeps you from clobbering remote edits.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
-- **Shared code across workflows** *(planned)* — value imports from
-  `shared/` inlined into `.ts` nodes at push; today imports are type-only.
+- **Shared code and small libraries** — `.ts` nodes import helpers/types
+  from `shared/` and opted-in npm packages; push bundles them into
+  self-contained nodes that run anywhere, n8n Cloud included.
+- **Built for n8n 2.x** — the draft/publish model is a first-class citizen
+  (push tells you whether code went live or stayed a draft), and every
+  behavior that touches the API is verified against a real n8n 2.x instance
+  by an automated integration suite.
 
 ![VS Code Screenshot](./docs/screenshot.webp)
 
