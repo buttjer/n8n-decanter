@@ -2,7 +2,7 @@
 
 **Priority:** P2
 **Status:** Done (2026-07-19 — implemented + offline-tested 2026-07-18; the
-live smoke ran via [Plan 15](INPROGRESS-15-docker-n8n-smoke-suite.md) against
+live smoke ran via [Plan 15](DONE-15-docker-n8n-smoke-suite.md) against
 n8n 2.30.7, caught a real sandbox incompatibility, and passes after the
 mechanism revision below)
 

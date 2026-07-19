@@ -1,7 +1,9 @@
 # Plan 12 — Structural watch: push workflow.json edits
 
 **Priority:** P2
-**Status:** In progress (implemented + offline-tested; live-instance verification pending)
+**Status:** Done (2026-07-19 — implemented + offline-tested; live verification
+complete: smoke-suite spot-check, user-confirmed browser reload, and a scripted
+pty `[r]` drive against a real n8n 2.30.7, see task 8)
 **Theme:** Watch reacts to `workflow.json` saves and pushes structural edits, guarded by a 3-way conflict check with interactive merge/local/remote resolution — the IDE becomes a peer editor of the n8n UI.
 
 ## Why
@@ -63,15 +65,18 @@ may be lost.
    warning, non-TTY conflict skip, prompt with `[m]` (merge-file content:
    remote-only node present, in-sync code as placeholder) and `[l]`
    (force push + stale-file cleanup), `check` warning. 27/27 checks.
-8. [ ] **Live-instance verification** — mostly closed 2026-07-19: browser
+8. [x] **Live-instance verification** — closed 2026-07-19: browser
    reload on structural push **verified live** (user-confirmed: the proxy
    refreshes the tab); PUT-response structure normalization (phantom
    re-push) and concurrent-edit conflict detection **verified by the
-   [Plan 15](INPROGRESS-15-docker-n8n-smoke-suite.md) structural-watch
+   [Plan 15](DONE-15-docker-n8n-smoke-suite.md) structural-watch
    step against real n8n 2.30.7 (no normalization observed — no-op saves
-   stay silent). Remaining: only the `[r]emote` prompt choice has never run
-   against a live instance (its parts — pullWorkflow, watcher re-arm,
-   baseline refresh — are unit/e2e-covered; the pty drive covered `[m]`/`[l]`).
+   stay silent). The `[r]emote` prompt choice: **driven live** via a
+   scripted pty (`expect`) against a real dockerized n8n 2.30.7 — second
+   client PUTs a structural change, differing local save raises the
+   interactive prompt, `r` pulls: local `workflow.json` takes the remote
+   version, the pull rewrite does not re-trigger a push (anti-loop), and
+   `status` reports structure + node in sync afterwards.
 
 ## Acceptance / verification
 
