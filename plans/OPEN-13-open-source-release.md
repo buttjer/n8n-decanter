@@ -167,7 +167,7 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
 - Pre-public hygiene/trust items (linguist stats → 100% TypeScript,
   SECURITY.md, stale README fix, branch cleanup) and the history/secrets
   audit verdicts live in
-  [Plan 17](INPROGRESS-17-public-trust-pass.md) (2026-07-19).
+  [Plan 17](DONE-17-public-trust-pass.md) (2026-07-19).
 - No CHANGELOG entry for this plan's repo/packaging work — it's
   infrastructure, not CLI behavior (per CLAUDE.md changelog rules).
 - The npm version badge in the README 404s until the first publish — expected.

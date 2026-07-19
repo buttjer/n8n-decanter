@@ -1,7 +1,7 @@
 # Plan 17 — Public trust pass (pre-release repo hygiene)
 
 **Priority:** P1
-**Status:** In progress
+**Status:** Done
 **Theme:** Last hygiene/trust items before the repo flips public — 100%
 TypeScript language stats, SECURITY.md, stale-docs fix, branch cleanup — plus
 the recorded audit verdicts on git history and secrets.
@@ -62,17 +62,31 @@ later.
    `git fetch --prune`. Remote now: `main`,
    `dependabot/npm_and_yarn/typescript-7.0.2` (open PR #5), this PR's
    branch.
+   **Correction (close-out, 2026-07-19):** the auto-delete inference was
+   wrong — `delete_branch_on_merge` was `false`; the branches of PRs #9,
+   #11, #13 (merged after the observation) all survived. Deleted them and
+   enabled `delete_branch_on_merge` so it can't recur. Remote now: `main`,
+   the dependabot branch (open PR #5), `feat/docs-website` (open PR #10).
 5. [x] Cross-links: plans/README.md entry, Plan 13 notes.
 
 ## Acceptance / verification
 
-- CI green on the PR; squash-merged (internal-only: no version bump, no
-  CHANGELOG entries — repo infra/docs).
-- After merge: `gh api repos/buttjer/n8n-decanter/languages` returns only
-  TypeScript (stats recompute on push; allow a few minutes).
-- Branches page shows only `main` plus the open dependabot branch.
-- SECURITY.md renders on the Security tab once private vulnerability
-  reporting is enabled (Plan 13 settings step).
+- [x] CI green on the PR; squash-merged (internal-only: no version bump, no
+  CHANGELOG entries — repo infra/docs). Merged as #9, 2026-07-19.
+- [ ] After merge: `gh api repos/buttjer/n8n-decanter/languages` returns only
+  TypeScript. **Still pending hours after merge** — the API serves the exact
+  pre-fix numbers (JS 21,651 B = 7.24%) despite four later pushes; GitHub's
+  stats cache hasn't recomputed. The `.gitattributes` fix itself is verified
+  correct against linguist's rules (`.mts` maps only to TypeScript;
+  `-linguist-detectable` is the documented stats-exclusion attribute).
+  **Re-check at the Plan 13 public flip**; if still stale then, touch the
+  `template/*.example` blobs in a PR or contact GitHub support.
+- [x] Branches page shows only `main`, the open dependabot branch, and
+  legitimately-open PR branches (`feat/docs-website`, PR #10) — after the
+  close-out cleanup in task 4's correction.
+- [ ] SECURITY.md renders on the Security tab once private vulnerability
+  reporting is enabled — **blocked on the repo being public** (Plan 13
+  settings step); nothing verifiable while private.
 
 ## Notes
 
