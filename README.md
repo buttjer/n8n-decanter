@@ -207,9 +207,13 @@ plain `tsc` rejects in `.ts` files (TS1108). `npm run typecheck` therefore
 runs [scripts/typecheck.mts](scripts/typecheck.mts), which wraps node files in
 an `async function` in memory (a `.decanter.json` next to the file — or in the
 parent of its `code/` dir — marks it as a node file) and maps diagnostics back
-to real line numbers. Known
-limitation: the IDE's own tsserver doesn't apply the wrapper, so editors show
-a spurious TS1108 on top-level `return` in `.ts` node files.
+to real line numbers. The IDE's own tsserver doesn't apply the wrapper, so on
+its own it would flag top-level `return`/`await` (TS1108/TS1375/TS1378) —
+which is why `init` also scaffolds `decanter-ts-plugin/`, a language-service
+plugin that suppresses exactly those codes on node files while every other
+diagnostic stays live. It loads after `npm install` in the sync dir, via the
+workspace TypeScript (VS Code prompts *Use Workspace Version* once; JetBrains
+IDEs use the project TypeScript by default).
 
 The CLI's own `.mts` sources are checked separately by `tsc -p
 tsconfig.cli.json` (strict; the first half of `npm run typecheck`). That
