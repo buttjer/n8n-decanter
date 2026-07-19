@@ -1,7 +1,7 @@
 # Plan 19 — Interactive workflow picker on bare invocation
 
 **Priority:** P2
-**Status:** Not started
+**Status:** Done
 **Theme:** `n8n-decanter` with no verb and no ref in an inited project opens a
 TTY-only type-to-filter picker — pulled workflows green, unpulled remote ones
 yellow — then a verb menu; discovery moves from the shell into the CLI itself.
@@ -45,11 +45,11 @@ narrow by typing, act.
 - **Execution:** the picker only produces `{verb, id}` and re-enters the
   normal dispatcher path — identical behavior to typing the command, including
   credential errors, typecheck-on-push, and exit codes.
-- **`completion` stays for now.** It serves a different moment (mid-command
-  tab completion for users who know what they're typing), costs ~40 lines, and
-  removal is **Breaking:** for anyone with the `eval` in their rc file. Its
-  fate is an open entry in [DECISIONS-NEEDED.md](DECISIONS-NEEDED.md); default
-  if undecided: keep, demoted below the picker in README/usage.
+- **`completion` stays — decided 2026-07-19.** It serves a different moment
+  (mid-command tab completion for users who know what they're typing), costs
+  ~40 lines, and removal would be **Breaking:** for anyone with the `eval` in
+  their rc file. The DECISIONS-NEEDED entry is resolved: keep, presented
+  below the picker in README/usage.
 - **No new dependencies:** raw mode via `readline.emitKeypressEvents` +
   `stdin.setRawMode(true)`; colors through the existing `lib/style.mts`;
   repaint via cursor-up + clear-line ANSI. Terminal state (raw mode, cursor)
@@ -75,8 +75,8 @@ narrow by typing, act.
 5. **Tests:** `test/unit/picker.test.mts` for filter + reducer; an e2e
    assertion that piped bare invocation still prints usage (add if absent);
    manual TTY checklist under Acceptance.
-6. *(decision-gated)* Act on the [DECISIONS-NEEDED.md](DECISIONS-NEEDED.md)
-   outcome for `completion` (keep-demoted vs. remove, **Breaking:**).
+6. ~~*(decision-gated)*~~ Decided 2026-07-19: `completion` kept (see Design
+   decisions); DECISIONS-NEEDED entry resolved and removed.
 
 ## Acceptance / verification
 
@@ -110,3 +110,17 @@ narrow by typing, act.
   resolution (exact id → exact name → unique prefix) is untouched.
 - The style layer's one rule (escapes only on a TTY) is unaffected — the
   picker exists only on a TTY by construction.
+- **Verification record (2026-07-20):** 17 unit tests on the pure state
+  machine; full `npm test` green including the new piped bare-invocation e2e
+  step; pty-scripted drive via `script -q` (Plan 12 precedent) confirmed:
+  live filter typing, verb menu, `❯ status <id>` dispatch through the real
+  dispatcher (credentials error, exit 1), Esc quit (exit 0), Esc-back from
+  the verb stage, `NO_COLOR` run fully legible, raw mode + cursor restored
+  (`\x1b[?25h` present), green/bold rendered under `TERM=xterm-256color`.
+  A lone Esc registers after ~500 ms — Node's readline escape-decoder
+  timeout, standard terminal behavior, not a bug.
+- **Pending manual verification:** one human-driven session against a live
+  n8n (real keyboard, remote workflows appearing yellow, picking one to
+  pull) — same caveat style as Plan 17's pending notes. The yellow/unpulled
+  render path is unit-covered (`mergeRemote`, `(not pulled)` suffix) but has
+  not been watched live.

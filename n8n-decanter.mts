@@ -5,6 +5,7 @@ import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
 import { init } from "./lib/init.mts";
+import { runPicker } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { renameNode, renameWorkflow } from "./lib/rename.mts";
@@ -41,6 +42,8 @@ const usage = (): string => {
   const b = style.bold;
   const d = style.dim;
   return `Usage:
+  ${b("n8n-decanter")}                       ${d("interactive picker (TTY, inited project):")}
+                                   ${d("choose a workflow, then a verb")}
   ${b("n8n-decanter init")} [dir] [--force]   ${d("interactive setup: .env, starter files, config")}
                                    ${d("(--force re-copies template files over existing ones)")}
   ${b("n8n-decanter")} [ref...] ${b("pull")}       ${d("pull workflows (default: all in decanter.config.json)")}
@@ -132,8 +135,35 @@ async function main() {
   // id-first support: the first token matching a known verb is the command,
   // wherever it sits — `push wf123` and `wf123 push` are equivalent.
   const verbIndex = positional.findIndex((a) => VERBS.has(a));
-  const command = verbIndex === -1 ? positional[0] : positional[verbIndex];
-  const rest = positional.filter((_, i) => i !== verbIndex);
+  let command = verbIndex === -1 ? positional[0] : positional[verbIndex];
+  let rest = positional.filter((_, i) => i !== verbIndex);
+
+  // Bare invocation on a TTY in an inited project → interactive picker
+  // (Plan 19). Piped runs and config-less directories fall through to
+  // usage() unchanged — scripts and LLM harnesses never see the picker.
+  if (command === undefined && args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
+    let pickerConfig;
+    try {
+      pickerConfig = loadConfig(process.cwd(), { requireCredentials: false });
+    } catch {
+      // no decanter.config.json in reach — bare invocation stays usage()
+    }
+    if (pickerConfig !== undefined) {
+      const local = listWorkflowRefs(pickerConfig.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true }));
+      const remote = pickerConfig.host !== "" && pickerConfig.apiKey !== ""
+        ? new N8nApi(pickerConfig).listWorkflows().then((ws) => ws.map((w) => ({ id: w.id, name: w.name })))
+        : undefined;
+      const picked = await runPicker(local, remote);
+      if (picked === "quit") return;
+      if (picked === "interrupted") {
+        process.exitCode = 130;
+        return;
+      }
+      log.info(style.dim(`❯ ${picked.verb} ${picked.id}`));
+      command = picked.verb;
+      rest = [picked.id];
+    }
+  }
 
   if (!command || command === "help" || args[0] === "--help") {
     console.log(usage());

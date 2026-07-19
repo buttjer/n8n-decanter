@@ -17,9 +17,9 @@ n8n-decanter/
                           #   rename | watch | run | list | executions |
                           #   uuid | completion
   lib/                    # implementation: api, compile, config, diff,
-                          #   executions, git, init, prompt, proxy, pull,
-                          #   push, rename, run, state, status, style, util,
-                          #   validate, watch (one .mts each)
+                          #   executions, git, init, picker, prompt, proxy,
+                          #   pull, push, rename, run, state, status, style,
+                          #   util, validate, watch (one .mts each)
                           #   + types.mts (shared data-model shapes)
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
@@ -147,10 +147,28 @@ resolves unknown names against `GET /api/v1/workflows` (cursor-paginated,
 matched client-side). A workflow literally named like a verb loses to verb
 detection — use the id. Config entries stay ids only.
 
-Discovery surfaces: `list` (one line per pulled workflow: name, id, folder;
-`--remote` appends unpulled remote ones) and `completion zsh|bash`, a printed
-shell script that delegates to the hidden, credentials-free `__complete` verb
-(verbs, flags, local names/ids; silently name-less without a config).
+Discovery surfaces, primary first: the **interactive picker** — bare
+`n8n-decanter` (no verb, no refs, no flags) on a TTY (stdin *and* stdout) in
+an inited project opens a type-to-filter list (`lib/picker.mts`): pulled
+workflows green, unpulled remote ones yellow with a literal `(not pulled)`
+suffix (never color alone), remote entries appended asynchronously as
+`GET /workflows` lands (skipped without credentials; failures degrade to a
+dim notice). Enter on a pulled workflow opens a verb menu
+(status/pull/push/watch/check; a letter cycles matching verbs, so `p`
+alternates pull/push); Enter on an unpulled one runs `pull` directly. The
+picker only produces `{verb, id}` and re-enters the normal dispatcher path —
+identical semantics to typing the command. Esc quits (exit 0), Ctrl-C
+interrupts (exit 130); raw mode and cursor are always restored. Any other
+bare invocation — piped, or no config in reach — prints usage unchanged, so
+scripts and LLM harnesses never meet the picker. The pure state machine
+(filter, key reducer, scroll window) is exported for unit tests; only
+`runPicker` touches the terminal. Secondary surfaces: `list` (one line per
+pulled workflow: name, id, folder; `--remote` appends unpulled remote ones)
+and `completion zsh|bash`, a printed shell script that delegates to the
+hidden, credentials-free `__complete` verb (verbs, flags, local names/ids;
+silently name-less without a config) — kept deliberately when the picker
+landed (decision 2026-07-19): it serves mid-command tab completion, which
+the picker doesn't replace.
 
 Output follows **one rule: styling and transient output exist only when the
 target stream is a TTY** (`util.styleText` per stream — `NO_COLOR` respected,
