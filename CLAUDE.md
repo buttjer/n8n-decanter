@@ -17,8 +17,8 @@ truth** — it also records past decisions/observations so the project could be
 rebuilt from it.
 
 **When your work changes the design, data model, flows, or surfaces a new
-decision or observation, ask the user whether PLAN.md should be updated.
-Never let PLAN.md silently drift from the code, and don't rewrite it unasked.**
+decision or observation, update the PLAN.md.
+Never let PLAN.md silently drift from the code, update it unasked.**
 
 ## Changelog
 
