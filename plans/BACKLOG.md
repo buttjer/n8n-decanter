@@ -35,6 +35,15 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
 - [ ] **`add` verb** — scaffold a Code node (uuid → node object → `//@file:`
       placeholder → source file) in one step. Lower priority than `rename`;
       node creation is rarer than renaming.
+- [ ] **Create workflows from the repo** (2026-07-19; n8n 2.x-only scope) —
+      the 2.x public API has `POST /api/v1/workflows` (verified by the
+      Plan 15 smoke suite; 1.x had no create, hence PLAN.md's "workflows are
+      born in n8n" rule). A `push --create` (or workflow-level `add`) would
+      let a workflow folder authored in the repo become the source of truth
+      end to end: scaffold folder → push creates it remotely → id lands in
+      `.decanter.json`/config. Touches the id-first data model (folders
+      currently exist only *after* a pull assigns the remote id) and the
+      "born in n8n" guidance in PLAN.md + template AGENTS.md.
 - [ ] **Engine-true simulation suite** — real e2e test or simulation suite: is
       there a way to really execute the workflow with the n8n engine using
       executions data as a mock/dry run? Also making sure nothing is really
