@@ -1,10 +1,12 @@
 # Plan 15 — Docker n8n smoke suite (dev-only)
 
 **Priority:** P2
-**Status:** In progress (2026-07-19: implemented — 14 steps green against
-n8n 2.30.7, incl. a real Plan 14 sandbox bug found and fixed. Open: pinData
-half of task 5 (not settable via public API), task 6 watch spot-check, CI
-dispatch verification once the repo is public)
+**Status:** In progress (2026-07-19: implemented — 15 steps green against
+n8n 2.30.7, incl. a real Plan 14 sandbox bug found and fixed; task 6 watch
+spot-check done — no PUT structure normalization observed, conflict path
+verified. Open: pinData half of task 5 → seeding-route ideas parked in
+[Plan 0](BACKLOG.md) for a separate analysis session (user, 2026-07-19);
+CI dispatch verification once the repo is public)
 **Theme:** An opt-in integration suite for *developing this tool*: spin up a
 real n8n in Docker, drive the CLI against it, and prove the things no mock
 can — that bundled nodes execute in the real Code-node sandbox, and that the
@@ -114,6 +116,13 @@ dependency, and the suite is invoked only by an explicit
    `workflow.json` edit under `watch` (in-process, like the e2e watch step)
    against the real API — clean push, then a forced remote structural
    change → conflict detected. UI-side editor behavior stays manual.
+   (done 2026-07-19: in-process `watchWorkflow` step — clean structural
+   push lands; a byte-identical re-save stays silent, so the real PUT
+   response's structure hash matches the local file (no phantom re-push);
+   concurrent remote edit → conflict logged, prompt skipped non-TTY,
+   remote left untouched; pull re-baselines back to in-sync. Non-TTY is
+   forced by stubbing `process.stdin.isTTY` for the step so a terminal
+   run can't hang on the prompt.)
 7. **Executions capture** (Plan 3 C spike input): run the webhook workflow,
    fetch `GET /api/v1/executions?includeData=true`, and **save a trimmed
    response shape** into the plan as the ground truth Plan 3 C designs

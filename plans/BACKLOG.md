@@ -81,6 +81,19 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
       [Plan 15](INPROGRESS-15-docker-n8n-smoke-suite.md) smoke suite against
       n8n 2.30.7; pinData still open — the public API cannot set it, needs
       the UI or internal REST)
+      - [ ] **pinData seeding routes — collect only, decide later** (user,
+            2026-07-19: all options plus any new ones to be analysed together
+            in a separate session; nothing here is chosen). Candidates so
+            far, roughly by invasiveness: **internal REST** — the UI's
+            workflow-save route carries `pinData`; same quarantined-fragile
+            treatment as the smoke suite's auth bootstrap. **`docker exec` +
+            `n8n import:workflow`** inside the container — pinData rides in
+            workflow-export JSON, no HTTP surface at all. **Direct sqlite
+            write** in the container (last resort, schema-coupled).
+            **Documented one-time manual UI check** instead of automation
+            (record the verdict + n8n version in PLAN.md). **Wait-and-see** —
+            re-check on every version bump whether the public API gained
+            pinData write support, and only then automate.
 - [x] **Watch: deep-link URL to the workflow** — on `watch` start, print the
       editor URL pointing straight at the watched workflow
       (`<origin>/workflow/<id>`), using the browser-reload proxy origin when
