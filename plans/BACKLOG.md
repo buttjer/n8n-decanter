@@ -48,9 +48,19 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
       published/unpublished line. Cheap; pairs with the `publish` verb.
 - [ ] **Stale-fixture warning for executions** (2026-07-19) — executions
       record the `workflowVersionId` they ran (published version); when
-      [Plan 3](INPROGRESS-3-local-run-and-diff-fidelity.md) C captures
+      [Plan 3](DONE-3-local-run-and-diff-fidelity.md) C captures
       fixtures, warn if that version is older than the current draft — the
       recorded data may not match the code being tested.
+- [ ] **`run --from-execution <execId>`** (deferred 2026-07-19 from
+      [Plan 3](DONE-3-local-run-and-diff-fidelity.md) C) — load a captured
+      execution (`executions` verb) as a `run` fixture: reconstruct `$input`
+      (via the connections graph — a node's own input isn't stored, only
+      upstream outputs), the `$('…')` node outputs, and staticData. Deferred
+      because agents read the execution JSON directly and hand-craft
+      fixtures; the automation carries the risk (executions run the
+      *published* version on n8n 2.x, and data can be flawed or stale).
+      `run --chain "A" "B"` stays deferred alongside it (real ordering/mode
+      semantics — Plan 3's original note).
 - [ ] **Recommend scoped API keys** (2026-07-19) — n8n 2.x API keys carry
       scopes; init/template docs should recommend a minimal-scope key
       (workflow read/update/list + what the user needs) instead of a

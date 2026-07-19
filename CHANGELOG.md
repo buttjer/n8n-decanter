@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-19
+
+### Added
+
+- **`executions` verb** — fetches recent execution data (full run JSON,
+  newest first) for a workflow into
+  `workflows/<Name>/executions/<execId>.json`:
+  `n8n-decanter <ref> executions [--status=success|error|waiting]
+  [--limit=N]` (default 5, API cap 250; both `--limit=N` and `--limit N`
+  work). A numeric argument fetches that single execution by id and routes
+  it to its workflow's folder. Read-only against the API. The files show the
+  real items each node produced
+  (`data.resultData.runData["<Node>"][0].data.main[0][]`) — temporary
+  reference data for writing accurate `run` fixtures. Executions run the
+  *published* workflow version (n8n 2.x), so they're convenience data, not
+  ground truth.
+- **`executions clean`** — offline; deletes fetched `executions/` dirs for
+  the given workflow refs, or all pulled workflows without one.
+- Execution data never reaches git: the verb writes each `executions/` dir
+  self-ignoring (a `.gitignore` containing `*` — run data can hold
+  credentials/PII), and `init`'s scaffolded root `.gitignore` now also
+  lists `workflows/*/executions/`.
+- Template `AGENTS.md`: new "Real execution data" section — when to fetch
+  executions, where items live in the JSON, copy real shapes into `run`
+  fixtures, never commit the data, clean up afterwards.
+
 ## [0.2.0] - 2026-07-19
 
 ### Added

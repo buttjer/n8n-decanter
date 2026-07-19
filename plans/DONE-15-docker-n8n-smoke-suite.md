@@ -41,7 +41,7 @@ dependency, and the suite is invoked only by an explicit
   [Plan 12](DONE-12-structural-watch.md),
   [Plan 14](DONE-14-bundle-shared-code-into-ts-pushes.md), the
   tags/pinned backlog item, and feeds
-  [Plan 3](INPROGRESS-3-local-run-and-diff-fidelity.md) C's spike.
+  [Plan 3](DONE-3-local-run-and-diff-fidelity.md) C's spike.
 
 ## Design
 

@@ -251,14 +251,46 @@ Two offline tools, always available (no credentials, no network, no live n8n):
     in `workflow.json`, so each-item nodes are looped once per input item.
 - JSON validity of `workflow.json` after every structural edit.
 
+## Real execution data (`executions/` — temporary, gitignored)
+
+When you need to see what data actually flows through a workflow — to write an
+accurate `run` fixture, or to debug a node against real payloads — fetch recent
+executions from the instance instead of guessing shapes:
+
+```sh
+n8n-decanter "<workflow>" executions                    # 5 most recent, full run data
+n8n-decanter "<workflow>" executions --status=error --limit=3
+n8n-decanter executions 4711                            # one execution by its id
+```
+
+Each execution lands as `workflows/<Name>/executions/<execId>.json`. The items
+a node produced are under
+`data.resultData.runData["<Node Name>"][0].data.main[0][]` — each entry's
+`.json` is one item, exactly what `$('<Node Name>')` (and the downstream node's
+`$input`) sees at runtime. Copy real item shapes from here into `run` fixtures.
+
+Rules:
+
+- **Temporary working data, never committed.** The tool writes the dir
+  self-ignoring (`executions/.gitignore` containing `*`) because run data can
+  hold credentials and PII — never weaken that, and never copy secrets from it
+  into code or fixtures.
+- **Clean up when the task that needed it is done:**
+  `n8n-decanter executions clean` (offline; removes every `executions/` dir,
+  or pass a workflow ref to scope it).
+- **Convenience, not ground truth.** Executions run the *published* workflow
+  version (n8n 2.x), which may be older than the local draft, and payloads
+  change over time — re-fetch rather than trusting stale files.
+
 ## Commands — who runs what
 
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
-  `n8n-decanter run <file> [fixture]`, `n8n-decanter uuid [n]`. These never touch
-  the network.
+  `n8n-decanter run <file> [fixture]`, `n8n-decanter uuid [n]`,
+  `n8n-decanter executions clean`. These never touch the network.
 - **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line
-  diffs; exits 1 on conflict/remote drift) — safe to run, but it does
-  contact the instance.
+  diffs; exits 1 on conflict/remote drift) and `n8n-decanter <ref> executions`
+  (fetches execution data, read-only) — safe to run, but they do contact the
+  instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
   pull` / `push` / `watch` read/write the real instance and `push` deploys.
   Otherwise finish edits, verify with `check` + `run`, and report that the
