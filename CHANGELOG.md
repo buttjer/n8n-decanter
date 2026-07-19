@@ -78,6 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `workflow.json` stays lean on n8n 2.x: `pull` now keeps the file to the
+  workflow itself — the server-side copy of the published version
+  (`activeVersion`, which duplicates every node's code) and sharing metadata
+  (`shared`) are left out. Your code exists exactly once (in `code/`), and
+  git diffs show your edits instead of publish churn. Nothing is lost:
+  neither field can be pushed anyway.
 - **Breaking:** `status` now exits **1 when a pull is needed or a push would
   clobber remote work** — on a CONFLICT, remote-only changes (structure or
   node code), remote code nodes unknown locally, remotely deleted nodes, or a

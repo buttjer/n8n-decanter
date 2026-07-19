@@ -133,6 +133,14 @@ export async function pullWorkflow(api: N8nApi, root: string, id: string, { comm
   }
 
   const wfOut = structuredClone(wf);
+  // Keep workflow.json to the workflow itself: n8n 2.x GET responses embed a
+  // full server-side copy of the *published* version (`activeVersion`, code
+  // included) and sharing metadata (`shared`) — derived data that would
+  // duplicate every node's source in git and churn on each publish. Neither
+  // field is pushable (sanitizeForPut whitelists), so dropping them loses
+  // nothing.
+  delete wfOut.activeVersion;
+  delete wfOut.shared;
   for (const node of wfOut.nodes) {
     const file = placeholders.get(node.id);
     if (file) node.parameters.jsCode = FILE_PLACEHOLDER_PREFIX + file;
