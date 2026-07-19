@@ -89,7 +89,7 @@ change, so only on demonstrated need.
 - No `dist/`, bundling, or publish pipeline; run-from-source stays.
 - No change to workflow node files, the function-body wrapper, or the root /
   template tsconfig semantics — [Plan 1](DONE-1-trustworthy-edit-loop.md) and
-  [Plan 4](INPROGRESS-4-editor-node-diagnostics.md) own that territory.
+  [Plan 4](DONE-4-editor-node-diagnostics.md) own that territory.
 - No change to the data model (`.decanter.json`, placeholders, markers) or any
   sync behavior; the e2e suite's byte-identical round-trip assertions must
   pass unchanged.

@@ -1,9 +1,9 @@
 # Plan 4 — Editor plugin to suppress spurious node-file diagnostics
 
 **Priority:** P2
-**Status:** In progress (implemented + unit/e2e tested; first manual editor
-verification **failed** 2026-07-19 — TS1108 still shown after `init --force`
-into an existing project; debug checklist in Task 5)
+**Status:** Done (manual editor verification passed 2026-07-19; the first
+failed attempt's root cause was the missed one-time *Use Workspace Version*
+consent — see Task 5 resolution)
 **Theme:** stop the editor's tsserver from flagging legal n8n node source
 (top-level `return`/`await`) as errors, without touching files on disk.
 
@@ -189,6 +189,18 @@ recommend opening the sync dir as its own workspace / multi-root folder;
 document setting `typescript.tsdk` at the real workspace root; or teach
 `check` to detect the nesting and print the hint.
 
+**Resolution (2026-07-19): suspect 3.** The sync dir *was* the workspace
+root (1 ruled out) and `node_modules/decanter-ts-plugin` was installed
+(2 ruled out) — the one-time *Use Workspace Version* consent had simply
+never been clicked, so the bundled tsserver was still running. Selecting
+the workspace version (TS 5.9.3) removed TS1108 immediately, and genuine
+errors still surface (TS2588 in `.js`, TS6133 in `.ts`), confirming the
+plugin filters only the three grammar codes. No code, template, or docs
+change needed — the consent step was already documented (template
+`AGENTS.md` "Writing Code node code", CHANGELOG 0.2.0); the failure was
+the step being easy to skip, which the docs already warn about as loudly
+as a README can.
+
 ## Acceptance / verification
 
 - **Unit test** (`test/unit/ts-plugin.test.mts`): loads the plugin from its
@@ -205,12 +217,11 @@ document setting `typescript.tsdk` at the real workspace root; or teach
   `template/` tree and asserts every file materializes (name `.example`-stripped,
   content byte-identical), which includes `decanter-ts-plugin/*`,
   `.vscode/settings.json`, and the updated tsconfig/package.json.
-- **Manual (the real proof, still pending — first attempt failed, see
-  Task 5):** open a synced node file with a
+- **Manual (the real proof — passed 2026-07-19, see Task 5 resolution):**
+  open a synced node file with a
   top-level `return`/`await` in VS Code; accept *Use Workspace Version* when
   prompted (after `npm install`); confirm 1108/1375/1378 are gone while a
-  genuine type error (e.g. `const n: number = "x"`) still shows. Flip Status to
-  Done once this passes.
+  genuine type error (e.g. `const n: number = "x"`) still shows.
 
 ## Rollout order
 
@@ -219,7 +230,8 @@ document setting `typescript.tsdk` at the real workspace root; or teach
 2. Write the plugin + unit test (Task 2).
 3. Add template files (Task 3–4; e2e needs no edit, see Acceptance).
 4. Docs (see Notes); propose PLAN.md updates to the user.
-5. Manual editor verification → flip Status to Done.
+5. ~~Manual editor verification → flip Status to Done.~~ Passed 2026-07-19
+   (second attempt; see Task 5 resolution).
 
 ## Notes
 

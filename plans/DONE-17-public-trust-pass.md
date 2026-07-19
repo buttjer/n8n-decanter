@@ -42,7 +42,7 @@ later.
   extension-less `template/*.example` files. Converting files would be wrong
   anyway: `decanter-ts-plugin/index.js.example` must stay CommonJS JS
   (tsserver `require()`s it in a build-free sync dir —
-  [Plan 4](INPROGRESS-4-editor-node-diagnostics.md) non-goal), and
+  [Plan 4](DONE-4-editor-node-diagnostics.md) non-goal), and
   `verify.mjs.example` gains nothing once linguist ignores examples.
 
 ## Tasks
