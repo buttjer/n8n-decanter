@@ -1,10 +1,14 @@
 # Plan 18 — pinData seeding & round-trip verification (smoke suite)
 
 **Priority:** P1 (small, research done, one smoke step + bookkeeping)
-**Status:** Not started (research 2026-07-19: **the recorded "public API
-cannot set pinData" claim is wrong for n8n 2.30.7** — verified in n8n source
-at the pinned tag; scoped 2026-07-19 by user decision to **n8n ≥ 2.30.7
-only** — public-API seeding, no fallback route)
+**Status:** Done (2026-07-19: smoke step landed and green against
+n8n 2.30.7 — the live probe confirmed the research, the public API accepts
+and persists `pinData` on PUT, and it survives an untouched pull→push
+round-trip; bookkeeping in BACKLOG.md/DONE-15/PLAN.md/plans-README updated.
+Research 2026-07-19: **the recorded "public API cannot set pinData" claim
+is wrong for n8n 2.30.7** — verified in n8n source at the pinned tag;
+scoped 2026-07-19 by user decision to **n8n ≥ 2.30.7 only** — public-API
+seeding, no fallback route)
 **Theme:** close the pinData half of the tags/pinned-data round-trip check by
 seeding pinData through the **public API** in the smoke suite (**n8n ≥ 2.30.7
 only** — the smoke pin is the support floor), and correct the stale claim in
