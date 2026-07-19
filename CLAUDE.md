@@ -39,9 +39,11 @@ changes with **Breaking:**. On release, rename `[Unreleased]` to
 - **Merging a PR with a non-empty `[Unreleased]` section is a release.** That
   PR itself rolls `[Unreleased]` → `[x.y.z] - <date>` and bumps
   `package.json` (semver; while 0.x: breaking → minor, everything else →
-  patch). After merge, tag the squash commit `vX.Y.Z` on main and push the
-  tag (once the package is on npm — plans/OPEN-13 — publishing joins this
-  step). Internal-only PRs (no `[Unreleased]` entries per the Changelog
+  patch). After merge, tag the squash commit `vX.Y.Z` on main, push the tag,
+  and create the GitHub Release from it with that version's changelog
+  section as the notes (`gh release create vX.Y.Z --verify-tag --notes-file
+  <section>`). Once the package is on npm (plans/OPEN-13), publishing joins
+  this step. Internal-only PRs (no `[Unreleased]` entries per the Changelog
   rules) merge without a version bump — so user-facing work never sits
   unreleased on main.
 - CI (typecheck + `npm test`) must be green before merge.
