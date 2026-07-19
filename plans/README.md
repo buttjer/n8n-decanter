@@ -89,6 +89,12 @@ items not yet claimed by one. Recommended order:
     stale 1.x-era claim), so the smoke suite seeds it via the API and
     asserts it survives an untouched pull→push round-trip. Scoped to
     n8n ≥ 2.30.7 only — no fallback seeding route.
+19. [Interactive workflow picker](OPEN-19-interactive-workflow-picker.md) —
+    bare `n8n-decanter` in an inited project becomes a TTY-only
+    type-to-filter picker (pulled workflows green, unpulled remote ones
+    yellow) with a follow-up verb menu; piped invocations keep printing
+    usage. Whether `completion` survives it is a
+    [DECISIONS-NEEDED](DECISIONS-NEEDED.md) entry.
 
 ## Conventions
 
