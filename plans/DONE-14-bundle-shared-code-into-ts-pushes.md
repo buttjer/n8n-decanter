@@ -258,7 +258,7 @@ Rules that keep it sane (all guard/compile errors, not silent behavior):
   imports (plus TS2307 because `shared/` isn't in the program — task 4).
 - **Cross-links**: [Plan 3](DONE-3-local-run-and-diff-fidelity.md)
   (`status --diff` readability of bundled output),
-  [Plan 4](INPROGRESS-4-editor-node-diagnostics.md) (ts-plugin must keep
+  [Plan 4](DONE-4-editor-node-diagnostics.md) (ts-plugin must keep
   suppressing on module-shaped node files),
   [Plan 7](OPEN-7-engine-true-simulation-suite.md) (simulation reuses the
   same compile choke point), [Plan 11](DONE-11-cli-look-and-feel.md) (diff

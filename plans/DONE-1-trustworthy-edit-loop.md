@@ -20,7 +20,7 @@ one workflow so noise from unrelated workflows disappears.
 
 - IDEAS: "js node files throw IDE errors … TS1108 / can't be redeclared … scope
   issue" (P1) — *redeclare half only; the TS1108 editor squiggle is
-  [Plan 4](INPROGRESS-4-editor-node-diagnostics.md)*
+  [Plan 4](DONE-4-editor-node-diagnostics.md)*
 - IDEAS: "the typecheck hook, just to the workflow it is currently worked on. Not
   global." (P1)
 - IDEAS (new): `Duration`/`Interval` stub gap (P1)
@@ -39,7 +39,7 @@ one workflow so noise from unrelated workflows disappears.
 2. **Commit the redeclare fix.** `moduleDetection: "force"` is currently
    uncommitted in `template/tsconfig.json.example` and root `tsconfig.json`.
    Making each node file its own module scope fixes the cross-file "cannot
-   redeclare" errors — [Plan 4](INPROGRESS-4-editor-node-diagnostics.md) reports this half
+   redeclare" errors — [Plan 4](DONE-4-editor-node-diagnostics.md) reports this half
    is already handled by `force`; confirm in-editor when you commit it. Commit it
    (with a CHANGELOG note if it changes the shipped template) and confirm the e2e
    "template content matches" assertion still passes.
@@ -47,7 +47,7 @@ one workflow so noise from unrelated workflows disappears.
      editor's own tsserver, not the CLI — `scripts/typecheck.mts` already wraps
      node bodies in an `async function`. `moduleDetection` / `module` knobs do
      **not** remove it (verified empirically in
-     [Plan 4](INPROGRESS-4-editor-node-diagnostics.md)). The real editor-squiggle fix lives
+     [Plan 4](DONE-4-editor-node-diagnostics.md)). The real editor-squiggle fix lives
      in that plan (a TS language-service plugin); until it lands, just document
      the false positive in the template's CLAUDE/AGENTS notes. Do **not** wrap
      files on disk (CLAUDE.md invariant).

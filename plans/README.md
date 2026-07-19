@@ -17,12 +17,13 @@ items not yet claimed by one. Recommended order:
    fetch real execution datasets (`executions` verb, gitignored temp data for
    agent-built fixtures). Done — `run --from-execution` deferred to
    [Plan 0](BACKLOG.md).
-4. [Editor node diagnostics](INPROGRESS-4-editor-node-diagnostics.md) — a TS
+4. [Editor node diagnostics](DONE-4-editor-node-diagnostics.md) — a TS
    language-service plugin that suppresses the editor-only TS1108/1375/1378 false
    positives on node files. Related to Plan 1's edit-loop work but larger
-   (needs a load-path spike), so it trails the first three. Implemented
-   (plugin ships in `template/decanter-ts-plugin/`); manual editor
-   verification pending.
+   (needs a load-path spike), so it trails the first three. Done — plugin
+   ships in `template/decanter-ts-plugin/` (released in 0.2.0); manual editor
+   verification passed once the one-time *Use Workspace Version* consent
+   was clicked.
 5. [Browser refresh after push](DONE-5-browser-refresh-after-push.md) — auto-refresh
    the n8n editor tab after a successful push, via a transparent dev proxy that
    injects an SSE live-reload client during `watch` (opt-in `browserReload`).
