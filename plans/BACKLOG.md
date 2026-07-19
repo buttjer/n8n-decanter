@@ -136,3 +136,88 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
             the Code-node sugar; and the public API v1 doesn't cleanly expose
             the running n8n version to pin against. Adds an online dependency
             to an otherwise-offline tool.
+
+## Recommendations (agent analysis — 2026-07-20)
+
+Findings from an overnight security/bug/convention sweep of the whole tree.
+Kept separate from the user's own items above; nothing above was reworded or
+reordered. Grouped by theme, roughly high-value first within each. Severity is
+this analysis's own read, not a promise.
+
+### Security & trust
+
+- [ ] **`run` executes node code with full host privileges — document and
+      narrow it.** `lib/run.mts` builds an `AsyncFunction` from the node body
+      and invokes it in the CLI's own process (`invoke`, line ~174). n8n runs
+      Code nodes in a locked-down task-runner sandbox; `run` does **not** —
+      free identifiers (`process`, `fetch`, `globalThis`, dynamic `import()`)
+      are all reachable, so a node file can touch the filesystem, network, and
+      env. This is by design for *your* code, but it's a real footgun for
+      agents that `run` generated/untrusted node files. **Recommend:** state
+      plainly in README + template `AGENTS.md` that `run` is not a sandbox
+      (never `run` a node you wouldn't execute by hand). Severity: moderate.
+- [ ] **`run`'s `$env` leaks the entire `process.env` by default.**
+      `lib/run.mts:150` — `$env: fixture.env ?? { ...process.env }`. A node
+      that reads or prints `$env` gets every exported variable of the CLI
+      process (which can include `N8N_API_KEY` and other secrets) straight into
+      the returned JSON on stdout. n8n's `$env` is scoped; this is not.
+      **Recommend:** default `$env` to `{}` (or a documented allowlist) unless
+      the fixture supplies `env`, with an explicit `--allow-env` opt-in for the
+      full-inherit behavior. Small change in `buildGlobals`. Severity: moderate.
+- [ ] **Document the `watch` live-reload proxy trust model.** `lib/proxy.mts`
+      binds `127.0.0.1` only (good) and is opt-in (`browserReload: "proxy"`),
+      but it's a transparent auth-passthrough tunnel to the n8n instance and
+      serves an unauthenticated `/__decanter/events` SSE endpoint. Localhost +
+      opt-in keeps risk low, but the trust model (any local process reaching
+      the port rides the browser's forwarded cookies; https/remote upstreams
+      are best-effort) deserves one explicit paragraph in PLAN.md/README beyond
+      the current "https is best-effort" note. Severity: low.
+- [ ] **Graduate "Recommend scoped API keys" (already listed above) to the
+      docs pass.** With `run`'s env exposure (above) and `.env` living next to
+      the config, a minimal-scope key is the cheapest blast-radius reduction.
+      No code — init/README/template wording. (Cross-ref the existing item.)
+
+### Correctness & cleanups (all minor — no behavior bug found)
+
+- [ ] **Dead comment guard in `parseEnvFile`.** `lib/config.mts:11` —
+      `m[0].trimStart().startsWith("#")` can never be true: the key regex
+      (`[A-Za-z_]…`) already rejects any `#`-leading line, so `m` is `null`
+      there. Harmless, but delete the guard or add a real inline-`#` handling
+      story so the intent is honest.
+- [ ] **Unused `log` parameter in `loadFixture`.** `lib/run.mts:76` —
+      `loadFixture(fixturePath, log)` never uses `log`. Drop it (a linter would
+      have caught this — see tooling below).
+- [ ] **Value-flag parser can swallow a following token.** `n8n-decanter.mts`
+      (the `--status`/`--limit` peel-off) consumes the next arg unconditionally
+      when no `=value` is given, so `n8n-decanter --status pull` reads `pull` as
+      the status value and then finds no verb. Documented-as-needs-a-value, but
+      a friendlier error ("`--status` needs a value; did you mean `status`?")
+      or requiring `=` for these flags would remove the surprise. Severity: low.
+
+### Tooling & conventions
+
+- [ ] **Add a linter (or remove the stray disable directive).**
+      `lib/util.mts:76` carries `// eslint-disable-next-line no-control-regex`,
+      but **there is no ESLint (or any linter) config in the repo** — the
+      directive references tooling that was never wired up. For a public TS CLI
+      with CONTRIBUTING.md, CI, and Dependabot, an automated lint/style gate is
+      the conventional missing piece (CI runs only typecheck + test).
+      **Recommend:** adopt a single-dep, fast linter — **Biome** fits the
+      "minimal deps / no build for dev" ethos better than ESLint's plugin
+      stack — wire it into `npm run` + the CI job, then the disable directive
+      becomes real (or is dropped). Would also have caught the two cleanups
+      above.
+- [ ] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
+      templates. Low priority for a solo project, but cheap and conventional if
+      contributions are wanted (CONTRIBUTING.md already invites them).
+
+### Positive notes (no action — recorded so a later sweep doesn't re-flag)
+
+- Credential handling is solid: `.env` gitignored + init warns when it isn't,
+  agent settings deny `Read(.env)`/`push --force`, the MCP wrapper keeps the
+  key out of the committed `.mcp.json`, and API errors only echo the server's
+  own response body.
+- Corrupt-`.decanter.json` resilience (one bad state file skips only its own
+  folder), request timeouts with a clear message, and deterministic
+  key-sorted workflow JSON are all handled well and well-tested (151 unit
+  tests; extensive e2e/proxy suites).
