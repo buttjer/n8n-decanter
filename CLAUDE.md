@@ -72,6 +72,10 @@ changes with **Breaking:**. On release, rename `[Unreleased]` to
 - GitHub-side enforcement (require PR + green CI, block force-push) needs a
   ruleset, which the Free plan only enforces on public repos — enable it
   when the repo goes public (plans/OPEN-13).
+- **Sandboxed shells:** `git push`/`gh` fail in the command sandbox
+  (credential helper unreachable — "could not read Username"); rerun that
+  command with sandbox escalation. Details + `.git/config` gotcha:
+  AGENTS.md "Sandboxed shells".
 
 ## Backlog
 
