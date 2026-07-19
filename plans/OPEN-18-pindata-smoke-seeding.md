@@ -3,10 +3,12 @@
 **Priority:** P1 (small, research done, one smoke step + bookkeeping)
 **Status:** Not started (research 2026-07-19: **the recorded "public API
 cannot set pinData" claim is wrong for n8n 2.30.7** — verified in n8n source
-at the pinned tag; awaiting user review before implementation)
+at the pinned tag; scoped 2026-07-19 by user decision to **n8n ≥ 2.30.7
+only** — public-API seeding, no fallback route)
 **Theme:** close the pinData half of the tags/pinned-data round-trip check by
-seeding pinData through the **public API** in the smoke suite, and correct the
-stale claim in the backlog/PLAN.md.
+seeding pinData through the **public API** in the smoke suite (**n8n ≥ 2.30.7
+only** — the smoke pin is the support floor), and correct the stale claim in
+the backlog/PLAN.md.
 
 ## Why
 
@@ -56,12 +58,10 @@ recorded during the smoke session without a live disproof at 2.30.7.
 
 Also established:
 
-- **Fallback route (verified in source, build only if needed)**:
-  `docker exec <container> n8n import:workflow --input=…` — the command
-  `jsonParse`s the file and hands the whole object to
-  `workflowRepository.create`; `pinData` is a `WorkflowEntity` column, so it
-  rides along with no HTTP surface
-  (`packages/cli/src/commands/import/workflow.ts`).
+- **Fallback seeding route — dropped (scope decision 2026-07-19)**: a
+  `docker exec <container> n8n import:workflow` path was verified in source,
+  but the check supports **n8n ≥ 2.30.7 only**, where the public API
+  suffices — no fallback gets built or kept for regressions.
 - **Execution caveat (for [Plan 7](OPEN-7-engine-true-simulation-suite.md),
   not this plan)**: docs say pinned data is honored only in *manual*
   executions, never production — storage vs. execution behavior are separate
@@ -93,19 +93,18 @@ Also established:
      parenthetical (pinData half verified, date, n8n 2.30.7, public-API
      seeding), correct the wrong "public API cannot set it" note, and check
      the item's box once the live run is green. Resolve the "pinData seeding
-     routes" sub-item with the decision: **public API seeding**; fallback
-     `docker exec` + `n8n import:workflow` recorded for regressions.
+     routes" sub-item with the decision: **public-API seeding, n8n ≥ 2.30.7
+     only — no fallback route**.
    - [Plan 15](DONE-15-docker-n8n-smoke-suite.md): status note — pinData
      half of task 5 landed after all via this plan.
    - `PLAN.md` (~lines 624–629): upgrade "preserved *by construction*" to
-     live-verified with date, and record that the 2.x public API *can* write
-     `pinData` (raise with user per `CLAUDE.md` — approving this plan is
-     that ask).
+     live-verified with date, and record that the public API *can* write
+     `pinData` on **n8n ≥ 2.30.7** (raise with user per `CLAUDE.md` —
+     approving this plan is that ask).
    - `plans/README.md`: add the entry for Plan 18.
 3. **Contingency** — if the live probe fails despite the source reading:
-   stop, record the exact HTTP status/body here and in the backlog, then
-   decide the fallback (likely `docker exec` + `n8n import:workflow`). Don't
-   build it speculatively.
+   stop and record the exact HTTP status/body here and in the backlog.
+   **No fallback route** — support is n8n ≥ 2.30.7 only.
 
 ## Acceptance / verification
 
@@ -119,8 +118,11 @@ Also established:
 
 - No CLI/user-facing changes — `pinData` stays untouched by the decanter's
   data model (never sent in PUTs, not extracted on pull).
-- No internal-REST or SQLite seeding route (dropped by the research; import
-  fallback only on probe failure).
+- No fallback seeding route of any kind (internal REST, SQLite, or
+  `n8n import:workflow`) — public API only.
+- No support for n8n < 2.30.7 — the 1.x public API rejects `pinData`
+  outright, earlier 2.x versions are untested, and the smoke pin (2.30.7)
+  is the floor.
 - Plan 7's execution-mode pinData question — noted above, handled there.
 
 ## Notes
