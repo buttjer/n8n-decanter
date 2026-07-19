@@ -145,7 +145,9 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
    `npm publish --provenance` — verified-build badge. The `repository` field
    already matches `buttjer/n8n-decanter`.
 5. **Wait for CI green** on the pushed repo, then create the GitHub Release
-   from tag `v0.1.0` with the CHANGELOG 0.1.0 section as notes.
+   from tag `v0.1.0` with the CHANGELOG 0.1.0 section as notes. *(Done
+   2026-07-19 — Releases exist for v0.1.0 and v0.2.0; the procedure is now a
+   standard release step per CLAUDE.md.)*
 6. **Publish:** `npm publish` (from CI with provenance preferred; locally,
    `npm publish` after `npm login` works too). Post-publish check:
    `npx n8n-decanter uuid` from a machine with Node >= 22.18.
@@ -162,6 +164,10 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
 
 ## Notes
 
+- Pre-public hygiene/trust items (linguist stats → 100% TypeScript,
+  SECURITY.md, stale README fix, branch cleanup) and the history/secrets
+  audit verdicts live in
+  [Plan 17](INPROGRESS-17-public-trust-pass.md) (2026-07-19).
 - No CHANGELOG entry for this plan's repo/packaging work — it's
   infrastructure, not CLI behavior (per CLAUDE.md changelog rules).
 - The npm version badge in the README 404s until the first publish — expected.
