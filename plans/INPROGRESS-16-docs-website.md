@@ -1,0 +1,121 @@
+# Plan 16 — Documentation website
+
+**Priority:** P2
+**Status:** In progress
+**Theme:** A static documentation website (Tailwind-styled) for n8n-decanter:
+landing page + real docs pages carved out of the README, deployed alongside
+the open-source release.
+
+## Why
+
+The README is release-quality but is becoming one long page: pitch, setup,
+per-verb behavior, data model, TS compilation, guards, agent integration all
+in one scroll. A docs site gives each topic its own page and URL (linkable
+from issues, npm, agent configs), gives the project a landing page for the
+public launch ([Plan 13](OPEN-13-open-source-release.md)), and creates room
+for content that doesn't fit a README (guides, FAQ, screenshots/casts).
+
+## Source
+
+Direct user request (2026-07-19). No Plan 0 entry.
+
+## Design decision
+
+- **Stack: Astro + Tailwind + MDX**, static output, in a `website/` dir with
+  its own `package.json` (a separate npm workspace-free subproject — the CLI
+  keeps its no-build-for-dev property; the site is the one thing that
+  builds, and only in its own dir).
+  - Astro over Starlight/VitePress/Docusaurus: those ship their own theme
+    systems and fight custom Tailwind styling; the whole point here is that
+    **the user supplies the Tailwind settings** (see Notes), so we want a
+    thin custom layout where Tailwind is the design system, not a skin.
+  - Astro over Next.js: static-first, zero client JS by default, built-in
+    Shiki code highlighting and content collections — a docs site needs
+    nothing more.
+  - **Tailwind v4** (CSS-first `@theme`) via `@tailwindcss/vite` by default;
+    if the user's settings arrive as a v3 `tailwind.config.js`, use v4's
+    `@config` compatibility layer or pin v3 — decide when the settings land.
+- **Hosting: GitHub Pages** via Actions (free, no new accounts, fits the
+  Plan 13 repo). Cloudflare Pages is the fallback if Pages limits chafe or
+  a custom domain/redirects story is wanted — flag before switching.
+- **README stays the npm/GitHub front door** but slims down after the site
+  is live: pitch, quickstart, screenshot, link to the site. Deep per-verb
+  and data-model detail moves to the site to stop the two drifting.
+  PLAN.md remains the internal design source of truth — the site documents
+  *usage*, never replaces PLAN.md.
+
+## Tasks
+
+1. **Scaffold `website/`** — Astro project (`npm create astro` minimal), MDX
+   integration, Tailwind v4 via `@tailwindcss/vite`, TypeScript strict.
+   Own `package.json`/lockfile; `website/dist/` gitignored; not in the npm
+   `files` whitelist (verify with `npm pack --dry-run`). Existing `docs/`
+   (README screenshot) stays as-is.
+2. **Theme slot for the user's Tailwind settings** — single
+   `website/src/styles/theme.css` holding the `@theme` tokens (colors, fonts,
+   radii) with a **neutral placeholder palette**, so layout/content work is
+   not blocked. **Blocked on user input:** swap in the real settings when
+   provided; nothing else should hardcode colors/fonts outside this file.
+3. **Docs shell** — layouts + components, all Tailwind:
+   - sidebar nav (grouped: Getting started / CLI reference / Concepts /
+     Agents), mobile drawer, prev/next links
+   - prose styling (`@tailwindcss/typography` or hand-rolled to match the
+     theme), Shiki code blocks matching light/dark
+   - dark mode (class strategy, respects `prefers-color-scheme`, toggle)
+   - landing page: pitch (reuse README bullets), screenshot, install
+     one-liner, links to GitHub/npm
+4. **Content** — MDX pages carved from README + template `AGENTS.md`
+   (usage-level only; PLAN.md internals stay out):
+   - Getting started: install, Node >= 22.18 + the `SyntaxError` engine-floor
+     warning, `init`, first pull
+   - CLI reference: one page per verb (`init`, `pull`, `push`, `status`,
+     `check`, `watch`, `run`, `list`, `rename`, `uuid`) — flags, exit codes,
+     offline/online
+   - Concepts: sync layout & data model (`workflow.json` placeholders,
+     `.decanter.json`, markers), TS nodes & `shared/` bundling, the two push
+     gates (compliance vs drift, what `--force` does and doesn't bypass),
+     watch & browser reload, auto-commits
+   - Agents: what `init` scaffolds (AGENTS.md, hooks, editor configs), the
+     offline `check`/`run` feedback loop
+   - FAQ/troubleshooting
+5. **Deploy** — `.github/workflows/docs.yml`: build on pushes to `main`
+   touching `website/`, deploy via `actions/deploy-pages`; PR builds as
+   check only. **Gated on the repo being public** (Plan 13) — Pages on Free
+   private repos isn't available.
+6. **Polish** — sitemap, canonical/OG meta, favicon, 404 page, and a
+   link-check (e.g. `astro build` + a checker) wired into the docs CI job.
+7. **README slim-down** (after the site is live) — trim deep detail, link to
+   the site; PR that also adds the site URL to `package.json` `homepage`
+   and the GitHub repo's website field.
+8. *(Optional)* **Search** — Pagefind post-build step; cheap with Astro,
+   fully static. Skip if the nav suffices at this page count.
+
+## Acceptance / verification
+
+- [ ] `npm run dev` / `npm run build` in `website/` work locally; build is
+      green in CI on PRs.
+- [ ] Site live on GitHub Pages; every CLI verb has a page; landing page
+      renders the theme (placeholder until user settings, real after).
+- [ ] Link check passes (internal links + README ↔ site cross-links).
+- [ ] `npm pack --dry-run` of the CLI package lists nothing from `website/`.
+- [ ] README links to the site; no content exists only in a stale copy on
+      both sides (each topic has one home).
+
+## Non-goals
+
+- Docs versioning (single version while 0.x), i18n, blog, comments.
+- Any runtime/client framework beyond what Astro islands need (target:
+  zero client JS except the dark-mode toggle and optional search).
+- Documenting PLAN.md internals — the site is user docs.
+
+## Notes
+
+- **Blocked input:** the user provides the Tailwind settings later — task 2
+  isolates them to one file so everything else can proceed with placeholders.
+- Ordering: tasks 1–4 + 6 are fully local and can start now; task 5+7 land
+  with/after [Plan 13](OPEN-13-open-source-release.md)'s public flip.
+- No CHANGELOG entry — the website is project infrastructure, not CLI
+  behavior (same reasoning as Plan 13's repo/packaging work). The README
+  slim-down (task 7) is also changelog-exempt as docs.
+- Domain: default is `buttjer.github.io/n8n-decanter`; a custom domain is a
+  user decision — record it here if/when chosen.

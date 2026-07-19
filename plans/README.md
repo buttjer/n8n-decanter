@@ -73,6 +73,11 @@ items not yet claimed by one. Recommended order:
     container: proves bundled nodes execute in the real sandbox and
     re-verifies the recorded API semantics (publish model, tags/pinned
     round-trip) on every version bump. Nothing user-facing.
+16. [Documentation website](INPROGRESS-16-docs-website.md) — static docs site
+    (Astro + Tailwind, `website/` subproject) carved out of the README:
+    landing page, per-verb CLI reference, concepts, agent docs; deployed to
+    GitHub Pages once the repo is public (Plan 13). Theme tokens slot in
+    user-provided Tailwind settings.
 
 ## Conventions
 
