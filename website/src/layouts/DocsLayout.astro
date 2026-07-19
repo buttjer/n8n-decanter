@@ -1,0 +1,36 @@
+---
+import PrevNext from "../components/PrevNext.astro";
+import Sidebar from "../components/Sidebar.astro";
+import BaseLayout from "./BaseLayout.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  id: string;
+}
+
+const { title, description, id } = Astro.props;
+---
+
+<BaseLayout title={`${title} · n8n-decanter`} description={description}>
+  <div class="mx-auto flex w-full max-w-6xl gap-10 px-4 sm:px-6">
+    <aside class="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-56 shrink-0 overflow-y-auto py-8 lg:block">
+      <Sidebar />
+    </aside>
+    <div class="min-w-0 flex-1 py-8">
+      <details class="mb-6 rounded-lg border border-zinc-200 lg:hidden dark:border-zinc-800">
+        <summary class="cursor-pointer px-4 py-2 text-sm font-medium">Menu</summary>
+        <div class="border-t border-zinc-200 p-4 dark:border-zinc-800">
+          <Sidebar />
+        </div>
+      </details>
+      <article
+        class="prose prose-zinc dark:prose-invert max-w-none prose-headings:tracking-tight prose-a:text-accent-700 dark:prose-a:text-accent-300 prose-code:before:content-none prose-code:after:content-none"
+      >
+        <h1>{title}</h1>
+        <slot />
+      </article>
+      <PrevNext id={id} />
+    </div>
+  </div>
+</BaseLayout>

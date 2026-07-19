@@ -1,0 +1,39 @@
+---
+title: run
+description: Execute a Code node offline against a faked n8n context, with optional fixtures.
+order: 10
+---
+
+```sh
+n8n-decanter <node-file> run [fixture.json]
+```
+
+Actually executes a node's body against a faked n8n context (`$input`,
+`$json`, `$('Node')`, `DateTime`, `$getWorkflowStaticData`, …) and prints the
+items it returns. Fully offline — no credentials, no network. Prefer this
+over hand-rolling a throwaway test script.
+
+The run mode (`runOnceForAllItems` / `runOnceForEachItem`) is read from the
+node's entry in `workflow.json`, so each-item nodes are looped once per input
+item.
+
+## Fixtures
+
+The optional fixture JSON supplies the context; every field is optional:
+
+```json
+{
+  "input": [{ "json": { "sku": "A1" } }],
+  "nodes": { "Fetch Products": [{ "json": { "id": 1 } }] },
+  "env": { "REGION": "eu" },
+  "staticData": { "global": { "cursor": 42 } }
+}
+```
+
+- `input` feeds `$input`/`$json`; without a fixture the input defaults to a
+  single empty item.
+- `nodes` backs `$('Node Name')`.
+- `$getWorkflowStaticData` is seeded from `workflow.json`'s `staticData`
+  (`global` and this node's slice); a fixture `staticData` replaces the
+  matching slice (`"node"` refers to the node being run). Mutations are
+  visible during the run but never persisted — `run` is offline.

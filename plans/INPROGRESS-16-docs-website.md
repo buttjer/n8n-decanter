@@ -90,16 +90,46 @@ Direct user request (2026-07-19). No Plan 0 entry.
 8. *(Optional)* **Search** — Pagefind post-build step; cheap with Astro,
    fully static. Skip if the nav suffices at this page count.
 
+## Done in the initial pass (2026-07-19)
+
+- [x] **Task 1 — scaffold:** `website/` with astro 5.18 / tailwind 4.3 /
+      mdx 4.3 + sitemap, own lockfile, `dist/`+`.astro/` gitignored.
+      `ASTRO_TELEMETRY_DISABLED=1` needed in sandboxes/CI (telemetry writes
+      to `~/Library/Preferences`).
+- [x] **Task 2 — theme slot:** `src/styles/theme.css` (`@theme` tokens,
+      placeholder amber accent + system font stacks). Still awaiting the
+      user's real Tailwind settings — swap happens only in this file.
+- [x] **Task 3 — docs shell:** header, grouped sidebar (active state,
+      mobile `<details>` drawer), prev/next, class-based dark mode with
+      pre-paint script + toggle, Shiki dual themes, typography prose.
+- [x] **Task 4 — content:** 21 MDX pages (2 getting-started, 12 CLI incl.
+      overview/completion, 6 concepts, 2 agents, 1 FAQ), sourced from
+      README + template `AGENTS.md`. Root-relative links get the deploy
+      base via a rehype plugin in `astro.config.mjs` — content never
+      hardcodes `/n8n-decanter`.
+- [x] **Task 5 — deploy workflow written:** `.github/workflows/docs.yml`
+      (PR = build + link check; main = deploy to Pages). **Activation
+      gated** on the repo being public + Pages enabled (Settings → Pages →
+      Source: GitHub Actions).
+- [x] **Task 6 — polish:** sitemap, canonical/OG meta, favicon, 404,
+      `scripts/check-links.mjs` wired into CI (`npm run check:links`).
+
+Remaining: task 7 (README slim-down + `homepage`, after the site is live)
+and optional task 8 (Pagefind).
+
 ## Acceptance / verification
 
-- [ ] `npm run dev` / `npm run build` in `website/` work locally; build is
-      green in CI on PRs.
+- [x] `npm run dev` / `npm run build` in `website/` work locally; build is
+      green in CI on PRs. (local build + link check green 2026-07-19; CI
+      run pends the push)
 - [ ] Site live on GitHub Pages; every CLI verb has a page; landing page
       renders the theme (placeholder until user settings, real after).
-- [ ] Link check passes (internal links + README ↔ site cross-links).
-- [ ] `npm pack --dry-run` of the CLI package lists nothing from `website/`.
+      (all verbs have pages; "live" gated on Plan 13)
+- [x] Link check passes (internal links + README ↔ site cross-links).
+      (25 pages, 0 broken; README cross-link lands with task 7)
+- [x] `npm pack --dry-run` of the CLI package lists nothing from `website/`.
 - [ ] README links to the site; no content exists only in a stale copy on
-      both sides (each topic has one home).
+      both sides (each topic has one home). (task 7, after go-live)
 
 ## Non-goals
 

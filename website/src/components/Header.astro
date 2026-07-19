@@ -1,0 +1,36 @@
+---
+import { href } from "../lib/url";
+import ThemeToggle from "./ThemeToggle.astro";
+---
+
+<header
+  class="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90"
+>
+  <div class="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+    <a href={href("/")} class="flex items-center gap-2 font-semibold tracking-tight">
+      <img src={href("/favicon.svg")} alt="" class="h-6 w-6" />
+      n8n-decanter
+    </a>
+    <nav class="flex items-center gap-4 text-sm">
+      <a
+        href={href("/docs/getting-started/installation/")}
+        class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        Docs
+      </a>
+      <a
+        href="https://github.com/buttjer/n8n-decanter"
+        class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        GitHub
+      </a>
+      <a
+        href="https://www.npmjs.com/package/n8n-decanter"
+        class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        npm
+      </a>
+      <ThemeToggle />
+    </nav>
+  </div>
+</header>

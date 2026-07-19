@@ -1,0 +1,40 @@
+---
+import "../styles/global.css";
+import Header from "../components/Header.astro";
+import { href } from "../lib/url";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const {
+  title,
+  description = "Work on n8n like a codebase — built for AI coding agents.",
+} = Astro.props;
+---
+
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={href("/favicon.svg")} />
+    <link rel="sitemap" href={href("/sitemap-index.xml")} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    {Astro.site && <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />}
+    <script is:inline>
+      // Runs before paint to avoid a light-mode flash on dark-theme visits.
+      const stored = localStorage.getItem("theme");
+      const dark = stored ? stored === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.classList.toggle("dark", dark);
+    </script>
+  </head>
+  <body class="min-h-full bg-white font-sans text-zinc-800 antialiased dark:bg-zinc-950 dark:text-zinc-200">
+    <Header />
+    <slot />
+  </body>
+</html>

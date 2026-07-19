@@ -1,0 +1,39 @@
+---
+import { docsNav } from "../lib/nav";
+
+const nav = await docsNav();
+const current = Astro.url.pathname.replace(/\/$/, "");
+---
+
+<nav class="space-y-6 text-sm">
+  {
+    nav.map((group) => (
+      <div>
+        <h2 class="mb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+          {group.label}
+        </h2>
+        <ul class="space-y-1 border-l border-zinc-200 dark:border-zinc-800">
+          {group.items.map((item) => {
+            const active = current === item.href.replace(/\/$/, "");
+            return (
+              <li>
+                <a
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  class:list={[
+                    "-ml-px block border-l-2 py-1 pl-3",
+                    active
+                      ? "border-accent-500 font-medium text-accent-700 dark:text-accent-300"
+                      : "border-transparent text-zinc-600 hover:border-zinc-400 hover:text-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100",
+                  ]}
+                >
+                  {item.title}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    ))
+  }
+</nav>

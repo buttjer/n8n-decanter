@@ -1,0 +1,97 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { href } from "../lib/url";
+
+const features = [
+  {
+    title: "Real version control",
+    text: "Meaningful diffs, PRs, blame; every push and pull is auto-committed.",
+  },
+  {
+    title: "TypeScript or typed JS",
+    text: "Write nodes in TS (compiled on push); n8n globals ($input, $('…'), …) are typed in both.",
+  },
+  {
+    title: "Agent-native",
+    text: "init scaffolds Claude Code / Cursor / Codex configs and verification hooks; offline check and run give agents a credential-free feedback loop.",
+  },
+  {
+    title: "Guardrails",
+    text: "A compliance guard and typecheck gate block broken pushes; a drift guard keeps you from clobbering remote edits.",
+  },
+  {
+    title: "Live editing",
+    text: "watch pushes on save and auto-reloads the n8n editor tab via a local proxy.",
+  },
+  {
+    title: "Shared code and small libraries",
+    text: ".ts nodes import helpers and types from shared/ and opted-in npm packages; push bundles them into self-contained nodes that run anywhere, n8n Cloud included.",
+  },
+  {
+    title: "Built for n8n 2.x",
+    text: "The draft/publish model is a first-class citizen, and every API-touching behavior is verified against a real n8n 2.x instance by an automated integration suite.",
+  },
+];
+---
+
+<BaseLayout title="n8n-decanter — work on n8n like a codebase">
+  <main class="mx-auto w-full max-w-6xl px-4 sm:px-6">
+    <section class="py-16 text-center sm:py-24">
+      <h1 class="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-balance sm:text-5xl">
+        Work on n8n like a codebase —
+        <span class="text-accent-600 dark:text-accent-400">built for AI coding agents.</span>
+      </h1>
+      <p class="mx-auto mt-6 max-w-2xl text-lg text-zinc-600 dark:text-zinc-400">
+        n8n-decanter syncs your n8n instance into a git-friendly, folder-per-workflow layout:
+        every Code node's source becomes its own <code class="font-mono text-base">.js</code> or
+        <code class="font-mono text-base">.ts</code> file, editable in your IDE or by your agent,
+        and pushed back through the n8n API.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+        <a
+          href={href("/docs/getting-started/installation/")}
+          class="rounded-lg bg-accent-600 px-5 py-2.5 font-medium text-white hover:bg-accent-700"
+        >
+          Get started
+        </a>
+        <a
+          href="https://github.com/buttjer/n8n-decanter"
+          class="rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          GitHub
+        </a>
+      </div>
+      <pre
+        class="mx-auto mt-8 w-fit max-w-full overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-50 px-5 py-3 text-left font-mono text-sm dark:border-zinc-800 dark:bg-zinc-900"><code>npm install -g n8n-decanter</code></pre>
+    </section>
+
+    <section class="pb-16">
+      <img
+        src={href("/screenshot.webp")}
+        alt="A decanted workflow in VS Code: workflow.json plus per-node code files"
+        class="mx-auto max-w-full rounded-xl border border-zinc-200 shadow-lg dark:border-zinc-800"
+        loading="lazy"
+      />
+    </section>
+
+    <section class="grid gap-6 pb-20 sm:grid-cols-2 lg:grid-cols-3">
+      {
+        features.map((feature) => (
+          <div class="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
+            <h2 class="font-semibold">{feature.title}</h2>
+            <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{feature.text}</p>
+          </div>
+        ))
+      }
+    </section>
+  </main>
+
+  <footer class="border-t border-zinc-200 py-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+    <p>
+      MIT License ·
+      <a href="https://github.com/buttjer/n8n-decanter" class="hover:underline">GitHub</a> ·
+      <a href="https://www.npmjs.com/package/n8n-decanter" class="hover:underline">npm</a>
+    </p>
+    <p class="mt-2">Not affiliated with or endorsed by n8n GmbH.</p>
+  </footer>
+</BaseLayout>

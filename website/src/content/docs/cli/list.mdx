@@ -1,0 +1,19 @@
+---
+title: list
+description: List pulled workflows — name, id, folder — and optionally remote ones.
+order: 9
+---
+
+```sh
+n8n-decanter list [--remote]
+```
+
+Lists every pulled workflow with its name, id, and folder path. Offline by
+default.
+
+## `--remote`
+
+Also queries the instance and appends workflows that exist remotely but
+haven't been pulled yet (marked `(not pulled)`) — the quick way to find the
+id for a [pull](/docs/cli/pull/), though `pull` also resolves unpulled names
+directly.
