@@ -46,8 +46,17 @@ changes with **Breaking:**. On release, rename `[Unreleased]` to
   this step. Internal-only PRs (no `[Unreleased]` entries per the Changelog
   rules) merge without a version bump — so user-facing work never sits
   unreleased on main.
-- CI (typecheck + `npm test`) must be green before merge.
-- **Worktrees by default:** any task that modifies repo files starts by
+- CI (typecheck + `npm test`) must be green before merge. **Docs fast-path
+  PRs are exempt from waiting** — markdown-only changes can't fail
+  typecheck/tests (real enforcement arrives with the public-repo ruleset,
+  plans/OPEN-13).
+- **Docs fast path:** a change touching only Markdown (`plans/`, `*.md`)
+  skips the worktree — branch directly in the main checkout
+  (`git switch -c chore/x`), commit, PR, merge immediately without waiting
+  for CI, then `git switch main && git pull` (merged branches auto-delete
+  on GitHub). **Never commit to main directly, fast path included.**
+- **Worktrees for code:** any other repo-modifying task (code, config,
+  tests, template, or anything mixing code with docs) starts by
   creating a worktree in the gitignored `.worktrees/` dir (`git worktree
   add -b feat/x .worktrees/feat-x main`) and working there — don't edit
   the main checkout unless the user explicitly says to. Read-only work
