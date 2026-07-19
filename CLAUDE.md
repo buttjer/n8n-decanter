@@ -47,11 +47,16 @@ changes with **Breaking:**. On release, rename `[Unreleased]` to
   rules) merge without a version bump — so user-facing work never sits
   unreleased on main.
 - CI (typecheck + `npm test`) must be green before merge.
-- Parallel features: use `git worktree`, one branch per worktree, living in
-  the gitignored `.worktrees/` dir (`git worktree add -b feat/x
-  .worktrees/feat-x main`). Each worktree needs its own `npm install`.
-  Concurrent `npm test` across worktrees is safe (tests bind ephemeral
-  ports); concurrent `test:smoke` is not (fixed Docker container name).
+- **Worktrees by default:** any task that modifies repo files starts by
+  creating a worktree in the gitignored `.worktrees/` dir (`git worktree
+  add -b feat/x .worktrees/feat-x main`) and working there — don't edit
+  the main checkout unless the user explicitly says to. Read-only work
+  (questions, reviews, exploration) needs no worktree. Claude Code enters
+  it via `EnterWorktree` with `path: .worktrees/feat-x`. After the PR is
+  merged, remove the worktree and delete the branch. Each worktree needs
+  its own `npm install`. Concurrent `npm test` across worktrees is safe
+  (tests bind ephemeral ports), and so is concurrent `test:smoke`
+  (PID-suffixed container name, ephemeral host port, mkdtemp work dir).
   **Never run `git clean -fdx`/`-fdX` from the repo root** — it deletes
   `.worktrees/` including uncommitted work; clean inside subdirs (e.g.
   `dist/`) instead.
