@@ -198,6 +198,28 @@ these are accepted, not oversights:
 Any future revival of these lands as its own small plan/PR, not by reopening
 this one.
 
+## `llms.txt` / `llms-full.txt` (2026-07-20)
+
+Small post-close addition (own PR, plan not reopened): the build now emits
+[llmstxt.org](https://llmstxt.org/) files for coding agents.
+
+- Two static endpoints — `website/src/pages/llms.txt.ts` (index: project
+  header + the sidebar link list) and `llms-full.txt.ts` (every doc's full
+  Markdown body inlined, sidebar order). Both delegate to
+  `website/src/lib/llms.ts`, which reuses the existing `docsNav()`/`flatDocs()`
+  ordering and reads each entry's `body` from the `docs` content collection —
+  no new dependency, no separate corpus to keep in sync.
+- Links are **absolutized** against `context.site` (`new URL(href, site)`),
+  reusing the base-prefixed `href()` paths, so they carry the full
+  `buttjer.github.io/n8n-decanter/…` origin.
+- **Base-path caveat:** with `base: /n8n-decanter` the files land at
+  `/n8n-decanter/llms.txt`, not the conventional site-root `/llms.txt`. Fine
+  for the Pages project site; a future custom-domain deploy makes them
+  root-level automatically. The `@astrojs/sitemap` integration ignores the raw
+  `.txt` endpoints (expected — llms.txt isn't a sitemap entry), and
+  `check-links.mjs` only scans `.html`, so it doesn't touch them.
+- Changelog-exempt for the same reason as the rest of the site (line ~215).
+
 ## Non-goals
 
 - Docs versioning (single version while 0.x), i18n, blog, comments.
