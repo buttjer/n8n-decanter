@@ -72,7 +72,10 @@ the network credential path git needs, while local git works fine:
   the sandbox. This is an environment artifact, not an auth problem: rerun
   the *same* command with the sandbox escalation your harness provides
   (Claude Code: retry the Bash call with `dangerouslyDisableSandbox: true`;
-  don't loosen the sandbox config for this).
+  don't loosen the sandbox config for this). `git push *` is on the Claude
+  Code allowlist (`.claude/settings.json`) so it runs without a permission
+  prompt — only the sandbox escalation is still required; force-push
+  (`--force`/`-f`) stays denied.
 - **`.git/config` writes are blocked sandboxed** — e.g. `git branch -D` of
   a branch with an upstream deletes the branch but then warns `could not
   lock config file`, leaving a stale `branch.<name>` section. Clean up
