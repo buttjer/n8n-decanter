@@ -136,6 +136,10 @@ plan's `## Source`. This file holds the remainder so nothing is orphaned.
             the Code-node sugar; and the public API v1 doesn't cleanly expose
             the running n8n version to pin against. Adds an online dependency
             to an otherwise-offline tool.
+- [ ] **`executions` missing from the interactive menu** (2026-07-20) — the
+      picker's per-workflow verb menu (`PICKER_VERBS` in `lib/picker.mts`)
+      offers only `status`/`pull`/`push`/`watch`/`check`; `executions` (fetch
+      run data) has no entry, so it's CLI-only. Add it to the menu.
 
 ## Recommendations (agent analysis — 2026-07-20)
 
