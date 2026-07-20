@@ -96,11 +96,13 @@ items not yet claimed by one. Recommended order:
     yellow) with a follow-up verb menu; piped invocations keep printing
     usage. `completion` stays alongside it (decided 2026-07-19).
 20. [CLI publish lifecycle](OPEN-20-cli-publish-lifecycle.md) — close the
-    n8n 2.x draft→published loop from the CLI: `publish`/`unpublish` verbs, a
-    version-aware `status` line, and a stale-fixture warning for `executions`.
-    Groups three backlog items off PLAN.md's publish-semantics research;
-    endpoint/field shapes gated on live smoke verification. Proposed
-    2026-07-20.
+    n8n 2.x workflow lifecycle from the CLI: `publish`/`unpublish` plus
+    `create` (blank server-born draft, pulled immediately) and `delete`
+    (confirmation-gated, local folder untouched), a version-aware `status`
+    line, and a stale-fixture warning for `executions`. Groups three backlog
+    items off PLAN.md's publish-semantics research + a user extension
+    (2026-07-20); endpoint/field shapes gated on live smoke verification.
+    From-a-repo-folder creation stays in Plan 21. Proposed 2026-07-20.
 21. [Repo-authored workflows](OPEN-21-repo-authored-workflows.md) — `add` verb
     (scaffold a Code node in one step, offline) and `push --create` (create a
     workflow remotely from a repo folder via 2.x `POST /workflows`). The
