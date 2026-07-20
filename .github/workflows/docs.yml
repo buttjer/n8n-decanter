@@ -11,6 +11,10 @@ on:
 env:
   ASTRO_TELEMETRY_DISABLED: "1"
 
+# Least privilege default; the deploy job widens this for GitHub Pages below.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build site
