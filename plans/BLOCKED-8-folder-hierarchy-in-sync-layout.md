@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P2 (design settled by upstream research; needs a live spike before code) |
-| **Status** | Task 1 spike done (2026-07-20) — **blocked on a licensed instance** for the actual-move proof; new finding reshapes the probe/gating design (see Spike results). Code not started. |
+| **Status** | **Blocked** — task 1 spike done (2026-07-20); needs a licensed/registered instance (`feat:folders`) for the actual-move proof. New finding reshapes the probe/gating design (see Spike results). Code not started. |
 | **Theme** | Let the local directory tree between `root` and a workflow folder act as the workflow's n8n folder path, pushed one-way to n8n via the public folders API — because the API can *write* folder placement but cannot *read* it. Pull-side mirroring is built in behind feature detection, so it activates by itself on any instance whose API exposes placement on read (none do today). |
 | **Model** | **Sonnet** for the bulk — the design is unusually settled (upstream source research done, tasks carry file:line anchors and concrete mock modes), so this is broad-but-specified implementation across many files. Reach for **Opus** on the live-instance spike (task 1) and the feature-detection/drift semantics (task 6), where judgment beats a checklist. |
 

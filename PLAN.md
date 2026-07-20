@@ -688,7 +688,7 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   (`parentFolderId`/project) on `GET /workflows/:id`?~~ **Answered for n8n
   2.30 (2026-07-19, raw GET via the plans/15 smoke rig): no placement field
   in the response** (`parentFolderId`/`project` absent) — flat layout stands;
-  [Plan 8](plans/OPEN-8-folder-hierarchy-in-sync-layout.md)'s push-driven
+  [Plan 8](plans/BLOCKED-8-folder-hierarchy-in-sync-layout.md)'s push-driven
   inversion is confirmed. Re-confirmed 2026-07-20 by Plan 8's task-1 spike
   against 2.30.7 with a folder-scoped key — no placement key on the single GET
   **or** the workflow-list items. Re-check on version bumps via the smoke suite.
