@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P3 (spike may promote the rest; **unblocked** 2026-07-19 — Plan 3 C shipped as the `executions` verb) |
-| **Status** | Not started |
+| **Status** | **In progress** — spike + Task 2 done 2026-07-20 (route B validated; `lib/simulate.mts` loader+transform shipped & engine-validated); tasks 3–6 open |
 | **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (LLM-guessed fixtures fill the gaps), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
 | **Model** | **Opus** — the highest-reasoning plan in the backlog: the route-B transform, the `n8n execute` subprocess orchestration, and above all the *safety-critical* default-deny node classification (a misclassified node runs for real) reward the strongest model. Once the spike (task 1) and transform are designed, the CLI/test wiring can drop to Sonnet. |
 
@@ -46,11 +46,12 @@ outputs.
   input-reconstruction problem that deferred `run --from-execution` (a node's
   own input isn't stored) doesn't apply, because pure nodes recompute their
   inputs' consequences and pinned nodes don't read inputs at all.
-- Related: [Plan 20](DONE-20-cli-publish-lifecycle.md) task 3 — the
-  stale-capture warning there uses the same `workflowVersionId` signal the
-  loader needs (executions run the *published* version, the repo holds the
-  draft); share the helper with whichever lands second.
-  [Plan 22](DONE-22-test-suite-depth.md) task 6 — the smoke version matrix is
+- Related: [Plan 20](DONE-20-cli-publish-lifecycle.md) task 3 (**shipped**) —
+  its stale-capture warning already implements the `workflowVersionId` signal
+  the loader needs (executions run the *published* version, the repo holds the
+  draft), as `warnStaleFixtures` in `lib/executions.mts` (currently private;
+  export/extract it rather than re-derive). [Plan 22](DONE-22-test-suite-depth.md)
+  task 6 — the smoke version matrix (**shipped**: 2.30.7 / 2.31.0 / 2.31.4) is
   where the engine-interface canary belongs (its notes already keep
   `test:sim` separate from `npm test`).
 
@@ -128,10 +129,11 @@ slower per run; output scraped from `n8n execute`'s result JSON.
 - Absent `n8nVersion`: default to the smoke suite's pinned version (one
   shared constant — 2.30.7 today) with a one-line hint recommending a pin
   matching the instance.
-- Verification runs on the smoke pin only. When Plan 22 task 6's smoke
-  version matrix lands, add a cheap **engine-interface canary** step there
-  (import + execute + parse the result JSON) — interface drift across 2.x is
-  then caught by infrastructure that already exists.
+- Verification runs on the smoke pin only. Plan 22 task 6's smoke version
+  matrix has **shipped** (CI `smoke` job over 2.30.7 / 2.31.0 / 2.31.4) — add
+  a cheap **engine-interface canary** step there (import + execute + parse the
+  result JSON) so interface drift across 2.x is caught by infrastructure that
+  now exists.
 
 ## Tasks
 
@@ -161,7 +163,55 @@ slower per run; output scraped from `n8n execute`'s result JSON.
    per-node diff. If either fails, stop and raise — route A is the recorded
    fallback (see the footnote), not a silent pivot. Record findings in this
    file.
-2. **`lib/simulate.mts` — fixture loader + transform.**
+
+   **Spike findings (2026-07-20 — route B VALIDATED, checkpoint passed).**
+   Ran against `n8nio/n8n:2.30.7` in Docker, reusing the Plan 15 rig
+   (`/rest/settings` readiness, owner-setup + API-key bootstrap). Created a
+   `Webhook → Compute(Code) → Tag(Set) → Fetch(HTTP)` workflow, fired the
+   webhook to capture a real execution, then replayed the transform through a
+   **fresh throwaway `docker run --rm` container** (`N8N_USER_FOLDER=/tmp/n8n`,
+   own SQLite) with `n8n import:workflow --input=… && n8n execute --id=… --rawOutput`.
+   - **Wall time ≈ 4.4 s** cold (fresh container incl. first-boot migrations),
+     well under the 30 s budget. First-boot migrations are cheap here; the
+     heavy cost is the one-time image pull (already cached).
+   - **`execute --rawOutput` prints the full `resultData.runData` for *every*
+     node** as JSON — identical shape to the captured execution
+     (`runData["<Node>"][0].data.main[0][]`). **Per-node diff fully supported.**
+   - **`pinData` is NOT honored by `execute` in CLI mode** (probes A & C: the
+     pinned trigger/network nodes emitted default/empty output, so `Compute`
+     ran against an empty item and threw). **Node replacement is therefore
+     mandatory** — the plan's default path, not the pinData shortcut. Probe 1
+     bullet answered: **no**, replacement it is.
+   - **Trigger mechanics (probe answered):** `execute --id` needs a real
+     trigger node as entry. Replacing the trigger with a plain Code node
+     leaves no entry point and fails (probe B). **Winning transform (probe D,
+     `code=0`):** prepend a bare `manualTrigger` (`__sim_start__`) as the entry
+     and replace the trigger + every network node with **name-preserving Code
+     nodes** (`type: code`, same `name`, `return <captured items>`) so
+     `$('<Trigger>')`/`$('<Node>')` still resolve. Pure nodes (`Compute`,
+     `Tag`) executed for real; `Fetch` emitted the captured value with **no
+     live HTTP call**. Round-trip verified: replayed `Compute` = captured
+     `{doubled:42}`.
+   - The synthetic `__sim_start__` node appears in the output `runData` — the
+     **diff must skip nodes absent from the original workflow.**
+   - **Task runners:** the JS Task Runner registers and runs fine in the fresh
+     container; the "Python 3 missing" message is a harmless warning (no Python
+     nodes). `N8N_RUNNERS_ENABLED=false` did not suppress the broker on 2.30.7
+     — irrelevant, since the fresh throwaway container has no port conflict.
+   - **Multi-run probe:** the single-pass capture has `runData["Fetch"].length
+     === 1`; backs the v1 hard-error on `length > 1` (Non-goals).
+   - Docker `--network none` not yet exercised (opt-in hard-isolation mode);
+     the default npx backend also still un-probed — both deferred to task 4,
+     neither gates route B. Repro script kept in the spike scratchpad.
+2. **`lib/simulate.mts` — fixture loader + transform.** ✅ **Done 2026-07-20**
+   — allowlist (14 types, signed off) + default-deny classification, capture
+   loader with fixture precedence and defensive `runData` validation, and the
+   route-B transform (name-preserving Code replacement + synthetic
+   `__sim_start__` manual trigger + credential strip + `assertDryRunSafe`
+   guard). Covered by `test/unit/simulate.test.mts` (13 cases) and validated
+   end-to-end: the shipped transform's output executes engine-true on real n8n
+   (2.30.7), per-node outputs matching the capture. The `warnStaleFixtures`
+   helper is now exported from `lib/executions.mts` and reused here.
    - Node classification: a maintained allowlist of side-effect-free node
      types executes for real; everything else is a **network node** and gets
      pinned. **Default-deny:** a node type not on the allowlist is treated as
@@ -184,7 +234,8 @@ slower per run; output scraped from `n8n execute`'s result JSON.
      Any surviving node with **more than one run** in the capture is a hard
      error too ("loop workflows are out of scope", Non-goals). Warn when the
      capture's `workflowVersionId` differs from the local draft's `versionId`
-     (stale capture — published vs draft; same signal as Plan 20 task 3).
+     (stale capture — published vs draft; reuse `warnStaleFixtures` from
+     `lib/executions.mts`, shipped by Plan 20 task 3).
    - Transform: produce the simulation copy per route B above. Refuse to emit
      if any surviving executable node is outside the pure allowlist, and strip
      `credentials` from every node — the structural half of the dry-run
@@ -290,6 +341,14 @@ slower per run; output scraped from `n8n execute`'s result JSON.
   20/22: unblocked; version policy decided; `--pin` keep/pin story added;
   loops scoped out of v1; trigger-swap shorthand corrected (name
   preservation); allowlist seeded; LLM gap filling made severable.
+- **Verified 2026-07-20 (2nd pass).** Every code/plan fact re-checked against
+  main: `lib/run.mts`, `buildNodeCode` in `lib/push.mts`, the `executions`
+  verb + `runData["<Node>"][0].data.main[0][]` shape (asserted in
+  `test/e2e.mts` and the smoke input→output roundtrip), `decanter.config.json`,
+  and the 2.30.7 smoke pin all hold. Two soft ties have since **shipped** and
+  are now updated above from "pending" to done: Plan 20 task 3's staleness
+  helper (`warnStaleFixtures`, `lib/executions.mts`) and Plan 22 task 6's smoke
+  version matrix (2.30.7 / 2.31.0 / 2.31.4). Design unchanged; still Not started.
 - **Route decided 2026-07-20 (user): B.** Route A reduced to a fallback
   footnote; the spike de-risks B instead of gating a choice.
 - **Ordering:** independent now — the spike can start anytime. Soft ties:
@@ -303,7 +362,8 @@ slower per run; output scraped from `n8n execute`'s result JSON.
   committed `workflows/<Name>/fixtures/` artifact (the guard already
   reserves the subdir), consumption of `executions/`, the pure-node
   allowlist, and the route-B design (user-decided 2026-07-20 — PLAN.md gets
-  it when the feature lands).
+  it when the feature lands). **Allowlist signed off 2026-07-20 (user):** the
+  14 seed types as-is, the three exclusions kept out.
 - **Allowlist maintenance:** curated, versioned; additions need
   justification. Default-deny carries the safety, not the list.
 - **Licensing:** n8n's Sustainable Use License permits running it for

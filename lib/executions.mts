@@ -14,7 +14,7 @@ export const EXECUTIONS_DIR = "executions";
  * by version so a page of same-version executions warns once; silent when the
  * draft version or the execution version is unavailable (defensive).
  */
-function warnStaleFixtures(dir: string, executions: Execution[], log: Log): void {
+export function warnStaleFixtures(dir: string, executions: Execution[], log: Log): void {
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) return;
   let draft: unknown;
