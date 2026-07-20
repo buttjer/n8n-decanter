@@ -50,7 +50,7 @@ outputs.
   stale-capture warning there uses the same `workflowVersionId` signal the
   loader needs (executions run the *published* version, the repo holds the
   draft); share the helper with whichever lands second.
-  [Plan 22](OPEN-22-test-suite-depth.md) task 6 — the smoke version matrix is
+  [Plan 22](DONE-22-test-suite-depth.md) task 6 — the smoke version matrix is
   where the engine-interface canary belongs (its notes already keep
   `test:sim` separate from `npm test`).
 

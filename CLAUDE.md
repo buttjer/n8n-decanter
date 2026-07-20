@@ -115,11 +115,15 @@ config, …) as thin pointers to it, so every agent stays in sync.
 
 ```sh
 npm test              # unit tests (node:test, test/unit/) + e2e suite
-                      #   (test/e2e.mts) + proxy suite (test/proxy.mts); e2e and
-                      #   proxy bind localhost ports, and one e2e step uses
-                      #   fs.watch (macOS FSEvents) — sandboxes that block port
-                      #   binding or FSEvents break them (unit tests run fine
-                      #   sandboxed)
+                      #   (test/e2e.mts) + proxy suite (test/proxy.mts) +
+                      #   interactive picker suite (test/interactive.mts,
+                      #   PassThrough streams — no pty); e2e and proxy bind
+                      #   localhost ports, and one e2e step uses fs.watch
+                      #   (macOS FSEvents) — sandboxes that block port binding
+                      #   or FSEvents break them (unit tests and the
+                      #   interactive suite run fine sandboxed).
+                      #   STEP=<substring> (env or --step=) runs a single
+                      #   step/scenario of e2e/proxy/smoke in isolation
 npm run typecheck     # tsc -p tsconfig.cli.json (CLI sources) + scripts/
                       #   typecheck.mts (node files — NOT plain tsc, see below)
 npm run test:smoke    # OPT-IN, dev-only: real n8n in Docker (test/smoke-n8n.mts,

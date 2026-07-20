@@ -33,7 +33,7 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.cli.json && node scripts/typecheck.mts",
-    "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/proxy.mts",
+    "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/proxy.mts && node test/interactive.mts",
     "test:smoke": "node test/smoke-n8n.mts"
   },
   "engines": {

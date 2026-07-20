@@ -55,7 +55,7 @@ function request(url: string, method = "GET"): Promise<Res> {
 }
 const get = (url: string) => request(url);
 
-const { step, passedCount } = createStepRunner({ onFail: () => upstream.close() });
+const { step, passedCount, hasFailed } = createStepRunner({ onFail: () => upstream.close() });
 
 // ---------- run ----------
 await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
@@ -207,7 +207,8 @@ await step("websocket upgrade round-trips through the proxy", async () => {
   await new Promise<void>((resolve) => wsUpstream.close(() => resolve()));
 });
 
-await handle.close();
-await new Promise<void>((resolve) => upstream.close(() => resolve()));
+if (!hasFailed()) {
+  await handle.close();
+  await new Promise<void>((resolve) => upstream.close(() => resolve()));
+}
 console.log(`\n${passedCount()} proxy checks passed`);
-process.exit(0);

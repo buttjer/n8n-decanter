@@ -28,10 +28,18 @@ jobs:
 
   # Dev-only integration smoke against a real n8n in Docker (plans/15).
   # Not part of the merge gate: runs on manual dispatch and a weekly cron.
+  # Matrix (Plan 22): oldest-supported / middle / latest verified 2.x tags —
+  # this is what actually backs the "n8n 2.x" contract across versions,
+  # instead of asserting it against one pinned point release. Keep in sync
+  # with the passing set recorded in test/smoke-n8n.mts's header comment.
   smoke:
-    name: n8n smoke (docker)
+    name: n8n smoke (docker, ${{ matrix.n8n_tag }})
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        n8n_tag: ["2.30.7", "2.31.0", "2.31.4"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -40,3 +48,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:smoke
+        env:
+          SMOKE_N8N_TAG: n8nio/n8n:${{ matrix.n8n_tag }}

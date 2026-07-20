@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P2 |
-| **Status** | Not started |
+| **Status** | Done (2026-07-20) — all six tasks landed; see "Outcome" below |
 | **Theme** | Grow the automated suite where it's genuinely thin — the interactive surfaces no test drives today (picker terminal IO, watch conflict prompts, watch↔proxy wiring) and a handful of uncovered CLI branches — and make the Docker smoke suite actually prove the "n8n 2.x" claim across versions while flaking less. Reduce the monolithic e2e's coupling so adding tests doesn't compound its fragility. |
 | **Model** | **Sonnet** — testability refactors (injectable streams/prompts) and test authoring against a clear spec; the fiddly parts (keypress/stream simulation, harness step-filtering, the Docker version matrix) are engineering, not research. High-volume, well-defined work where a strong coder is the efficient pick. |
 
@@ -167,3 +167,55 @@ don't drift to the wrong layer:
   publish/unpublish verbs land, add their activate/deactivate assertions to the
   smoke suite; [Plan 7](OPEN-7-engine-true-simulation-suite.md)'s `simulate`
   keeps its own `test:sim` — don't fold it in here.
+
+## Outcome (2026-07-20)
+
+All six tasks landed in one PR (following the Plan 9/10 convention of one PR
+per plan batch), `npm test` green (63 e2e + 10 proxy + 12 interactive + 151
+unit), typecheck green, and the Docker smoke suite verified locally against
+all three matrix tags before landing.
+
+1. **Harness** — `STEP=<substring>` (env or `--step=`) filter, plus
+   skip-on-prerequisite-failure (a mid-chain failure no longer
+   `process.exit()`s immediately; every step after it is marked `skip
+   ... (prerequisite "<name>" failed)`, and the run still reaches its
+   `finally`/cleanup code with the process exiting via `process.exitCode`).
+   Verified both mechanisms directly and against the real suite.
+2. **Picker terminal IO** — `runPicker` takes injectable `input`/`output`
+   streams (`PickerInputStream`/`PickerOutputStream`, defaults unchanged);
+   `test/interactive.mts` (12 checks) drives it via `PassThrough` +
+   `emitKeypressEvents` — filter/arrows/enter into the verb menu, unpulled-entry
+   direct pull, esc-back/esc-quit, ctrl-c, stdin EOF, raw-mode/cursor restore
+   on every exit path, the remote promise resolving/rejecting, resume, and the
+   notice line. **Deferred**: extracting `pickerLoop` out of
+   `n8n-decanter.mts` into `lib/` was explicitly optional in this plan and
+   was skipped — `runPicker` (the untested surface this plan targeted) is
+   fully covered without it.
+3. **Watch conflict prompt** — `watchWorkflow` takes an optional
+   `promptFactory` (default `createPrompt`; `lib/prompt.mts` now exports the
+   `Prompt` type). Passing one explicitly also bypasses the
+   `!process.stdin.isTTY` skip, since a test deliberately supplying answers
+   isn't the "no one is there to answer" case that skip guards. Four new
+   `test/e2e.mts` steps assert `[m]`/`[l]`/`[r]`/Enter against real structural
+   conflicts on the mock.
+4. **Watch↔proxy** — one `test/e2e.mts` step: `browserReload: "proxy"`
+   against the mock, a raw SSE client on the proxy, a `code/` save, asserting
+   the `pushed` event (with `workflowId`) and that the logged editor deep-link
+   uses the proxy's port, not the raw upstream host.
+5. **Branch gaps** — init's non-2xx and unreachable credential-probe outcomes
+   (the "verified" case already had coverage); a multi-workflow partial
+   failure ([i/n] progress, per-item error, exit 1, rest still processed);
+   `resolveRef`'s remote-list fallback for `pull` plus the ambiguous-prefix
+   error; `executions --limit`'s upper bound (250). `--status` has no bound
+   validation in the code (arbitrary pass-through filter) — nothing to add there.
+6. **Docker smoke** — `webhook()` now polls (12 × 750ms, ~9s budget) instead
+   of a fixed pre-sleep at every call site; the bootstrap step (owner
+   setup/login/api-key — the version-fragile, undocumented-REST-endpoint
+   part) names the image tag in every assertion so a version-bump failure
+   reads as "this version's bootstrap shape changed", not "decanter broke".
+   `.github/workflows/ci.yml`'s `smoke` job (still cron + dispatch only, off
+   the merge gate) is now a matrix over three tags — **verified locally
+   against real containers**: `n8nio/n8n:2.30.7` (oldest supported — the
+   floor Plan 18's pinData seeding needs), `2.31.0` (middle), `2.31.4`
+   (latest at verification time, from the n8n GitHub releases list). Passing
+   set recorded in `test/smoke-n8n.mts`'s header comment.
