@@ -1,23 +1,10 @@
 # Plan 15 — Docker n8n smoke suite (dev-only)
 
-**Priority:** P2
-**Status:** Done (2026-07-19: implemented — 15 steps green against
-n8n 2.30.7, incl. a real Plan 14 sandbox bug found and fixed; task 6 watch
-spot-check done — no PUT structure normalization observed, conflict path
-verified. Task 8 CI job **verified via `workflow_dispatch`** the same day:
-`n8n smoke (docker)` green on the ubuntu runner (worked on the private repo
-already — the "once public" gate was unnecessary). The pinData half of
-task 5 is out of this plan's scope by user decision (2026-07-19):
-seeding-route ideas parked in [Plan 0](BACKLOG.md) for a separate analysis
-session — the backlog item stays open independently. **Update 2026-07-19:**
-that pinData half landed after all via
-[Plan 18](DONE-18-pindata-smoke-seeding.md) — public-API seeding, one more
-smoke step, backlog item closed)
-**Theme:** An opt-in integration suite for *developing this tool*: spin up a
-real n8n in Docker, drive the CLI against it, and prove the things no mock
-can — that bundled nodes execute in the real Code-node sandbox, and that the
-API semantics PLAN.md records still hold. Never shipped to users, never part
-of `npm test`.
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | Done (2026-07-19: implemented — 15 steps green against n8n 2.30.7, incl. a real Plan 14 sandbox bug found and fixed; task 6 watch spot-check done — no PUT structure normalization observed, conflict path verified. Task 8 CI job **verified via `workflow_dispatch`** the same day: `n8n smoke (docker)` green on the ubuntu runner (worked on the private repo already — the "once public" gate was unnecessary). The pinData half of task 5 is out of this plan's scope by user decision (2026-07-19): seeding-route ideas parked in [Plan 0](BACKLOG.md) for a separate analysis session — the backlog item stays open independently. **Update 2026-07-19:** that pinData half landed after all via [Plan 18](DONE-18-pindata-smoke-seeding.md) — public-API seeding, one more smoke step, backlog item closed) |
+| **Theme** | An opt-in integration suite for *developing this tool*: spin up a real n8n in Docker, drive the CLI against it, and prove the things no mock can — that bundled nodes execute in the real Code-node sandbox, and that the API semantics PLAN.md records still hold. Never shipped to users, never part of `npm test`. |
 
 ## Why
 

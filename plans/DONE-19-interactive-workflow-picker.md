@@ -1,10 +1,10 @@
 # Plan 19 — Interactive workflow picker on bare invocation
 
-**Priority:** P2
-**Status:** Done
-**Theme:** `n8n-decanter` with no verb and no ref in an inited project opens a
-TTY-only type-to-filter picker — pulled workflows green, unpulled remote ones
-yellow — then a verb menu; discovery moves from the shell into the CLI itself.
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | Done |
+| **Theme** | `n8n-decanter` with no verb and no ref in an inited project opens a TTY-only type-to-filter picker — pulled workflows green, unpulled remote ones yellow — then a verb menu; discovery moves from the shell into the CLI itself. |
 
 ## Why
 

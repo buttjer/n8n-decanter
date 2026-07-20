@@ -1,17 +1,11 @@
 # Plan 21 — Repo-authored workflows (`add` + `push --create`)
 
-**Priority:** P2 (`add`) / P3 (`push --create`, data-model change)
-**Status:** Not started
-**Theme:** Let Code nodes and whole workflows be **born in the repo**, not only
-in n8n: an `add` verb scaffolds a Code node in-place, and `push --create`
-creates a brand-new workflow remotely from a repo folder via the n8n 2.x
-`POST /api/v1/workflows` endpoint — inverting today's "born in n8n, then
-pulled" rule.
-**Model:** split by task. **Sonnet** for `add` (task 1) — mechanical
-scaffolding that reuses the existing uuid/kebab/rename machinery against a
-concrete spec. **Opus** for `push --create` (task 2) — it inverts the
-pull-first data model, needs user sign-off, and the round-trip/id-capture
-edges reward the stronger model.
+| | |
+|---|---|
+| **Priority** | P2 (`add`) / P3 (`push --create`, data-model change) |
+| **Status** | Not started |
+| **Theme** | Let Code nodes and whole workflows be **born in the repo**, not only in n8n: an `add` verb scaffolds a Code node in-place, and `push --create` creates a brand-new workflow remotely from a repo folder via the n8n 2.x `POST /api/v1/workflows` endpoint — inverting today's "born in n8n, then pulled" rule. |
+| **Model** | split by task. **Sonnet** for `add` (task 1) — mechanical scaffolding that reuses the existing uuid/kebab/rename machinery against a concrete spec. **Opus** for `push --create` (task 2) — it inverts the pull-first data model, needs user sign-off, and the round-trip/id-capture edges reward the stronger model. |
 
 ## Why
 

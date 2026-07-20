@@ -1,10 +1,10 @@
 # Plan 11 — CLI look & feel
 
-**Priority:** P1 (style layer, progress, logo) / P2 (name resolution, completion, `list`)
-**Status:** Done (2026-07-18)
-**Theme:** Make the CLI pleasant for humans — color, progress, name-based
-arguments, shell completion, a small logo — without changing one byte of the
-plain, line-oriented output that LLMs, scripts, and the e2e suite consume.
+| | |
+|---|---|
+| **Priority** | P1 (style layer, progress, logo) / P2 (name resolution, completion, `list`) |
+| **Status** | Done (2026-07-18) |
+| **Theme** | Make the CLI pleasant for humans — color, progress, name-based arguments, shell completion, a small logo — without changing one byte of the plain, line-oriented output that LLMs, scripts, and the e2e suite consume. |
 
 ## Why
 

@@ -1,9 +1,10 @@
 # Plan 2 — Offline validation + rename
 
-**Priority:** P1 (validator) / P2 (rename)
-**Status:** Done (2026-07-18)
-**Theme:** convert the repo's most fragile manual invariants into machine-checked
-ones, then make renames atomic.
+| | |
+|---|---|
+| **Priority** | P1 (validator) / P2 (rename) |
+| **Status** | Done (2026-07-18) |
+| **Theme** | convert the repo's most fragile manual invariants into machine-checked ones, then make renames atomic. |
 
 ## Why
 

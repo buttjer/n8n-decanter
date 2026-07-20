@@ -1,10 +1,10 @@
 # Plan 17 — Public trust pass (pre-release repo hygiene)
 
-**Priority:** P1
-**Status:** Done
-**Theme:** Last hygiene/trust items before the repo flips public — 100%
-TypeScript language stats, SECURITY.md, stale-docs fix, branch cleanup — plus
-the recorded audit verdicts on git history and secrets.
+| | |
+|---|---|
+| **Priority** | P1 |
+| **Status** | Done |
+| **Theme** | Last hygiene/trust items before the repo flips public — 100% TypeScript language stats, SECURITY.md, stale-docs fix, branch cleanup — plus the recorded audit verdicts on git history and secrets. |
 
 ## Why
 

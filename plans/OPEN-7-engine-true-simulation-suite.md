@@ -1,17 +1,11 @@
 # Plan 7 — Engine-true simulation suite
 
-**Priority:** P3 (spike may promote the rest; **unblocked** 2026-07-19 —
-Plan 3 C shipped as the `executions` verb)
-**Status:** Not started
-**Theme:** replay a whole workflow through the *real* n8n engine offline —
-network nodes pinned with captured execution data (LLM-guessed fixtures fill
-the gaps), side-effect-free nodes executing for real — with a hard guarantee
-that nothing external is written.
-**Model:** **Opus** — the highest-reasoning plan in the backlog: the route-B
-transform, the `n8n execute` subprocess orchestration, and above all the
-*safety-critical* default-deny node classification (a misclassified node runs
-for real) reward the strongest model. Once the spike (task 1) and transform
-are designed, the CLI/test wiring can drop to Sonnet.
+| | |
+|---|---|
+| **Priority** | P3 (spike may promote the rest; **unblocked** 2026-07-19 — Plan 3 C shipped as the `executions` verb) |
+| **Status** | Not started |
+| **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (LLM-guessed fixtures fill the gaps), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
+| **Model** | **Opus** — the highest-reasoning plan in the backlog: the route-B transform, the `n8n execute` subprocess orchestration, and above all the *safety-critical* default-deny node classification (a misclassified node runs for real) reward the strongest model. Once the spike (task 1) and transform are designed, the CLI/test wiring can drop to Sonnet. |
 
 ## Why
 

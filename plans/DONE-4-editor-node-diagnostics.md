@@ -1,11 +1,10 @@
 # Plan 4 — Editor plugin to suppress spurious node-file diagnostics
 
-**Priority:** P2
-**Status:** Done (manual editor verification passed 2026-07-19; the first
-failed attempt's root cause was the missed one-time *Use Workspace Version*
-consent — see Task 5 resolution)
-**Theme:** stop the editor's tsserver from flagging legal n8n node source
-(top-level `return`/`await`) as errors, without touching files on disk.
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | Done (manual editor verification passed 2026-07-19; the first failed attempt's root cause was the missed one-time *Use Workspace Version* consent — see Task 5 resolution) |
+| **Theme** | stop the editor's tsserver from flagging legal n8n node source (top-level `return`/`await`) as errors, without touching files on disk. |
 
 ## Source
 

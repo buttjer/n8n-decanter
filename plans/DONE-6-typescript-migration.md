@@ -1,11 +1,10 @@
 # Plan 6 — TypeScript migration of the CLI
 
-**Priority:** P3
-**Status:** Done
-**Theme:** convert the CLI's own source (`n8n-decanter.mjs`, `lib/`, `scripts/`,
-`test/`) from untyped `.mjs` to strict TypeScript `.mts`, run natively via
-Node's type stripping — no build step, no change to the data model or to how
-sync dirs work.
+| | |
+|---|---|
+| **Priority** | P3 |
+| **Status** | Done |
+| **Theme** | convert the CLI's own source (`n8n-decanter.mjs`, `lib/`, `scripts/`, `test/`) from untyped `.mjs` to strict TypeScript `.mts`, run natively via Node's type stripping — no build step, no change to the data model or to how sync dirs work. |
 
 ## Source
 

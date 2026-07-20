@@ -1,9 +1,10 @@
 # Plan 1 — Trustworthy edit loop
 
-**Priority:** P1
-**Status:** Done
-**Theme:** make the hook/typecheck feedback green-by-default and scoped to the
-workflow being edited.
+| | |
+|---|---|
+| **Priority** | P1 |
+| **Status** | Done |
+| **Theme** | make the hook/typecheck feedback green-by-default and scoped to the workflow being edited. |
 
 ## Why
 
