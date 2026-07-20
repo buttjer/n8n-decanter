@@ -1,7 +1,7 @@
 ---
 title: delete
 description: Delete a workflow from the server, deliberately — the local folder is kept.
-order: 11
+order: 13
 ---
 
 ```sh

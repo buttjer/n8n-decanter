@@ -1,7 +1,7 @@
 ---
 title: publish / unpublish
 description: Take a draft live, or return a published workflow to draft-only.
-order: 10
+order: 12
 ---
 
 ```sh

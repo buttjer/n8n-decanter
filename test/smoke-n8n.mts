@@ -103,13 +103,13 @@ async function cli(...args: string[]) {
   }
 }
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
-const webhook = async (payload: unknown): Promise<any> => {
+const webhook = async (payload: unknown, path = "smoke-hook"): Promise<any> => {
   let last = "";
   // bounded poll (12 x 750ms = 9s budget) for webhook registration lagging
   // activation/push — callers used to pad this with a fixed pre-sleep too;
   // polling here already covers the lag, on the fast path *and* the slow one
   for (let i = 0; i < 12; i++) {
-    const res = await fetch(`${HOST}/webhook/smoke-hook`, {
+    const res = await fetch(`${HOST}/webhook/${path}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
@@ -572,6 +572,89 @@ try {
     const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
     assert.equal(gone.status, 404, "hard delete: workflow gone from the server");
     assert.ok(existsSync(path.join(lifeDir, ".decanter.json")), "local folder left untouched as the git record");
+  });
+
+  // Plan 21 authoring verbs against real n8n. Dedicated workflows (not the
+  // heavily-mutated Smoke WF) so the assertions stay clean, torn down at the
+  // end. `authId`/`authDir`/`cloneId` thread from the add step into duplicate.
+  let authId = "";
+  let authDir = "";
+  let cloneId = "";
+
+  await step("add: a scaffolded Code node executes in the real n8n sandbox", async () => {
+    // fresh Webhook -> Respond skeleton (no code node yet); add mints the node
+    const created = await api("POST", "/api/v1/workflows", {
+      name: "Smoke Authoring",
+      nodes: [
+        { id: "aw1", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0],
+          parameters: { httpMethod: "POST", path: "smoke-auth-hook", responseMode: "responseNode" } },
+        { id: "ar1", name: "Respond", type: "n8n-nodes-base.respondToWebhook", typeVersion: 1.1, position: [440, 0],
+          parameters: { respondWith: "allIncomingItems" } },
+      ],
+      connections: { Webhook: { main: [[{ node: "Respond", type: "main", index: 0 }]] } },
+      settings: { executionOrder: "v1" },
+    });
+    authId = created.id;
+    authDir = path.join(ROOT, "Smoke Authoring");
+    let r = await cli(authId, "pull");
+    assert.equal(r.code, 0, r.out);
+
+    // add scaffolds a disconnected Code node with the default runnable body
+    r = await cli(authId, "add", "Enrich");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(existsSync(path.join(authDir, "code", "enrich.js")), "add wrote the source file");
+
+    // wire it into the chain: Webhook -> Enrich -> Respond (add never wires)
+    const wf = JSON.parse(read(authDir, "workflow.json"));
+    wf.connections = {
+      Webhook: { main: [[{ node: "Enrich", type: "main", index: 0 }]] },
+      Enrich: { main: [[{ node: "Respond", type: "main", index: 0 }]] },
+    };
+    writeFileSync(path.join(authDir, "workflow.json"), JSON.stringify(wf, null, 2));
+    r = await cli(authId, "check");
+    assert.equal(r.code, 0, "wired scaffold must stay compliant: " + r.out);
+    r = await cli(authId, "push");
+    assert.equal(r.code, 0, r.out);
+    r = await cli(authId, "publish"); // make the webhook live
+    assert.equal(r.code, 0, r.out);
+
+    // trigger it: the DEFAULT scaffold body (item.json.myNewField = 1) must run
+    // in n8n's real Code-node sandbox on the webhook item
+    const out = await webhook({ n: 21 }, "smoke-auth-hook");
+    assert.equal(out[0]?.myNewField, 1, "default scaffold body executed in the sandbox: " + JSON.stringify(out).slice(0, 300));
+    assert.equal(out[0]?.body?.n, 21, "scaffold was correctly wired between Webhook and Respond");
+  });
+
+  await step("duplicate: real POST clone — born unpublished from a published source, independent", async () => {
+    const source = await api("GET", `/api/v1/workflows/${authId}`);
+    assert.equal(source.active, true, "source is published from the add step's publish");
+
+    let r = await cli(authId, "duplicate", "Smoke Authoring Copy");
+    assert.equal(r.code, 0, r.out);
+    cloneId = r.out.match(/duplicated "Smoke Authoring" -> "Smoke Authoring Copy" \(([^)]+)\)/)?.[1] ?? "";
+    assert.ok(cloneId, "duplicate printed the new id: " + r.out);
+    assert.notEqual(cloneId, authId, "distinct new id");
+
+    const clone = await api("GET", `/api/v1/workflows/${cloneId}`);
+    assert.equal(clone.active, false, "clone born unpublished even though the source is published");
+    assert.equal(clone.nodes.length, source.nodes.length, "clone carries the source's nodes");
+    assert.deepEqual(clone.connections, source.connections, "clone preserves the connections");
+    const cloneDir = path.join(ROOT, "Smoke Authoring Copy");
+    assert.ok(existsSync(path.join(cloneDir, ".decanter.json")), "clone pulled into a folder");
+    // the .js Code node round-trips byte-clean into the clone
+    assert.equal(read(cloneDir, "code", "enrich.js"), read(authDir, "code", "enrich.js"), "clone's enrich.js is byte-identical");
+
+    // independence: edit + push the clone; the source's remote code is untouched
+    const before = (await api("GET", `/api/v1/workflows/${authId}`)).nodes.find((n: any) => n.name === "Enrich").parameters.jsCode;
+    writeFileSync(path.join(cloneDir, "code", "enrich.js"), "return [{ json: { cloneOnly: true } }];\n");
+    r = await cli(cloneId, "push");
+    assert.equal(r.code, 0, r.out);
+    const after = (await api("GET", `/api/v1/workflows/${authId}`)).nodes.find((n: any) => n.name === "Enrich").parameters.jsCode;
+    assert.equal(after, before, "editing the clone must not change the source workflow");
+
+    // tidy up both authoring workflows (the container is ephemeral, but keep it clean)
+    await api("DELETE", `/api/v1/workflows/${cloneId}`);
+    await api("DELETE", `/api/v1/workflows/${authId}`);
   });
 
   await step("executions stale-fixture warning: fires on a version mismatch, silent on a match", async () => {

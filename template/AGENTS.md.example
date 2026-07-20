@@ -72,7 +72,7 @@ A node object:
 
 ```json
 {
-  "id": "a1b2c3d4-…",            // UUID v4 — `n8n-decanter uuid` to generate; NEVER change an existing id
+  "id": "a1b2c3d4-…",            // UUID v4 — `n8n-decanter <ref> add` mints it; NEVER change an existing id
   "name": "Amazon Feed",          // unique per workflow — connections + $('…') reference it
   "type": "n8n-nodes-base.code",
   "typeVersion": 2,
@@ -118,9 +118,12 @@ on the next pull (or do it yourself, folder names are cosmetic — the id inside
 
 ### Adding a Code node
 
-1. Add the node object — generate its `id` with `n8n-decanter uuid` (a lowercase
-   v4 UUID), placeholder `jsCode`, position, connections.
-2. Create the source file it points at in `code/` (`.js` or `.ts`, see below).
+1. `n8n-decanter <ref> add "<Node name>" [--ts]` scaffolds it in one step: it
+   mints the node `id`, writes the `code/` source (`.js`, or `.ts` with
+   `--ts`), adds the `//@file:` placeholder, records it in `.decanter.json`,
+   and re-checks the folder. The node lands **disconnected**.
+2. Wire it up — add its connections in `workflow.json` (and any `$('…')`
+   references from other nodes), then edit the source in `code/`.
 3. Verify: `n8n-decanter run <file> [fixture.json]` to execute it, then
    `n8n-decanter check` (typecheck + layout).
 
@@ -292,7 +295,7 @@ Rules:
 ## Commands — who runs what
 
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
-  `n8n-decanter run <file> [fixture]`, `n8n-decanter uuid [n]`,
+  `n8n-decanter run <file> [fixture]`, `n8n-decanter <ref> add "<Node name>"`,
   `n8n-decanter executions clean`. These never touch the network.
 - **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line
   diffs; exits 1 on conflict/remote drift) and `n8n-decanter <ref> executions`

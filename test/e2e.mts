@@ -1032,19 +1032,6 @@ const runOutput = (out: string) => {
   return JSON.parse(out.slice(start, out.lastIndexOf("]") + 1));
 };
 
-await step("uuid: prints lowercase v4 uuids", async () => {
-  const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-  let r = await cli("uuid");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out.trim(), V4);
-  r = await cli("uuid", "3");
-  const lines = r.out.trim().split("\n");
-  assert.equal(lines.length, 3);
-  for (const l of lines) assert.match(l, V4);
-  r = await cli("uuid", "0");
-  assert.equal(r.code, 1, "uuid 0 must fail");
-});
-
 await step("run: executes a .ts node against a fixture (all-items)", async () => {
   const rd = path.join(TMP, "runtest");
   mkdirSync(rd, { recursive: true });
@@ -1703,6 +1690,92 @@ await step("delete: refuses without --force non-interactively; --force deletes, 
   assert.match(r.out, /left untouched/);
   assert.ok(!db.has(id), "workflow gone from the server");
   assert.ok(existsSync(path.join(dir, ".decanter.json")), "local folder kept as the git-tracked record");
+});
+
+await step("add: scaffold a disconnected Code node offline; check + push send it", async () => {
+  // self-contained: a fresh workflow so the authoring steps don't perturb others
+  let r = await cli("create", "Authoring Demo");
+  assert.equal(r.code, 0, r.out);
+  const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
+  const dir = wfDir("Authoring Demo");
+  const before = JSON.parse(read(dir, "workflow.json")).nodes.length;
+
+  r = await cli(id, "add", "Parse Order");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /added Code node "Parse Order" \([0-9a-f-]{36}\) -> code[/\\]parse-order\.js — disconnected/);
+  const wf = JSON.parse(read(dir, "workflow.json"));
+  assert.equal(wf.nodes.length, before + 1, "node appended");
+  const node = wf.nodes.find((n: any) => n.name === "Parse Order");
+  assert.equal(node.type, "n8n-nodes-base.code");
+  assert.equal(node.parameters.mode, "runOnceForAllItems");
+  assert.equal(node.parameters.jsCode, "//@file:code/parse-order.js");
+  assert.match(node.id, /^[0-9a-f-]{36}$/, "v4 uuid node id");
+  assert.ok(existsSync(path.join(dir, "code", "parse-order.js")), "source file created");
+  assert.equal(state(dir).nodes[node.id].file, "code/parse-order.js", "registered in state");
+  assert.ok(!wf.connections["Parse Order"], "lands disconnected");
+
+  r = await cli(id, "check");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Authoring Demo: OK/);
+
+  // colliding kebab name → -<id8> suffix (a distinct node name that kebabs the same)
+  r = await cli(id, "add", "Parse-Order");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /-> code[/\\]parse-order-[0-9a-f]{8}\.js/);
+
+  // --ts scaffolds a .ts source
+  r = await cli(id, "add", "Typed Step", "--ts");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /-> code[/\\]typed-step\.ts/);
+  assert.ok(existsSync(path.join(dir, "code", "typed-step.ts")));
+
+  // duplicate node name refused
+  r = await cli(id, "add", "Parse Order");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /a node named "Parse Order" already exists/);
+  // no node name → usage error
+  r = await cli(id, "add");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /add needs exactly one node name/);
+
+  // push sends the three scaffolded code nodes
+  r = await cli(id, "push");
+  assert.equal(r.code, 0, r.out);
+  assert.equal(db.get(id).nodes.filter((n: any) => n.type === "n8n-nodes-base.code").length, 3, "three code nodes pushed");
+});
+
+await step("duplicate: clones a workflow into a new remote one via POST, landed by pull", async () => {
+  const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
+  const sourceNodeCount = db.get(id).nodes.length;
+
+  let r = await cli(id, "duplicate", "Authoring Clone");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /duplicated "Authoring Demo" -> "Authoring Clone" \(wf-new-[^)]+\) on the server — unpublished draft/);
+  const clone = [...db.values()].find((w) => w.name === "Authoring Clone");
+  assert.ok(clone, "clone created in the mock db");
+  assert.equal(clone.active, false, "born unpublished");
+  assert.notEqual(clone.id, id, "distinct new id");
+  assert.equal(clone.nodes.length, sourceNodeCount, "carries the source's nodes");
+  const cloneDir = wfDir("Authoring Clone");
+  assert.ok(existsSync(path.join(cloneDir, ".decanter.json")), "clone pulled into a folder");
+  assert.equal(state(cloneDir).workflowId, clone.id, "state points at the new id");
+  // the plain .js node round-trips byte-clean into the clone
+  assert.equal(read(cloneDir, "code", "parse-order.js"), read(wfDir("Authoring Demo"), "code", "parse-order.js"));
+  // source folder + remote left untouched
+  assert.ok(db.has(id), "source remote intact");
+  assert.equal(db.get(id).name, "Authoring Demo", "source name unchanged");
+  assert.ok(existsSync(path.join(wfDir("Authoring Demo"), ".decanter.json")), "source folder intact");
+
+  // no name → "<name> (copy)"
+  r = await cli(id, "duplicate");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /-> "Authoring Demo \(copy\)"/);
+  assert.ok([...db.values()].find((w) => w.name === "Authoring Demo (copy)"), "default copy-named clone");
+
+  // duplicate needs a ref
+  r = await cli("duplicate");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /duplicate needs a workflow ref/);
 });
 
 if (!hasFailed()) {

@@ -110,12 +110,14 @@ items not yet claimed by one. Recommended order:
     all four endpoints live-verified against 2.30.7 and asserted by the smoke
     suite. Picker menu wiring (state-aware publish/unpublish toggle) left to
     Plan 19's surface as a follow-up.
-21. [Local authoring helpers](OPEN-21-repo-authored-workflows.md) — `add` verb
+21. [Local authoring helpers](DONE-21-repo-authored-workflows.md) — `add` verb
     (scaffold a Code node in one step, offline) and `duplicate` verb (clone an
     existing workflow into a new remote one via 2.x `POST /workflows`, landed
     through a fresh pull). Both preserve the pull-first model — the earlier
     `push --create` idea, which would have inverted it, was dropped
-    (2026-07-20). Proposed 2026-07-20.
+    (2026-07-20). Done 2026-07-20 — both verbs land with e2e + unit coverage;
+    the smoke suite exercises the real `POST /workflows` (create/duplicate
+    share it). Picker menu wiring deferred to Plan 19.
 22. [Test suite depth](DONE-22-test-suite-depth.md) — cover the interactive
     surfaces no test drives today (picker terminal IO, watch conflict prompts,
     watch↔proxy wiring) via injected streams (no pty dep), decouple the

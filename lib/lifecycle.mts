@@ -1,10 +1,13 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { createPrompt } from "./prompt.mts";
 import { pullWorkflow } from "./pull.mts";
+import { assertCompliant, buildNodeCode } from "./push.mts";
 import { findWorkflowDir } from "./state.mts";
-import type { DecanterConfig, Log } from "./types.mts";
-import { publicationState } from "./util.mts";
+import type { DecanterConfig, Log, Workflow } from "./types.mts";
+import { isJsCodeNode, placeholderFile, publicationState, sanitizeForPut } from "./util.mts";
+import { validateWorkflowDir } from "./validate.mts";
 
 /**
  * `publish` — take an unpublished draft live (n8n 2.x activate). A workflow
@@ -44,12 +47,44 @@ export async function unpublishWorkflow(api: N8nApi, id: string, log: Log): Prom
  * Plan 21's `duplicate`.
  */
 export async function createWorkflow(api: N8nApi, config: DecanterConfig, name: string, log: Log): Promise<{ dir: string; id: string }> {
-  const created = await api.createWorkflow(name);
+  const created = await api.createWorkflow({ name, nodes: [], connections: {}, settings: {} });
   const id = created.id;
   log.ok(`created "${name}" (${id}) on the server — unpublished draft`);
   const { dir } = await pullWorkflow(api, config.root, id, { commitOnPull: config.commitOnPull }, log);
   log.info(`edit code/, push, then "publish" to go live`);
   return { dir, id };
+}
+
+/**
+ * `<ref> duplicate ["<new name>"]` — clone an already-pulled workflow into a
+ * brand-new remote one, then pull the copy. The body is assembled from the
+ * **local** folder exactly as `push` does (placeholders reconstituted from
+ * `code/`, `.ts` nodes compiled), so the clone carries the repo's current
+ * content — even edits not yet pushed to the source. The default name is
+ * `"<name> (copy)"` (matching the n8n UI). Born **unpublished**, like any
+ * create; the source folder and the source remote workflow are left untouched.
+ * Pull-first is preserved: the copy is born server-side and materialized via a
+ * fresh pull. Reuses `api.createWorkflow` (Plan 20) with a full body.
+ */
+export async function duplicateWorkflow(api: N8nApi, config: DecanterConfig, id: string, newName: string | undefined, log: Log): Promise<{ dir: string; id: string }> {
+  const dir = findWorkflowDir(config.root, id, log);
+  if (!dir) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
+  assertCompliant(validateWorkflowDir(dir), log, `"${path.basename(dir)}"`);
+  const wf = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as Workflow;
+  const sourceName = wf.name;
+  for (const node of wf.nodes) {
+    if (!isJsCodeNode(node)) continue;
+    const file = placeholderFile(node);
+    if (file === null) continue;
+    node.parameters.jsCode = (await buildNodeCode(dir, file, log)).jsCode;
+  }
+  const body = sanitizeForPut(wf);
+  body.name = newName?.trim() || `${sourceName} (copy)`;
+  const created = await api.createWorkflow(body);
+  log.ok(`duplicated "${sourceName}" -> "${body.name}" (${created.id}) on the server — unpublished draft`);
+  const { dir: newDir } = await pullWorkflow(api, config.root, created.id, { commitOnPull: config.commitOnPull }, log);
+  log.info(`edit code/, push, then "publish" to go live`);
+  return { dir: newDir, id: created.id };
 }
 
 /**

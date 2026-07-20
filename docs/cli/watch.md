@@ -1,7 +1,7 @@
 ---
 title: watch
 description: Push a workflow's files on save, with optional browser live-reload.
-order: 8
+order: 9
 ---
 
 ```sh

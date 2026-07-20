@@ -19,7 +19,7 @@ import {
 import { validateNodeFile, validateWorkflowDir, type ValidationResult } from "./validate.mts";
 
 /** Layout-compliance gate: warnings pass through, errors abort the push. */
-function assertCompliant({ errors, warnings }: ValidationResult, log: Log, what: string): void {
+export function assertCompliant({ errors, warnings }: ValidationResult, log: Log, what: string): void {
   for (const w of warnings) log.warn(w);
   if (errors.length === 0) return;
   for (const e of errors) log.error(e);

@@ -153,7 +153,7 @@ entries carry no priority field) — adjust freely.
       the status value and then finds no verb. Documented-as-needs-a-value, but
       a friendlier error ("`--status` needs a value; did you mean `status`?")
       or requiring `=` for these flags would remove the surprise. Severity: low.
-- [ ] **Remove the `uuid` verb (scope creep) — supersede it with Plan 21's
+- [x] **Remove the `uuid` verb (scope creep) — supersede it with Plan 21's
       `add`.** `n8n-decanter uuid [count]` (`n8n-decanter.mts` handler ~179-184)
       is a general lowercase-v4 UUID generator justified only for hand-authoring
       new node ids in `workflow.json` — scope-distant from "sync workflows to
@@ -169,6 +169,8 @@ entries carry no priority field) — adjust freely.
       `docs/agents/*`, `docs/concepts/configuration.md`, `README.md`, `PLAN.md`,
       and the `test/e2e.mts` step. Breaking change → **Breaking:** CHANGELOG
       entry. Severity: low (deferred until `add` ships).
+      (done 2026-07-20, alongside Plan 21's `add`: verb + docs + agent template
+      + e2e step removed; `add` now mints the id. Breaking → v0.4.0.)
 - [ ] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
       templates. Low priority for a solo project, but cheap and conventional if
       contributions are wanted (CONTRIBUTING.md already invites them).
@@ -221,16 +223,16 @@ entries carry no priority field) — adjust freely.
       fixtures, warn if that version is older than the current draft — the
       recorded data may not match the code being tested.
       (graduated to [Plan 20](DONE-20-cli-publish-lifecycle.md))
-- [ ] **`add` verb** — scaffold a Code node (uuid → node object → `//@file:`
+- [x] **`add` verb** — scaffold a Code node (uuid → node object → `//@file:`
       placeholder → source file) in one step. Lower priority than `rename`;
       node creation is rarer than renaming.
-      (graduated to [Plan 21](OPEN-21-repo-authored-workflows.md))
+      (graduated to [Plan 21](DONE-21-repo-authored-workflows.md))
 - [ ] **Folder hierarchy in sync layout** — mirror n8n's folder hierarchy, if
       the API exposes folder placement (PLAN.md milestone 4 — needs a live
       instance to verify). (graduated to
       [Plan 8](BLOCKED-8-folder-hierarchy-in-sync-layout.md) — API research done:
       placement is write-only, so the plan inverts to push-driven placement)
-- [ ] **Create workflows from the repo** (2026-07-19; n8n 2.x-only scope) —
+- [x] **Create workflows from the repo** (2026-07-19; n8n 2.x-only scope) —
       the 2.x public API has `POST /api/v1/workflows` (verified by the
       Plan 15 smoke suite; 1.x had no create, hence PLAN.md's "workflows are
       born in n8n" rule). A `push --create` (or workflow-level `add`) would
@@ -241,9 +243,9 @@ entries carry no priority field) — adjust freely.
       "born in n8n" guidance in PLAN.md + template AGENTS.md.
       (2026-07-20 status: split — blank CLI-native create →
       [Plan 20](DONE-20-cli-publish-lifecycle.md) `create`; clone an existing
-      workflow → [Plan 21](OPEN-21-repo-authored-workflows.md) `duplicate`;
+      workflow → [Plan 21](DONE-21-repo-authored-workflows.md) `duplicate`;
       both preserve pull-first. The data-model-inverting `push --create`
-      variant was dropped by user decision.)
+      variant was dropped by user decision. Both shipped 2026-07-20.)
 - [ ] **Engine-true simulation suite** — real e2e test or simulation suite: is
       there a way to really execute the workflow with the n8n engine using
       executions data as a mock/dry run? Also making sure nothing is really
