@@ -33,8 +33,9 @@ items not yet claimed by one. Recommended order:
 7. [Engine-true simulation suite](OPEN-7-engine-true-simulation-suite.md) —
    replay a whole workflow through the real n8n engine offline: network nodes
    pinned from captured executions (LLM guesses fill gaps), pure nodes run for
-   real, enforced no-side-effects. Depends on Plan 3's execution-dataset
-   capture, so it goes last.
+   real, enforced no-side-effects. Unblocked since Plan 3's `executions` verb
+   shipped (2026-07-19); next step is the timeboxed engine spike. Refreshed
+   2026-07-20.
 8. [Folder hierarchy in sync layout](OPEN-8-folder-hierarchy-in-sync-layout.md) —
    local dirs above a workflow folder become its n8n folder path, pushed
    one-way via the folders public API (the API can write placement but not
@@ -94,6 +95,27 @@ items not yet claimed by one. Recommended order:
     type-to-filter picker (pulled workflows green, unpulled remote ones
     yellow) with a follow-up verb menu; piped invocations keep printing
     usage. `completion` stays alongside it (decided 2026-07-19).
+20. [CLI publish lifecycle](OPEN-20-cli-publish-lifecycle.md) — close the
+    n8n 2.x workflow lifecycle from the CLI: `publish`/`unpublish` plus
+    `create` (blank server-born draft, pulled immediately) and `delete`
+    (confirmation-gated, local folder untouched), a version-aware `status`
+    line, and a stale-fixture warning for `executions`. Groups three backlog
+    items off PLAN.md's publish-semantics research + a user extension
+    (2026-07-20); endpoint/field shapes gated on live smoke verification. Owns
+    the `createWorkflow` method Plan 21's `duplicate` reuses. Proposed
+    2026-07-20.
+21. [Local authoring helpers](OPEN-21-repo-authored-workflows.md) — `add` verb
+    (scaffold a Code node in one step, offline) and `duplicate` verb (clone an
+    existing workflow into a new remote one via 2.x `POST /workflows`, landed
+    through a fresh pull). Both preserve the pull-first model — the earlier
+    `push --create` idea, which would have inverted it, was dropped
+    (2026-07-20). Proposed 2026-07-20.
+22. [Test suite depth](OPEN-22-test-suite-depth.md) — cover the interactive
+    surfaces no test drives today (picker terminal IO, watch conflict prompts,
+    watch↔proxy wiring) via injected streams (no pty dep), decouple the
+    monolithic e2e for isolation/legibility, and extend the Docker smoke suite
+    to a 2.x version matrix + polling instead of fixed sleeps. Proposed
+    2026-07-20.
 
 ## Conventions
 
@@ -113,6 +135,10 @@ mergeable:
     priorities per task (e.g. "P1 (validator) / P2 (rename)").
   - `**Status:**` `Not started` / `In progress` / `Done`.
   - `**Theme:**` one-line what-and-why.
+  - `**Model:**` *(optional, advisory)* the Claude model best suited to
+    *implement* the plan — Opus for high-reasoning / safety-critical / novel
+    design, Sonnet for well-specified broad implementation, Haiku for
+    mechanical low-risk work; may split per task. A hint, not a rule.
 - **Sections**, in order:
   - `## Why` — the motivation/context.
   - `## Source` — the backlog entries ([Plan 0](BACKLOG.md), or

@@ -1,12 +1,10 @@
 # Plan 10 — Hardening: bigger refactors & decision-gated work
 
-**Priority:** P2 (task 7: P3)
-**Status:** Done (2026-07-18; task 7 deferred by user decision)
-**Theme:** The half of the tests/stability/refactoring work that changes
-user-visible behavior, needs design care because existing copies deliberately
-diverge, or needs a user decision / real-world checking before starting.
-The no-brainer half is [Plan 9](DONE-9-tests-stability-refactoring.md), which
-should land first — its unit tests are the safety net for the refactors here.
+| | |
+|---|---|
+| **Priority** | P2 (task 7: P3) |
+| **Status** | Done (2026-07-18; task 7 deferred by user decision) |
+| **Theme** | The half of the tests/stability/refactoring work that changes user-visible behavior, needs design care because existing copies deliberately diverge, or needs a user decision / real-world checking before starting. The no-brainer half is [Plan 9](DONE-9-tests-stability-refactoring.md), which should land first — its unit tests are the safety net for the refactors here. |
 
 ## Why
 

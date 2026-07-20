@@ -1,10 +1,10 @@
 # Plan 12 — Structural watch: push workflow.json edits
 
-**Priority:** P2
-**Status:** Done (2026-07-19 — implemented + offline-tested; live verification
-complete: smoke-suite spot-check, user-confirmed browser reload, and a scripted
-pty `[r]` drive against a real n8n 2.30.7, see task 8)
-**Theme:** Watch reacts to `workflow.json` saves and pushes structural edits, guarded by a 3-way conflict check with interactive merge/local/remote resolution — the IDE becomes a peer editor of the n8n UI.
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | Done (2026-07-19 — implemented + offline-tested; live verification complete: smoke-suite spot-check, user-confirmed browser reload, and a scripted pty `[r]` drive against a real n8n 2.30.7, see task 8) |
+| **Theme** | Watch reacts to `workflow.json` saves and pushes structural edits, guarded by a 3-way conflict check with interactive merge/local/remote resolution — the IDE becomes a peer editor of the n8n UI. |
 
 ## Why
 

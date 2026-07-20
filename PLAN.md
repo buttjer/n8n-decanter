@@ -415,7 +415,11 @@ Bootstraps a sync directory (defaults to cwd, runs before any config exists):
 
 1. Prompt for host + API key; values from an existing `.env` are offered as
    defaults (enter keeps them). Host is normalized (`https://` prepended when
-   no scheme, trailing `/` stripped). Write `.env`.
+   no scheme, trailing `/` stripped). Write `.env`. The docs (`.env.example`,
+   README) recommend a **scoped** API key limited to the scopes the CLI uses —
+   `workflow:read`/`list`/`update` and `execution:read`/`list` — over a
+   full-access key, since the key lives beside the config and a leak is
+   otherwise instance-wide. Guidance only; init never creates the key.
 2. Copy `template/` into the target **recursively and completely** — whatever
    the template contains ships — but never overwrite files that already exist
    in the target, so re-running init is safe. Files named `X.example`

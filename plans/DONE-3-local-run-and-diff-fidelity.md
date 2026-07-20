@@ -1,10 +1,10 @@
 # Plan 3 — Local run/diff fidelity
 
-**Priority:** P2
-**Status:** Done (A + B 2026-07-18; C shipped 2026-07-19 as the standalone
-`executions` verb — `run --from-execution` deferred to the backlog)
-**Theme:** make offline iteration trustworthy — seed staticData in `run`, diff
-local vs live before push, and capture real execution data as fixtures.
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | Done (A + B 2026-07-18; C shipped 2026-07-19 as the standalone `executions` verb — `run --from-execution` deferred to the backlog) |
+| **Theme** | make offline iteration trustworthy — seed staticData in `run`, diff local vs live before push, and capture real execution data as fixtures. |
 
 ## Why
 
