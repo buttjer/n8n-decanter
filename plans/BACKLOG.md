@@ -36,10 +36,13 @@ entries carry no priority field) — adjust freely.
 
 ### Open — medium (valuable, more scope/design)
 
-- [ ] **Modification-aware template refresh** — conffile-style: record
+- [x] **Modification-aware template refresh** — conffile-style: record
       copy-time hashes of template files in a manifest at init; on re-init
       update pristine files (after confirm), never touch user-modified ones,
       and report drift. Replaces the blunt `init --force` recopy.
+      (done 2026-07-20: `.decanter-template.json` baseline manifest +
+      `lib/template.mts` `classifyTemplateFile`; `--force` kept as the
+      overwrite-all escape hatch; conflicts report-only. v0.3.4.)
 - [ ] **`n8n-globals.d.ts` sourcing** — today it's a hand-written "pragmatic
       subset" shipped in `template/` as a byte-identical copy of the repo's
       root file → two copies that can drift.

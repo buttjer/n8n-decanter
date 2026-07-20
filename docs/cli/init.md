@@ -15,7 +15,8 @@ Interactive setup for a new (or existing) sync dir:
   edit or delete `.env` to change credentials. A best-effort credential check
   runs at the end.
 - Copies the starter template. Files named `X.example` in the template land
-  as `X` in the target.
+  as `X` in the target, and a copy-time baseline is recorded in
+  `.decanter-template.json` (see [Re-running init](#re-running-init)).
 - Scaffolds `decanter.config.json` and a `.gitignore`.
 
 ## TypeScript tooling
@@ -37,8 +38,30 @@ per-agent configs (Claude Code, Cursor, Codex, opencode), including a hook
 that runs `check` after node edits — see
 [Agents](/docs/agents/overview/).
 
+## Re-running init
+
+`init` is safe to re-run — for example to pick up template improvements after
+upgrading the CLI. It's **modification-aware** (like dpkg conffiles): at first
+init it records the hash of every template file in a git-tracked
+`.decanter-template.json` manifest, then compares that baseline against your
+working copy and the current template on each re-run:
+
+- **Files you haven't touched** whose template version changed → `init` lists
+  them and offers to update (a single `y/N` confirm). Non-interactive runs
+  report that updates are available and apply nothing — re-run interactively or
+  use `--force`.
+- **Files you've edited locally** → left untouched; reported as
+  `left unchanged (modified locally): …`.
+- **Files changed in both the template and your copy** → left untouched;
+  flagged as a conflict to resolve manually (or `--force` to take the template
+  version).
+- **Files new to the template** → copied in.
+
+Commit `.decanter-template.json` — it's the shared baseline, so a teammate who
+clones and re-inits sees the same drift picture. `.env` is never tracked in it.
+
 ## Flags
 
-- `--force` — re-copies template files over existing ones. `.env` is never
-  touched by it. Without the flag, existing files are never overwritten
-  (re-running `init` is safe).
+- `--force` — the escape hatch: overwrites **every** template file with its
+  template version, including ones you edited (each such file is flagged
+  `(had local changes)`), then re-records the baseline. `.env` is never touched.

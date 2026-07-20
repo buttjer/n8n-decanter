@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { parseEnvFile } from "./config.mts";
 import { createPrompt } from "./prompt.mts";
 import { style } from "./style.mts";
+import { classifyTemplateFile, MANIFEST_FILE, readManifest, writeManifest, type TemplateOutcome } from "./template.mts";
 import type { Log } from "./types.mts";
+import { sha256 } from "./util.mts";
 
 /**
  * Nearest ancestor of `startDir` holding a package.json — the package root.
@@ -55,28 +57,158 @@ export function printBanner(log: Log): void {
   console.log(style.dim(`n8n workflows ⇄ agentic code · v${version}`));
 }
 
-function copyTemplate(srcDir: string, destDir: string, { force = false, protect = new Set() }: { force?: boolean; protect?: Set<string> } = {}): string[] {
-  const overwritten: string[] = [];
-  const walk = (src: string, dest: string, rel: string): void => {
-    mkdirSync(dest, { recursive: true });
+interface TemplateEntry {
+  /** Materialized rel path — manifest key *and* on-disk location under destDir. */
+  rel: string;
+  srcPath: string;
+  destPath: string;
+  templateHash: string;
+  targetHash?: string;
+  outcome: TemplateOutcome;
+}
+
+/**
+ * Classify every template file against the target dir and the copy-time
+ * baseline manifest. Pure scan — no files are written.
+ */
+function scanTemplate(srcDir: string, destDir: string, manifest: Record<string, string>, protect: Set<string>): TemplateEntry[] {
+  const entries: TemplateEntry[] = [];
+  const walk = (src: string, rel: string): void => {
     for (const entry of readdirSync(src, { withFileTypes: true })) {
       const srcPath = path.join(src, entry.name);
       if (entry.isDirectory()) {
-        walk(srcPath, path.join(dest, entry.name), path.join(rel, entry.name));
+        walk(srcPath, path.join(rel, entry.name));
         continue;
       }
       const name = entry.name.endsWith(".example") && entry.name !== ".example"
         ? entry.name.slice(0, -".example".length)
         : entry.name;
-      const destPath = path.join(dest, name);
+      const materializedRel = path.join(rel, name);
+      const destPath = path.join(destDir, materializedRel);
+      if (protect.has(destPath)) continue; // .env: written separately, never manifest-tracked
+      const templateHash = sha256(readFileSync(srcPath, "utf8"));
       const exists = existsSync(destPath);
-      if (exists && (!force || protect.has(destPath))) continue;
-      copyFileSync(srcPath, destPath);
-      if (exists) overwritten.push(path.join(rel, name));
+      const targetHash = exists ? sha256(readFileSync(destPath, "utf8")) : undefined;
+      const manifestHash = manifest[materializedRel];
+      entries.push({
+        rel: materializedRel,
+        srcPath,
+        destPath,
+        templateHash,
+        targetHash,
+        outcome: classifyTemplateFile({ exists, targetHash, templateHash, manifestHash }),
+      });
     }
   };
-  walk(srcDir, destDir, "");
-  return overwritten;
+  walk(srcDir, "");
+  return entries;
+}
+
+function copyEntry(entry: TemplateEntry): void {
+  mkdirSync(path.dirname(entry.destPath), { recursive: true });
+  copyFileSync(entry.srcPath, entry.destPath);
+}
+
+/**
+ * Modification-aware template refresh (dpkg conffile-style). First init copies
+ * everything and records a baseline manifest. Re-init copies files new to the
+ * template, offers to refresh files the user hasn't touched (pristine), and
+ * leaves locally-modified files alone while reporting the drift. `--force` is
+ * the escape hatch: it overwrites every template file regardless.
+ */
+async function refreshTemplate(srcDir: string, destDir: string, { force, protect, version }: { force: boolean; protect: Set<string>; version: string }, log: Log): Promise<void> {
+  const manifest = readManifest(destDir);
+  const firstInit = !existsSync(path.join(destDir, MANIFEST_FILE));
+  const entries = scanTemplate(srcDir, destDir, manifest.files, protect);
+  const nextFiles: Record<string, string> = {};
+
+  if (force) {
+    let anyExisting = false;
+    for (const e of entries) {
+      const changed = e.targetHash !== undefined && e.targetHash !== e.templateHash;
+      if (e.targetHash !== undefined) anyExisting = true;
+      copyEntry(e);
+      nextFiles[e.rel] = e.templateHash;
+      if (e.targetHash !== undefined) log.warn(`--force: overwrote ${e.rel} with the template version${changed ? " (had local changes)" : ""}`);
+    }
+    writeManifest(destDir, { version, files: nextFiles });
+    log.info(anyExisting ? `reset template -> ${destDir}` : `copied template -> ${destDir}`);
+    return;
+  }
+
+  const added: string[] = [];
+  const pending: TemplateEntry[] = [];
+  const modified: string[] = [];
+  const conflicts: string[] = [];
+  let uptodate = 0;
+
+  for (const e of entries) {
+    switch (e.outcome) {
+      case "added":
+        copyEntry(e);
+        nextFiles[e.rel] = e.templateHash;
+        added.push(e.rel);
+        break;
+      case "converged":
+        nextFiles[e.rel] = e.templateHash; // adopt: on-disk copy now equals the template
+        break;
+      case "adopt":
+        nextFiles[e.rel] = e.targetHash!; // legacy dir: trust the on-disk copy as the baseline
+        break;
+      case "update":
+        pending.push(e);
+        nextFiles[e.rel] = manifest.files[e.rel]!; // provisional; set to templateHash if applied
+        break;
+      case "drift-modified":
+        modified.push(e.rel);
+        nextFiles[e.rel] = manifest.files[e.rel]!;
+        break;
+      case "drift-conflict":
+        conflicts.push(e.rel);
+        nextFiles[e.rel] = manifest.files[e.rel]!;
+        break;
+      case "uptodate":
+        uptodate++;
+        nextFiles[e.rel] = e.templateHash;
+        break;
+    }
+  }
+
+  // On first init everything is "added" — the single "copied template" line
+  // below says it; only call out files the template *gained* on a re-init.
+  if (!firstInit) for (const rel of added) log.info(`added ${rel} from the template`);
+
+  if (pending.length > 0) {
+    let apply = false;
+    if (process.stdin.isTTY) {
+      const rl = createPrompt();
+      try {
+        log.info(`${pending.length} template file(s) have newer versions and are unmodified locally:`);
+        for (const e of pending) log.info(`  ${e.rel}`);
+        apply = (await rl.question(`Update ${pending.length} pristine file(s) to the template version? [y/N] `)).trim().toLowerCase().startsWith("y");
+      } finally {
+        rl.close();
+      }
+    } else {
+      log.warn(`${pending.length} pristine template file(s) have updates available — re-run init interactively or with --force to apply: ${pending.map((e) => e.rel).join(", ")}`);
+    }
+    if (apply) {
+      for (const e of pending) {
+        copyEntry(e);
+        nextFiles[e.rel] = e.templateHash;
+      }
+      log.info(`updated ${pending.length} file(s) from the template`);
+    }
+  }
+
+  if (modified.length > 0) log.warn(`left unchanged (modified locally): ${modified.join(", ")}`);
+  if (conflicts.length > 0) log.warn(`left unchanged (changed in both the template and your copy — resolve manually or --force to reset): ${conflicts.join(", ")}`);
+
+  writeManifest(destDir, { version, files: nextFiles });
+  // "copied" only when the whole tree was genuinely fresh; a dir that pre-dates
+  // the manifest (files present, no baseline) adopts in place — report as such.
+  if (added.length === entries.length) log.info(`copied template -> ${destDir}`);
+  else log.info(`template up to date (${uptodate} unchanged${added.length ? `, ${added.length} added` : ""})`);
 }
 
 /** Interactive bootstrap: prompt for credentials, write .env, copy template/. */
@@ -107,15 +239,14 @@ export async function init(targetDir: string | undefined, { force = false }: { f
     log.info(`wrote ${envFile}`);
   }
 
-  // Copy the template completely (whatever it contains, recursively).
-  // Default: never overwrite files that already exist in the target.
-  // --force re-copies template files over existing ones (.env excepted —
-  // it was just written with real credentials).
+  // Copy the template (whatever it contains, recursively), recording a
+  // per-file baseline in .decanter-template.json. Re-init is modification-aware:
+  // pristine files can be refreshed (after confirm), locally-edited files are
+  // left alone with drift reported, and `--force` overwrites everything. `.env`
+  // is protected (just written with real credentials) and never tracked.
   // Files named `X.example` are inert in this repo (so agent tooling ignores
   // them while working on the CLI itself) and materialize as `X` in the target.
-  const overwritten = copyTemplate(TEMPLATE_DIR, dir, { force, protect: new Set([envFile]) });
-  log.info(`copied template -> ${dir}`);
-  for (const rel of overwritten) log.warn(`--force: overwrote ${rel} with the template version`);
+  await refreshTemplate(TEMPLATE_DIR, dir, { force, protect: new Set([envFile]), version: cliVersion() }, log);
 
   const configFile = path.join(dir, "decanter.config.json");
   if (!existsSync(configFile)) {

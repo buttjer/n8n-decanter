@@ -47,7 +47,8 @@ const usage = (): string => {
                                    ${d("choose a workflow, then verbs — stays in")}
                                    ${d("the workflow's menu until Esc")}
   ${b("n8n-decanter init")} [dir] [--force]   ${d("interactive setup: .env, starter files, config")}
-                                   ${d("(--force re-copies template files over existing ones)")}
+                                   ${d("(re-init refreshes unedited template files, keeps")}
+                                   ${d("your edits; --force overwrites everything)")}
   ${b("n8n-decanter")} [ref...] ${b("pull")}       ${d("pull workflows (default: all in decanter.config.json)")}
   ${b("n8n-decanter")} [ref...] ${b("push")} [--force] [--no-typecheck]
   ${b("n8n-decanter")} [ref...] ${b("status")} [--diff]   ${d("drift report (--diff shows line diffs);")}
