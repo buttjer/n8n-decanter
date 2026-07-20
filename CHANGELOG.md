@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-20
+
 ### Changed
 
 - **Interactive picker got a visual refresh.** Each workflow row now leads with
