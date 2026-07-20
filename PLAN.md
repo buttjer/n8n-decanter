@@ -63,7 +63,8 @@ n8n-decanter/
   Release (changelog section as notes). Internal-only PRs (no
   changelog entry) merge without a bump — user-facing work never sits
   unreleased on main. Full scheme in CLAUDE.md ("Git workflow & releases");
-  GitHub ruleset enforcement waits for the repo going public (plans/OPEN-13).
+  GitHub ruleset enforcement is live now that the repo is public
+  (plans/DONE-13).
 - **n8n 2.x only (user decision 2026-07-19).** The tool targets the n8n 2.x
   line exclusively — the draft/publish model is treated as the native model,
   no 1.x compatibility hedges. Continuously verified against real 2.x

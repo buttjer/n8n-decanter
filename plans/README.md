@@ -64,10 +64,11 @@ items not yet claimed by one. Recommended order:
     session starts with a safety commit + pull. Done — live verification
     via the Plan 15 smoke suite, a scripted pty `[r]` drive, and a
     user-confirmed browser reload.
-13. [Open-source release](OPEN-13-open-source-release.md) — everything between
-    "the code is done" and v0.1.0 public on GitHub + npm: identity rewrite,
-    repo hygiene, publish build, CI, tarball verification. Remaining steps are
-    the user's manual checklist (repo creation, npm publish).
+13. [Open-source release](DONE-13-open-source-release.md) — everything between
+    "the code is done" and public on GitHub + npm: identity rewrite, repo
+    hygiene, publish build, CI, tarball verification, security settings,
+    branch protection. Done — repo is public with a live ruleset, and
+    `npm publish` reached the registry (v0.3.2, matching `main`).
 14. [Bundle `shared/` code into TS pushes](DONE-14-bundle-shared-code-into-ts-pushes.md) —
     make imports from `shared/` work in `.ts` nodes (types *and* values) via
     hoist→wrap→bundle at push time; no-import nodes keep byte-identical

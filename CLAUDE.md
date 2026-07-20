@@ -55,10 +55,10 @@ Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
   patch). After merge, tag the squash commit `vX.Y.Z` on main, push the tag,
   and create the GitHub Release from it with that version's changelog
   section as the notes (`gh release create vX.Y.Z --verify-tag --notes-file
-  <section>`). Once the package is on npm (plans/OPEN-13), publishing joins
-  this step. Internal-only PRs (no `[Unreleased]` entries per the Changelog
-  rules) merge without a version bump — so user-facing work never sits
-  unreleased on main.
+  <section>`). The package is on npm (plans/DONE-13) — `npm publish` joins
+  this step too now. Internal-only PRs (no `[Unreleased]` entries per the
+  Changelog rules) merge without a version bump — so user-facing work never
+  sits unreleased on main.
 - CI (typecheck + `npm test`) must be green before merge, now enforced
   GitHub-side (see the ruleset bullet below). **The docs fast path no longer
   skips the wait** — markdown-only changes still can't *fail* the checks, but
@@ -85,7 +85,7 @@ Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
   `.worktrees/` including uncommitted work; clean inside subdirs (e.g.
   `dist/`) instead.
 - GitHub-side enforcement (require PR + green required checks, block
-  force-push) is **live** via the public-repo ruleset (plans/OPEN-13).
+  force-push) is **live** via the public-repo ruleset (plans/DONE-13).
   Auto-merge is not enabled on the repo and admin-bypass is disallowed, so a
   blocked merge means "checks still pending" — wait them out, don't try to
   force it.
