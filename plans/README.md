@@ -105,6 +105,12 @@ items not yet claimed by one. Recommended order:
     workflow remotely from a repo folder via 2.x `POST /workflows`). The
     `push --create` half inverts PLAN.md's "born in n8n" data model, so it
     needs user sign-off before landing. Proposed 2026-07-20.
+22. [Test suite depth](OPEN-22-test-suite-depth.md) — cover the interactive
+    surfaces no test drives today (picker terminal IO, watch conflict prompts,
+    watch↔proxy wiring) via injected streams (no pty dep), decouple the
+    monolithic e2e for isolation/legibility, and extend the Docker smoke suite
+    to a 2.x version matrix + polling instead of fixed sleeps. Proposed
+    2026-07-20.
 
 ## Conventions
 
