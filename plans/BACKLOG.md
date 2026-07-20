@@ -146,7 +146,7 @@ entries carry no priority field) — adjust freely.
 - [ ] **Folder hierarchy in sync layout** — mirror n8n's folder hierarchy, if
       the API exposes folder placement (PLAN.md milestone 4 — needs a live
       instance to verify). (graduated to
-      [Plan 8](OPEN-8-folder-hierarchy-in-sync-layout.md) — API research done:
+      [Plan 8](BLOCKED-8-folder-hierarchy-in-sync-layout.md) — API research done:
       placement is write-only, so the plan inverts to push-driven placement)
 - [ ] **Create workflows from the repo** (2026-07-19; n8n 2.x-only scope) —
       the 2.x public API has `POST /api/v1/workflows` (verified by the
