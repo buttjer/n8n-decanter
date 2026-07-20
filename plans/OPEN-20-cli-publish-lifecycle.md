@@ -178,9 +178,23 @@ belong in one plan.
   drift overrides. For `delete` it means exactly one thing: "skip the
   confirmation" (the non-interactive consent switch), a third meaning next
   to init's overwrite and push's drift bypass — the help text must say so.
-- **Picker:** the verb menu stays `status/pull/push/watch/check` — `create`
-  has no ref to pick and `delete` doesn't belong one keystroke away from a
-  workflow list. Revisit only as its own decision.
+- **Picker integration (Plan 19).** These verbs act on a picked workflow, so
+  the verb menu should grow with them (it's already slated to gain
+  `executions` — see [Plan 0](BACKLOG.md)):
+  - **`publish` / `unpublish` → add as one state-aware toggle.** The
+    version-aware GET (task 2) already knows the publish state, so the menu
+    shows `publish` on a draft-only workflow and `unpublish` on a live one —
+    one entry, not two. Safe, ref-taking, the picker's natural job.
+  - **`delete` → stays out of the menu.** Destructive one keystroke from a
+    fast-moving list is the risk the picker should avoid; it keeps its `y/N`
+    gate as a typed verb. Include it (last, still confirmed) only as a
+    deliberate later decision.
+  - **`create` → not a verb-menu item** (no workflow to pick). It belongs in
+    the picker's *workflow-list* stage instead — a "new workflow" affordance
+    (dedicated key, or "type a name that matches nothing → create") — a
+    separate, optional picker enhancement.
+  Wiring the menu is Plan 19's surface, not this plan's tasks; land the verbs
+  first, then add the menu entries in the same or a follow-up change.
 - **PLAN.md:** beyond the task-1/2 notes above, `create`/`delete` extend the
   verb list and the "born in n8n" prose needs the one-line clarification
   that birth can now be *triggered* from the CLI — same raise-with-the-user

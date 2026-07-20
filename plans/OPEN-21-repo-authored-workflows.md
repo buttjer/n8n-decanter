@@ -105,6 +105,13 @@ the inverting variant was cut entirely.
   them; the other reuses. Don't duplicate the method or the gate.
 - **CHANGELOG:** the `add` and `duplicate` verbs are user-facing → `Added`
   under `[Unreleased]` when they land.
+- **Picker integration (Plan 19).** `duplicate` acts on a picked workflow and
+  is non-destructive, so it belongs in the verb menu — default the copy name
+  to `"<name> (copy)"` so it clones the highlighted workflow in one keystroke,
+  no prompt. `add` does *not* (scaffolding a node needs a node name and lands
+  disconnected — a typed verb, not a menu pick). Wiring is Plan 19's surface;
+  land the verb first. (Plan 20's picker note covers the publish-toggle,
+  `delete`, and `create` sides of the same menu question.)
 - Pairs with [Plan 20](OPEN-20-cli-publish-lifecycle.md): `create` (blank) /
   `duplicate` (from an existing workflow) / `add` (a node) / `publish` together
   make the whole author→create→publish loop CLI-native.
