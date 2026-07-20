@@ -6,6 +6,9 @@
 
 **Work on n8n like a codebase — built for AI coding agents.**
 
+**Pre-1.0 — breaking changes to the data model or CLI may ship in minor
+versions until v1.0.**
+
 n8n-decanter syncs your n8n instance into a git-friendly, folder-per-workflow
 layout: every Code node's source becomes its own `.js` or `.ts` file,
 editable in your IDE or by your agent, and pushed back through the n8n API.
