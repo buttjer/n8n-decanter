@@ -11,6 +11,15 @@
 //
 // Env knobs: SMOKE_N8N_TAG overrides the pinned image tag (version-bump
 // testing); SMOKE_KEEP=1 keeps the container alive after the run.
+//
+// Version matrix (Plan 22): the CI `smoke` job (cron + manual dispatch only)
+// runs this suite against a small, named set of 2.x tags via SMOKE_N8N_TAG —
+// oldest-supported, a middle release, and latest — so the "n8n 2.x" contract
+// (PLAN.md) is asserted across the line, not just one pinned point release.
+// Passing set, last verified 2026-07-20: n8nio/n8n:2.30.7 (oldest supported —
+// the floor Plan 18's pinData seeding needs), 2.31.0 (middle), 2.31.4
+// (latest at verification time). Keep this list and .github/workflows/ci.yml's
+// `smoke` matrix in sync.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
@@ -96,7 +105,10 @@ async function cli(...args: string[]) {
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
 const webhook = async (payload: unknown): Promise<any> => {
   let last = "";
-  for (let i = 0; i < 6; i++) {
+  // bounded poll (12 x 750ms = 9s budget) for webhook registration lagging
+  // activation/push — callers used to pad this with a fixed pre-sleep too;
+  // polling here already covers the lag, on the fast path *and* the slow one
+  for (let i = 0; i < 12; i++) {
     const res = await fetch(`${HOST}/webhook/smoke-hook`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -105,7 +117,7 @@ const webhook = async (payload: unknown): Promise<any> => {
     const text = await res.text();
     last = `${res.status}: ${text.slice(0, 400)}`;
     if (res.ok && text) return JSON.parse(text);
-    await sleep(1500); // webhook registration lags activation
+    await sleep(750);
   }
   let execInfo = "";
   try {
@@ -163,6 +175,11 @@ try {
   });
 
   await step("bootstrap: owner setup, login, API key (the version-fragile part)", async () => {
+    // Every assertion here names IMAGE explicitly: this bootstrap sequence
+    // (undocumented REST endpoints, not the public API) is what actually
+    // changes shape between n8n versions — a failure here means "this
+    // version's setup/login/api-key flow changed", not "decanter broke".
+    const versionNote = `against ${IMAGE} — if this only fails on a version bump, the bootstrap sequence changed shape, not decanter`;
     // Set-Cookie is special-cased in fetch — getSetCookie(), not headers.get()
     const authCookie = (r: Response) => r.headers.getSetCookie().join("; ").match(/n8n-auth=[^;]+/)?.[0];
     const setup = await fetch(`${HOST}/rest/owner/setup`, {
@@ -170,7 +187,7 @@ try {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(OWNER),
     });
-    assert.ok(setup.ok, `owner setup failed: ${setup.status} ${await setup.text()}`);
+    assert.ok(setup.ok, `owner setup failed ${versionNote}: ${setup.status} ${await setup.text()}`);
     let cookie = authCookie(setup);
     const attempts: string[] = [`setup ${setup.status} cookies=${JSON.stringify(setup.headers.getSetCookie())}`];
     // a cold instance can accept the setup but lag on issuing auth cookies — retry login briefly
@@ -184,7 +201,7 @@ try {
       cookie = authCookie(login);
       if (!cookie) await sleep(2000);
     }
-    assert.ok(cookie, `no n8n-auth cookie from setup or login:\n  ${attempts.join("\n  ")}`);
+    assert.ok(cookie, `no n8n-auth cookie from setup or login ${versionNote}:\n  ${attempts.join("\n  ")}`);
     const keyRes = await fetch(`${HOST}/rest/api-keys`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
@@ -195,9 +212,9 @@ try {
       }),
     });
     const keyText = await keyRes.text();
-    assert.ok(keyRes.ok, `api key creation failed: ${keyRes.status} ${keyText}`);
+    assert.ok(keyRes.ok, `api key creation failed ${versionNote}: ${keyRes.status} ${keyText}`);
     KEY = JSON.parse(keyText).data.rawApiKey;
-    assert.ok(KEY, "no rawApiKey in response");
+    assert.ok(KEY, `no rawApiKey in response ${versionNote}`);
   });
 
   await step("seed: workflow created via the public API (2.x has POST /workflows)", async () => {
@@ -274,8 +291,7 @@ try {
     let r = await cli("push");
     assert.equal(r.code, 0, r.out);
     await api("POST", `/api/v1/workflows/${wfId}/activate`);
-    await sleep(1500); // webhook registration
-    const out = await webhook({ n: 21 });
+    const out = await webhook({ n: 21 }); // its own bounded poll covers webhook registration lag
     assert.deepEqual(out, [{ doubled: 42, plus: 121 }], `bundled node must compute through shared/ AND the npm package: ${JSON.stringify(out)}`);
   });
 
@@ -293,7 +309,6 @@ try {
     const r = await cli("push"); // structural + code change; workflow is active -> goes live
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /published: code is live now/, "active 2.x workflow auto-publishes on push: " + r.out);
-    await sleep(1000);
     const out = await webhook({ n: 5 });
     assert.deepEqual(out, [{ doubled: 10, mode: "each" }], JSON.stringify(out));
   });
@@ -341,7 +356,6 @@ try {
     assert.equal(r.code, 0, r.out);
     r = await cli(wfId, "status");
     assert.equal(r.code, 0, "in sync after force push + pull: " + r.out);
-    await sleep(1000);
     const out = await webhook({ n: 2 });
     assert.deepEqual(out, [{ doubled: 4, mode: "forced" }], JSON.stringify(out));
   });
@@ -358,7 +372,6 @@ try {
     const remote = await api("GET", `/api/v1/workflows/${wfId}`);
     assert.equal(remote.nodes.find((n: any) => n.id === "c1").name, "Ümläut Nödé", "real n8n accepted the rename");
     assert.ok(remote.connections["Ümläut Nödé"], "rewritten connections accepted");
-    await sleep(1000);
     const out = await webhook({ n: 3 });
     assert.deepEqual(out, [{ doubled: 6, mode: "forced" }], "workflow still executes after rename: " + JSON.stringify(out));
     r = await cli(wfId, "pull");
