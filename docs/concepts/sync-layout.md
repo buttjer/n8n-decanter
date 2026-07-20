@@ -58,6 +58,13 @@ Per-folder machine state: the node-id → file map plus the sync hashes used by
 the [drift guard](/docs/concepts/push-gates/). Commit it; never edit it by
 hand or "fix" a hash.
 
+## `.decanter-template.json` (sync-dir root)
+
+Not per-workflow — one file at the sync-dir root recording the hash of every
+template file as [init](/docs/cli/init/) copied it. It's the baseline that
+makes re-running `init` modification-aware (refresh untouched files, leave your
+edits, report drift). Commit it; never edit it by hand.
+
 ## `code/<node>.remote.js`
 
 An incoming-change artifact written by [pull](/docs/cli/pull/) when the

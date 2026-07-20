@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-20
+
+### Added
+
+- **Modification-aware template refresh.** `init` now records a copy-time
+  baseline of every template file in a git-tracked `.decanter-template.json`
+  manifest. Re-running `init` uses it to refresh files you haven't touched
+  (after a confirm), pull in files newly added to the template, and **leave
+  your local edits alone** — reporting them as drift instead of silently
+  keeping the old version. Files that changed in both the template and your
+  copy are flagged as conflicts and left untouched.
+
+### Changed
+
+- **Re-running `init` is no longer all-or-nothing.** Previously the default
+  refused to overwrite anything and `--force` clobbered every template file.
+  Now the default is modification-aware (see above); `--force` is unchanged —
+  the escape hatch that overwrites everything, now noting which files "had
+  local changes" as it goes.
+
 ## [0.3.3] - 2026-07-20
 
 ### Changed

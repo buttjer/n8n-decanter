@@ -19,7 +19,7 @@ n8n-decanter/
   lib/                    # implementation: api, compile, config, diff,
                           #   executions, git, init, picker, prompt, proxy,
                           #   pull, push, rename, run, state, status, style,
-                          #   util, validate, watch (one .mts each)
+                          #   template, util, validate, watch (one .mts each)
                           #   + types.mts (shared data-model shapes)
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
@@ -439,8 +439,20 @@ Bootstraps a sync directory (defaults to cwd, runs before any config exists):
    full-access key, since the key lives beside the config and a leak is
    otherwise instance-wide. Guidance only; init never creates the key.
 2. Copy `template/` into the target **recursively and completely** — whatever
-   the template contains ships — but never overwrite files that already exist
-   in the target, so re-running init is safe. Files named `X.example`
+   the template contains ships. Copy is **modification-aware** (dpkg
+   conffile-style, `lib/template.mts`): init records the `sha256` of each file
+   as copied in a git-tracked `.decanter-template.json` manifest at the sync-dir
+   root (keys are materialized rel paths; `.env` is excluded — protected +
+   credential-bearing). On re-init, each file is classified from three hashes —
+   manifest baseline, on-disk, current-template — via the pure
+   `classifyTemplateFile`: `added` (copy), `uptodate` (skip), `update` (pristine
+   but template moved → batched `y/N` confirm; non-interactive reports "updates
+   available" and applies nothing), `converged`/`adopt` (silently re-baseline),
+   `drift-modified`/`drift-conflict` (leave, report). `--force` is the escape
+   hatch — overwrite every file regardless, flagging the ones that "had local
+   changes", then re-baseline. This *replaces* the old blunt "never overwrite by
+   default / `--force` clobbers all" behavior while keeping re-init safe. Files
+   named `X.example`
    materialize as `X`: the suffix keeps agent-tooling config (CLAUDE.md,
    `.claude/settings*`, opencode.json, …) inert inside this repo while
    working on the CLI itself, but live in init'ed dirs. Name template files

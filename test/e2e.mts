@@ -237,22 +237,31 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   // piped init prints a plain version line instead of the TTY logo
   assert.match(stdout + stderr, /n8n-decanter v\d+\.\d+\.\d+/);
   assert.ok(!(stdout + stderr).includes("\x1b"), "init must not emit ANSI when piped");
-  // re-init must not clobber user edits to template-provided files
+  // init records a copy-time baseline manifest (.decanter-template.json) that
+  // tracks every materialized template file *except* the credential-bearing .env
+  const manifest = JSON.parse(read(target, ".decanter-template.json")) as { version: string; files: Record<string, string> };
+  const expectedKeys = templateFiles.map(materialize).filter((r) => r !== ".env").sort();
+  assert.deepEqual(Object.keys(manifest.files).sort(), expectedKeys, "manifest tracks all template files but .env");
+  assert.ok(!("env" in manifest.files) && !(".env" in manifest.files), ".env must never be manifest-tracked");
+  // re-init must not clobber user edits to template-provided files, and must
+  // report the drift instead (modification-aware refresh)
   const probe = materialize(templateFiles.find((f) => materialize(f) !== ".env")!);
   writeFileSync(path.join(target, probe), "user content\n");
   const again = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
   again.child.stdin!.write("\n\n"); // keep existing host + key
   again.child.stdin!.end();
-  await again;
+  const againResult = await again;
   assert.equal(read(target, probe), "user content\n");
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
-  // init --force re-copies template files over existing ones (.env protected)
+  assert.ok((againResult.stdout + againResult.stderr).includes(`left unchanged (modified locally): ${probe}`), "re-init must report the modified file as drift");
+  // init --force re-copies template files over existing ones (.env protected),
+  // flagging the ones that had local changes
   const forced = execFile(process.execPath, [CLI, "init", target, "--force"], { encoding: "utf8" });
   forced.child.stdin!.write("\n\n"); // keep existing host + key
   forced.child.stdin!.end();
   const forcedResult = await forced;
   assert.match(forcedResult.stdout + forcedResult.stderr, /using existing \.env/, "re-init must not prompt when .env is complete");
-  assert.match(forcedResult.stdout + forcedResult.stderr, /--force: overwrote/);
+  assert.ok((forcedResult.stdout + forcedResult.stderr).includes(`--force: overwrote ${probe} with the template version (had local changes)`), "--force must flag clobbered local edits");
   const probeTemplateRel = templateFiles.find((f) => materialize(f) === probe)!;
   assert.equal(read(target, probe), read(templateDir, probeTemplateRel), "--force must restore the template version");
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`, ".env must survive --force");

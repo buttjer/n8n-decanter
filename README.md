@@ -64,9 +64,11 @@ directly, no build needed.
 
 `init` copies everything in [template/](template/); files named `X.example`
 land as `X` (the suffix keeps agent configs inert in this repo, live in the
-target). It never overwrites existing files (safe to re-run) unless you pass
-`--force`, which re-copies template files over existing ones (`.env` is never
-touched by it). When `.env` already holds both values, init skips the
+target). Re-running `init` is safe and **modification-aware**: it refreshes
+template files you haven't edited (after a confirm), leaves your local changes
+alone (reporting them as drift), and picks up files new to the template —
+tracked via a `.decanter-template.json` baseline. `--force` is the escape hatch
+that overwrites everything (`.env` is never touched). When `.env` already holds both values, init skips the
 prompts and reuses them — edit or delete `.env` to change credentials. It
 also does a best-effort credential check. Alternatively set up manually: `cp .env.example .env` and
 fill it in. Then add workflow ids to `decanter.config.json`:
