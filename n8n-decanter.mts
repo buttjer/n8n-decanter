@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
-import { init } from "./lib/init.mts";
+import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
+import { init, printBanner } from "./lib/init.mts";
+import { mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { renameNode, renameWorkflow } from "./lib/rename.mts";
@@ -11,7 +13,7 @@ import { runNode } from "./lib/run.mts";
 import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef } from "./lib/state.mts";
 import { statusWorkflow } from "./lib/status.mts";
 import { style, styleErr, transientLine } from "./lib/style.mts";
-import type { Log } from "./lib/types.mts";
+import type { DecanterConfig, Log } from "./lib/types.mts";
 import { runTypecheck, validateWorkflowDir } from "./lib/validate.mts";
 import { watchWorkflow } from "./lib/watch.mts";
 
@@ -40,6 +42,9 @@ const usage = (): string => {
   const b = style.bold;
   const d = style.dim;
   return `Usage:
+  ${b("n8n-decanter")}                       ${d("interactive picker (TTY, inited project):")}
+                                   ${d("choose a workflow, then verbs — stays in")}
+                                   ${d("the workflow's menu until Esc")}
   ${b("n8n-decanter init")} [dir] [--force]   ${d("interactive setup: .env, starter files, config")}
                                    ${d("(--force re-copies template files over existing ones)")}
   ${b("n8n-decanter")} [ref...] ${b("pull")}       ${d("pull workflows (default: all in decanter.config.json)")}
@@ -52,6 +57,11 @@ const usage = (): string => {
   ${b("n8n-decanter")} [ref] ${b("watch")} [--force]   ${d("watch code/ + workflow.json, push on save")}
                                    ${d("(starts with a safety commit + pull; structural")}
                                    ${d("conflicts prompt; browser live-reload optional)")}
+  ${b("n8n-decanter")} [ref...] ${b("executions")} [--status=success|error|waiting] [--limit=N]
+                                   ${d("fetch recent execution data (real run JSON) into")}
+                                   ${d("workflows/<Name>/executions/ — gitignored temp files;")}
+                                   ${d("a numeric argument fetches that one execution by id")}
+  ${b("n8n-decanter")} [ref...] ${b("executions clean")}   ${d("delete fetched execution data (offline)")}
   ${b("n8n-decanter list")} [--remote]      ${d("pulled workflows: name, id, folder")}
                                    ${d("(--remote adds workflows not pulled yet)")}
   ${b("n8n-decanter completion")} zsh|bash  ${d("print a shell completion script for your rc file")}
@@ -68,7 +78,7 @@ Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 };
 
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "list", "completion", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "list", "executions", "completion", "__complete", "help"]);
 /** Verbs whose workflow arguments go through name resolution. */
 const REF_VERBS = new Set(["pull", "push", "status", "check", "watch"]);
 
@@ -100,7 +110,23 @@ const COMPLETION_SCRIPTS: Record<string, string> = {
 };
 
 async function main() {
-  const args = process.argv.slice(2);
+  // --status/--limit take a value (--limit=5 or --limit 5); they're peeled
+  // off first so the boolean-flag and positional logic below stays untouched.
+  const valueFlags = new Map<string, string>();
+  const args: string[] = [];
+  {
+    const raw = process.argv.slice(2);
+    for (let i = 0; i < raw.length; i++) {
+      const m = raw[i].match(/^--(status|limit)(?:=(.*))?$/);
+      if (!m) {
+        args.push(raw[i]);
+        continue;
+      }
+      const value = m[2] ?? raw[++i];
+      if (value === undefined || value === "") throw new Error(`--${m[1]} needs a value (e.g. --${m[1]}=${m[1] === "limit" ? "5" : "success"})`);
+      valueFlags.set(m[1], value);
+    }
+  }
   const force = args.includes("--force");
   const noTypecheck = args.includes("--no-typecheck");
   const workflowFlag = args.includes("--workflow");
@@ -112,6 +138,22 @@ async function main() {
   const verbIndex = positional.findIndex((a) => VERBS.has(a));
   const command = verbIndex === -1 ? positional[0] : positional[verbIndex];
   const rest = positional.filter((_, i) => i !== verbIndex);
+
+  // Bare invocation on a TTY in an inited project → interactive picker
+  // (Plan 19). Piped runs and config-less directories fall through to
+  // usage() unchanged — scripts and LLM harnesses never see the picker.
+  if (command === undefined && args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
+    let pickerConfig;
+    try {
+      pickerConfig = loadConfig(process.cwd(), { requireCredentials: false });
+    } catch {
+      // no decanter.config.json in reach — bare invocation stays usage()
+    }
+    if (pickerConfig !== undefined) {
+      await pickerLoop(pickerConfig);
+      return;
+    }
+  }
 
   if (!command || command === "help" || args[0] === "--help") {
     console.log(usage());
@@ -150,7 +192,7 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--help");
+    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--status=", "--limit=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireCredentials: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -161,7 +203,72 @@ async function main() {
     return;
   }
 
-  const offline = command === "check" || command === "rename" || (command === "list" && !remoteFlag);
+  await dispatch(command, rest, { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, valueFlags });
+}
+
+interface Flags {
+  force: boolean;
+  noTypecheck: boolean;
+  workflowFlag: boolean;
+  remoteFlag: boolean;
+  diffFlag: boolean;
+  valueFlags: Map<string, string>;
+}
+
+/** Flag defaults for picker-launched verbs (no CLI flags in play). */
+const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, workflowFlag: false, remoteFlag: false, diffFlag: false, valueFlags: new Map() };
+
+/**
+ * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
+ * back in the same workflow's verb menu until Esc (workflow list, then quit)
+ * or Ctrl-C. The remote list is fetched once and cached across iterations; a
+ * verb error is logged and returns to the menu instead of ending the session.
+ * The process exit code reflects the last verb run.
+ */
+async function pickerLoop(config: DecanterConfig): Promise<void> {
+  printBanner(log);
+  let remoteCache: Array<{ id: string; name: string }> | undefined;
+  let remoteNotice: string | undefined;
+  let remotePending: Promise<Array<{ id: string; name: string }>> | undefined =
+    config.host !== "" && config.apiKey !== ""
+      ? new N8nApi(config).listWorkflows().then((ws) => ws.map((w) => ({ id: w.id, name: w.name })))
+      : undefined;
+  remotePending?.then((ws) => {
+    remoteCache = ws;
+    remotePending = undefined;
+  }).catch((err: Error) => {
+    remoteNotice = `remote list unavailable (${err.message.split("\n")[0]})`;
+    remotePending = undefined;
+  });
+  let resume: PickerResume | undefined;
+  for (;;) {
+    // re-listed each round: a pull just added a folder (or renamed one)
+    const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true }));
+    const entries = remoteCache !== undefined ? mergeRemote(local, remoteCache) : local;
+    const picked = await runPicker(entries, remotePending, { resume, notice: remoteNotice });
+    if (picked === "quit") return;
+    if (picked === "interrupted") {
+      process.exitCode = 130;
+      return;
+    }
+    log.info(style.dim(`❯ ${picked.verb} ${picked.name}`));
+    process.exitCode = 0;
+    try {
+      await dispatch(picked.verb, [picked.id], PICKER_FLAGS);
+    } catch (err) {
+      process.exitCode = 1;
+      log.error((err as Error).message);
+    }
+    console.log("");
+    resume = { id: picked.id, verb: picked.verb };
+  }
+}
+
+/** Config-needing verbs: load config, resolve refs, run the verb switch. */
+async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
+  const { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, valueFlags } = flags;
+  const offline = command === "check" || command === "rename" || (command === "list" && !remoteFlag)
+    || (command === "executions" && rest.includes("clean"));
   const config = loadConfig(process.cwd(), { requireCredentials: !offline });
   const api = new N8nApi(config);
 
@@ -287,6 +394,46 @@ async function main() {
         }
       }
       if (errorCount > 0) process.exitCode = 1;
+      break;
+    }
+    case "executions": {
+      // grammar: "clean" may sit anywhere (like the verb itself); a purely
+      // numeric argument is an execution id (n8n execution ids are integers,
+      // workflow ids are 16-char alphanumeric tokens) — everything else is a
+      // workflow ref. A workflow literally named "clean" or like a number
+      // must be addressed by id, same rule as verb-named workflows.
+      const params = rest.filter((a) => a !== "clean");
+      const wfIds: string[] = [];
+      for (const r of params.filter((a) => !/^\d+$/.test(a))) wfIds.push(await resolveRef(r));
+      if (rest.includes("clean")) {
+        cleanExecutions(config.root, wfIds, log);
+        break;
+      }
+      const limitRaw = valueFlags.get("limit");
+      const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
+      if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 250)) {
+        throw new Error("--limit must be an integer between 1 and 250 (the executions API page cap)");
+      }
+      const status = valueFlags.get("status");
+      const execIds = params.filter((a) => /^\d+$/.test(a));
+      if (execIds.length === 0 && wfIds.length === 0) {
+        if (config.workflows.length === 0) {
+          throw new Error('no workflow ids: pass them as arguments or list them in decanter.config.json "workflows"');
+        }
+        wfIds.push(...config.workflows);
+      }
+      let failed = false;
+      const attempt = async (label: string, fn: () => Promise<void>) => {
+        try {
+          await fn();
+        } catch (err) {
+          failed = true;
+          log.error(`${label}: ${(err as Error).message}`);
+        }
+      };
+      for (const e of execIds) await attempt(`execution ${e}`, () => fetchExecutionById(api, config.root, e, log));
+      for (const id of wfIds) await attempt(id, () => fetchExecutions(api, config.root, id, { status, limit }, log));
+      if (failed) process.exitCode = 1;
       break;
     }
     case "rename": {

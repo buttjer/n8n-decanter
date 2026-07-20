@@ -1,10 +1,10 @@
 # Plan 5 — Browser refresh after push (The Proxy Method)
 
-**Priority:** P2 (High DX Impact)
-
-**Status:** Done
-
-**Theme:** Spin up a transparent development proxy during `decanter watch`. The proxy injects a lightweight live-reload client into n8n's frontend HTML payload. When a local push completes, the proxy signals the client to cleanly refresh the browser tab.
+| | |
+|---|---|
+| **Priority** | P2 (High DX Impact) |
+| **Status** | Done |
+| **Theme** | Spin up a transparent development proxy during `decanter watch`. The proxy injects a lightweight live-reload client into n8n's frontend HTML payload. When a local push completes, the proxy signals the client to cleanly refresh the browser tab. |
 
 ---
 

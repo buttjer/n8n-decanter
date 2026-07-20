@@ -4,7 +4,10 @@
 //
 // Black-box by design: drives the CLI as a subprocess and talks to n8n with
 // plain fetch — no lib/ imports, so nothing here can accidentally share a
-// bug with the code under test.
+// bug with the code under test. One deliberate exception: the structural-
+// watch step drives lib/watch.mts in-process (same as the e2e watch step) —
+// watch is interactive and long-running, unscriptable as a subprocess
+// without a pty, and in-process log capture is what the asserts need.
 //
 // Env knobs: SMOKE_N8N_TAG overrides the pinned image tag (version-bump
 // testing); SMOKE_KEEP=1 keeps the container alive after the run.
@@ -13,7 +16,7 @@ import { execFile as execFileCb } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { createStepRunner } from "./harness.mts";
 
@@ -373,6 +376,98 @@ try {
     assert.equal(r.code, 0, r.out);
     const tags = await api("GET", `/api/v1/workflows/${wfId}/tags`);
     assert.ok(Array.isArray(tags) && tags.some((t: any) => t.name === "smoke-tag"), `tags survived: ${JSON.stringify(tags)}`);
+  });
+
+  await step("pinData: public-API seeding survives an untouched pull→push round-trip", async () => {
+    // Plan 18's live probe: n8n >= 2.30.7 accepts pinData on the public-API
+    // PUT (the recorded "cannot set it" was a 1.x-era claim); a failure here
+    // throws with the server's status+body — that is the disproof signal.
+    const seed = { Webhook: [{ json: { smoke: "pinned" } }] };
+    const remote = await api("GET", `/api/v1/workflows/${wfId}`);
+    await api("PUT", `/api/v1/workflows/${wfId}`, {
+      name: remote.name,
+      nodes: remote.nodes,
+      connections: remote.connections,
+      settings: remote.settings ?? {},
+      pinData: seed,
+    });
+    let got = await api("GET", `/api/v1/workflows/${wfId}`);
+    assert.deepEqual(got.pinData, seed, `public API persists seeded pinData: ${JSON.stringify(got.pinData)}`);
+    // decanter's PUT never sends pinData — the server must keep its stored copy
+    let r = await cli(wfId, "pull");
+    assert.equal(r.code, 0, r.out);
+    r = await cli(wfId, "push");
+    assert.equal(r.code, 0, r.out);
+    got = await api("GET", `/api/v1/workflows/${wfId}`);
+    assert.deepEqual(got.pinData, seed, `pinData survives the round-trip: ${JSON.stringify(got.pinData)}`);
+  });
+
+  await step("structural watch: clean push, no phantom re-push, conflict detected", async () => {
+    // Plan 12 residue: does the real PUT response's structure hash match the
+    // local file (baseline = response hash — a mismatch means every no-op
+    // save phantom-re-pushes), and does a real concurrent edit -> conflict?
+    const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib", "watch.mts")).href);
+    const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib", "api.mts")).href);
+    const apiClient = new N8nApi({ host: HOST, apiKey: KEY });
+    const config = {
+      configDir: TMP, root: ROOT, workflows: [wfId], commitOnPush: false, commitOnPull: false,
+      browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: HOST, apiKey: KEY,
+    };
+    const logs: string[] = [];
+    const capture = (m: string) => logs.push(m);
+    const log = { info: capture, ok: capture, warn: capture, error: capture };
+    const wfJson = path.join(wfDir, "workflow.json");
+    const setPosition = (pos: [number, number]): void => {
+      const wf = JSON.parse(read(wfJson));
+      wf.nodes.find((n: any) => n.id === "c1").position = pos;
+      writeFileSync(wfJson, JSON.stringify(wf, null, 2));
+    };
+    // non-TTY stdin so the conflict prompt skips instead of hanging the suite
+    const stdinWasTty = process.stdin.isTTY;
+    process.stdin.isTTY = false;
+    const handle = await watchWorkflow(apiClient, config, wfId, {}, log);
+    try {
+      // TMP is not a git repo — watch must warn and skip the startup pull
+      assert.ok(logs.some((m) => m.includes("no git safety net")), logs.join("\n"));
+      // clean structural push: a position move lands on the real instance
+      setPosition([222, 2]);
+      await sleep(2500);
+      let remote = await api("GET", `/api/v1/workflows/${wfId}`);
+      assert.deepEqual(remote.nodes.find((n: any) => n.id === "c1").position, [222, 2],
+        "structural save must reach n8n:\n" + logs.join("\n"));
+      // phantom re-push check: baseline is now the PUT *response* hash — if
+      // real n8n normalized any PUT-accepted field, this no-op save would
+      // GET+push again instead of staying silent (anti-loop branch)
+      const updatedAt = remote.updatedAt;
+      const logCount = logs.length;
+      writeFileSync(wfJson, read(wfJson)); // same bytes, new fs event
+      await sleep(2500);
+      remote = await api("GET", `/api/v1/workflows/${wfId}`);
+      assert.equal(remote.updatedAt, updatedAt, "no phantom re-push after a no-op save");
+      assert.equal(logs.length, logCount, "anti-loop skip must be silent:\n" + logs.slice(logCount).join("\n"));
+      // second client changes the structure remotely, local edit differs -> conflict
+      await api("PUT", `/api/v1/workflows/${wfId}`, {
+        name: remote.name,
+        nodes: remote.nodes.map((n: any) => (n.id === "c1" ? { ...n, position: [444, 4] } : n)),
+        connections: remote.connections,
+        settings: remote.settings ?? {},
+      });
+      setPosition([333, 3]);
+      await sleep(2500);
+      assert.ok(logs.some((m) => m.includes("structural conflict")), "conflict detected:\n" + logs.join("\n"));
+      assert.ok(logs.some((m) => m.includes("non-interactive session")), "non-TTY skips the prompt:\n" + logs.join("\n"));
+      remote = await api("GET", `/api/v1/workflows/${wfId}`);
+      assert.deepEqual(remote.nodes.find((n: any) => n.id === "c1").position, [444, 4],
+        "skipped conflict must leave the remote untouched");
+    } finally {
+      process.stdin.isTTY = stdinWasTty;
+      await handle.close();
+    }
+    // resolve like the prompt's [r] would, out-of-band: pull re-baselines
+    let r = await cli(wfId, "pull");
+    assert.equal(r.code, 0, r.out);
+    r = await cli(wfId, "status");
+    assert.equal(r.code, 0, "in sync after conflict resolution: " + r.out);
   });
 
   await step("error surfaces: bad key -> clean 401, unknown id -> clean 404", async () => {

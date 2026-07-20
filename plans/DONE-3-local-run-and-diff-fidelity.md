@@ -1,9 +1,10 @@
 # Plan 3 — Local run/diff fidelity
 
-**Priority:** P2
-**Status:** In progress (A + B done 2026-07-18; C open, needs a live-API spike)
-**Theme:** make offline iteration trustworthy — seed staticData in `run`, diff
-local vs live before push, and capture real execution data as fixtures.
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | Done (A + B 2026-07-18; C shipped 2026-07-19 as the standalone `executions` verb — `run --from-execution` deferred to the backlog) |
+| **Theme** | make offline iteration trustworthy — seed staticData in `run`, diff local vs live before push, and capture real execution data as fixtures. |
 
 ## Why
 
@@ -44,7 +45,7 @@ local and remote hashes (compiling `.ts` the same way push does).
    encoded in `status.mts` (`splitMarker`, `compileTs`). A minimal line diff is
    enough; both sides are already materialized in memory.
 
-### C. Execution datasets + `run --from-execution`
+### C. Execution datasets + `run --from-execution` — DONE (2026-07-19, rescoped; see C outcome)
 
 1. **Pull execution datasets.** On `pull` (and as a standalone
    `n8n-decanter executions <id>` command), fetch recent executions via the
@@ -108,3 +109,33 @@ it has real ordering/mode semantics; revisit after `--from-execution` lands.
   creep vs a standalone `executions` verb; and the `resultData.runData` →
   fixture mapping needs a live-instance spike (incl. the n8n 2.x
   draft-vs-published mismatch: executions run the published version).
+
+## C outcome (2026-07-19)
+
+Rescoped per user decision: C.1 shipped as a **standalone `executions` verb**
+(not part of `pull` — scope-creep concern confirmed), C.2
+(`run --from-execution`) **deferred to the backlog** — the fetched JSON is
+readable directly by agents, who hand-craft `run` fixtures from it; the
+automated fixture reconstruction (input via connections graph, the
+draft-vs-published mismatch) is where the risk lives, so it waits alongside
+the already-deferred `run --chain`.
+
+- `n8n-decanter [ref…] executions [--status=…] [--limit=N]` (`lib/executions.mts`,
+  endpoints in `lib/api.mts`): recent executions with full run data →
+  `workflows/<Name>/executions/<execId>.json`, verbatim. A numeric arg
+  fetches one execution by id, routed via the response's `workflowId`.
+  Read-only against the API. First value-taking flags in the CLI
+  (`--limit=N` and `--limit N` both parse).
+- **Never in git:** each `executions/` dir is written self-ignoring
+  (`.gitignore` containing `*`) — robust for pre-existing sync dirs and
+  custom roots, and defuses the commit-on-pull pathspec/PII concern; init's
+  scaffolded root `.gitignore` additionally lists `workflows/*/executions/`.
+- `executions clean` (offline, credentials-free) deletes the dirs — scoped
+  by refs or all pulled workflows. Framed as **temp data for agents**:
+  template `AGENTS.md` gained a "Real execution data" section (fetch to see
+  real payload shapes, item path in the JSON, never commit, clean up when
+  done, published-version caveat).
+- Verified in the e2e suite (mock executions endpoints mirror the Plan 15
+  smoke-recorded 2.x shape): fetch, filters, per-id routing, self-gitignore,
+  not-pulled error, clean. PLAN.md gained the design section; README +
+  CHANGELOG updated (released as 0.2.1).

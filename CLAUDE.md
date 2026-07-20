@@ -17,8 +17,8 @@ truth** — it also records past decisions/observations so the project could be
 rebuilt from it.
 
 **When your work changes the design, data model, flows, or surfaces a new
-decision or observation, ask the user whether PLAN.md should be updated.
-Never let PLAN.md silently drift from the code, and don't rewrite it unasked.**
+decision or observation, update the PLAN.md.
+Never let PLAN.md silently drift from the code, update it unasked.**
 
 ## Changelog
 
@@ -46,18 +46,36 @@ changes with **Breaking:**. On release, rename `[Unreleased]` to
   this step. Internal-only PRs (no `[Unreleased]` entries per the Changelog
   rules) merge without a version bump — so user-facing work never sits
   unreleased on main.
-- CI (typecheck + `npm test`) must be green before merge.
-- Parallel features: use `git worktree`, one branch per worktree, living in
-  the gitignored `.worktrees/` dir (`git worktree add -b feat/x
-  .worktrees/feat-x main`). Each worktree needs its own `npm install`.
-  Concurrent `npm test` across worktrees is safe (tests bind ephemeral
-  ports); concurrent `test:smoke` is not (fixed Docker container name).
+- CI (typecheck + `npm test`) must be green before merge. **Docs fast-path
+  PRs are exempt from waiting** — markdown-only changes can't fail
+  typecheck/tests (real enforcement arrives with the public-repo ruleset,
+  plans/OPEN-13).
+- **Docs fast path:** a change touching only Markdown (`plans/`, `*.md`)
+  skips the worktree — branch directly in the main checkout
+  (`git switch -c chore/x`), commit, PR, merge immediately without waiting
+  for CI, then `git switch main && git pull` (merged branches auto-delete
+  on GitHub). **Never commit to main directly, fast path included.**
+- **Worktrees for code:** any other repo-modifying task (code, config,
+  tests, template, or anything mixing code with docs) starts by
+  creating a worktree in the gitignored `.worktrees/` dir (`git worktree
+  add -b feat/x .worktrees/feat-x main`) and working there — don't edit
+  the main checkout unless the user explicitly says to. Read-only work
+  (questions, reviews, exploration) needs no worktree. Claude Code enters
+  it via `EnterWorktree` with `path: .worktrees/feat-x`. After the PR is
+  merged, remove the worktree and delete the branch. Each worktree needs
+  its own `npm install`. Concurrent `npm test` across worktrees is safe
+  (tests bind ephemeral ports), and so is concurrent `test:smoke`
+  (PID-suffixed container name, ephemeral host port, mkdtemp work dir).
   **Never run `git clean -fdx`/`-fdX` from the repo root** — it deletes
   `.worktrees/` including uncommitted work; clean inside subdirs (e.g.
   `dist/`) instead.
 - GitHub-side enforcement (require PR + green CI, block force-push) needs a
   ruleset, which the Free plan only enforces on public repos — enable it
   when the repo goes public (plans/OPEN-13).
+- **Sandboxed shells:** `git push`/`gh` fail in the command sandbox
+  (credential helper unreachable — "could not read Username"); rerun that
+  command with sandbox escalation. Details + `.git/config` gotcha:
+  AGENTS.md "Sandboxed shells".
 
 ## Backlog
 

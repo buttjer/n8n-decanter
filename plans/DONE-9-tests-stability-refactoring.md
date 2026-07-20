@@ -1,12 +1,10 @@
 # Plan 9 — Test & stability quick wins
 
-**Priority:** P1
-**Status:** Done (2026-07-18)
-**Theme:** The no-brainer half of the hardening work: fast unit tests for the
-pure core, crash-path fixes that only implement already-documented behavior,
-small scenario-coverage gaps, and trivial dedupes. Everything here is clearly
-right, fully offline, and needs no user decision — the decision-gated /
-bigger half lives in [Plan 10](DONE-10-hardening-bigger-refactors.md).
+| | |
+|---|---|
+| **Priority** | P1 |
+| **Status** | Done (2026-07-18) |
+| **Theme** | The no-brainer half of the hardening work: fast unit tests for the pure core, crash-path fixes that only implement already-documented behavior, small scenario-coverage gaps, and trivial dedupes. Everything here is clearly right, fully offline, and needs no user decision — the decision-gated / bigger half lives in [Plan 10](DONE-10-hardening-bigger-refactors.md). |
 
 ## Why
 

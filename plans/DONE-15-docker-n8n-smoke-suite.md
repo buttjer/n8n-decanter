@@ -1,15 +1,10 @@
 # Plan 15 — Docker n8n smoke suite (dev-only)
 
-**Priority:** P2
-**Status:** In progress (2026-07-19: implemented — 14 steps green against
-n8n 2.30.7, incl. a real Plan 14 sandbox bug found and fixed. Open: pinData
-half of task 5 (not settable via public API), task 6 watch spot-check, CI
-dispatch verification once the repo is public)
-**Theme:** An opt-in integration suite for *developing this tool*: spin up a
-real n8n in Docker, drive the CLI against it, and prove the things no mock
-can — that bundled nodes execute in the real Code-node sandbox, and that the
-API semantics PLAN.md records still hold. Never shipped to users, never part
-of `npm test`.
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | Done (2026-07-19: implemented — 15 steps green against n8n 2.30.7, incl. a real Plan 14 sandbox bug found and fixed; task 6 watch spot-check done — no PUT structure normalization observed, conflict path verified. Task 8 CI job **verified via `workflow_dispatch`** the same day: `n8n smoke (docker)` green on the ubuntu runner (worked on the private repo already — the "once public" gate was unnecessary). The pinData half of task 5 is out of this plan's scope by user decision (2026-07-19): seeding-route ideas parked in [Plan 0](BACKLOG.md) for a separate analysis session — the backlog item stays open independently. **Update 2026-07-19:** that pinData half landed after all via [Plan 18](DONE-18-pindata-smoke-seeding.md) — public-API seeding, one more smoke step, backlog item closed) |
+| **Theme** | An opt-in integration suite for *developing this tool*: spin up a real n8n in Docker, drive the CLI against it, and prove the things no mock can — that bundled nodes execute in the real Code-node sandbox, and that the API semantics PLAN.md records still hold. Never shipped to users, never part of `npm test`. |
 
 ## Why
 
@@ -33,10 +28,10 @@ dependency, and the suite is invoked only by an explicit
 - [DECISIONS-NEEDED](DECISIONS-NEEDED.md) entry 1 (2026-07-18), decided:
   go, dev-only scope.
 - Absorbs the live-verification residue of
-  [Plan 12](INPROGRESS-12-structural-watch.md),
+  [Plan 12](DONE-12-structural-watch.md),
   [Plan 14](DONE-14-bundle-shared-code-into-ts-pushes.md), the
   tags/pinned backlog item, and feeds
-  [Plan 3](INPROGRESS-3-local-run-and-diff-fidelity.md) C's spike.
+  [Plan 3](DONE-3-local-run-and-diff-fidelity.md) C's spike.
 
 ## Design
 
@@ -114,6 +109,13 @@ dependency, and the suite is invoked only by an explicit
    `workflow.json` edit under `watch` (in-process, like the e2e watch step)
    against the real API — clean push, then a forced remote structural
    change → conflict detected. UI-side editor behavior stays manual.
+   (done 2026-07-19: in-process `watchWorkflow` step — clean structural
+   push lands; a byte-identical re-save stays silent, so the real PUT
+   response's structure hash matches the local file (no phantom re-push);
+   concurrent remote edit → conflict logged, prompt skipped non-TTY,
+   remote left untouched; pull re-baselines back to in-sync. Non-TTY is
+   forced by stubbing `process.stdin.isTTY` for the step so a terminal
+   run can't hang on the prompt.)
 7. **Executions capture** (Plan 3 C spike input): run the webhook workflow,
    fetch `GET /api/v1/executions?includeData=true`, and **save a trimmed
    response shape** into the plan as the ground truth Plan 3 C designs

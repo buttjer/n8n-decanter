@@ -8,6 +8,26 @@ changelog/backlog duties, commands, architecture). Treat `CLAUDE.md` as
 authoritative for those rules regardless of which agent you are; this file
 carries the shared, tool-agnostic recipes.
 
+## Sandboxed shells: git push / gh need escalation
+
+Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) block
+the network credential path git needs, while local git works fine:
+
+- **`git push` / `gh pr …` / anything hitting github.com fails sandboxed**
+  with `fatal: could not read Username for 'https://github.com': Device not
+  configured` — the credential helper (macOS keychain) is unreachable from
+  the sandbox. This is an environment artifact, not an auth problem: rerun
+  the *same* command with the sandbox escalation your harness provides
+  (Claude Code: retry the Bash call with `dangerouslyDisableSandbox: true`;
+  don't loosen the sandbox config for this).
+- **`.git/config` writes are blocked sandboxed** — e.g. `git branch -D` of
+  a branch with an upstream deletes the branch but then warns `could not
+  lock config file`, leaving a stale `branch.<name>` section. Clean up
+  unsandboxed: `git config --remove-section branch.<name>`.
+- Commit, status, diff, log, branch creation, worktree add — all fine
+  sandboxed; only credential/network git and `.git/config` writes need
+  escalation.
+
 ## Verifying changes at the CLI surface
 
 Drive the real CLI (`node n8n-decanter.mts <verb>`) as a subprocess against a

@@ -1,0 +1,4 @@
+# template/ files named X.example have no real extension, so GitHub's linguist
+# guesses their language by content and pollutes the stats; highlighting and
+# diffs stay normal (deliberately not linguist-vendored).
+*.example -linguist-detectable

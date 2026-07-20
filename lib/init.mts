@@ -45,7 +45,7 @@ const LOGO_ROWS = [
 ];
 
 /** TTY: logo + tagline + version. Piped: one plain, stable version line. */
-function printBanner(log: Log): void {
+export function printBanner(log: Log): void {
   const version = cliVersion();
   if (!process.stdout.isTTY) {
     log.info(`n8n-decanter v${version}`);
@@ -125,7 +125,10 @@ export async function init(targetDir: string | undefined, { force = false }: { f
 
   const gitignoreFile = path.join(dir, ".gitignore");
   if (!existsSync(gitignoreFile)) {
-    writeFileSync(gitignoreFile, "node_modules/\n.env\n");
+    // executions/ holds fetched run data (may contain credentials/PII);
+    // belt-and-braces with the self-ignoring executions/.gitignore the
+    // `executions` verb writes into pre-existing sync dirs
+    writeFileSync(gitignoreFile, "node_modules/\n.env\nworkflows/*/executions/\n");
     log.info("wrote .gitignore");
   } else if (!readFileSync(gitignoreFile, "utf8").split("\n").some((l) => l.trim() === ".env")) {
     log.warn(".gitignore exists but does not ignore .env — add it, the file holds your API key");

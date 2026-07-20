@@ -1,9 +1,10 @@
 # Plan 2 — Offline validation + rename
 
-**Priority:** P1 (validator) / P2 (rename)
-**Status:** Done (2026-07-18)
-**Theme:** convert the repo's most fragile manual invariants into machine-checked
-ones, then make renames atomic.
+| | |
+|---|---|
+| **Priority** | P1 (validator) / P2 (rename) |
+| **Status** | Done (2026-07-18) |
+| **Theme** | convert the repo's most fragile manual invariants into machine-checked ones, then make renames atomic. |
 
 ## Why
 
@@ -91,7 +92,7 @@ anything is left dangling.
 - Task A4 grew beyond spec: dangling `$('…')` is also checked in **expression
   parameters** of every node (the n8n UI rewrites those on rename too), not
   just node source files. Same literal-only heuristic.
-- With [Plan 3](INPROGRESS-3-local-run-and-diff-fidelity.md)/[Plan 7](OPEN-7-engine-true-simulation-suite.md)
+- With [Plan 3](DONE-3-local-run-and-diff-fidelity.md)/[Plan 7](OPEN-7-engine-true-simulation-suite.md)
   in mind: the `$('…')` scan/rewrite lives in `lib/util.mts`
   (`findNodeRefs`/`renameNodeRefs`, one shared regex) for reuse by
   `run`/`simulate`; the orphan-file scan covers only the folder root and

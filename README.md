@@ -19,6 +19,10 @@ editable in your IDE or by your agent, and pushed back through the n8n API.
   credential-free feedback loop.
 - **Guardrails** — a compliance guard and typecheck gate block broken
   pushes; a drift guard keeps you from clobbering remote edits.
+- **Real execution data on tap** — `executions` fetches recent run JSON into
+  a gitignored temp dir, so agents see actual payload shapes (and build
+  accurate `run` fixtures) instead of guessing; `executions clean` removes
+  it when done.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
 - **Shared code and small libraries** — `.ts` nodes import helpers/types
@@ -63,6 +67,15 @@ fill it in. Then add workflow ids to `decanter.config.json`:
 { "root": "./workflows", "workflows": ["0cXNQKKzmO0pXiCq"] }
 ```
 
+**Prefer a scoped API key.** In n8n (Settings → n8n API → Create) create a key
+limited to the permissions the CLI actually uses rather than a full-access one,
+so a leaked `.env` has a small blast radius:
+
+- `workflow:read`, `workflow:list`, `workflow:update` — `pull` / `status` / `push`
+- `execution:read`, `execution:list` — the `executions` verb
+
+A full-access key also works if your n8n version predates scoped keys.
+
 After every successful push **and pull**, the workflow's folder is
 git-committed automatically (scoped to that folder; outside a git repo it
 just warns). Set `"commitOnPush": false` / `"commitOnPull": false` to turn
@@ -81,6 +94,12 @@ offline (no credentials, no network).
 ## Commands
 
 ```sh
+n8n-decanter                        # interactive picker (terminal, inited
+                                    #   project): filter workflows by typing —
+                                    #   pulled green, unpulled remote yellow —
+                                    #   then run verbs (unpulled: Enter pulls);
+                                    #   stays in the workflow's menu between
+                                    #   verbs, Esc backs out, Esc Esc quits
 n8n-decanter init [dir]             # interactive bootstrap (see Setup)
 n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
 n8n-decanter [ref...] push [--force] [--no-typecheck]
@@ -91,6 +110,12 @@ n8n-decanter <ref> rename "<old node>" "<new node>"   # rename a node everywhere
 n8n-decanter <ref> rename --workflow "<new name>"     # rename the workflow
 n8n-decanter [ref] watch            # push a workflow's nodes on save
                                     #   (+ browser live-reload, opt-in)
+n8n-decanter [ref...] executions [--status=success|error|waiting] [--limit=N]
+                                    # fetch recent execution data (run JSON)
+                                    #   into workflows/<Name>/executions/
+                                    #   (gitignored temp files; a numeric arg
+                                    #   fetches that one execution by id)
+n8n-decanter [ref...] executions clean   # delete fetched execution data (offline)
 n8n-decanter list [--remote]        # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones)
 n8n-decanter completion zsh|bash    # print a shell completion script
@@ -110,8 +135,10 @@ may appear in any position too.
 
 Output is styled (color, `✓`/`!`/`✗` glyphs, progress) **only when writing to
 a terminal** and respects `NO_COLOR`/`FORCE_COLOR`; piped or redirected output
-is plain line-oriented text, safe for scripts and LLM harnesses. Tab
-completion for verbs, flags, and workflow names: append
+is plain line-oriented text, safe for scripts and LLM harnesses. The
+interactive picker follows the same rule: it exists only on a terminal —
+a piped bare `n8n-decanter` prints plain usage text. For shell tab
+completion of verbs, flags, and workflow names, append
 `eval "$(n8n-decanter completion zsh)"` (or `bash`) to your shell rc.
 
 `status` exits 1 when a pull is needed or a push would clobber remote work
@@ -123,6 +150,65 @@ would overwrite before running it. API requests time out after 30 s (set
 `DEBUG=1` prints full stack traces on errors. `run` fakes the full Code-node
 context including `$getWorkflowStaticData`, seeded from `workflow.json` and
 overridable per fixture.
+
+`executions` is read-only against the API and writes each execution as
+`workflows/<Name>/executions/<execId>.json` — real run data (the items every
+node produced), meant as temporary reference for building `run` fixtures.
+The dir is written self-gitignored (run data can contain credentials/PII and
+must never land in git); executions reflect the *published* workflow version
+(n8n 2.x), so treat them as convenience data, not ground truth, and remove
+them with `executions clean` when done.
+
+## How it compares
+
+n8n-decanter is **Code-node-first**: it optimizes the loop of writing, typing,
+testing, and shipping the JavaScript/TypeScript *inside* your workflows. Here's
+how that focus stacks up against the native editor and against
+[n8n-as-code](https://github.com/EtienneLescot/n8n-as-code) — a broader,
+whole-workflow authoring toolkit.
+
+| Capability | Native n8n (browser) | n8n-as-code | n8n-decanter |
+|---|---|---|---|
+| **TypeScript for Code nodes** | ❌ JavaScript or Python only | ❌ TS is at workflow level, not node logic | ✅ Code nodes as `.ts`, compiled on push, typed n8n globals |
+| **Shared code in Code nodes** | ❌ self-host `NODE_FUNCTION_ALLOW_*` only; no libraries | ❌ not part of its model | ✅ `shared/*.ts` + npm bundled into self-contained nodes (Cloud-safe) |
+| **Code as individual files** | ❌ no source files (JSON blob) | 🟡 one `.workflow.ts` per workflow | ✅ folder per workflow; each Code node its own `.js`/`.ts` |
+| **Versioning** | 🟡 in-app history (DB snapshots, tiered retention); Git source control is Enterprise-only | ✅ GitOps sync of workflow source | ✅ real git — diffs, PRs, blame; auto-commit each push/pull |
+| **Live editing** | ✅ the canvas (baseline) | 🟡 explicit pull/push, no auto-watch | ✅ `watch`: push on save + auto-reload the editor tab |
+| **Offline testing on historic executions** | 🟡 re-run past executions / pin data, but online in-editor | 🟡 inspect executions against a live env | ✅ fetch real run JSON → offline `run` fixtures, no creds/network |
+| **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs + MCP; offline `check`/`run` loop; guardrails |
+| **Model ownership** | ❌ locked to n8n's own hosted AI; can't use your Claude subscription | 🟡 beta Claude Code plugin uses your subscription; flagship Workbench needs an Anthropic key for Claude | ✅ never calls an LLM itself — your agent/subscription does 100%, no key or model config ever |
+| **Agentic workflow creation** | 🟡 AI Workflow Builder (natural language), but Cloud / plan-gated — credits, self-host needs setup | ✅ 537 node schemas + 7,700+ templates + skills | 🟡 today via scaffolded n8n-mcp; first-party repo-authored creation planned (`add` + `push --create`) |
+| **Whole-workflow TypeScript authoring** | ❌ | ✅ `.workflow.ts` decorator classes (structure + links) | ❌ keeps `workflow.json`; extracts Code-node source only |
+| **Multi-environment promotion** | 🟡 Enterprise source control / environments | ✅ `promote` remaps creds + refs Dev→Prod | 🟡 separate sync dir per instance, but no `promote` (IDs/creds/refs not remapped) |
+
+Legend: ✅ first-class · 🟡 partial or indirect · ❌ not supported.
+
+**Bottom line:** reach for n8n-decanter when your workflows live or die by their
+Code nodes — TypeScript, shared libraries, offline tests, and real git diffs.
+n8n-as-code shines for whole-workflow authoring/generation and multi-environment
+ops; the native editor stays the live visual canvas everything syncs back to. And
+decanter makes no LLM calls of its own — you drive it with the coding agent you
+already run, so Claude Code on a Claude subscription needs no extra API tokens.
+
+## Caveats
+
+- **Pushing to a *published* workflow republishes it immediately.** n8n 2.x
+  splits each workflow into a draft and a published version — in the editor,
+  *Save* updates the draft and *Publish* makes it live. The public API has no
+  such split: `PUT /workflows/:id` hardcodes `publishIfActive: true`, so a push
+  to an already-published workflow **goes live at once — there is no draft-only
+  update through the API** (pushing to an *unpublished* workflow only updates
+  its draft). This is an n8n API limitation, not decanter's; decanter surfaces
+  the outcome — push prints `published: code is live now` vs `unpublished:
+  draft only`, and `status`/`watch` show the state. For a staged rollout,
+  unpublish → push → publish (triggers are down in between), or push to a
+  staging-copy workflow.
+- **n8n's optimistic locking isn't reachable through the API.** That same `PUT`
+  also forces `forceSave: true` and exposes no version checksum, so the server
+  won't reject a stale write. Decanter's **drift guard** is the only thing
+  protecting remote edits from being clobbered — so always `pull` (or check
+  `status`) before pushing. `--force` deliberately bypasses only this guard,
+  never the compliance guard.
 
 ## How node files work
 
@@ -207,9 +293,13 @@ plain `tsc` rejects in `.ts` files (TS1108). `npm run typecheck` therefore
 runs [scripts/typecheck.mts](scripts/typecheck.mts), which wraps node files in
 an `async function` in memory (a `.decanter.json` next to the file — or in the
 parent of its `code/` dir — marks it as a node file) and maps diagnostics back
-to real line numbers. Known
-limitation: the IDE's own tsserver doesn't apply the wrapper, so editors show
-a spurious TS1108 on top-level `return` in `.ts` node files.
+to real line numbers. The IDE's own tsserver doesn't apply the wrapper, so on
+its own it would flag top-level `return`/`await` (TS1108/TS1375/TS1378) —
+which is why `init` also scaffolds `decanter-ts-plugin/`, a language-service
+plugin that suppresses exactly those codes on node files while every other
+diagnostic stays live. It loads after `npm install` in the sync dir, via the
+workspace TypeScript (VS Code prompts *Use Workspace Version* once; JetBrains
+IDEs use the project TypeScript by default).
 
 The CLI's own `.mts` sources are checked separately by `tsc -p
 tsconfig.cli.json` (strict; the first half of `npm run typecheck`). That

@@ -14,16 +14,20 @@ n8n-decanter/
   .env.example
   decanter.config.json
   n8n-decanter.mts        # CLI entry: init | pull | push | status | check |
-                          #   rename | watch | run | uuid
-  lib/                    # implementation: api, compile, config, git, init,
-                          #   prompt, proxy, pull, push, rename, run, state,
-                          #   status, util, validate, watch (one .mts each)
+                          #   rename | watch | run | list | executions |
+                          #   uuid | completion
+  lib/                    # implementation: api, compile, config, diff,
+                          #   executions, git, init, picker, prompt, proxy,
+                          #   pull, push, rename, run, state, status, style,
+                          #   util, validate, watch (one .mts each)
                           #   + types.mts (shared data-model shapes)
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
                           #   added here later is copied too
-  test/e2e.mts            # mock-API end-to-end test (npm test)
+  test/                   # e2e.mts (mock-API e2e) + proxy.mts + unit/ — all
+                          #   npm test; smoke-n8n.mts (opt-in Docker smoke,
+                          #   plans/15); harness.mts (shared step runner)
   tsconfig.json           # workflow node files: allowJs + checkJs, includes workflows/
   tsconfig.cli.json       # the CLI's own .mts sources: strict NodeNext, no emit
   n8n-globals.d.ts        # ambient types: $, $input, DateTime, …
@@ -77,6 +81,8 @@ workflows/
         <node-name>.ts          # TS Code node (one-way)
         <node-name>.remote.js   # written by pull on conflict/UI-edit, visible on purpose
       .decanter.json            # state, see below
+      executions/               # optional: fetched run data (plans/3) — temp,
+        <execId>.json           #   self-gitignored, never synced back
 ```
 
 - Workflow **id** lives in `workflow.json` itself → folder name is cosmetic.
@@ -141,10 +147,36 @@ resolves unknown names against `GET /api/v1/workflows` (cursor-paginated,
 matched client-side). A workflow literally named like a verb loses to verb
 detection — use the id. Config entries stay ids only.
 
-Discovery surfaces: `list` (one line per pulled workflow: name, id, folder;
-`--remote` appends unpulled remote ones) and `completion zsh|bash`, a printed
-shell script that delegates to the hidden, credentials-free `__complete` verb
-(verbs, flags, local names/ids; silently name-less without a config).
+Discovery surfaces, primary first: the **interactive picker** — bare
+`n8n-decanter` (no verb, no refs, no flags) on a TTY (stdin *and* stdout) in
+an inited project opens with the init logo banner, then a type-to-filter
+list (`lib/picker.mts`): pulled workflows green, unpulled remote ones yellow
+with a literal `(not pulled)` suffix (never color alone), remote entries
+appended asynchronously as `GET /workflows` lands (skipped without
+credentials; failures degrade to a dim notice) — while loading, dim `░`
+skeleton rows of varied widths mark where they will appear. Enter on a
+pulled workflow opens a verb menu (status/pull/push/watch/check; a letter
+cycles matching verbs, so `p` alternates pull/push); Enter on an unpulled
+one runs `pull` directly. The picker only produces `{verb, id}` and
+re-enters the normal dispatcher path (`dispatch()`, the extracted verb
+switch) — identical semantics to typing the command. The session is a
+loop: after a verb finishes (or fails — errors log and return), the same
+workflow's verb menu re-opens with the cursor on the verb just run; the
+local list is re-scanned each round (a pull just added a folder) while the
+remote list is fetched once per session. Esc steps back to the workflow
+list, Esc there quits; Ctrl-C interrupts (exit 130); the exit code
+otherwise reflects the last verb run. Raw mode and cursor are always
+restored, and stdin EOF quits rather than wedging. Any other bare
+invocation — piped, or no config in reach — prints usage unchanged, so
+scripts and LLM harnesses never meet the picker. The pure state machine
+(filter, key reducer, scroll window, resume) is exported for unit tests;
+only `runPicker` touches the terminal. Secondary surfaces: `list` (one line per
+pulled workflow: name, id, folder; `--remote` appends unpulled remote ones)
+and `completion zsh|bash`, a printed shell script that delegates to the
+hidden, credentials-free `__complete` verb (verbs, flags, local names/ids;
+silently name-less without a config) — kept deliberately when the picker
+landed (decision 2026-07-19): it serves mid-command tab completion, which
+the picker doesn't replace.
 
 Output follows **one rule: styling and transient output exist only when the
 target stream is a TTY** (`util.styleText` per stream — `NO_COLOR` respected,
@@ -238,7 +270,8 @@ Errors (block push / exit 1):
   target must name a real node), duplicate node names or ids, orphan
   `.js`/`.ts` files no placeholder references (`.d.ts` and `*.remote.js`
   exempt; only the folder root and `code/` are scanned — other subdirs are
-  reserved for future artifacts like `executions/`/`fixtures/`, plans 3/7),
+  reserved for artifacts like `executions/` (live since plans/3 C) and
+  `fixtures/` (plans/7)),
   and dangling literal `$('…')` references in node source files *and* in
   expression parameters. The `$('…')` scan is a deliberate regex heuristic
   (shared `findNodeRefs`/`renameNodeRefs` in `lib/util.mts`): literal
@@ -280,6 +313,40 @@ Offline by design — `push` propagates.
 `rename <id> --workflow "<new name>"` sets `wf.name` only: the folder is
 cosmetic and follows on the next pull (same rename machinery as remote
 renames).
+
+## Execution datasets (`n8n-decanter [ref…] executions`, plans/3 C)
+
+Added 2026-07-19. Fetches recent executions with full run data
+(`GET /api/v1/executions?includeData=true`, filtered by `workflowId`;
+`--status=success|error|waiting` and `--limit=N` — default 5, API page cap
+250 — pass through to the API) into
+`workflows/<Name>/executions/<execId>.json`, verbatim and pretty-printed. A
+purely numeric argument is an execution id (`GET /executions/{id}`), routed
+to its workflow's folder via the response's `workflowId`. Read-only against
+the API by design — nothing under `executions/` is ever synced back.
+
+Purpose: **temporary reference data so agents (and humans) see real payload
+shapes** — items live under
+`data.resultData.runData["<Node>"][0].data.main[0][]` — instead of guessing
+when writing `run` fixtures or debugging nodes; also the designated fixture
+source for the simulation suite (plans/7). `executions clean` (offline)
+deletes the dirs — for the given refs, or every pulled workflow.
+
+Two decisions from the 2026-07-18 review (plans/3):
+
+- **Standalone verb, not part of `pull`** — fetching on every pull would be
+  scope creep and a surprise network/data cost.
+- **Never in git.** Run data can contain credentials/PII, and `executions/`
+  sits inside the commit-on-pull/push pathspec — so the verb writes each dir
+  *self-ignoring* (`executions/.gitignore` containing `*`, robust for
+  pre-existing sync dirs and custom roots), and init's scaffolded root
+  `.gitignore` lists `workflows/*/executions/` as well.
+
+Caveat (recorded in plans/3, smoke-verified): executions run the *published*
+workflow version (per-execution `workflowVersionId`, n8n 2.x) — possibly
+older than the draft/repo state. Convenience data, not ground truth.
+`run --from-execution` (auto-building a fixture from a captured execution)
+was deliberately deferred to the backlog — agents read the JSON directly.
 
 ## Watch mode (`n8n-decanter <id> watch`)
 
@@ -348,7 +415,11 @@ Bootstraps a sync directory (defaults to cwd, runs before any config exists):
 
 1. Prompt for host + API key; values from an existing `.env` are offered as
    defaults (enter keeps them). Host is normalized (`https://` prepended when
-   no scheme, trailing `/` stripped). Write `.env`.
+   no scheme, trailing `/` stripped). Write `.env`. The docs (`.env.example`,
+   README) recommend a **scoped** API key limited to the scopes the CLI uses —
+   `workflow:read`/`list`/`update` and `execution:read`/`list` — over a
+   full-access key, since the key lives beside the config and a leak is
+   otherwise instance-wide. Guidance only; init never creates the key.
 2. Copy `template/` into the target **recursively and completely** — whatever
    the template contains ships — but never overwrite files that already exist
    in the target, so re-running init is safe. Files named `X.example`
@@ -623,7 +694,11 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   Resolved by decision, see Implementation notes.
 - ~~Whether `PUT` preserves workflow fields that are neither sent nor
   whitelisted (tags, pinned data) on an untouched round-trip.~~ **Verified
-  against n8n 2.30.7 (2026-07-19, plans/15 smoke suite): tags survive an
-  untouched pull→push round-trip** (asserted weekly by the suite), and
-  pinned data is preserved *by construction* — the 2.x GET returns
-  `pinData`, the PUT whitelist never sends it, so the server keeps its copy.
+  against n8n 2.30.7 (2026-07-19, plans/15 + plans/18 smoke suite): both
+  tags and pinned data survive an untouched pull→push round-trip** (asserted
+  weekly by the suite). Pinned data was upgraded from "preserved *by
+  construction*" to live-verified on 2026-07-19: the plans/18 smoke step
+  seeds `pinData` via the public API — which *can* write it on
+  n8n ≥ 2.30.7 (the earlier "cannot" note was a stale 1.x-era claim) —
+  and the round-trip leaves it intact, since the PUT whitelist never sends
+  it and the server keeps its stored copy.

@@ -1,10 +1,10 @@
 # Plan 4 — Editor plugin to suppress spurious node-file diagnostics
 
-**Priority:** P2
-**Status:** In progress (implemented + unit/e2e tested; manual editor
-verification pending — see Acceptance)
-**Theme:** stop the editor's tsserver from flagging legal n8n node source
-(top-level `return`/`await`) as errors, without touching files on disk.
+| | |
+|---|---|
+| **Priority** | P2 |
+| **Status** | Done (manual editor verification passed 2026-07-19; the first failed attempt's root cause was the missed one-time *Use Workspace Version* consent — see Task 5 resolution) |
+| **Theme** | stop the editor's tsserver from flagging legal n8n node source (top-level `return`/`await`) as errors, without touching files on disk. |
 
 ## Source
 
@@ -155,6 +155,51 @@ end in `.example`. Materialization to `decanter-ts-plugin/index.js` and
 `.vscode/settings.json` works as intended. Keep the full real filename before
 `.example` per the CLAUDE.md convention.
 
+### 5. Field report — first manual verification failed (2026-07-19)
+
+User ran `init --force` into an **existing project** and still sees TS1108
+on node files. `--force` does overwrite template files (only `.env` is
+protected, see `copyTemplate` in `lib/init.mts`), so the plugin folder, the
+tsconfig `plugins` entry, and `.vscode/settings.json` should all be on disk —
+the failure is most likely in the **load path**, not materialization. Debug
+checklist, in suspicion order:
+
+1. **Workspace-root nuance (prime suspect for "existing project"):** VS Code
+   reads `.vscode/settings.json` only at the **workspace root**. If the sync
+   dir is a subfolder of the opened project, the template's
+   `typescript.tsdk` is inert → the *built-in* tsserver runs → it resolves
+   tsconfig plugins from its own peer `node_modules`, never the sync dir's.
+   Even picking "Use Workspace Version" then offers the *root* project's
+   TypeScript, whose peer `node_modules` also lacks the plugin.
+2. **`npm install` re-run in the sync dir after init?** The plugin is a
+   `file:` devDependency — without an install there is no
+   `node_modules/decanter-ts-plugin`, and tsserver skips unresolvable
+   `plugins` entries silently.
+3. **Workspace TS actually selected?** "TypeScript: Select TypeScript
+   Version" must show *Use Workspace Version* (one-time consent; the
+   status-bar TS version should match the sync dir's `typescript`).
+4. **Evidence:** "TypeScript: Open TS Server Log" — grep for
+   `decanter-ts-plugin` (loaded vs. resolution error), and confirm the
+   governing tsconfig for a node file is the sync dir's (nearest config
+   above `code/`), not a parent project's tsconfig/jsconfig.
+
+If 1 confirms, the fix is docs and/or tooling (to decide, not pre-empt):
+recommend opening the sync dir as its own workspace / multi-root folder;
+document setting `typescript.tsdk` at the real workspace root; or teach
+`check` to detect the nesting and print the hint.
+
+**Resolution (2026-07-19): suspect 3.** The sync dir *was* the workspace
+root (1 ruled out) and `node_modules/decanter-ts-plugin` was installed
+(2 ruled out) — the one-time *Use Workspace Version* consent had simply
+never been clicked, so the bundled tsserver was still running. Selecting
+the workspace version (TS 5.9.3) removed TS1108 immediately, and genuine
+errors still surface (TS2588 in `.js`, TS6133 in `.ts`), confirming the
+plugin filters only the three grammar codes. No code, template, or docs
+change needed — the consent step was already documented (template
+`AGENTS.md` "Writing Code node code", CHANGELOG 0.2.0); the failure was
+the step being easy to skip, which the docs already warn about as loudly
+as a README can.
+
 ## Acceptance / verification
 
 - **Unit test** (`test/unit/ts-plugin.test.mts`): loads the plugin from its
@@ -171,11 +216,11 @@ end in `.example`. Materialization to `decanter-ts-plugin/index.js` and
   `template/` tree and asserts every file materializes (name `.example`-stripped,
   content byte-identical), which includes `decanter-ts-plugin/*`,
   `.vscode/settings.json`, and the updated tsconfig/package.json.
-- **Manual (the real proof, still pending):** open a synced node file with a
+- **Manual (the real proof — passed 2026-07-19, see Task 5 resolution):**
+  open a synced node file with a
   top-level `return`/`await` in VS Code; accept *Use Workspace Version* when
   prompted (after `npm install`); confirm 1108/1375/1378 are gone while a
-  genuine type error (e.g. `const n: number = "x"`) still shows. Flip Status to
-  Done once this passes.
+  genuine type error (e.g. `const n: number = "x"`) still shows.
 
 ## Rollout order
 
@@ -184,7 +229,8 @@ end in `.example`. Materialization to `decanter-ts-plugin/index.js` and
 2. Write the plugin + unit test (Task 2).
 3. Add template files (Task 3–4; e2e needs no edit, see Acceptance).
 4. Docs (see Notes); propose PLAN.md updates to the user.
-5. Manual editor verification → flip Status to Done.
+5. ~~Manual editor verification → flip Status to Done.~~ Passed 2026-07-19
+   (second attempt; see Task 5 resolution).
 
 ## Notes
 

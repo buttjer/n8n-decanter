@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-20
+
+### Added
+
+- `.env.example` and the README now recommend a **scoped** n8n API key —
+  limited to the scopes the CLI uses (`workflow:read`/`list`/`update`,
+  `execution:read`/`list`) — instead of a full-access key, so a leaked `.env`
+  has a smaller blast radius.
+
+## [0.2.3] - 2026-07-20
+
+### Changed
+
+- **The picker is now a session** — after a verb finishes (or fails: the
+  error is logged and you're back in the menu), the picker returns to the
+  same workflow's verb menu with the cursor on the verb you just ran, so
+  `status` → `pull` needs no re-picking. `Esc` steps back to the workflow
+  list (freshly re-scanned, so a just-pulled workflow shows green), `Esc`
+  there quits; the exit code reflects the last verb run. The remote
+  workflow list is fetched once per session.
+
+### Added
+
+- While the remote workflow list loads, the picker shows light-gray `░`
+  placeholder rows of varied widths where the entries will appear, instead
+  of a "loading" line.
+- The picker opens with the n8n-decanter logo banner (same as `init`).
+
+## [0.2.2] - 2026-07-20
+
+### Added
+
+- **Interactive workflow picker** — running bare `n8n-decanter` (no verb, no
+  arguments) in an inited project on a terminal now opens a picker instead of
+  printing usage: type to filter, `↑`/`↓` to move, pulled workflows shown
+  green, not-yet-pulled remote ones yellow with a `(not pulled)` marker
+  (appended live once the server list loads; skipped without credentials).
+  `Enter` on a pulled workflow offers status/pull/push/watch/check (`↑↓` +
+  `Enter`, or a letter to cycle matching verbs); `Enter` on an unpulled
+  workflow pulls it directly. `Esc` quits, `Ctrl-C` interrupts (exit 130).
+  The chosen verb behaves exactly like typing the command. Piped output and
+  directories without a `decanter.config.json` keep printing usage — scripts
+  and LLM harnesses never see the picker. The `completion zsh|bash` verb
+  stays: shell tab completion and the picker cover different moments.
+
+## [0.2.1] - 2026-07-19
+
+### Added
+
+- **`executions` verb** — fetches recent execution data (full run JSON,
+  newest first) for a workflow into
+  `workflows/<Name>/executions/<execId>.json`:
+  `n8n-decanter <ref> executions [--status=success|error|waiting]
+  [--limit=N]` (default 5, API cap 250; both `--limit=N` and `--limit N`
+  work). A numeric argument fetches that single execution by id and routes
+  it to its workflow's folder. Read-only against the API. The files show the
+  real items each node produced
+  (`data.resultData.runData["<Node>"][0].data.main[0][]`) — temporary
+  reference data for writing accurate `run` fixtures. Executions run the
+  *published* workflow version (n8n 2.x), so they're convenience data, not
+  ground truth.
+- **`executions clean`** — offline; deletes fetched `executions/` dirs for
+  the given workflow refs, or all pulled workflows without one.
+- Execution data never reaches git: the verb writes each `executions/` dir
+  self-ignoring (a `.gitignore` containing `*` — run data can hold
+  credentials/PII), and `init`'s scaffolded root `.gitignore` now also
+  lists `workflows/*/executions/`.
+- Template `AGENTS.md`: new "Real execution data" section — when to fetch
+  executions, where items live in the JSON, copy real shapes into `run`
+  fixtures, never commit the data, clean up afterwards.
+
 ## [0.2.0] - 2026-07-19
 
 ### Added
