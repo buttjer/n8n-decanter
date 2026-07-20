@@ -46,7 +46,7 @@ outputs.
   input-reconstruction problem that deferred `run --from-execution` (a node's
   own input isn't stored) doesn't apply, because pure nodes recompute their
   inputs' consequences and pinned nodes don't read inputs at all.
-- Related: [Plan 20](OPEN-20-cli-publish-lifecycle.md) task 3 — the
+- Related: [Plan 20](DONE-20-cli-publish-lifecycle.md) task 3 — the
   stale-capture warning there uses the same `workflowVersionId` signal the
   loader needs (executions run the *published* version, the repo holds the
   draft); share the helper with whichever lands second.

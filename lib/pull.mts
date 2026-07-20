@@ -135,11 +135,15 @@ export async function pullWorkflow(api: N8nApi, root: string, id: string, { comm
   const wfOut = structuredClone(wf);
   // Keep workflow.json to the workflow itself: n8n 2.x GET responses embed a
   // full server-side copy of the *published* version (`activeVersion`, code
-  // included) and sharing metadata (`shared`) — derived data that would
-  // duplicate every node's source in git and churn on each publish. Neither
-  // field is pushable (sanitizeForPut whitelists), so dropping them loses
-  // nothing.
+  // included), sharing metadata (`shared`), and the published-version pointer
+  // (`activeVersionId`) — derived data that would duplicate every node's source
+  // in git and/or churn on each publish. None is pushable (sanitizeForPut
+  // whitelists) and no local command reads them from workflow.json (the
+  // version-aware `status` reads `activeVersionId` straight off the live GET),
+  // so dropping them loses nothing. The draft `versionId` is kept — the
+  // executions stale-fixture warning compares against it.
   delete wfOut.activeVersion;
+  delete wfOut.activeVersionId;
   delete wfOut.shared;
   for (const node of wfOut.nodes) {
     const file = placeholders.get(node.id);

@@ -5,6 +5,7 @@ import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
+import { createWorkflow, deleteWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
@@ -54,6 +55,11 @@ const usage = (): string => {
   ${b("n8n-decanter")} [ref...] ${b("check")} [--no-typecheck]   ${d("offline layout-compliance check")}
   ${b("n8n-decanter")} <ref> ${b("rename")} "<old node>" "<new node>"   ${d("rename a node everywhere (offline)")}
   ${b("n8n-decanter")} <ref> ${b("rename")} --workflow "<new name>"     ${d("rename the workflow itself")}
+  ${b("n8n-decanter")} [ref...] ${b("publish")}     ${d("take the draft(s) live (unpublish returns to draft-only)")}
+  ${b("n8n-decanter")} [ref...] ${b("unpublish")}
+  ${b("n8n-decanter create")} "<name>"     ${d("create a blank workflow on the server, then pull it")}
+  ${b("n8n-decanter")} <ref> ${b("delete")} [--force]   ${d("delete a workflow from the server (y/N confirm;")}
+                                   ${d("--force skips it; the local folder is left untouched)")}
   ${b("n8n-decanter")} [ref] ${b("watch")} [--force]   ${d("watch code/ + workflow.json, push on save")}
                                    ${d("(starts with a safety commit + pull; structural")}
                                    ${d("conflicts prompt; browser live-reload optional)")}
@@ -79,9 +85,9 @@ Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 };
 
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "list", "executions", "completion", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "list", "executions", "publish", "unpublish", "create", "delete", "completion", "__complete", "help"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "publish", "unpublish", "delete"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -436,6 +442,37 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       for (const e of execIds) await attempt(`execution ${e}`, () => fetchExecutionById(api, config.root, e, log));
       for (const id of wfIds) await attempt(id, () => fetchExecutions(api, config.root, id, { status, limit }, log));
       if (failed) process.exitCode = 1;
+      break;
+    }
+    case "publish":
+    case "unpublish": {
+      if (ids.length === 0) {
+        throw new Error('no workflow ids: pass them as arguments or list them in decanter.config.json "workflows"');
+      }
+      let failed = false;
+      for (const id of ids) {
+        try {
+          if (command === "publish") await publishWorkflow(api, id, log);
+          else await unpublishWorkflow(api, id, log);
+        } catch (err) {
+          failed = true;
+          log.error(`${id}: ${(err as Error).message}`);
+        }
+      }
+      if (failed) process.exitCode = 1;
+      break;
+    }
+    case "create": {
+      if (rest.length !== 1) throw new Error('create needs exactly one name: n8n-decanter create "<name>"');
+      await createWorkflow(api, config, rest[0], log);
+      break;
+    }
+    case "delete": {
+      // Deliberately never falls back to config.workflows — a ref is required,
+      // one workflow per call (no cascade, too much blast radius for a default).
+      if (refs.length === 0) throw new Error("delete needs a workflow ref: n8n-decanter <ref> delete");
+      if (refs.length > 1) throw new Error("delete takes exactly one workflow — delete them one at a time");
+      await deleteWorkflow(api, config, refs[0], { force }, log);
       break;
     }
     case "rename": {

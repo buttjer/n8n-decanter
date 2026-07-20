@@ -57,6 +57,36 @@ export class N8nApi {
     return this.#request("PUT", `/api/v1/workflows/${encodeURIComponent(id)}`, body) as Promise<Workflow | undefined>;
   }
 
+  /**
+   * Create a blank draft on the server (n8n 2.x `POST /workflows`). The minimal
+   * accepted body is name + empty nodes/connections/settings (verified against
+   * 2.30.7 — name-only is rejected). Born **unpublished** (`active:false`); the
+   * caller pulls the returned id so the folder + state land. `createWorkflow` is
+   * the shared entry point Plan 21's `duplicate` reuses.
+   */
+  async createWorkflow(name: string): Promise<Workflow> {
+    return this.#request("POST", "/api/v1/workflows", { name, nodes: [], connections: {}, settings: {} }) as Promise<Workflow>;
+  }
+
+  /** Take the draft live (n8n 2.x publish). Idempotent server-side; returns the workflow. */
+  async activateWorkflow(id: string): Promise<Workflow | undefined> {
+    return this.#request("POST", `/api/v1/workflows/${encodeURIComponent(id)}/activate`) as Promise<Workflow | undefined>;
+  }
+
+  /** Return a published workflow to draft-only. Idempotent server-side; returns the workflow. */
+  async deactivateWorkflow(id: string): Promise<Workflow | undefined> {
+    return this.#request("POST", `/api/v1/workflows/${encodeURIComponent(id)}/deactivate`) as Promise<Workflow | undefined>;
+  }
+
+  /**
+   * Hard-delete a workflow (n8n 2.x `DELETE /workflows/:id`). Verified to delete
+   * even a *published* workflow outright (no refusal, no archive), so the CLI's
+   * confirmation gate is the only guard. Returns the deleted workflow.
+   */
+  async deleteWorkflow(id: string): Promise<Workflow | undefined> {
+    return this.#request("DELETE", `/api/v1/workflows/${encodeURIComponent(id)}`) as Promise<Workflow | undefined>;
+  }
+
   async #request(method: string, pathname: string, body?: unknown): Promise<unknown> {
     try {
       // The signal also covers body consumption, so a stalled response

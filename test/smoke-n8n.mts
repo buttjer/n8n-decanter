@@ -207,7 +207,7 @@ try {
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({
         label: "decanter-smoke",
-        scopes: ["workflow:create", "workflow:read", "workflow:update", "workflow:list", "workflow:activate", "execution:read", "execution:list", "tag:create", "tag:read", "workflowTags:update", "workflowTags:list"],
+        scopes: ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:list", "workflow:activate", "workflow:deactivate", "execution:read", "execution:list", "tag:create", "tag:read", "workflowTags:update", "workflowTags:list"],
         expiresAt: null,
       }),
     });
@@ -509,6 +509,94 @@ try {
     const items = runData["Ümläut Nödé"][0]?.data?.main?.[0];
     assert.ok(Array.isArray(items) && items[0]?.json, "items under data.main[0][] with .json");
     assert.equal(typeof exec.workflowVersionId, "string", "2.x records workflowVersionId per execution");
+  });
+
+  await step("version fields: GET carries versionId (draft) and activeVersionId (published)", async () => {
+    // Plan 20 task 2 live gate: both fields present; activeVersionId == versionId
+    // on an in-sync published workflow (wfId has been pushed while active).
+    const remote = await api("GET", `/api/v1/workflows/${wfId}`);
+    assert.equal(typeof remote.versionId, "string", "2.x GET carries the draft versionId");
+    assert.ok("activeVersionId" in remote, "2.x GET carries activeVersionId");
+    assert.equal(remote.active, true, "wfId is published from earlier steps");
+    assert.equal(remote.activeVersionId, remote.versionId, "published & in sync: live version == draft");
+  });
+
+  await step("lifecycle verbs: create → push → publish → unpublish → delete round-trip", async () => {
+    // create a blank draft on the server via the CLI, born unpublished
+    let r = await cli("create", "Smoke Lifecycle");
+    assert.equal(r.code, 0, r.out);
+    const lifeId = r.out.match(/created "Smoke Lifecycle" \(([^)]+)\)/)?.[1];
+    assert.ok(lifeId, "create printed the new id: " + r.out);
+    const lifeDir = path.join(ROOT, "Smoke Lifecycle");
+    assert.ok(existsSync(path.join(lifeDir, ".decanter.json")), "create pulled the folder");
+    let remote = await api("GET", `/api/v1/workflows/${lifeId}`);
+    assert.equal(remote.active, false, "born unpublished");
+    assert.equal(remote.activeVersionId, null, "unpublished → no active version");
+
+    // give it a trigger so it can go live, then push (stays draft while unpublished)
+    const wf = JSON.parse(read(lifeDir, "workflow.json"));
+    wf.nodes = [{ id: "lh1", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { httpMethod: "POST", path: "smoke-life-hook" } }];
+    wf.connections = {};
+    writeFileSync(path.join(lifeDir, "workflow.json"), JSON.stringify(wf, null, 2));
+    r = await cli(lifeId, "push");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /unpublished: draft only/, "push to an unpublished workflow stays draft: " + r.out);
+
+    // publish → live; activeVersionId now matches the draft
+    r = await cli(lifeId, "publish");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /published "Smoke Lifecycle" \([^)]+\) — code is live now/);
+    remote = await api("GET", `/api/v1/workflows/${lifeId}`);
+    assert.equal(remote.active, true, "publish took it live");
+    assert.equal(remote.activeVersionId, remote.versionId, "publish set activeVersionId to the draft");
+    // publish again → no-op-with-a-note
+    r = await cli(lifeId, "publish");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /is already published/);
+
+    // unpublish → draft only
+    r = await cli(lifeId, "unpublish");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /unpublished "Smoke Lifecycle" \([^)]+\) — draft only/);
+    remote = await api("GET", `/api/v1/workflows/${lifeId}`);
+    assert.equal(remote.active, false, "unpublish returned it to draft-only");
+
+    // delete needs a ref (never touches config)
+    r = await cli("delete");
+    assert.equal(r.code, 1);
+    assert.match(r.out, /delete needs a workflow ref/);
+    // delete --force → hard delete even after publish/unpublish; local folder kept
+    r = await cli(lifeId, "delete", "--force");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /deleted "Smoke Lifecycle" \([^)]+\) from the server/);
+    const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
+    assert.equal(gone.status, 404, "hard delete: workflow gone from the server");
+    assert.ok(existsSync(path.join(lifeDir, ".decanter.json")), "local folder left untouched as the git record");
+  });
+
+  await step("executions stale-fixture warning: fires on a version mismatch, silent on a match", async () => {
+    // Plan 20 task 5, against real execution data: read one real execution's
+    // recorded (published) version, then drive the local draft versionId to a
+    // mismatch and to a match.
+    const page = await api("GET", `/api/v1/executions?includeData=true&limit=1&workflowId=${wfId}`);
+    const ran: string = page.data[0]?.workflowVersionId;
+    assert.equal(typeof ran, "string", "an execution with a recorded version exists");
+    let r = await cli(wfId, "pull");
+    assert.equal(r.code, 0, r.out);
+    const wfJson = path.join(wfDir, "workflow.json");
+    const setDraft = (v: string): void => {
+      const wf = JSON.parse(read(wfJson));
+      wf.versionId = v;
+      writeFileSync(wfJson, JSON.stringify(wf, null, 2));
+    };
+    setDraft("stale-draft-marker");
+    r = await cli("executions", wfId, "--limit", "1");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, new RegExp(`captured executions ran published version ${ran}; your draft is stale-draft-marker`), r.out);
+    setDraft(ran); // draft now matches the execution's version → silent
+    r = await cli("executions", wfId, "--limit", "1");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!r.out.includes("may not match the code"), "matching version is silent: " + r.out);
   });
 } finally {
   await teardown();

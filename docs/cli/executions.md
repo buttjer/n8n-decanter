@@ -1,7 +1,7 @@
 ---
 title: executions
 description: Fetch recent execution run data as JSON, for building accurate run fixtures.
-order: 9
+order: 12
 ---
 
 ```sh
@@ -53,3 +53,15 @@ or for every pulled workflow when no ref is given. Run it when you're done.
 Executions run the **published** workflow version (n8n 2.x), not necessarily
 your local draft — so treat the data as convenience reference, not ground
 truth about your current code.
+
+To make that concrete, `executions` **warns** when a fetched execution ran a
+published version different from your local draft (comparing the execution's
+`workflowVersionId` against `workflow.json`'s `versionId`):
+
+```txt
+! captured executions ran published version <X>; your draft is <Y> —
+  the data may not match the code you're editing
+```
+
+The files are still written — it's a warning, not an error — but it tells you
+the captured shapes may be a step behind the code in front of you.

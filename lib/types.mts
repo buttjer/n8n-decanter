@@ -28,6 +28,15 @@ export interface Workflow {
   name: string;
   /** Publication state (n8n 2.x publish model). Read-only via API. */
   active?: boolean;
+  /** Draft version id (n8n 2.x GET) — always present on a real 2.x response. */
+  versionId?: string;
+  /**
+   * Published (live) version id (n8n 2.x GET). `null`/absent when unpublished;
+   * equals `versionId` when the live version matches the draft. It only lags the
+   * draft after a UI edit that isn't published yet — the version-aware `status`
+   * signal (see publishedVersionLagsDraft).
+   */
+  activeVersionId?: string | null;
   nodes: WorkflowNode[];
   connections: Record<string, unknown>;
   settings?: Record<string, unknown>;
@@ -46,6 +55,8 @@ export interface Execution {
   id: number | string;
   status?: string;
   workflowId?: string;
+  /** The *published* version id this execution ran (n8n 2.x). */
+  workflowVersionId?: string;
   [key: string]: unknown;
 }
 

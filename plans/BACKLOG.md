@@ -134,25 +134,25 @@ entries carry no priority field) — adjust freely.
 
 ### Graduated (tracked by a numbered plan; not yet done)
 
-- [ ] **`publish` / `unpublish` verbs** (2026-07-19) — `POST
+- [x] **`publish` / `unpublish` verbs** (2026-07-19) — `POST
       /api/v1/workflows/:id/activate` (and deactivate) close the draft→live
       loop from the CLI. Semantics to respect (PLAN.md, smoke-verified):
       this only matters for **unpublished** workflows — a push to an
       already-published workflow auto-publishes (`publishIfActive: true`
       server-side), there is no draft-only push to a live workflow. So
       `publish` = "take this draft live"; `unpublish` = back to draft-only.
-      (graduated to [Plan 20](OPEN-20-cli-publish-lifecycle.md))
-- [ ] **Version-aware `status`** (2026-07-19) — the 2.x GET exposes
+      (graduated to [Plan 20](DONE-20-cli-publish-lifecycle.md))
+- [x] **Version-aware `status`** (2026-07-19) — the 2.x GET exposes
       `versionId` (draft) and `activeVersionId` (published): `status` can say
       "published version is older than the draft" instead of the binary
       published/unpublished line. Cheap; pairs with the `publish` verb.
-      (graduated to [Plan 20](OPEN-20-cli-publish-lifecycle.md))
-- [ ] **Stale-fixture warning for executions** (2026-07-19) — executions
+      (graduated to [Plan 20](DONE-20-cli-publish-lifecycle.md))
+- [x] **Stale-fixture warning for executions** (2026-07-19) — executions
       record the `workflowVersionId` they ran (published version); when
       [Plan 3](DONE-3-local-run-and-diff-fidelity.md) C captures
       fixtures, warn if that version is older than the current draft — the
       recorded data may not match the code being tested.
-      (graduated to [Plan 20](OPEN-20-cli-publish-lifecycle.md))
+      (graduated to [Plan 20](DONE-20-cli-publish-lifecycle.md))
 - [ ] **`add` verb** — scaffold a Code node (uuid → node object → `//@file:`
       placeholder → source file) in one step. Lower priority than `rename`;
       node creation is rarer than renaming.
@@ -172,7 +172,7 @@ entries carry no priority field) — adjust freely.
       currently exist only *after* a pull assigns the remote id) and the
       "born in n8n" guidance in PLAN.md + template AGENTS.md.
       (2026-07-20 status: split — blank CLI-native create →
-      [Plan 20](OPEN-20-cli-publish-lifecycle.md) `create`; clone an existing
+      [Plan 20](DONE-20-cli-publish-lifecycle.md) `create`; clone an existing
       workflow → [Plan 21](OPEN-21-repo-authored-workflows.md) `duplicate`;
       both preserve pull-first. The data-model-inverting `push --create`
       variant was dropped by user decision.)

@@ -29,6 +29,39 @@ const server = http.createServer((req, res) => {
       .writeHead(200, { "content-type": "application/json" })
       .end(JSON.stringify({ data: [...db.values()], nextCursor: null }));
   }
+  // create: POST /api/v1/workflows (no id) — mirrors 2.x required-field order
+  if (req.method === "POST" && req.url === "/api/v1/workflows") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      const sent = JSON.parse(body);
+      for (const required of ["name", "nodes", "connections", "settings"]) {
+        if (sent[required] === undefined) return void res.writeHead(400).end(`request/body must have required property '${required}'`);
+      }
+      const id = `wf-new-${putCount}-${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      const created = {
+        id, name: sent.name, active: false, createdAt: now, updatedAt: now,
+        nodes: sent.nodes, connections: sent.connections, settings: sent.settings,
+        staticData: null, pinData: {}, tags: [],
+        versionId: `ver-${id}`, activeVersionId: null,
+      };
+      db.set(id, created);
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(created));
+    });
+    return;
+  }
+  // publish/unpublish: POST /api/v1/workflows/:id/(de)activate — idempotent, returns the workflow
+  const act = req.url!.match(/^\/api\/v1\/workflows\/([^/]+)\/(activate|deactivate)$/);
+  if (act) {
+    if (req.method !== "POST") return void res.writeHead(405).end("method not allowed");
+    const wf = db.get(act[1]);
+    if (!wf) return void res.writeHead(404).end("not found");
+    wf.active = act[2] === "activate";
+    wf.activeVersionId = wf.active ? wf.versionId : null;
+    wf.updatedAt = new Date().toISOString();
+    return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
+  }
   if (req.method === "GET" && req.url!.startsWith("/api/v1/executions")) {
     const one = req.url!.match(/^\/api\/v1\/executions\/(\d+)\?/);
     if (one) {
@@ -52,6 +85,10 @@ const server = http.createServer((req, res) => {
   const wf = db.get(m[1]);
   if (!wf) return void res.writeHead(404).end("not found");
   if (req.method === "GET") {
+    return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
+  }
+  if (req.method === "DELETE") {
+    db.delete(m[1]); // hard delete, even when published (matches 2.x)
     return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
   }
   if (req.method === "PUT") {
@@ -114,6 +151,7 @@ db.set("wf123", {
   pinData: {},
   tags: [],
   versionId: "aaa",
+  activeVersionId: "aaa", // published & in sync (live version == draft); version-aware status stays plain
   // n8n 2.x derived fields — pull must keep them OUT of workflow.json
   activeVersion: { versionId: "aaa", nodes: [{ id: "n2", parameters: { jsCode: JS_CODE } }], workflowPublishHistory: [] },
   shared: [{ createdAt: "2026-07-01T00:00:00.000Z", role: "workflow:owner" }],
@@ -1551,6 +1589,111 @@ await step("executions clean: removes the dirs, credentials-free", async () => {
   } finally {
     env = savedEnv;
   }
+});
+
+await step("create: blank workflow born unpublished on the server, then pulled into the layout", async () => {
+  let r = await cli("create", "Fresh Flow");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /created "Fresh Flow" \(wf-new-[^)]+\) on the server — unpublished draft/);
+  const created = [...db.values()].find((w) => w.name === "Fresh Flow");
+  assert.ok(created, "workflow created in the mock db");
+  assert.equal(created.active, false, "born unpublished");
+  const dir = wfDir("Fresh Flow");
+  assert.ok(existsSync(path.join(dir, ".decanter.json")), "pulled: state file exists");
+  assert.ok(existsSync(path.join(dir, "workflow.json")), "pulled: workflow.json exists");
+  assert.equal(state(dir).workflowId, created.id, "state points at the new id");
+  assert.match(r.out, /wrote Fresh Flow[/\\]workflow\.json/);
+  // create needs exactly one name
+  r = await cli("create");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /create needs exactly one name/);
+});
+
+await step("publish/unpublish: toggle live state; already-in-state is a no-op note", async () => {
+  const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
+  let r = await cli(id, "publish");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /published "Fresh Flow" \([^)]+\) — code is live now/);
+  assert.equal(db.get(id).active, true);
+  assert.equal(db.get(id).activeVersionId, db.get(id).versionId, "activeVersionId set to the draft on publish");
+  // publish again → no-op note, still published
+  r = await cli(id, "publish");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /is already published/);
+  assert.equal(db.get(id).active, true);
+  // unpublish → back to draft-only
+  r = await cli(id, "unpublish");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /unpublished "Fresh Flow" \([^)]+\) — draft only/);
+  assert.equal(db.get(id).active, false);
+  assert.equal(db.get(id).activeVersionId, null);
+  // unpublish again → no-op note
+  r = await cli(id, "unpublish");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /is already unpublished/);
+  // resolves by name too, leaving it published for the status step
+  r = await cli("Fresh Flow", "publish");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /published "Fresh Flow"/);
+});
+
+await step("status: version-aware — a live version older than the draft prints the lag note", async () => {
+  const created = [...db.values()].find((w) => w.name === "Fresh Flow")!;
+  const prevVersion = created.versionId;
+  created.versionId = "draft-ahead"; // simulate a UI draft edit the live version now lags
+  try {
+    let r = await cli(created.id, "status");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /published — live version is older than the draft \(push or "publish" to go live\)/);
+    // an in-sync published workflow stays plain (wf123: activeVersionId == versionId)
+    r = await cli("wf123", "status");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /\]  published/);
+    assert.ok(!r.out.includes("older than the draft"), "in-sync published stays plain: " + r.out);
+  } finally {
+    created.versionId = prevVersion;
+  }
+});
+
+await step("executions: warns when a captured run's version differs from the local draft", async () => {
+  const exDir = path.join(dirF, "executions");
+  const exec202 = EXECUTIONS.find((e) => e.id === 202)!;
+  const prev = exec202.workflowVersionId;
+  exec202.workflowVersionId = "old-live-ver"; // wf123 draft is "aaa"
+  try {
+    let r = await cli("executions", "wf123", "--status=error"); // exec 202 only
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /captured executions ran published version old-live-ver; your draft is aaa — the data may not match the code you're editing/);
+    rmSync(exDir, { recursive: true, force: true });
+    r = await cli("executions", "wf123", "--status=success"); // exec 201, version "aaa" == draft
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!r.out.includes("may not match the code"), "matching version is silent: " + r.out);
+  } finally {
+    exec202.workflowVersionId = prev;
+    rmSync(exDir, { recursive: true, force: true });
+  }
+});
+
+await step("delete: refuses without --force non-interactively; --force deletes, local folder kept", async () => {
+  const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
+  const dir = wfDir("Fresh Flow");
+  // non-interactive without --force → refuse, remote intact
+  let r = await cli(id, "delete");
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /refusing to delete "Fresh Flow" \([^)]+\) without confirmation — re-run with --force/);
+  assert.ok(db.has(id), "workflow not deleted without consent");
+  // no ref → error, never falls back to config.workflows
+  r = await cli("delete");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /delete needs a workflow ref/);
+  assert.ok(db.has("wf123"), "config workflow untouched by a ref-less delete");
+  // --force deletes even a published workflow; the local folder is left as the git record
+  r = await cli(id, "delete", "--force");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /deleted "Fresh Flow" \([^)]+\) from the server/);
+  assert.match(r.out, /left untouched/);
+  assert.ok(!db.has(id), "workflow gone from the server");
+  assert.ok(existsSync(path.join(dir, ".decanter.json")), "local folder kept as the git-tracked record");
 });
 
 if (!hasFailed()) {

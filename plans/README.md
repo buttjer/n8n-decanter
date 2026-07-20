@@ -98,15 +98,17 @@ items not yet claimed by one. Recommended order:
     type-to-filter picker (pulled workflows green, unpulled remote ones
     yellow) with a follow-up verb menu; piped invocations keep printing
     usage. `completion` stays alongside it (decided 2026-07-19).
-20. [CLI publish lifecycle](OPEN-20-cli-publish-lifecycle.md) — close the
+20. [CLI publish lifecycle](DONE-20-cli-publish-lifecycle.md) — close the
     n8n 2.x workflow lifecycle from the CLI: `publish`/`unpublish` plus
     `create` (blank server-born draft, pulled immediately) and `delete`
     (confirmation-gated, local folder untouched), a version-aware `status`
     line, and a stale-fixture warning for `executions`. Groups three backlog
     items off PLAN.md's publish-semantics research + a user extension
     (2026-07-20); endpoint/field shapes gated on live smoke verification. Owns
-    the `createWorkflow` method Plan 21's `duplicate` reuses. Proposed
-    2026-07-20.
+    the `createWorkflow` method Plan 21's `duplicate` reuses. Done 2026-07-20 —
+    all four endpoints live-verified against 2.30.7 and asserted by the smoke
+    suite. Picker menu wiring (state-aware publish/unpublish toggle) left to
+    Plan 19's surface as a follow-up.
 21. [Local authoring helpers](OPEN-21-repo-authored-workflows.md) — `add` verb
     (scaffold a Code node in one step, offline) and `duplicate` verb (clone an
     existing workflow into a new remote one via 2.x `POST /workflows`, landed

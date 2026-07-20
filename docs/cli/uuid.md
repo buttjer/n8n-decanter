@@ -1,7 +1,7 @@
 ---
 title: uuid
 description: Generate lowercase v4 UUIDs for new node ids.
-order: 12
+order: 15
 ---
 
 ```sh

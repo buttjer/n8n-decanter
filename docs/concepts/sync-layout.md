@@ -37,8 +37,12 @@ Only structure round-trips through push — `name`, `nodes`, `connections`,
 `settings`, `staticData`. Pull also brings down `active`, `tags`, `pinData`,
 and timestamps, but push never sends them back and they don't count as drift,
 so editing them here has no effect (activation, tags, and pinned data are
-managed in the n8n UI). `shared` and the published-version copy `activeVersion`
-are the only fields stripped on pull entirely.
+managed in the n8n UI). `shared`, the published-version copy `activeVersion`,
+and the published-version pointer `activeVersionId` are stripped on pull
+entirely — derived state that churns on each publish, with no local reader
+(the version-aware [status](/docs/cli/status/) reads `activeVersionId` off the
+live GET). The draft `versionId` is kept, since the
+[executions](/docs/cli/executions/) stale-fixture warning compares against it.
 
 ## `code/`
 

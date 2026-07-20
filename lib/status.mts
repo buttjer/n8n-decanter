@@ -6,7 +6,7 @@ import { unifiedDiff } from "./diff.mts";
 import { findWorkflowDir, readState } from "./state.mts";
 import { style } from "./style.mts";
 import type { Log, Workflow } from "./types.mts";
-import { isJsCodeNode, publicationState, sha256, splitMarker, workflowStructureHash } from "./util.mts";
+import { isJsCodeNode, publicationState, publishedVersionLagsDraft, sha256, splitMarker, workflowStructureHash } from "./util.mts";
 
 /** The comparable local body: file content for .js, the compiled JS for .ts. */
 async function localBody(dir: string, file: string, log?: Log): Promise<string | null> {
@@ -39,7 +39,13 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
   };
   const state = readState(dir)!;
   const pub = publicationState(remote);
-  log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]${pub ? `  ${pub}` : ""}`);
+  // Version-aware note: on a published workflow whose live version lags the
+  // draft (a UI edit not yet published), say so; otherwise the plain state word,
+  // or nothing when the server omits `active` (defensive, mirrors publicationState).
+  const pubNote = publishedVersionLagsDraft(remote)
+    ? `  published — live version is older than the draft (push or "publish" to go live)`
+    : pub ? `  ${pub}` : "";
+  log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]${pubNote}`);
 
   const remoteStruct = workflowStructureHash(remote);
   const wfFile = path.join(dir, "workflow.json");
