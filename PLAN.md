@@ -155,8 +155,8 @@ with a literal `(not pulled)` suffix (never color alone), remote entries
 appended asynchronously as `GET /workflows` lands (skipped without
 credentials; failures degrade to a dim notice) — while loading, dim `░`
 skeleton rows of varied widths mark where they will appear. Enter on a
-pulled workflow opens a verb menu (status/pull/push/watch/check; a letter
-cycles matching verbs, so `p` alternates pull/push); Enter on an unpulled
+pulled workflow opens a verb menu (status/pull/push/watch/check/executions; a
+letter cycles matching verbs, so `p` alternates pull/push); Enter on an unpulled
 one runs `pull` directly. The picker only produces `{verb, id}` and
 re-enters the normal dispatcher path (`dispatch()`, the extracted verb
 switch) — identical semantics to typing the command. The session is a
@@ -547,6 +547,13 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   (`{ global?, node? }` — `node` meaning the node being run) replaces the
   matching slice whole, no merging. Mutations are visible during the run,
   never persisted — `run` stays offline.
+- **`run` `$env` isolation (2026-07-20)**: n8n's `$env` is scoped, so `run`'s
+  `$env` is **empty by default** — it does *not* inherit `process.env` (which
+  carries `N8N_API_KEY` and any other exported secret, straight into the
+  returned JSON if a node prints `$env`). Precedence: a fixture's `env` field
+  wins; otherwise `--allow-env` opts back into `{ ...process.env }`; otherwise
+  `{}`. The flag is threaded `runNode` → `buildGlobals` via an `allowEnv`
+  option. (Backlog high item; earlier default leaked the whole environment.)
 - **Name resolution is composed, not monolithic (2026-07-18, plans/11)**:
   `lib/state.mts` exports `listWorkflowRefs` (dir scan; names from folder
   basename + `workflow.json`), pure `matchWorkflowRef` (the tiered matcher,

@@ -780,6 +780,25 @@ await step("run: missing $() fixture data errors clearly", async () => {
   assert.match(r.out, /node "Up" has no fixture data/);
 });
 
+await step("run: $env is empty by default, inherits process.env only with --allow-env", async () => {
+  const rd = path.join(TMP, "runtest-env");
+  mkdirSync(rd, { recursive: true });
+  writeFileSync(path.join(rd, "Env.js"), "return [{ json: { key: $env.N8N_API_KEY ?? null } }];\n");
+  // default: $env is empty — host secrets (N8N_API_KEY lives in the CLI env) never leak
+  let r = await cli("run", path.join("runtest-env", "Env.js"));
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { key: null } }]);
+  // --allow-env opts back into the full process env
+  r = await cli("run", path.join("runtest-env", "Env.js"), "--allow-env");
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { key: "test-key" } }]);
+  // a fixture env wins regardless of the flag
+  writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ env: { N8N_API_KEY: "from-fixture" } }));
+  r = await cli("run", path.join("runtest-env", "Env.js"), path.join("runtest-env", "fx.json"));
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(runOutput(r.out), [{ json: { key: "from-fixture" } }]);
+});
+
 await step("guard: dangling connection blocks check and push", async () => {
   const dir2 = wfDir("Order Sync v2");
   const wfJson = read(dir2, "workflow.json");

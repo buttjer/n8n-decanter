@@ -242,7 +242,10 @@ Two offline tools, always available (no credentials, no network, no live n8n):
     ```
 
     `input` feeds `$input`/`$json`; `nodes` backs `$('Node Name')`; without a
-    fixture the input defaults to a single empty item.
+    fixture the input defaults to a single empty item. `env` backs `$env`,
+    which is **empty by default** (like n8n's scoped `$env`) — set it here, or
+    pass `--allow-env` to inherit the process environment (may include
+    `N8N_API_KEY`; never `run --allow-env` an untrusted node).
     `$getWorkflowStaticData` is seeded from `workflow.json`'s `staticData`
     (`global` and this node's `node:` slice); a fixture `staticData` replaces
     the matching slice (`"node"` = the node being run). Mutations are visible

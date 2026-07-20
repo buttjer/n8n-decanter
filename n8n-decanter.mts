@@ -65,7 +65,8 @@ const usage = (): string => {
   ${b("n8n-decanter list")} [--remote]      ${d("pulled workflows: name, id, folder")}
                                    ${d("(--remote adds workflows not pulled yet)")}
   ${b("n8n-decanter completion")} zsh|bash  ${d("print a shell completion script for your rc file")}
-  ${b("n8n-decanter")} <node-file> ${b("run")} [fixture.json]   ${d("run a node locally (offline)")}
+  ${b("n8n-decanter")} <node-file> ${b("run")} [fixture.json] [--allow-env]   ${d("run a node locally (offline;")}
+                                   ${d("$env is empty unless the fixture sets env or --allow-env inherits process.env)")}
   ${b("n8n-decanter uuid")} [count]         ${d("print lowercase v4 UUID(s) for new node ids")}
 
 A workflow <ref> is its id, its workflow/folder name, or a unique name prefix
@@ -129,6 +130,7 @@ async function main() {
   }
   const force = args.includes("--force");
   const noTypecheck = args.includes("--no-typecheck");
+  const allowEnv = args.includes("--allow-env");
   const workflowFlag = args.includes("--workflow");
   const remoteFlag = args.includes("--remote");
   const diffFlag = args.includes("--diff");
@@ -177,7 +179,7 @@ async function main() {
 
   if (command === "run") {
     if (rest.length < 1) throw new Error("run needs a node file argument: n8n-decanter run <node-file> [fixture.json]");
-    await runNode(rest[0], rest[1], log);
+    await runNode(rest[0], rest[1], log, { allowEnv });
     return;
   }
 
@@ -192,7 +194,7 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--status=", "--limit=", "--help");
+    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireCredentials: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);

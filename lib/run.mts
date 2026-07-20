@@ -110,7 +110,7 @@ function makeNodeRef(items: unknown[]) {
  * Build the globals an n8n Code node sees. `perItem` overrides the each-item
  * fields ($json, $binary, $itemIndex, $input.item) for "Run Once for Each Item".
  */
-async function buildGlobals(fixture: Fixture, log: Log, context: { nodeName?: string; staticData?: unknown } = {}) {
+async function buildGlobals(fixture: Fixture, log: Log, context: { nodeName?: string; staticData?: unknown; allowEnv?: boolean } = {}) {
   const staticData = staticDataSlices(context.staticData, context.nodeName, fixture);
   const input = (fixture.input ?? [{ json: {} }]).map(asItem);
   const nodes: Record<string, ReturnType<typeof makeNodeRef>> = {};
@@ -147,7 +147,10 @@ async function buildGlobals(fixture: Fixture, log: Log, context: { nodeName?: st
     $,
     $json: input[0]?.json ?? {},
     $binary: input[0]?.binary ?? {},
-    $env: fixture.env ?? { ...process.env },
+    // n8n's $env is scoped, not the whole host environment. A fixture's env
+    // always wins; otherwise $env is empty unless --allow-env opts into
+    // inheriting process.env (which can carry N8N_API_KEY and other secrets).
+    $env: fixture.env ?? (context.allowEnv ? { ...process.env } : {}),
     $itemIndex: 0,
     $runIndex: 0,
     $now: DateTime ? DateTime.now() : undefined,
@@ -182,7 +185,7 @@ async function invoke(code: string, globals: Record<string, unknown>): Promise<u
  * what it returns. Offline; no credentials, no network. `.ts` is compiled with
  * the same esbuild pass as push; `.js` runs verbatim (marker stripped if any).
  */
-export async function runNode(file: string, fixturePath: string | undefined, log: Log): Promise<unknown> {
+export async function runNode(file: string, fixturePath: string | undefined, log: Log, opts: { allowEnv?: boolean } = {}): Promise<unknown> {
   const resolved = path.resolve(file);
   if (!existsSync(resolved)) throw new Error(`node file not found: ${file}`);
   if (!/\.(ts|js)$/.test(resolved)) throw new Error(`not a node source file (need .js or .ts): ${file}`);
@@ -197,7 +200,7 @@ export async function runNode(file: string, fixturePath: string | undefined, log
     : splitMarker(readFileSync(resolved, "utf8")).body;
 
   const fixture = loadFixture(fixturePath, log);
-  const globals = await buildGlobals(fixture, log, { nodeName: node?.name, staticData });
+  const globals = await buildGlobals(fixture, log, { nodeName: node?.name, staticData, allowEnv: opts.allowEnv });
 
   log.info(`running ${basename} (${mode})${fixturePath ? ` with fixture ${path.basename(fixturePath)}` : ""}`);
   log.info("─".repeat(48));

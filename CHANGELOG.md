@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-20
+
+### Security
+
+- **Breaking:** `run`'s `$env` no longer exposes the CLI process environment
+  by default. Previously a node that read or printed `$env` during `run`
+  received every exported variable of the CLI process — including
+  `N8N_API_KEY` and any other secret — straight into the JSON on stdout;
+  n8n's real `$env` is scoped, this was not. Now `$env` is **empty** unless
+  the fixture supplies an `"env"` object (which still wins), and the new
+  **`--allow-env`** flag opts back into the old full-inherit behavior for the
+  cases that need it (`n8n-decanter <node> run [fixture.json] --allow-env`).
+
+### Added
+
+- The interactive picker's per-workflow verb menu now includes
+  **`executions`** (status/pull/push/watch/check/executions), so fetching a
+  workflow's real run data no longer requires dropping to the CLI.
+
 ## [0.2.4] - 2026-07-20
 
 ### Added
