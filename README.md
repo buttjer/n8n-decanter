@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/buttjer/n8n-decanter/actions/workflows/ci.yml/badge.svg)](https://github.com/buttjer/n8n-decanter/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/n8n-decanter)](https://www.npmjs.com/package/n8n-decanter)
+[![Docs](https://img.shields.io/badge/docs-website-blue.svg)](https://buttjer.github.io/n8n-decanter/)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Work on n8n like a codebase — built for AI coding agents.**
@@ -36,7 +37,11 @@ editable in your IDE or by your agent, and pushed back through the n8n API.
   behavior that touches the API is verified against a real n8n 2.x instance
   by an automated integration suite.
 
-![VS Code Screenshot](./docs/screenshot.webp)
+![Terminal demo — the interactive picker: filter workflows, choose a verb, sync](./docs/terminal-demo.gif)
+
+![Agent demo — a coding agent edits a Code node, tests it offline, then pushes live](./docs/agent-demo.gif)
+
+📖 **Full documentation: [buttjer.github.io/n8n-decanter](https://buttjer.github.io/n8n-decanter/)**
 
 ## Setup
 
