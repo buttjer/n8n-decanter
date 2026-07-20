@@ -97,6 +97,13 @@ export interface DecanterConfig {
   proxyPort: number;
   /** Per-request timeout for n8n API calls, milliseconds (default 30 000). */
   requestTimeoutMs: number;
+  /**
+   * n8n version the `simulate` engine runs (npx tag / Docker tag). Optional —
+   * absent, simulate defaults to the smoke pin (DEFAULT_N8N_VERSION) and hints
+   * to pin it to match your instance. "Engine-true" means true to *your* n8n,
+   * so pinning this to the running version is recommended (Plan 7).
+   */
+  n8nVersion?: string;
   host: string;
   apiKey: string;
 }

@@ -1,14 +1,16 @@
 // Offline unit tests for lib/simulate.mts — the fixture loader + route-B
 // transform (Plan 7 task 2). No engine, no mock server: pure file-in/JSON-out.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import {
   assertDryRunSafe,
   buildSimulation,
+  diffItems,
   isPureNode,
+  pinFixtures,
   PURE_NODE_TYPES,
   SIM_START_NODE,
 } from "../../lib/simulate.mts";
@@ -190,6 +192,33 @@ describe("buildSimulation — untaken / disabled exemptions", () => {
     assert.equal(disabled.type, "n8n-nodes-base.code"); // neutralized
     assert.match(String(disabled.parameters.jsCode), /reached unexpectedly/);
     assert.doesNotThrow(() => assertDryRunSafe(sim.workflow));
+  });
+});
+
+describe("diffItems", () => {
+  it("is key-order-insensitive on json payloads and ignores pairedItem/metadata", () => {
+    assert.equal(diffItems([{ json: { a: 1, b: 2 }, pairedItem: { item: 0 } }], [{ json: { b: 2, a: 1 }, pairedItem: { item: 9 } }]), true);
+  });
+  it("detects a differing value (the regression signal) and item count", () => {
+    assert.equal(diffItems([{ json: { doubled: 42 } }], [{ json: { doubled: 43 } }]), false);
+    assert.equal(diffItems([{ json: { x: 1 } }], [{ json: { x: 1 } }, { json: { x: 2 } }]), false);
+  });
+});
+
+describe("pinFixtures", () => {
+  it("writes provenance-stamped fixtures for network nodes only, with a PII warning", () => {
+    const dir = scaffoldBase();
+    pinFixtures(dir, "1", log);
+    // Webhook + Fetch are network -> pinned; Compute/Tag are pure -> skipped
+    const webhook = JSON.parse(readFileSync(path.join(dir, "fixtures", "webhook.json"), "utf8"));
+    assert.equal(webhook.source, "capture");
+    assert.equal(webhook.node, "Webhook");
+    assert.equal(webhook.execId, "1");
+    assert.equal(webhook.workflowVersionId, "v1");
+    assert.deepEqual(webhook.items, [item({ body: { n: 21 } })]);
+    assert.ok(existsSync(path.join(dir, "fixtures", "fetch.json")));
+    assert.ok(!existsSync(path.join(dir, "fixtures", "compute.json")));
+    assert.ok(warnings.some((w) => /credentials\/PII/.test(w)), warnings.join("|"));
   });
 });
 

@@ -22,6 +22,7 @@ n8n-decanter [ref...] unpublish                       # back to draft-only
 n8n-decanter <ref> delete [--force]                   # delete from the server
 n8n-decanter [ref...] executions [--status=…] [--limit=N]
 n8n-decanter [ref...] executions clean
+n8n-decanter <ref> simulate --execution <id> [--network-none] [--json]   # engine-true replay
 n8n-decanter list [--remote]
 n8n-decanter completion zsh|bash
 n8n-decanter <node-file> run [fixture.json] [--allow-env]
@@ -58,7 +59,7 @@ may appear in any position too.
 
 | Verbs | Network |
 | --- | --- |
-| `check`, `run`, `rename`, `add`, `list`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception) |
+| `check`, `run`, `rename`, `add`, `list`, `simulate`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n API) |
 | `status`, `executions` | Read the remote, never write |
 | `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish`, `delete` | Read/write the live instance |
 

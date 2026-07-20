@@ -41,6 +41,7 @@ export function loadConfig(cwd: string = process.cwd(), { requireCredentials = t
         browserReload?: string;
         proxyPort?: number;
         requestTimeoutMs?: number;
+        n8nVersion?: string;
       };
       loadEnv(dir);
       const host = (process.env.N8N_HOST ?? "").replace(/\/+$/, "");
@@ -57,6 +58,7 @@ export function loadConfig(cwd: string = process.cwd(), { requireCredentials = t
         browserReload: cfg.browserReload === "proxy" ? "proxy" : "off",
         proxyPort: typeof cfg.proxyPort === "number" ? cfg.proxyPort : 5679,
         requestTimeoutMs: typeof cfg.requestTimeoutMs === "number" && cfg.requestTimeoutMs > 0 ? cfg.requestTimeoutMs : 30_000,
+        n8nVersion: typeof cfg.n8nVersion === "string" && cfg.n8nVersion !== "" ? cfg.n8nVersion : undefined,
         host,
         apiKey,
       };

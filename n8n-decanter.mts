@@ -3,8 +3,10 @@ import path from "node:path";
 import { addCodeNode } from "./lib/add.mts";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
+import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
+import { pinFixtures, runSimulation, type SimulationReport } from "./lib/simulate.mts";
 import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
@@ -71,6 +73,11 @@ const usage = (): string => {
                                    ${d("workflows/<Name>/executions/ — gitignored temp files;")}
                                    ${d("a numeric argument fetches that one execution by id")}
   ${b("n8n-decanter")} [ref...] ${b("executions clean")}   ${d("delete fetched execution data (offline)")}
+  ${b("n8n-decanter")} <ref> ${b("simulate")} --execution <id> [--network-none] [--json]
+                                   ${d("replay the workflow through a real n8n engine (Docker):")}
+                                   ${d("pure nodes run for real, network nodes pinned from the")}
+                                   ${d("capture, credentials stripped; exits 1 on divergence")}
+  ${b("n8n-decanter")} <ref> ${b("simulate")} --pin <id>   ${d("save a capture's network outputs as committed fixtures/")}
   ${b("n8n-decanter list")} [--remote]      ${d("pulled workflows: name, id, folder")}
                                    ${d("(--remote adds workflows not pulled yet)")}
   ${b("n8n-decanter completion")} zsh|bash  ${d("print a shell completion script for your rc file")}
@@ -87,9 +94,9 @@ Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 };
 
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "add", "duplicate", "watch", "run", "list", "executions", "publish", "unpublish", "create", "delete", "completion", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "add", "duplicate", "watch", "run", "list", "executions", "simulate", "publish", "unpublish", "create", "delete", "completion", "__complete", "help"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "publish", "unpublish", "delete"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "publish", "unpublish", "delete"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -126,13 +133,13 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
       }
       const value = m[2] ?? raw[++i];
-      if (value === undefined || value === "") throw new Error(`--${m[1]} needs a value (e.g. --${m[1]}=${m[1] === "limit" ? "5" : "success"})`);
+      if (value === undefined || value === "") throw new Error(`--${m[1]} needs a value (e.g. --${m[1]}=${m[1] === "limit" ? "5" : m[1] === "status" ? "success" : "123"})`);
       valueFlags.set(m[1], value);
     }
   }
@@ -143,6 +150,8 @@ async function main() {
   const remoteFlag = args.includes("--remote");
   const diffFlag = args.includes("--diff");
   const tsFlag = args.includes("--ts");
+  const jsonFlag = args.includes("--json");
+  const networkNoneFlag = args.includes("--network-none");
   const positional = args.filter((a) => !a.startsWith("--"));
   // id-first support: the first token matching a known verb is the command,
   // wherever it sits — `push wf123` and `wf123 push` are equivalent.
@@ -196,7 +205,7 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--help");
+    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--json", "--network-none", "--n8n-version=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireCredentials: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -207,7 +216,7 @@ async function main() {
     return;
   }
 
-  await dispatch(command, rest, { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, tsFlag, valueFlags });
+  await dispatch(command, rest, { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, valueFlags });
 }
 
 interface Flags {
@@ -217,11 +226,13 @@ interface Flags {
   remoteFlag: boolean;
   diffFlag: boolean;
   tsFlag: boolean;
+  jsonFlag: boolean;
+  networkNoneFlag: boolean;
   valueFlags: Map<string, string>;
 }
 
 /** Flag defaults for picker-launched verbs (no CLI flags in play). */
-const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, workflowFlag: false, remoteFlag: false, diffFlag: false, tsFlag: false, valueFlags: new Map() };
+const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, workflowFlag: false, remoteFlag: false, diffFlag: false, tsFlag: false, jsonFlag: false, networkNoneFlag: false, valueFlags: new Map() };
 
 /**
  * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
@@ -269,10 +280,29 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
   }
 }
 
+/** Human-readable `simulate` report: per-node diff lines + a pass/fail summary. */
+function printSimulationReport(r: SimulationReport, log: Log): void {
+  log.info(`replayed execution ${r.execId} on n8n ${r.version}${r.networkNone ? " (network: none)" : ""} — ${r.pure.length} node(s) real, ${r.pinned.length} pinned`);
+  if (!r.engineOk) log.error(`engine run failed: ${r.engineError ?? "unknown error"}`);
+  for (const d of r.diffs) {
+    if (d.equal) log.ok(`${d.node}: matches capture`);
+    else {
+      log.error(`${d.node}: diverged from capture`);
+      log.info(style.dim(`    expected ${JSON.stringify(d.expected)}`));
+      log.info(style.dim(`    actual   ${JSON.stringify(d.actual)}`));
+    }
+  }
+  if (r.ok) log.ok(`simulation matches the capture (${r.diffs.length} node${r.diffs.length === 1 ? "" : "s"} checked)`);
+  else log.error(`simulation diverged: ${r.divergent.length > 0 ? r.divergent.join(", ") : "engine error"}`);
+}
+
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
 async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
-  const { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, tsFlag, valueFlags } = flags;
-  const offline = command === "check" || command === "rename" || command === "add" || (command === "list" && !remoteFlag)
+  const { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, valueFlags } = flags;
+  // simulate reads local captures + drives a throwaway engine — it never calls
+  // the n8n API, so no credentials are required.
+  const offline = command === "check" || command === "rename" || command === "add" || command === "simulate"
+    || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"));
   const config = loadConfig(process.cwd(), { requireCredentials: !offline });
   const api = new N8nApi(config);
@@ -441,6 +471,30 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       for (const e of execIds) await attempt(`execution ${e}`, () => fetchExecutionById(api, config.root, e, log));
       for (const id of wfIds) await attempt(id, () => fetchExecutions(api, config.root, id, { status, limit }, log));
       if (failed) process.exitCode = 1;
+      break;
+    }
+    case "simulate": {
+      if (refs.length !== 1) throw new Error("simulate needs exactly one workflow ref: n8n-decanter <ref> simulate --execution <id>");
+      const dir = findWorkflowDir(config.root, refs[0], log);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      const pinId = valueFlags.get("pin");
+      if (pinId !== undefined) {
+        pinFixtures(dir, pinId, log);
+        break;
+      }
+      const execId = valueFlags.get("execution");
+      if (execId === undefined) throw new Error("simulate needs --execution <id> (or --pin <id>): fetch one first with `executions`");
+      if (!(await dockerAvailable())) {
+        throw new Error("simulate needs a running Docker daemon (the engine backend) — start Docker and retry");
+      }
+      const version = valueFlags.get("n8n-version") ?? config.n8nVersion ?? DEFAULT_N8N_VERSION;
+      if (valueFlags.get("n8n-version") === undefined && config.n8nVersion === undefined) {
+        log.info(style.dim(`using default engine version ${version}; pin "n8nVersion" in decanter.config.json to match your instance`));
+      }
+      const report = await runSimulation(dir, execId, { version, networkNone: networkNoneFlag }, log);
+      if (jsonFlag) console.log(JSON.stringify(report, null, 2));
+      else printSimulationReport(report, log);
+      if (!report.ok) process.exitCode = 1;
       break;
     }
     case "publish":

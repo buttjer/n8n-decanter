@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`simulate` verb** — `n8n-decanter <ref> simulate --execution <id>` replays
+  a whole workflow through a **real n8n engine** (Docker) using a captured
+  execution as the mock: side-effect-free nodes (Set, IF, Code, …) execute for
+  real, every network/side-effectful node is pinned to its captured output,
+  credentials are stripped, and no outbound-capable node survives — a dry,
+  engine-true regression check. It diffs each executed node's output against the
+  capture and **exits `1` on divergence** (CI-gateable). `--network-none` adds
+  an enforced outbound cutoff; `--json` emits the report for tooling.
+- **`simulate --pin <id>`** — copy a capture's network-node outputs into
+  committed, provenance-stamped `workflows/<Name>/fixtures/<node>.json`, making
+  replays reproducible and committable (prints a PII-review warning).
+- **`n8nVersion` config field** (`decanter.config.json`) — pins the n8n version
+  the `simulate` engine runs, so "engine-true" matches your instance;
+  `--n8n-version <tag>` overrides it per run. Defaults to the project's pinned
+  version with a hint when unset.
+- **`npm run test:sim`** — opt-in engine simulation suite (needs Docker; never
+  part of `npm test`); skips cleanly when no Docker daemon is available.
+
 ## [0.4.1] - 2026-07-20
 
 ### Changed
