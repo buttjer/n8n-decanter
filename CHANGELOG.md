@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-20
+
+### Fixed
+
+- **Globally-installed CLI (`npm i -g n8n-decanter`) could crash on
+  `push`/`check`/`watch`'s typecheck gate** — it resolved the `typescript`
+  package relative to its own install location instead of the sync dir
+  being checked, which only ever worked when the CLI happened to be nested
+  inside the sync dir's `node_modules` (e.g. a local `devDependency`
+  install). A global install is never nested there, so the gate could fail
+  to find `typescript` at all. Now resolved relative to the sync dir first,
+  falling back to the CLI's own location.
+
 ## [0.3.1] - 2026-07-20
 
 ### Added

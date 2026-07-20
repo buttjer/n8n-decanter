@@ -5,10 +5,28 @@
 // in memory only — files on disk stay verbatim — and maps diagnostic line
 // numbers back. Node files are recognized by a .decanter.json sibling, or —
 // code/ layout — one in the parent of their code/ dir.
+import { createRequire } from "node:module";
 import path from "node:path";
-import ts from "typescript";
 import { scanNodeImports } from "../lib/compile.mts";
 import { nodeFileContextDir } from "../lib/state.mts";
+
+// `typescript` is a devDependency of *this* package, never a runtime one —
+// a plain `import ts from "typescript"` resolves relative to this script's
+// own location, which for a globally-installed CLI is nowhere near the sync
+// dir being typechecked, so it can never find the sync dir's scaffolded
+// `typescript` devDependency (plans/13). Resolve from cwd (the sync dir —
+// lib/validate.mts spawns this script with cwd set to it) first, falling
+// back to this script's own location for setups where the sync dir has no
+// `typescript` of its own (e.g. this repo's own dev/test tree, where the
+// CLI's own node_modules carries it).
+function resolveTypescript(): typeof import("typescript") {
+  try {
+    return createRequire(path.join(process.cwd(), "package.json"))("typescript");
+  } catch {
+    return createRequire(import.meta.url)("typescript");
+  }
+}
+const ts = resolveTypescript();
 
 const PREFIX = "async function __n8nNode() {\n";
 const SUFFIX = "\n}\nvoid __n8nNode;\n";
