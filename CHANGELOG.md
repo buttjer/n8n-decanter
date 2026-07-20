@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-20
+
+### Changed
+
+- **Refreshed the scaffolded agent guide (`AGENTS.md`).** It now steers agents
+  to the `rename` and `duplicate` verbs (rename led with the command instead of
+  a hand-edit checklist, `duplicate` added to the new-workflow and command
+  taxonomies), opens with a compact "short version" of the hard invariants,
+  points at `n8n-globals.d.ts` as the authoritative globals list instead of an
+  inline copy that could drift, and drops a stale reference to a non-existent
+  `SCAFFOLD.md`.
+
 ## [0.4.0] - 2026-07-20
 
 ### Added
