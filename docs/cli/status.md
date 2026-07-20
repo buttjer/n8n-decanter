@@ -23,6 +23,6 @@ edits exit **0** — scripts and CI can gate on it like on `check`.
 Shows the actual line diff under each drifted node, so you see what a push
 would overwrite before running it.
 
-On n8n 2.x, edits of shared files (`shared/*.ts`) mark every importing node
-as push-pending, so `status` tells you which nodes a helper change will
-touch.
+`status` compiles each `.ts` node before comparing (bundling its `shared/*.ts`
+imports), so editing a shared file marks every importing node as push-pending —
+you see which nodes a helper change will touch.

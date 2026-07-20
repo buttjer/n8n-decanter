@@ -33,8 +33,12 @@ Structure, parameters, and connections are editable — connections are keyed
 by **node name**, which is why renames need care
 ([rename](/docs/cli/rename/) handles all the places atomically).
 
-Not synced (don't add them): `active`, `tags`, `pinData`, `shared`,
-timestamps. Activation is managed in the n8n UI.
+Only structure round-trips through push — `name`, `nodes`, `connections`,
+`settings`, `staticData`. Pull also brings down `active`, `tags`, `pinData`,
+and timestamps, but push never sends them back and they don't count as drift,
+so editing them here has no effect (activation, tags, and pinned data are
+managed in the n8n UI). `shared` and the published-version copy `activeVersion`
+are the only fields stripped on pull entirely.
 
 ## `code/`
 
