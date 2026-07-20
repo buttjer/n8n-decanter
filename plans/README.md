@@ -36,7 +36,7 @@ items not yet claimed by one. Recommended order:
    real, enforced no-side-effects. Unblocked since Plan 3's `executions` verb
    shipped (2026-07-19); next step is the timeboxed engine spike. Refreshed
    2026-07-20.
-8. [Folder hierarchy in sync layout](OPEN-8-folder-hierarchy-in-sync-layout.md) —
+8. [Folder hierarchy in sync layout](BLOCKED-8-folder-hierarchy-in-sync-layout.md) —
    local dirs above a workflow folder become its n8n folder path, pushed
    one-way via the folders public API (the API can write placement but not
    read it); pull mirroring ships feature-detected so it self-activates once
@@ -132,7 +132,9 @@ Every plan in this folder follows the same shape so they stay scannable and
 mergeable:
 
 - **Filename:** `STATUS-NN-kebab-title.md`, where `STATUS` is `OPEN` /
-  `INPROGRESS` / `DONE` (mirrors the `**Status:**` header field; the backlog is
+  `INPROGRESS` / `BLOCKED` / `DONE` (`BLOCKED` = designed but can't proceed
+  until an external dependency clears, e.g. Plan 8 needs a licensed instance;
+  mirrors the `**Status:**` header field; the backlog is
   the unprefixed `BACKLOG.md`). `NN` is the plan's stable id and rough
   running order (how it's referenced, e.g. "Plan 3"). It is *not* the priority —
   priority lives in the header field below, so a low-numbered plan can be P2 and

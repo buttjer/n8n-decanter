@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P2 (design settled by upstream research; needs a live spike before code) |
-| **Status** | Not started |
+| **Status** | **Blocked** — task 1 spike done (2026-07-20); needs a licensed/registered instance (`feat:folders`) for the actual-move proof. New finding reshapes the probe/gating design (see Spike results). Code not started. |
 | **Theme** | Let the local directory tree between `root` and a workflow folder act as the workflow's n8n folder path, pushed one-way to n8n via the public folders API — because the API can *write* folder placement but cannot *read* it. Pull-side mirroring is built in behind feature detection, so it activates by itself on any instance whose API exposes placement on read (none do today). |
 | **Model** | **Sonnet** for the bulk — the design is unusually settled (upstream source research done, tasks carry file:line anchors and concrete mock modes), so this is broad-but-specified implementation across many files. Reach for **Opus** on the live-instance spike (task 1) and the feature-detection/drift semantics (task 6), where judgment beats a checklist. |
 
@@ -175,6 +175,75 @@ into a feature with a remote effect.
     release that ships it once it lands. That release turns task 6 on for
     real instances via a re-run of `init` (or on-demand re-probe) — no
     decanter change.
+
+## Spike results (task 1 — 2026-07-20, `n8nio/n8n:2.30.7` in Docker)
+
+Method: booted a fresh community-edition container, minted an API key carrying
+all five `folder:*` scopes (via the internal `/rest/api-keys`), and probed the
+public + internal folders/workflow endpoints. Scratchpad scripts only (not
+committed); container torn down.
+
+**Headline: the folders feature is license-gated (`feat:folders`), and a fresh
+community instance does not have it.** It is *free* but requires **registering
+the instance** (email → license key) to unlock — it is not enterprise-only, but
+it is not on out-of-the-box either. Consequences observed on the unregistered
+instance:
+
+- `GET /api/v1/projects/personal/folders` → **403** `{"message":"Your license
+  does not allow for feat:folders. To enable feat:folders, please upgrade to a
+  license that supports this feature."}` — **the route exists, it is not 404.**
+- `POST .../folders` (create) → same **403**. Even the **internal** UI path
+  `POST /rest/projects/:id/folders` → **403** `"Plan lacks license for this
+  feature"` — so this is not a public-API quirk; the UI can't make folders
+  either on an unregistered instance.
+- `PUT /api/v1/workflows/:id` with `parentFolderId` in the body → **400**
+  `{"message":"request/body must NOT have additional properties"}`. When
+  folders is unlicensed, `parentFolderId` is **not an accepted PUT property at
+  all** — identical to sending any unknown field. (So on these instances the
+  plan's push-placement can't even attempt the move.)
+- The API key *did* carry `folder:create/list/read/update/delete` (the scopes
+  exist on 2.30.7) — yet still got 403. **403 here means "feature unlicensed,"
+  not "key lacks scopes."** The two are indistinguishable by scope grant.
+
+**Probe-mechanics findings (affect task 3):**
+
+- `GET .../folders?limit=1` → **400** `{"message":"Unknown query parameter
+  'limit'"}`. The folders list endpoint on 2.30.7 does **not** accept `limit`.
+  Task 3's probe (`...folders?limit=1`) must drop `limit` (bare GET, or use
+  `filter`/`select`), or every probe misfires as a 400.
+- `GET /api/v1/projects` → **403** on community (Projects list is itself
+  license-gated). Do **not** resolve the personal project id through it; the
+  `personal` alias in the folders path works without that permission.
+
+**Read-path — write-only confirmed (matches the source research):**
+
+- Public `GET /api/v1/workflows/:id` and the `GET /api/v1/workflows` list items
+  expose **no** `parentFolder*`/folder key. Task 6's feature detection stays
+  correct — no instance exposes placement on public read today.
+
+**Not validated (the actual point of task 1):** that a PUT with
+`parentFolderId` *moves* the workflow and shows in the UI. That requires a
+**registered/licensed** instance with `feat:folders`, which a bare Docker
+container can't provide (registration needs a real email + n8n's license
+server, out of scope for an automated spike). **This proof is deferred until a
+licensed instance is available.**
+
+**Design implications to fold into the tasks (pending sign-off):**
+
+1. **Task 3 (probe) needs a fourth outcome: `403 feat:folders` = "route present
+   but unlicensed."** Distinct from 404 (no folders API / old build) and from a
+   403 caused by missing scopes. Suggest classifying: 404 ⇒ `none`; 403 whose
+   body mentions `feat:folders`/`license` ⇒ `none` **with an "register your
+   instance (free) to enable folders" hint**; 403 otherwise ⇒ `none` with the
+   "key lacks `folder:*` scopes" hint; 200 ⇒ `write`. Drop `?limit=1`.
+2. **Task 4's gating message is wrong for the common case.** "upgrade and re-run
+   init" implies a version problem; the actual fix on a modern-but-unregistered
+   instance is **register the community edition (free) to unlock folders**.
+   Message should name licensing, not just version/scopes.
+3. **Task 8 (mock + e2e) can't be exercised by the smoke suite as-is** — the
+   Docker smoke instance is unregistered, so it will 403 on every folder call.
+   The mock modes stay the offline oracle; smoke coverage of the *real* folders
+   path needs a licensed instance (skip/guard it otherwise).
 
 ## Acceptance / verification
 

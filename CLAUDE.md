@@ -94,7 +94,9 @@ Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
 
 `plans/` is the backlog (see `plans/README.md` for conventions);
 `plans/BACKLOG.md` is the grab-bag of items without their own
-plan. When your work **fully** completes a Plan 0 entry (implemented, tested,
+plan. A feature **distinct from n8n and the n8n-as-code (git-sync) concept**
+gets its own backlog group (see `AGENTS.md`). When your work **fully**
+completes a Plan 0 entry (implemented, tested,
 documented as applicable), check it off (`- [x]`). Partially done is not done:
 leave the box unchecked and append a short parenthetical status instead. Don't
 delete, reword, or reorder the user's entries, and don't add ideas of your own
