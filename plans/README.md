@@ -113,12 +113,12 @@ items not yet claimed by one. Recommended order:
     through a fresh pull). Both preserve the pull-first model — the earlier
     `push --create` idea, which would have inverted it, was dropped
     (2026-07-20). Proposed 2026-07-20.
-22. [Test suite depth](OPEN-22-test-suite-depth.md) — cover the interactive
+22. [Test suite depth](DONE-22-test-suite-depth.md) — cover the interactive
     surfaces no test drives today (picker terminal IO, watch conflict prompts,
     watch↔proxy wiring) via injected streams (no pty dep), decouple the
     monolithic e2e for isolation/legibility, and extend the Docker smoke suite
-    to a 2.x version matrix + polling instead of fixed sleeps. Proposed
-    2026-07-20.
+    to a 2.x version matrix + polling instead of fixed sleeps. Done —
+    landed 2026-07-20 (see the plan's "Outcome" section).
 23. [Picker visual refinements](OPEN-23-picker-visual-refinements.md) — feed
     the Plan 16 docs-site picker *simulation*'s styling back into the real
     `lib/picker.mts`: aligned id column, `●`/`○` shape-based status glyphs

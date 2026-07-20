@@ -25,9 +25,12 @@ n8n-decanter/
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
                           #   added here later is copied too
-  test/                   # e2e.mts (mock-API e2e) + proxy.mts + unit/ — all
-                          #   npm test; smoke-n8n.mts (opt-in Docker smoke,
-                          #   plans/15); harness.mts (shared step runner)
+  test/                   # e2e.mts (mock-API e2e) + proxy.mts + interactive.mts
+                          #   (picker terminal IO, PassThrough streams) + unit/
+                          #   — all npm test; smoke-n8n.mts (opt-in Docker
+                          #   smoke, plans/15); harness.mts (shared step
+                          #   runner: STEP=<substring> isolates one step,
+                          #   skip-on-prerequisite-failure, plans/22)
   tsconfig.json           # workflow node files: allowJs + checkJs, includes workflows/
   tsconfig.cli.json       # the CLI's own .mts sources: strict NodeNext, no emit
   n8n-globals.d.ts        # ambient types: $, $input, DateTime, …
@@ -63,11 +66,16 @@ n8n-decanter/
   GitHub ruleset enforcement waits for the repo going public (plans/OPEN-13).
 - **n8n 2.x only (user decision 2026-07-19).** The tool targets the n8n 2.x
   line exclusively — the draft/publish model is treated as the native model,
-  no 1.x compatibility hedges. Continuously verified against a pinned real
-  2.x instance by the plans/15 smoke suite. A consequence recorded the same
-  day: the 2.x public API *does* offer `POST /api/v1/workflows`, so
-  repo-born workflows are possible (backlog: "Create workflows from the
-  repo").
+  no 1.x compatibility hedges. Continuously verified against real 2.x
+  instances by the plans/15 smoke suite; the "across the line" half of that
+  claim is backed by a small version matrix (plans/22, added 2026-07-20) —
+  the CI `smoke` job (cron + manual dispatch only) runs the suite against an
+  oldest-supported, a middle, and the latest verified 2.x tag via
+  `SMOKE_N8N_TAG`, instead of asserting it from one pinned point release.
+  Passing set recorded in `test/smoke-n8n.mts`'s header comment. A
+  consequence recorded 2026-07-19: the 2.x public API *does* offer `POST
+  /api/v1/workflows`, so repo-born workflows are possible (backlog: "Create
+  workflows from the repo").
 
 ## Synced content layout
 
@@ -620,6 +628,18 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
 - **Testing note**: the e2e test binds a localhost port and must exec the CLI
   *asynchronously* (the mock server shares the test process; a sync exec
   deadlocks). Sandboxed environments may block the port bind.
+- **`test/e2e.mts` is one sequential, stateful scenario against a single
+  shared mock** (not per-test isolation — that's a deliberate speed trade,
+  plans/22): every step builds on the previous step's on-disk/remote state.
+  `test/harness.mts`'s `createStepRunner` gives this two debugging aids:
+  `STEP=<substring>` (env or `--step=`) runs only matching steps, and once a
+  step fails, every step after it is skipped with a `prerequisite "<name>"
+  failed` reason instead of cascading into an unrelated crash. Interactive
+  surfaces that were "TTY only, untested by CI" now have coverage without a
+  pty: `lib/picker.mts`'s `runPicker` and `lib/watch.mts`'s `watchWorkflow`
+  (conflict prompt) take injectable input/output streams / a prompt factory,
+  driven by `test/interactive.mts` (picker) and dedicated `test/e2e.mts`
+  steps (watch conflict `[m]`/`[l]`/`[r]`/Enter, and watch↔proxy SSE wiring).
 - **Structure drift detection** hashes the sanitized, code-stripped workflow
   with recursively sorted keys, so key order never causes false drift.
 - **Compliance guard** (milestone 7): `--force` deliberately does *not*
