@@ -70,6 +70,28 @@ entries carry no priority field) — adjust freely.
       agents that `run` generated/untrusted node files. **Recommend:** state
       plainly in README + template `AGENTS.md` that `run` is not a sandbox
       (never `run` a node you wouldn't execute by hand). Severity: moderate.
+- [ ] **`run`'s faked n8n context silently diverges from n8n — `$jmespath`
+      throws, other globals are absent, and the docs never mark the boundary.**
+      `lib/run.mts` `buildGlobals`: `$jmespath` (line ~170) is wired to *throw*
+      ("not implemented in `run` — assert on the data directly"), even though it
+      is one of the stable Code-node globals the project already treats as core
+      (it ships in `n8n-globals.d.ts`; the `.d.ts`-sourcing item above lists it
+      among the stable surface). A node that uses `$jmespath` — common in
+      data-shaping nodes — cannot be `run` at all, and the failure only surfaces
+      mid-run at the call site. Other real globals are simply missing (`$vars`,
+      `$secrets`, `$ifEmpty`, `$evaluateExpression`, `$max`/`$min`; `$runIndex`
+      is pinned at 0; `$('Node').item` is not the per-item *linked* item in
+      `runOnceForEachItem`), so those nodes hit an opaque `ReferenceError`.
+      Meanwhile `docs/cli/run.md` sells it as "executes a node's body against a
+      faked n8n context (`$input`, `$json`, `$('Node')`, `DateTime`, …)" with no
+      list of what is covered vs. absent. **Recommend:** (a) implement
+      `$jmespath` — n8n's `$jmespath(obj, expr)` maps straight onto the
+      `jmespath` package's `search(obj, expr)`, a small pure-JS dep wired exactly
+      like luxon; and (b) document the emulated-vs-unsupported boundary in
+      `docs/cli/run.md`, and have unsupported globals fail with a friendly "not
+      emulated in `run`" message instead of a bare `ReferenceError`. Relates to
+      the `run` host-privileges item above and `run --from-execution` below.
+      Severity: moderate.
 - [ ] **Add a linter (or remove the stray disable directive).**
       `lib/util.mts:76` carries `// eslint-disable-next-line no-control-regex`,
       but **there is no ESLint (or any linter) config in the repo** — the
@@ -111,6 +133,17 @@ entries carry no priority field) — adjust freely.
       (`[A-Za-z_]…`) already rejects any `#`-leading line, so `m` is `null`
       there. Harmless, but delete the guard or add a real inline-`#` handling
       story so the intent is honest.
+- [ ] **Dead luxon-optional branch in `run`.** `lib/run.mts` `buildGlobals`
+      (~136-143) wraps the luxon import in `try/catch` and warns "luxon not
+      installed — DateTime/$now/$today are unavailable", leaving `$now`/`$today`
+      `undefined`. But **luxon is a hard `dependencies` entry** (package.json),
+      not optional — a normal install always has it, so the catch branch is
+      unreachable and the `undefined` fallback only bites someone with a broken
+      `node_modules` (who would then get an opaque `$now.toISO()` TypeError
+      anyway). **Recommend:** import luxon normally and drop the try/catch +
+      `undefined` fallbacks; or, if "run works without luxon for pure-logic
+      nodes" is a wanted property, move luxon to `optionalDependencies` so the
+      code reflects reality. Severity: low.
 - [ ] **Unused `log` parameter in `loadFixture`.** `lib/run.mts:76` —
       `loadFixture(fixturePath, log)` never uses `log`. Drop it (a linter would
       have caught this — see the linter item above).
@@ -120,6 +153,22 @@ entries carry no priority field) — adjust freely.
       the status value and then finds no verb. Documented-as-needs-a-value, but
       a friendlier error ("`--status` needs a value; did you mean `status`?")
       or requiring `=` for these flags would remove the surprise. Severity: low.
+- [ ] **Remove the `uuid` verb (scope creep) — supersede it with Plan 21's
+      `add`.** `n8n-decanter uuid [count]` (`n8n-decanter.mts` handler ~179-184)
+      is a general lowercase-v4 UUID generator justified only for hand-authoring
+      new node ids in `workflow.json` — scope-distant from "sync workflows to
+      git" (user decision 2026-07-20: plan to remove). Don't just drop it: the
+      agent offline-loop docs (`docs/agents/offline-loop.md`,
+      `docs/agents/overview.md`) actively steer agents to `uuid` for minting node
+      ids, so removal must land **together with (or after)
+      [Plan 21](OPEN-21-repo-authored-workflows.md)'s `add` verb**, which
+      scaffolds a Code node *including its id* and makes standalone `uuid`
+      redundant. Removal touches: the `VERBS`/`__complete` sets + `usage()` +
+      handler in `n8n-decanter.mts`, `docs/cli/uuid.md` (delete),
+      `docs/cli/overview.md` (command surface + offline-verbs table row),
+      `docs/agents/*`, `docs/concepts/configuration.md`, `README.md`, `PLAN.md`,
+      and the `test/e2e.mts` step. Breaking change → **Breaking:** CHANGELOG
+      entry. Severity: low (deferred until `add` ships).
 - [ ] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
       templates. Low priority for a solo project, but cheap and conventional if
       contributions are wanted (CONTRIBUTING.md already invites them).
