@@ -120,6 +120,17 @@ entries carry no priority field) — adjust freely.
 - [ ] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
       templates. Low priority for a solo project, but cheap and conventional if
       contributions are wanted (CONTRIBUTING.md already invites them).
+- [ ] **Cross-PR docs-drift guardrail in CI** (2026-07-20). The `/docs` pages
+      can fall behind the CLI when a behavior change and its docs live in
+      *separate* PRs: v0.3.0 (#29 — `--allow-env` + `executions` in the picker)
+      merged before the `/docs` pages existed, so those pages landed a step
+      behind and git flagged nothing (different files → clean merge). The
+      `CLAUDE.md`/`AGENTS.md` docs-maintenance rule only catches drift *within* a
+      behavior-changing PR. A CI check — diff the CLI verb/flag surface (or the
+      CHANGELOG's user-facing entries) against the matching `/docs` pages, or a
+      release-checklist step — would catch the cross-PR case. Real enforcement
+      rides the public-repo CI ruleset
+      ([Plan 13](OPEN-13-open-source-release.md)). Severity: low.
 
 ### Graduated (tracked by a numbered plan; not yet done)
 
