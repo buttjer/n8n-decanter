@@ -8,6 +8,16 @@ changelog/backlog duties, commands, architecture). Treat `CLAUDE.md` as
 authoritative for those rules regardless of which agent you are; this file
 carries the shared, tool-agnostic recipes.
 
+## Backlog: distinctive features get their own group
+
+When a change introduces a feature that's **distinct from n8n itself and from
+the generic "n8n-as-code" (git-sync) concept** — a capability that
+*differentiates* this tool rather than mirroring n8n or plain
+workflow-syncing — record it in the backlog (`plans/`) under **its own
+group**, kept separate from the priority buckets and the parity/hardening
+work. This keeps the tool's differentiators visible and tracked as a distinct
+class. (Backlog mechanics otherwise per `CLAUDE.md`.)
+
 ## Sandboxed shells: git push / gh need escalation
 
 Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) block
