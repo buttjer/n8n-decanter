@@ -1,6 +1,7 @@
 ---
 import "../styles/global.css";
 import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
 import { href } from "../lib/url";
 
 interface Props {
@@ -12,6 +13,9 @@ const {
   title,
   description = "Work on n8n like a codebase — built for AI coding agents.",
 } = Astro.props;
+
+// Absolute URL for the social card (needs Astro.site set); 1200×630.
+const ogImage = Astro.site ? new URL(href("/og.png"), Astro.site) : undefined;
 ---
 
 <html lang="en" class="h-full">
@@ -25,6 +29,11 @@ const {
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    {ogImage && <meta property="og:image:width" content="1200" />}
+    {ogImage && <meta property="og:image:height" content="630" />}
+    <meta name="twitter:card" content="summary_large_image" />
+    {ogImage && <meta name="twitter:image" content={ogImage} />}
     {Astro.site && <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />}
     <script is:inline>
       // Runs before paint to avoid a light-mode flash on dark-theme visits.
@@ -33,8 +42,11 @@ const {
       document.documentElement.classList.toggle("dark", dark);
     </script>
   </head>
-  <body class="min-h-full bg-white font-sans text-zinc-800 antialiased dark:bg-zinc-950 dark:text-zinc-200">
+  <body class="flex min-h-full flex-col bg-white font-sans text-zinc-800 antialiased dark:bg-zinc-950 dark:text-zinc-200">
     <Header />
-    <slot />
+    <div class="flex-1">
+      <slot />
+    </div>
+    <Footer />
   </body>
 </html>

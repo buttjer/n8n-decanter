@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: #09090b;
+    background-image: radial-gradient(1100px 620px at 12% -10%, rgba(232,137,43,0.16), transparent 62%);
+    color: #fafafa;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 300;
+    padding: 58px 80px;
+    display: flex; flex-direction: column; justify-content: space-between;
+    position: relative;
+  }
+  body::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px; background: #e8892b; }
+  h1 { font-family: ui-serif, Georgia, "Times New Roman", serif; font-weight: 500; font-size: 64px; line-height: 1.1; letter-spacing: -0.5px; max-width: 920px; }
+  h1 .accent { color: #e8892b; }
+  .sub { margin-top: 22px; font-size: 24px; line-height: 1.5; color: #a1a1aa; max-width: 900px; }
+  .glyphs { display: flex; gap: 12px; margin-top: 4px; }
+  .chip {
+    display: flex; align-items: center; justify-content: center;
+    width: 50px; height: 50px; border-radius: 11px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 22px;
+    color: #e8892b; background: rgba(232,137,43,0.10);
+    box-shadow: inset 0 0 0 1px rgba(232,137,43,0.28);
+  }
+  .foot { display: flex; align-items: center; justify-content: space-between; }
+  .pill {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 24px;
+    color: #e4e4e7; background: #18181b; border: 1px solid #27272a;
+    border-radius: 12px; padding: 13px 20px;
+  }
+  .pill .dim { color: #71717a; }
+  .url { font-size: 23px; color: #71717a; }
+</style></head>
+<body>
+  <div>
+    <svg viewBox="0 0 47 6" height="56" width="438.66666666666663" shape-rendering="crispEdges" fill="none"><g fill="#e8892b"><rect x="4" y="1" width="1" height="1"/><rect x="5" y="1" width="1" height="1"/><rect x="6" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="1" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="2" y="2" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="4" y="2" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="6" y="2" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="8" y="2" width="1" height="1"/><rect x="9" y="2" width="1" height="1"/><rect x="8" y="3" width="1" height="1"/><rect x="10" y="2" width="1" height="1"/><rect x="10" y="3" width="1" height="1"/><rect x="0" y="4" width="1" height="1"/><rect x="0" y="5" width="1" height="1"/><rect x="2" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="4" y="4" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="6" y="4" width="1" height="1"/><rect x="6" y="5" width="1" height="1"/><rect x="8" y="4" width="1" height="1"/><rect x="8" y="5" width="1" height="1"/><rect x="10" y="4" width="1" height="1"/><rect x="10" y="5" width="1" height="1"/></g><g fill="#fafafa"><rect x="18" y="0" width="1" height="1"/><rect x="18" y="1" width="1" height="1"/><rect x="37" y="1" width="1" height="1"/><rect x="16" y="2" width="1" height="1"/><rect x="17" y="2" width="1" height="1"/><rect x="16" y="3" width="1" height="1"/><rect x="18" y="2" width="1" height="1"/><rect x="18" y="3" width="1" height="1"/><rect x="20" y="2" width="1" height="1"/><rect x="21" y="2" width="1" height="1"/><rect x="20" y="3" width="1" height="1"/><rect x="21" y="3" width="1" height="1"/><rect x="22" y="2" width="1" height="1"/><rect x="22" y="3" width="1" height="1"/><rect x="24" y="2" width="1" height="1"/><rect x="25" y="2" width="1" height="1"/><rect x="24" y="3" width="1" height="1"/><rect x="26" y="2" width="1" height="1"/><rect x="28" y="2" width="1" height="1"/><rect x="29" y="2" width="1" height="1"/><rect x="30" y="2" width="1" height="1"/><rect x="30" y="3" width="1" height="1"/><rect x="32" y="2" width="1" height="1"/><rect x="33" y="2" width="1" height="1"/><rect x="32" y="3" width="1" height="1"/><rect x="34" y="2" width="1" height="1"/><rect x="34" y="3" width="1" height="1"/><rect x="36" y="2" width="1" height="1"/><rect x="37" y="2" width="1" height="1"/><rect x="37" y="3" width="1" height="1"/><rect x="38" y="2" width="1" height="1"/><rect x="40" y="2" width="1" height="1"/><rect x="41" y="2" width="1" height="1"/><rect x="40" y="3" width="1" height="1"/><rect x="41" y="3" width="1" height="1"/><rect x="42" y="2" width="1" height="1"/><rect x="42" y="3" width="1" height="1"/><rect x="44" y="2" width="1" height="1"/><rect x="45" y="2" width="1" height="1"/><rect x="44" y="3" width="1" height="1"/><rect x="46" y="2" width="1" height="1"/><rect x="16" y="4" width="1" height="1"/><rect x="16" y="5" width="1" height="1"/><rect x="17" y="5" width="1" height="1"/><rect x="18" y="4" width="1" height="1"/><rect x="18" y="5" width="1" height="1"/><rect x="20" y="4" width="1" height="1"/><rect x="20" y="5" width="1" height="1"/><rect x="21" y="5" width="1" height="1"/><rect x="22" y="5" width="1" height="1"/><rect x="24" y="4" width="1" height="1"/><rect x="24" y="5" width="1" height="1"/><rect x="25" y="5" width="1" height="1"/><rect x="26" y="5" width="1" height="1"/><rect x="28" y="4" width="1" height="1"/><rect x="29" y="4" width="1" height="1"/><rect x="28" y="5" width="1" height="1"/><rect x="29" y="5" width="1" height="1"/><rect x="30" y="4" width="1" height="1"/><rect x="30" y="5" width="1" height="1"/><rect x="32" y="4" width="1" height="1"/><rect x="32" y="5" width="1" height="1"/><rect x="34" y="4" width="1" height="1"/><rect x="34" y="5" width="1" height="1"/><rect x="37" y="4" width="1" height="1"/><rect x="37" y="5" width="1" height="1"/><rect x="38" y="5" width="1" height="1"/><rect x="40" y="4" width="1" height="1"/><rect x="40" y="5" width="1" height="1"/><rect x="41" y="5" width="1" height="1"/><rect x="42" y="5" width="1" height="1"/><rect x="44" y="4" width="1" height="1"/><rect x="44" y="5" width="1" height="1"/></g></svg>
+    <h1 style="margin-top:30px">Work on n8n like a codebase —<br><span class="accent">built for AI coding agents.</span></h1>
+    <p class="sub">Sync n8n Code nodes into a git-friendly, folder-per-workflow layout of <code>.js</code>/<code>.ts</code> files — edit in your IDE or agent, push back through the API.</p>
+  </div>
+  <div class="glyphs"><div class="chip">⎇</div><div class="chip">{ }</div><div class="chip">❖</div><div class="chip">⊘</div><div class="chip">☰</div><div class="chip">↯</div><div class="chip">⧉</div><div class="chip">⌘</div><div class="chip">⬡</div></div>
+  <div class="foot">
+    <div class="pill"><span class="dim">$</span> npm install -g n8n-decanter</div>
+    <div class="url">buttjer.github.io/n8n-decanter</div>
+  </div>
+</body></html>

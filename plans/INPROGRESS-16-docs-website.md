@@ -150,6 +150,10 @@ and optional task 8 (Pagefind).
 - **Client-JS exception:** the two demos add a little vanilla client JS beyond
   the dark-mode toggle (see Non-goals). Both are framework-free, self-contained
   in their component `<script>`, and disabled under `prefers-reduced-motion`.
+- **Social card (og:image):** a 1200×630 `public/og.png` generated from a
+  self-contained HTML card by `website/scripts/make-og.mjs` (`npm run og`,
+  renders via headless Chrome; reuses the SVG wordmark). `BaseLayout` emits
+  `og:image` (+ width/height) and `twitter:card` as absolute URLs via `href()`.
 
 ## Acceptance / verification
 
