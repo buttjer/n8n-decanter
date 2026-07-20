@@ -5,7 +5,7 @@ order: 11
 ---
 
 ```sh
-n8n-decanter <node-file> run [fixture.json]
+n8n-decanter <node-file> run [fixture.json] [--allow-env]
 ```
 
 Actually executes a node's body against a faked n8n context (`$input`,
@@ -38,6 +38,10 @@ The optional fixture JSON supplies the context; every field is optional:
   single empty item.
 - `nodes` backs `$('Node Name')`.
 - `params` backs `$input.params` (defaults to `{}`).
+- `env` backs `$env`. Like n8n's own scoped `$env`, it is **empty by default** —
+  set it explicitly with this field, or pass **`--allow-env`** to inherit the
+  CLI process's environment (which may include `N8N_API_KEY` and other secrets),
+  so a node that prints `$env` never leaks the host environment by accident.
 - `$getWorkflowStaticData` is seeded from `workflow.json`'s `staticData`
   (`global` and this node's slice); a fixture `staticData` replaces the
   matching slice (`"node"` refers to the node being run). Mutations are

@@ -18,7 +18,7 @@ n8n-decanter [ref...] executions [--status=…] [--limit=N]
 n8n-decanter [ref...] executions clean
 n8n-decanter list [--remote]
 n8n-decanter completion zsh|bash
-n8n-decanter <node-file> run [fixture.json]
+n8n-decanter <node-file> run [fixture.json] [--allow-env]
 n8n-decanter uuid [count]
 ```
 
@@ -27,7 +27,7 @@ n8n-decanter uuid [count]
 Running **bare `n8n-decanter`** (no verb, no arguments) in an inited project
 on a terminal opens a picker instead of printing usage: type to filter,
 `↑`/`↓` to move, pulled workflows shown green, not-yet-pulled remote ones
-yellow. `Enter` on a pulled workflow offers status/pull/push/watch/check;
+yellow. `Enter` on a pulled workflow offers status/pull/push/watch/check/executions;
 `Enter` on an unpulled one pulls it directly. It stays in the workflow's verb
 menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
 output and dirs without a `decanter.config.json` keep printing usage — scripts
