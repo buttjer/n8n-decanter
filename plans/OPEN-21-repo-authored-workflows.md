@@ -1,18 +1,19 @@
-# Plan 21 — Repo-authored workflows (`add` + `push --create`)
+# Plan 21 — Local authoring helpers (`add` + `duplicate`)
 
 | | |
 |---|---|
-| **Priority** | P2 (`add`) / P3 (`push --create`, data-model change) |
+| **Priority** | P2 |
 | **Status** | Not started |
-| **Theme** | Let Code nodes and whole workflows be **born in the repo**, not only in n8n: an `add` verb scaffolds a Code node in-place, and `push --create` creates a brand-new workflow remotely from a repo folder via the n8n 2.x `POST /api/v1/workflows` endpoint — inverting today's "born in n8n, then pulled" rule. |
-| **Model** | split by task. **Sonnet** for `add` (task 1) — mechanical scaffolding that reuses the existing uuid/kebab/rename machinery against a concrete spec. **Opus** for `push --create` (task 2) — it inverts the pull-first data model, needs user sign-off, and the round-trip/id-capture edges reward the stronger model. |
+| **Theme** | Two repo-side authoring conveniences that create new workflow surface **without inverting the pull-first model**: `add` scaffolds a Code node into a workflow (offline); `duplicate` clones an existing workflow into a brand-new remote one via the n8n 2.x `POST /api/v1/workflows` endpoint, landing the copy through a fresh pull. Neither touches the "born in n8n" invariant. |
+| **Model** | **Sonnet** — both are mechanical wiring over machinery that already exists (uuid/kebab/rename for `add`; push-assembly + `createWorkflow` + pull for `duplicate`), gated on the same smoke work Plan 20 already carries. No novel design. |
 
 ## Why
 
 The data model today is strictly **pull-first**: a workflow folder only exists
 *after* a pull assigns it a remote id (`pullWorkflow` in `lib/pull.mts` writes
 `.decanter.json` with the server's `workflowId`), and PLAN.md's guidance is
-"workflows are born in n8n". Two frictions follow:
+"workflows are born in n8n". Two frictions follow — both closable *without*
+touching that model:
 
 - **Adding a Code node** means a manual dance the CLI already has all the pieces
   for: mint a uuid (`uuid` verb), hand-write the node object in `workflow.json`,
@@ -20,20 +21,28 @@ The data model today is strictly **pull-first**: a workflow folder only exists
   `.decanter.json` consistent — then `check`. The `rename` verb proved the
   value of collapsing exactly this kind of multi-file edit into one atomic,
   guard-checked command.
-- **Authoring a workflow from scratch in the repo** is impossible end-to-end:
-  you must create it in the UI first to get an id. But PLAN.md records
-  (2026-07-19) that the 2.x public API *does* offer `POST /api/v1/workflows`
-  (smoke-verified), so a repo-born workflow is now technically possible — the
-  only blocker is the id-first data model, not the API.
+- **Forking a workflow** — clone one to iterate on a variant, or restore a
+  git-tracked workflow that was deleted remotely — is a manual UI round-trip
+  today (duplicate in the editor, then re-pull). Because `duplicate` starts
+  from an already-pulled, **id-bearing** folder and lands the copy through a
+  fresh **pull**, it preserves pull-first exactly: the source folder came from
+  a pull, and so does the new one. Nothing is born outside n8n.
+
+**Dropped (2026-07-20, user decision):** an earlier draft proposed
+`push --create` — creating a workflow from an **id-less** repo folder, which
+*would* have inverted the pull-first / "born in n8n" model and needed sign-off.
+It earns nothing now: Plan 20's `create` gives CLI-native genesis of a blank
+workflow without inverting the model, and `duplicate` covers the clone case, so
+the inverting variant was cut entirely.
 
 ## Source
 
 - [Plan 0](BACKLOG.md): **`add` verb** — "scaffold a Code node (uuid → node
   object → `//@file:` placeholder → source file) in one step."
 - [Plan 0](BACKLOG.md): **Create workflows from the repo** (2026-07-19; n8n
-  2.x-only) — "`push --create` … let a workflow folder authored in the repo
-  become the source of truth end to end … Touches the id-first data model and
-  the 'born in n8n' guidance in PLAN.md + template AGENTS.md."
+  2.x-only) — split by outcome: blank CLI-native create → Plan 20's `create`;
+  clone an existing workflow → this plan's `duplicate`; the
+  repo-as-source-of-truth (`push --create`) variant → dropped.
 
 ## Tasks
 
@@ -48,47 +57,58 @@ The data model today is strictly **pull-first**: a workflow folder only exists
    loudly on any violation, exactly like `rename`. Push propagates. Shares the
    filename-collision handling (`-<id8>` suffix) with pull/rename.
 
-2. **`push --create` (P3, data-model change — needs user sign-off).**
-   When a workflow folder has **no `workflowId`** (or a sentinel "unassigned"
-   marker), `push --create` calls `N8nApi.createWorkflow(sanitizeForPut(wf))`
-   (`POST /api/v1/workflows`), then writes the returned id into
-   `.decanter.json`, records sync hashes from the POST response (same
-   server-canonical rule as PUT), and — optionally — appends the id to
-   `decanter.config.json`. Without `--create`, a missing id stays a hard error
-   ("pull first"), so nothing changes for the pull-first flow. Scaffolding a
-   fresh folder (no pull) needs a tiny `new`/`init-workflow` helper or a
-   documented minimal `workflow.json` skeleton.
+2. **`duplicate` verb (P2, needs credentials).** `n8n-decanter <ref>
+   duplicate ["<new name>"]`: resolve the source ref (REF_VERBS), assemble the
+   workflow body from the **local** folder exactly as `push` does (placeholders
+   reconstituted from `code/`, `.ts` nodes compiled), run it through
+   `sanitizeForPut`, and set a new name (the argument, or default
+   `"<name> (copy)"`, matching the n8n UI). Create it remotely with
+   `N8nApi.createWorkflow(body)` (`POST /api/v1/workflows`), then immediately
+   **pull the returned id** so a fresh folder + `.decanter.json` materialize
+   (pull-first preserved) and print the new id. Born **unpublished**, like any
+   create. The source folder and the remote source workflow are left untouched.
+   **`createWorkflow` + the POST smoke gate are shared with Plan 20's `create`
+   — whichever plan lands first introduces the method; they must not both add
+   it, nor re-verify the same endpoint.**
 
 ## Acceptance / verification
 
 - `add` creates a compliant, checkable Code node in one command (node object +
   `code/` file + `.decanter.json` entry + placeholder), disconnected, and a
   subsequent `push` sends it. Colliding kebab names get the `-<id8>` suffix.
-- `push --create` on an id-less folder creates the workflow remotely, captures
-  the assigned id into `.decanter.json`, and a follow-up `pull` round-trips it
-  byte-cleanly. Existing (id-bearing) folders are unaffected by the flag.
-- `npm test` grows an e2e step for each (mock server gains a `POST /workflows`
-  handler for task 2); the smoke suite exercises the real `POST` on the pinned
-  version.
+- `duplicate <ref> "<name>"` creates a new remote workflow carrying the
+  source's content under the new name, and — via the pull it runs — leaves a
+  new folder that round-trips byte-clean; the source folder and source remote
+  workflow are unchanged; the new workflow reads unpublished. Colliding folder
+  names get pull's usual handling.
+- `npm test` grows an e2e step for each (mock server gains the `POST
+  /workflows` handler, shared with Plan 20's `create`); the smoke suite
+  exercises the real `POST` on the pinned version (create/duplicate share it).
 
 ## Non-goals
 
 - Full graphical authoring (connections, node positioning, trigger wiring) —
   `add` lands a disconnected node; wiring stays in the editor or manual JSON.
 - Non-Code node scaffolding — `add` is Code-node-specific (the tool's domain).
+- Selective copy — `duplicate` clones the **whole** workflow, not a node subset.
 
 ## Notes
 
-- **PLAN.md data-model change (task 2):** repo-born workflows invert the
-  "born in n8n" rule and the id-first assumption (folders currently exist only
-  after a pull assigns an id). This **must be raised with the user before
-  landing** (per `CLAUDE.md`) — the plan file is a proposal, not approval. The
-  template `AGENTS.md` "born in n8n" guidance would need updating alongside.
-- **CHANGELOG:** the `add` verb and the `push --create` flag are user-facing →
-  `Added` under `[Unreleased]` when they land.
-- Pairs with [Plan 20](OPEN-20-cli-publish-lifecycle.md): `add` →
-  `push --create` → `publish` would make the whole author→create→publish loop
-  CLI-native.
-- Keep `add` strictly offline (like `rename`): no credentials, push does the
+- **No PLAN.md data-model change.** Both verbs preserve pull-first — `add` is a
+  local edit that `push` propagates; `duplicate` births the copy server-side
+  and materializes it via pull. The "born in n8n" rule and the id-first
+  assumption stand; only the verb list grows. (This is the whole reason
+  `push --create`, which *would* have inverted the model, was dropped.)
+- **`createWorkflow` ownership.** The `N8nApi.createWorkflow` method and its
+  `POST /api/v1/workflows` smoke verification are shared with
+  [Plan 20](OPEN-20-cli-publish-lifecycle.md)'s `create`. One plan introduces
+  them; the other reuses. Don't duplicate the method or the gate.
+- **CHANGELOG:** the `add` and `duplicate` verbs are user-facing → `Added`
+  under `[Unreleased]` when they land.
+- Pairs with [Plan 20](OPEN-20-cli-publish-lifecycle.md): `create` (blank) /
+  `duplicate` (from an existing workflow) / `add` (a node) / `publish` together
+  make the whole author→create→publish loop CLI-native.
+- Keep `add` strictly offline (like `rename`): no credentials, `push` does the
   network half — preserves the offline-verb set the agent permission configs
-  rely on.
+  rely on. `duplicate` needs credentials (it POSTs), like the other create-side
+  verbs.

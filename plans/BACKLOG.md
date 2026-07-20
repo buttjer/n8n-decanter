@@ -164,7 +164,11 @@ entries carry no priority field) — adjust freely.
       `.decanter.json`/config. Touches the id-first data model (folders
       currently exist only *after* a pull assigns the remote id) and the
       "born in n8n" guidance in PLAN.md + template AGENTS.md.
-      (graduated to [Plan 21](OPEN-21-repo-authored-workflows.md))
+      (2026-07-20 status: split — blank CLI-native create →
+      [Plan 20](OPEN-20-cli-publish-lifecycle.md) `create`; clone an existing
+      workflow → [Plan 21](OPEN-21-repo-authored-workflows.md) `duplicate`;
+      both preserve pull-first. The data-model-inverting `push --create`
+      variant was dropped by user decision.)
 - [ ] **Engine-true simulation suite** — real e2e test or simulation suite: is
       there a way to really execute the workflow with the n8n engine using
       executions data as a mock/dry run? Also making sure nothing is really

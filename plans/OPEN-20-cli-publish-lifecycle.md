@@ -87,10 +87,12 @@ belong in one plan.
    invert PLAN.md's "born in n8n" rule: the server still assigns the id and
    owns the birth; the CLI just triggers it. **Boundary to
    [Plan 21](OPEN-21-repo-authored-workflows.md):** `create` starts from
-   nothing; Plan 21's `push --create` starts from an existing repo folder
-   (that half inverts the data model and stays in Plan 21, gated on user
-   sign-off). Duplicate names are allowed server-side — no client-side
-   uniqueness check beyond what pull's folder naming already handles.
+   nothing; Plan 21's `duplicate` starts from an existing (already-pulled)
+   workflow and clones it — both preserve pull-first, and both call this same
+   `createWorkflow` method (this plan introduces it; `duplicate` reuses it —
+   don't add it or its smoke gate twice). Duplicate names are allowed
+   server-side — no client-side uniqueness check beyond what pull's folder
+   naming already handles.
 
 4. **`delete` verb — remove a workflow, deliberately.**
    `n8n-decanter <ref> delete`: resolve the ref (REF_VERBS), then
@@ -165,11 +167,13 @@ belong in one plan.
   create body (task 3), and `DELETE`'s behavior on a published workflow
   (task 4) must be confirmed via the Plan 15 smoke rig first — mirrors how
   the folder-placement question was resolved.
-- Pairs naturally with the backlog's **Create workflows from the repo** /
-  **`add` verb** items (see [Plan 21](OPEN-21-repo-authored-workflows.md)):
-  together they'd make the whole author→create→publish loop CLI-native.
-  Task 3's from-nothing `create` deliberately stays on this side of the
-  boundary; creating from an existing folder remains Plan 21's.
+- Pairs naturally with [Plan 21](OPEN-21-repo-authored-workflows.md)'s
+  **`add`** (scaffold a node) and **`duplicate`** (clone an existing workflow)
+  verbs: together they'd make the whole author→create→publish loop CLI-native.
+  `create` (from nothing) and `duplicate` (from an existing workflow) share the
+  `createWorkflow` method + POST smoke gate — this plan owns them; Plan 21
+  reuses. The dropped `push --create` (create from an id-less repo folder,
+  which *would* have inverted the model) is gone from both plans.
 - `--force` has no role in publish/unpublish — explicit user intents, not
   drift overrides. For `delete` it means exactly one thing: "skip the
   confirmation" (the non-interactive consent switch), a third meaning next

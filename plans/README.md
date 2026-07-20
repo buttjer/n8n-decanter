@@ -101,13 +101,15 @@ items not yet claimed by one. Recommended order:
     (confirmation-gated, local folder untouched), a version-aware `status`
     line, and a stale-fixture warning for `executions`. Groups three backlog
     items off PLAN.md's publish-semantics research + a user extension
-    (2026-07-20); endpoint/field shapes gated on live smoke verification.
-    From-a-repo-folder creation stays in Plan 21. Proposed 2026-07-20.
-21. [Repo-authored workflows](OPEN-21-repo-authored-workflows.md) — `add` verb
-    (scaffold a Code node in one step, offline) and `push --create` (create a
-    workflow remotely from a repo folder via 2.x `POST /workflows`). The
-    `push --create` half inverts PLAN.md's "born in n8n" data model, so it
-    needs user sign-off before landing. Proposed 2026-07-20.
+    (2026-07-20); endpoint/field shapes gated on live smoke verification. Owns
+    the `createWorkflow` method Plan 21's `duplicate` reuses. Proposed
+    2026-07-20.
+21. [Local authoring helpers](OPEN-21-repo-authored-workflows.md) — `add` verb
+    (scaffold a Code node in one step, offline) and `duplicate` verb (clone an
+    existing workflow into a new remote one via 2.x `POST /workflows`, landed
+    through a fresh pull). Both preserve the pull-first model — the earlier
+    `push --create` idea, which would have inverted it, was dropped
+    (2026-07-20). Proposed 2026-07-20.
 22. [Test suite depth](OPEN-22-test-suite-depth.md) — cover the interactive
     surfaces no test drives today (picker terminal IO, watch conflict prompts,
     watch↔proxy wiring) via injected streams (no pty dep), decouple the
