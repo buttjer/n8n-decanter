@@ -125,3 +125,41 @@ functions; the CLI process is the surface users touch.
   building a fresh mock is faster than extracting it.
 - CLI output contains ANSI codes even when piped (known, Plan 11) — match
   with regexes, not exact strings.
+
+## Housekeeping routine
+
+A periodic maintenance pass over the repo — run it on demand (Claude Code:
+`/housekeeping`). Each step is a **check** that may produce a small PR; batch
+related fixes, keep markdown-only cleanups on the docs fast path (`CLAUDE.md`
+→ "Docs fast path"). A pass that finds nothing to do is a valid outcome —
+report it. Anything needing a non-obvious decision → surface it, don't guess.
+
+Start from an up-to-date `main` (`git switch main && git pull`), then:
+
+1. **Backlog hygiene** (`plans/`) — for each open `- [ ]`, check whether the
+   code already *fully* satisfies it (implemented + tested + documented). If
+   so, check it off with a dated parenthetical; if only partial, leave the box
+   and append a short status. **Never delete, reorder, reword, or add to the
+   user's entries.**
+2. **Docs & changelog currency** — diff what merged since the last pass against
+   `/docs`, `CHANGELOG.md` `[Unreleased]`, and `PLAN.md`. Any user-facing CLI /
+   sync / data-model / guard / config change that landed without its docs +
+   changelog entry gets one now (rules: `CLAUDE.md`). PLAN.md must not have
+   drifted from the code.
+3. **Release check** — a non-empty `[Unreleased]` means user-facing work is
+   sitting unreleased: cut the release per `CLAUDE.md` (roll the section, bump
+   `package.json`, tag `vX.Y.Z`, GitHub Release). Confirm the latest git tag ==
+   `package.json` version and main is fully released.
+4. **Worktree & branch prune** — remove `.worktrees/*` whose branch is merged
+   or gone (`git worktree remove`), delete merged local + remote branches, and
+   clean stale `.git/config` `branch.<name>` sections left by sandboxed deletes
+   (`AGENTS.md` → "Sandboxed shells"). **Never `git clean -fdx` from the repo
+   root** — it nukes `.worktrees/`.
+5. **Dependency PR triage** — review open Dependabot PRs; merge the safe ones
+   (green CI, minor/patch). For majors, record the decision in the backlog
+   (e.g. TypeScript 7.x → `plans/BACKLOG.md`) rather than silently merging.
+6. **CI & tests green** — main's required checks are green, `npm test` and
+   `npm run typecheck` pass locally, and no open PR is red.
+7. **Drift audits** — `template/*.example` still match their repo counterparts
+   (e.g. the `n8n-globals.d.ts` duplication, a tracked backlog item); run
+   `npm audit` for new advisories.
