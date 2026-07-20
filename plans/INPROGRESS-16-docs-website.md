@@ -150,6 +150,10 @@ and optional task 8 (Pagefind).
 - **Client-JS exception:** the two demos add a little vanilla client JS beyond
   the dark-mode toggle (see Non-goals). Both are framework-free, self-contained
   in their component `<script>`, and disabled under `prefers-reduced-motion`.
+- **"How it compares" temporarily hidden** (landing + README) pending the
+  n8n-as-code maintainer's sign-off on the comparison scorings (2026-07-20).
+  Commented out in place (JSX comment + data block on the landing, HTML comment
+  in the README) — uncomment to restore once approved.
 - **Social card (og:image):** a 1200×630 `public/og.png` generated from a
   self-contained HTML card by `website/scripts/make-og.mjs` (`npm run og`,
   renders via headless Chrome; reuses the SVG wordmark). `BaseLayout` emits

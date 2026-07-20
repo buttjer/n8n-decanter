@@ -54,6 +54,10 @@ const features = [
 
 // "How it compares" — condensed from the README table. ✅ first-class ·
 // 🟡 partial/indirect · ❌ not supported.
+// TEMPORARILY HIDDEN (with the section below) pending the n8n-as-code
+// maintainer's sign-off on the scorings (asked 2026-07-20). Uncomment both to
+// restore.
+/*
 const compareHead = ["Capability", "Native n8n", "n8n-as-code", "n8n-decanter"];
 const compareRows = [
   ["TypeScript for Code nodes", "❌ JS or Python only", "❌ TS at workflow level, not node logic", "✅ Code nodes as .ts, compiled on push, typed globals"],
@@ -67,6 +71,7 @@ const compareRows = [
   ["Whole-workflow TS authoring", "❌", "✅ .workflow.ts decorator classes", "❌ keeps workflow.json; Code-node source only"],
   ["Multi-environment promotion", "🟡 Enterprise environments", "✅ promote remaps creds + refs", "🟡 a sync dir per instance, no promote yet"],
 ];
+*/
 ---
 
 <BaseLayout title="n8n-decanter — work on n8n like a codebase">
@@ -131,6 +136,9 @@ const compareRows = [
       </p>
     </section>
 
+    {/* TEMPORARILY HIDDEN pending the n8n-as-code maintainer's sign-off on the
+        scorings (asked 2026-07-20). Uncomment this section + the
+        compareHead/compareRows data above to restore.
     <section class="pb-24">
       <h2 class="text-center text-3xl sm:text-5xl">How it compares</h2>
       <p class="mx-auto mt-3 max-w-2xl text-center text-sm text-zinc-600 dark:text-zinc-400">
@@ -176,5 +184,6 @@ const compareRows = [
         ✅ first-class · 🟡 partial or indirect · ❌ not supported
       </p>
     </section>
+    */}
   </main>
 </BaseLayout>
