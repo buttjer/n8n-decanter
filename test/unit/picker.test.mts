@@ -9,6 +9,7 @@ import {
   initialState,
   mergeRemote,
   reduceKey,
+  renderLines,
   visibleWindow,
   type PickerEntry,
   type PickerState,
@@ -152,6 +153,50 @@ describe("verb stage", () => {
       done: true,
       result: { verb: "status", id: "aaa111", name: "Billing Sync" },
     });
+  });
+});
+
+describe("renderLines (pure view, Plan 23)", () => {
+  // Strip SGR escapes so assertions hold whether or not the test stream is a
+  // color-capable TTY — this is exactly the monochrome/NO_COLOR reader's view.
+  const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
+  const mixed: PickerEntry[] = [
+    { id: "aaa111", name: "Billing Sync", pulled: true },
+    { id: "bbb222", name: "A", pulled: false },
+    { id: "ccc333", name: "Mail Digest Nightly", pulled: true },
+  ];
+  const render = (over: Partial<PickerState> = {}): string[] =>
+    renderLines({ ...initialState(mixed, false), ...over }).map(plain);
+
+  it("titles the workflow stage and drops the (not pulled) words", () => {
+    const lines = render();
+    assert.equal(lines[0], "pick a workflow");
+    assert.ok(!lines.some((l) => l.includes("(not pulled)")), "no per-row (not pulled) phrase");
+  });
+
+  it("leads each row with a shape-based ●/○ glyph, legible in monochrome", () => {
+    const lines = render();
+    const billing = lines.find((l) => l.includes("Billing Sync"))!;
+    const hollow = lines.find((l) => l.includes("A "))!;
+    assert.match(billing, /●\s+Billing Sync/);
+    assert.match(hollow, /○\s+A/);
+    // legend states the key once in the footer
+    assert.ok(lines.some((l) => l.includes("● pulled") && l.includes("○ not pulled")));
+  });
+
+  it("aligns the dim id column by padding names to the window's widest", () => {
+    const lines = render();
+    const rows = lines.filter((l) => /(aaa111|bbb222|ccc333)/.test(l));
+    assert.equal(rows.length, 3);
+    const idCols = rows.map((l) => l.search(/(aaa111|bbb222|ccc333)/));
+    assert.ok(idCols.every((c) => c === idCols[0]), `ids not aligned: ${idCols.join(",")}`);
+  });
+
+  it("titles the verb stage with the selected workflow name as a heading", () => {
+    const lines = render({ stage: "verb", selected: mixed[0], verbCursor: 0 });
+    assert.ok(lines[0].startsWith("Billing Sync"));
+    assert.ok(lines[0].includes("aaa111"));
+    assert.ok(lines.some((l) => l.includes("❯") && l.includes(PICKER_VERBS[0])));
   });
 });
 

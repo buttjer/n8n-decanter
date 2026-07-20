@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-20
+
+### Changed
+
+- **Interactive picker got a visual refresh.** Each workflow row now leads with
+  a `●` (pulled) / `○` (not pulled) status glyph and the ids line up in an
+  aligned column; each stage carries a short title (`pick a workflow` over the
+  list, the workflow name over its verb menu). The state distinction is now
+  carried by the glyph *shape*, so the per-row `(not pulled)` words are gone —
+  the key is stated once in a footer legend (`● pulled · ○ not pulled`), and
+  the output stays legible under `NO_COLOR`. Behavior (filtering, navigation,
+  verbs) is unchanged.
+
 ## [0.3.2] - 2026-07-20
 
 ### Fixed
