@@ -12,7 +12,7 @@ The README is release-quality but is becoming one long page: pitch, setup,
 per-verb behavior, data model, TS compilation, guards, agent integration all
 in one scroll. A docs site gives each topic its own page and URL (linkable
 from issues, npm, agent configs), gives the project a landing page for the
-public launch ([Plan 13](OPEN-13-open-source-release.md)), and creates room
+public launch ([Plan 13](DONE-13-open-source-release.md)), and creates room
 for content that doesn't fit a README (guides, FAQ, screenshots/casts).
 
 ## Source
@@ -233,7 +233,7 @@ Small post-close addition (own PR, plan not reopened): the build now emits
 - **Blocked input:** the user provides the Tailwind settings later — task 2
   isolates them to one file so everything else can proceed with placeholders.
 - Ordering: tasks 1–4 + 6 are fully local and can start now; task 5+7 land
-  with/after [Plan 13](OPEN-13-open-source-release.md)'s public flip.
+  with/after [Plan 13](DONE-13-open-source-release.md)'s public flip.
 - No CHANGELOG entry — the website is project infrastructure, not CLI
   behavior (same reasoning as Plan 13's repo/packaging work). The README
   slim-down (task 7) is also changelog-exempt as docs.

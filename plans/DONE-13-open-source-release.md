@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P1 |
-| **Status** | In progress |
+| **Status** | Done |
 | **Theme** | Everything between "the code is done" and "the repo is public on GitHub and the package is on npm": identity rewrite, repo hygiene, publish pipeline, post-publish verification. |
 | **Model** | **Haiku** (or Sonnet) — what's left for a model is small and mechanical (re-run the tarball `init` smoke, the `createRequire` typescript fix); the substance is a *human* checklist (create the repo, npm publish, security settings) that no model should drive. Low reasoning load. |
 
@@ -141,8 +141,11 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
    registry (`npm view n8n-decanter version` → `0.3.0`; published as a plain
    local `npm publish`, not `--provenance` — see step 6). Post-publish
    check passed: `npx n8n-decanter@0.3.0 uuid` printed a UUID from the
-   registry package.
-9. When all of the above is done: flip this plan to `DONE-13-…`.
+   registry package. **Superseded 2026-07-20** — the user ran `npm publish`
+   for v0.3.2 (the mid-session release, see Notes) themselves once the OTP
+   requirement blocked this session; `npm view n8n-decanter version` now
+   confirms `0.3.2`, matching `main` exactly. No lag remains.
+9. Done 2026-07-20 — flipped to `DONE-13-open-source-release.md`.
 
 ## Acceptance / verification
 
@@ -154,7 +157,8 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
       public 2026-07-20; CI has been green on `main` throughout (checked
       2026-07-20, last 5 runs all `success`).
 - [x] `npx n8n-decanter uuid` works from the registry on Node 22. Verified
-      2026-07-20: `npx n8n-decanter@0.3.0 uuid` printed a UUID.
+      2026-07-20: `npx n8n-decanter@0.3.0 uuid` printed a UUID (re-verified
+      at `0.3.2` after the user's publish).
 
 ## Notes
 
@@ -216,6 +220,9 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
     versions (0.3.1 and 0.3.2 both tagged + GitHub-Released but not on
     npm) until the user runs `npm publish`.
   - This was the last item on the tarball/global-install verification
-    list — Plan 13 now has nothing left but the explicitly-deferred,
-    non-blocking npm trusted-publishing item (step 6) and the
-    user-pending `npm publish` above.
+    list.
+- **Closed 2026-07-20.** User ran `npm publish` for v0.3.2 themselves
+  (registry confirmed at `0.3.2`, matching `main` — no lag). Nothing left
+  but the explicitly-deferred, non-blocking npm trusted-publishing item
+  (step 6), which doesn't gate closing this plan. Flipped to
+  `DONE-13-open-source-release.md`.

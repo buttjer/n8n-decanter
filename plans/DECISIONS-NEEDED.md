@@ -13,4 +13,4 @@ dev-only, graduated to [Plan 15](DONE-15-docker-n8n-smoke-suite.md);
 bundle compression/minification → dropped (recorded in
 [Plan 14](DONE-14-bundle-shared-code-into-ts-pushes.md) Notes);
 dist/template release blocker → fixed, acknowledged (re-verify step in
-[Plan 13](OPEN-13-open-source-release.md)).*
+[Plan 13](DONE-13-open-source-release.md)).*

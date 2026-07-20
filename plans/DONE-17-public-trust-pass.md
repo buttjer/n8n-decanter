@@ -17,7 +17,7 @@ later.
 ## Source
 
 - Direct user request (2026-07-19). No Plan 0 entry.
-- Complements [Plan 13](OPEN-13-open-source-release.md) (release mechanics);
+- Complements [Plan 13](DONE-13-open-source-release.md) (release mechanics);
   this plan is the hygiene/trust layer on top of it.
 
 ## Audit verdicts (recorded, no action)
@@ -93,7 +93,7 @@ later.
 - No CHANGELOG entries: nothing here is CLI behavior.
 - GitHub Releases for v0.1.0/v0.2.0 already exist; npm publish is still
   pending (Plan 13 manual steps).
-- Everything else pre-public stays in [Plan 13](OPEN-13-open-source-release.md):
+- Everything else pre-public stays in [Plan 13](DONE-13-open-source-release.md):
   tarball smoke incl. `init`, the global-install typecheck gap, the PLAN.md
   "no build step (for dev)" wording, the public flip + rulesets + security
   settings + npm publish.
