@@ -18,7 +18,7 @@ entries carry no priority field) — adjust freely.
 
 ### Open — high (small, cheap, high-value)
 
-- [ ] **`run`'s `$env` leaks the entire `process.env` by default.**
+- [x] **`run`'s `$env` leaks the entire `process.env` by default.**
       `lib/run.mts:150` — `$env: fixture.env ?? { ...process.env }`. A node
       that reads or prints `$env` gets every exported variable of the CLI
       process (which can include `N8N_API_KEY` and other secrets) straight into
@@ -26,10 +26,13 @@ entries carry no priority field) — adjust freely.
       **Recommend:** default `$env` to `{}` (or a documented allowlist) unless
       the fixture supplies `env`, with an explicit `--allow-env` opt-in for the
       full-inherit behavior. Small change in `buildGlobals`. Severity: moderate.
-- [ ] **`executions` missing from the interactive menu** (2026-07-20) — the
+      (done 2026-07-20: `$env` now empty by default; fixture `env` wins;
+      `--allow-env` opts into `process.env`. v0.3.0, breaking.)
+- [x] **`executions` missing from the interactive menu** (2026-07-20) — the
       picker's per-workflow verb menu (`PICKER_VERBS` in `lib/picker.mts`)
       offers only `status`/`pull`/`push`/`watch`/`check`; `executions` (fetch
       run data) has no entry, so it's CLI-only. Add it to the menu.
+      (done 2026-07-20: added to `PICKER_VERBS`. v0.3.0.)
 
 ### Open — medium (valuable, more scope/design)
 

@@ -119,7 +119,7 @@ n8n-decanter [ref...] executions clean   # delete fetched execution data (offlin
 n8n-decanter list [--remote]        # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones)
 n8n-decanter completion zsh|bash    # print a shell completion script
-n8n-decanter <node-file> run [fixture.json]   # run a node offline, print items
+n8n-decanter <node-file> run [fixture.json] [--allow-env]   # run a node offline, print items
 n8n-decanter uuid [count]           # lowercase v4 UUID(s) for new node ids
 ```
 
@@ -149,7 +149,11 @@ would overwrite before running it. API requests time out after 30 s (set
 `"requestTimeoutMs"` in `decanter.config.json` for slow instances), and
 `DEBUG=1` prints full stack traces on errors. `run` fakes the full Code-node
 context including `$getWorkflowStaticData`, seeded from `workflow.json` and
-overridable per fixture.
+overridable per fixture. Like n8n's own scoped `$env`, `run`'s `$env` is
+**empty by default** — set it explicitly with the fixture's `"env"` field, or
+pass `--allow-env` to inherit the CLI process's environment (which may include
+`N8N_API_KEY` and other secrets), so a node that prints `$env` never leaks the
+host environment by accident.
 
 `executions` is read-only against the API and writes each execution as
 `workflows/<Name>/executions/<execId>.json` — real run data (the items every
