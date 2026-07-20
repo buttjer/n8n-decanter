@@ -22,7 +22,7 @@
 // `smoke` matrix in sync.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -680,6 +680,137 @@ try {
     r = await cli("executions", wfId, "--limit", "1");
     assert.equal(r.code, 0, r.out);
     assert.ok(!r.out.includes("may not match the code"), "matching version is silent: " + r.out);
+  });
+
+  // ---------- richer execution roundtrips: the CLI executions verb end-to-end ----------
+  // The steps above run wfId over the webhook and read the raw executions API;
+  // these drive the `executions` verb itself — capture real run JSON to disk,
+  // fetch by id, filter success vs. a genuine error run, and prove captured
+  // data doubles as a `run` fixture (PLAN's "convenience data / fixtures").
+
+  const execFiles = (dir: string): string[] => {
+    const outDir = path.join(dir, "executions");
+    return existsSync(outDir) ? readdirSync(outDir).filter((f) => /^\d+\.json$/.test(f)) : [];
+  };
+  // The Code node's current source path, read from its live placeholder — the
+  // rename step moved it to code/ümläut-nödé.ts, so nothing here may hardcode it.
+  const computeSrc = (): string => {
+    const node = JSON.parse(read(wfDir, "workflow.json")).nodes.find((n: any) => n.id === "c1");
+    const rel = String(node?.parameters?.jsCode ?? "").match(/^\/\/@file:(.+)$/)?.[1];
+    assert.ok(rel, `no //@file: placeholder on the Code node: ${node?.parameters?.jsCode}`);
+    return path.join(wfDir, rel);
+  };
+  // Tolerant POST: returns the status without demanding a usable response —
+  // used to drive a *failing* run, where the Respond node is never reached.
+  const fireHook = async (payload: unknown): Promise<number> => {
+    const res = await fetch(`${HOST}/webhook/smoke-hook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await res.text();
+    return res.status;
+  };
+
+  await step("executions pull: the CLI writes real run JSON into a self-ignoring dir", async () => {
+    const r = await cli(wfId, "executions", "--limit", "5");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /execution/, r.out);
+    const files = execFiles(wfDir);
+    assert.ok(files.length > 0, "at least one <id>.json landed: " + r.out);
+    // the dir must self-ignore: execution JSON can carry credentials/PII and
+    // sits inside the commit-on-pull/push pathspec
+    assert.equal(read(wfDir, "executions", ".gitignore"), "*\n", "executions/.gitignore is '*'");
+    assert.match(r.out, /gitignored/, "the CLI flags the data as gitignored temp: " + r.out);
+    const one = JSON.parse(read(wfDir, "executions", files[0]));
+    assert.equal(one.status, "success");
+    // executions are historical snapshots — an old page entry may predate the
+    // rename, so anchor on the never-renamed Webhook node, not the Code node
+    const runData = one.data?.resultData?.runData;
+    assert.ok(runData?.Webhook, `captured JSON keyed by node name: ${runData && Object.keys(runData).join(",")}`);
+  });
+
+  await step("executions by id: a numeric ref self-routes to its workflow folder", async () => {
+    const page = await api("GET", `/api/v1/executions?limit=1&workflowId=${wfId}`);
+    const id = String(page.data[0].id);
+    let r = await cli(wfId, "executions", "clean"); // pin the single fetched file
+    assert.equal(r.code, 0, r.out);
+    r = await cli("executions", id); // no workflow ref — the id decides the folder
+    assert.equal(r.code, 0, r.out);
+    const file = path.join(wfDir, "executions", `${id}.json`);
+    assert.ok(existsSync(file), `execution ${id} landed by id: ` + r.out);
+    assert.equal(String(JSON.parse(read(file)).id), id, "fetched the right execution");
+  });
+
+  await step("error executions: a throwing run is captured; --status filters success from error", async () => {
+    // fresh baseline — the stale-fixture step left workflow.json's versionId edited
+    let r = await cli(wfId, "pull");
+    assert.equal(r.code, 0, r.out);
+    // a Code node that fails on demand: `{ fail: true }` throws before Respond
+    writeFileSync(computeSrc(), [
+      'import { double } from "../../../shared/math";',
+      "const body = ($json.body ?? {}) as { n?: number; fail?: boolean };",
+      'if (body.fail) throw new Error("intentional smoke failure");',
+      "return { json: { doubled: double(Number(body.n ?? 0)), mode: 'forced' } };",
+      "",
+    ].join("\n"));
+    r = await cli(wfId, "push"); // active workflow → goes live
+    assert.equal(r.code, 0, r.out);
+    // one success (the polling helper also confirms webhook re-registration)…
+    const ok = await webhook({ n: 9 });
+    assert.deepEqual(ok, [{ doubled: 18, mode: "forced" }], JSON.stringify(ok));
+    // …and one failure that records an error execution
+    await fireHook({ fail: true });
+    // error execution can lag the 500 — poll the API for it (9s budget)
+    let errId = "";
+    for (let i = 0; i < 12 && !errId; i++) {
+      const page = await api("GET", `/api/v1/executions?status=error&limit=1&workflowId=${wfId}`);
+      errId = page.data?.[0]?.id ? String(page.data[0].id) : "";
+      if (!errId) await sleep(750);
+    }
+    assert.ok(errId, "an error execution was recorded for the throwing run");
+    // --status=error captures only failures, thrown message intact
+    r = await cli(wfId, "executions", "clean");
+    assert.equal(r.code, 0, r.out);
+    r = await cli(wfId, "executions", "--status", "error", "--limit", "5");
+    assert.equal(r.code, 0, r.out);
+    let files = execFiles(wfDir);
+    assert.ok(files.length > 0, "an error execution file landed: " + r.out);
+    for (const f of files) assert.equal(JSON.parse(read(wfDir, "executions", f)).status, "error", `--status=error only captures failures (${f})`);
+    const message = JSON.parse(read(wfDir, "executions", `${errId}.json`)).data?.resultData?.error?.message ?? "";
+    assert.match(message, /intentional smoke failure/, `thrown message survives into captured JSON: ${message}`);
+    // --status=success is the complement: never the failure we just captured
+    r = await cli(wfId, "executions", "clean");
+    assert.equal(r.code, 0, r.out);
+    r = await cli(wfId, "executions", "--status", "success", "--limit", "5");
+    assert.equal(r.code, 0, r.out);
+    files = execFiles(wfDir);
+    assert.ok(files.length > 0 && !files.includes(`${errId}.json`), "success filter excludes the error run: " + files.join(","));
+    for (const f of files) assert.equal(JSON.parse(read(wfDir, "executions", f)).status, "success", `--status=success only captures successes (${f})`);
+  });
+
+  await step("captured executions are valid run fixtures — the edit loop closes offline", async () => {
+    // PLAN's promise: fetched execution data doubles as a `run` fixture. Feed a
+    // real recorded run's *input* back through `run` and assert the offline
+    // result matches the *recorded live output*.
+    const page = await api("GET", `/api/v1/executions?includeData=true&status=success&limit=1&workflowId=${wfId}`);
+    const runData = page.data[0].data.resultData.runData;
+    const input = runData["Webhook"][0].data.main[0];           // what the Code node received
+    const recordedOut = runData["Ümläut Nödé"][0].data.main[0]; // what it produced live
+    const n = Number(input[0].json.body.n ?? 0);
+    const fixture = path.join(TMP, "captured.fixture.json");
+    writeFileSync(fixture, JSON.stringify({ input }, null, 2));
+    const r = await cli("run", computeSrc(), fixture);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(recordedOut[0].json.doubled, n * 2, "sanity: recorded live output is 2×input");
+    assert.match(r.out, new RegExp(`"doubled":\\s*${n * 2}\\b`), `offline run reproduces the live output: ${r.out}`);
+  });
+
+  await step("executions clean: fetched data is removed (offline)", async () => {
+    assert.ok(existsSync(path.join(wfDir, "executions")), "executions dir present before clean");
+    const r = await cli(wfId, "executions", "clean");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(path.join(wfDir, "executions")), "clean removed the executions dir: " + r.out);
   });
 } finally {
   await teardown();
