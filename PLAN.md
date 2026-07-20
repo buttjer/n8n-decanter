@@ -634,6 +634,25 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   the sync-dir upward search in `lib/validate.mts`. Shared data-model shapes
   (`Workflow`, `JsCodeNode`, `DecanterState`, `DecanterConfig`, …) live in
   `lib/types.mts`; `isJsCodeNode` is a type guard.
+- **Publish-build pipeline (added 2026-07-18, plans/13)**: "no build step"
+  above is a *dev-time* guarantee only — the published npm tarball ships
+  compiled JS. Node refuses to type-strip `.mts` once a package lands under
+  `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so
+  publishing the raw `.mts` sources can never work; this was discovered by
+  the tarball smoke test, not designed upfront. `tsconfig.build.json` runs
+  `tsc` with `rewriteRelativeImportExtensions` (shebang preserved) into
+  `dist/`, invoked by the `prepack` script — so it only ever runs during
+  `npm pack`/`npm publish`, never in normal dev. `package.json`'s `bin`
+  points at `dist/n8n-decanter.mjs`; `files` ships `dist/` + `template/` +
+  `CHANGELOG.md` (raw `lib/*.mts` and `n8n-decanter.mts` are *not*
+  published). Two runtime spots had to become extension-aware to work in
+  both the dev tree and an installed `dist/`: `lib/validate.mts`'s
+  `runTypecheck` picks `.mts` vs `.mjs` for the `scripts/typecheck` child
+  process from its own `import.meta.url`, and `lib/init.mts`'s
+  `packageRootFrom` walks up from either `lib/` (dev) or `dist/lib/`
+  (installed) to find the package root for `template/`. `npm link` from a
+  checkout needs `npm run build` once first, since the linked package hits
+  the same node_modules type-stripping wall.
 - **Testing note**: the e2e test binds a localhost port and must exec the CLI
   *asynchronously* (the mock server shares the test process; a sync exec
   deadlocks). Sandboxed environments may block the port bind.
