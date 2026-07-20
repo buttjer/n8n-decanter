@@ -220,6 +220,37 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`, ".env must survive --force");
 });
 
+await step("init: credential probe — non-2xx and unreachable outcomes get their own log lines", async () => {
+  // non-2xx: a real server that answers, but rejects
+  const rejecting = http.createServer((_req, res) => void res.writeHead(403).end("nope"));
+  await new Promise<void>((resolve) => rejecting.listen(0, "127.0.0.1", () => resolve()));
+  const rejectingPort = (rejecting.address() as import("node:net").AddressInfo).port;
+  try {
+    const target = path.join(TMP, "init-target-probe-403");
+    const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
+    pending.child.stdin!.write(`http://127.0.0.1:${rejectingPort}\nsome-key\n`);
+    pending.child.stdin!.end();
+    const { stdout, stderr } = await pending;
+    assert.match(stdout + stderr, /credential check failed \(403 Forbidden\) — \.env written anyway/);
+  } finally {
+    rejecting.close();
+  }
+
+  // unreachable: nothing listens on this port — the same catch branch (and
+  // log line shape) a real fetch timeout would hit; init's probe timeout is
+  // a fixed 10s, too slow to exercise directly in an offline suite
+  const probe = http.createServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", () => resolve()));
+  const deadPort = (probe.address() as import("node:net").AddressInfo).port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  const target = path.join(TMP, "init-target-probe-unreachable");
+  const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
+  pending.child.stdin!.write(`http://127.0.0.1:${deadPort}\nsome-key\n`);
+  pending.child.stdin!.end();
+  const { stdout, stderr } = await pending;
+  assert.match(stdout + stderr, /could not reach http:\/\/127\.0\.0\.1:\d+ \([^)]*\) — \.env written anyway/);
+});
+
 await step("bare invocation piped: usage, never the interactive picker", async () => {
   // Plan 19's picker is TTY-gated; this whole suite runs the CLI piped, so a
   // bare run in an inited project must keep printing plain usage text
@@ -843,6 +874,44 @@ await step("name refs: exact name and case-insensitive prefix resolve; unknown n
   assert.match(r.out, /"Order Sync v2"/);
 });
 
+await step("multi-workflow: one id fails, [i/n] progress shown, exit 1, the rest still processed", async () => {
+  // an id that resolves (id-shaped, no local/remote match needed) but was
+  // never pulled, ahead of a real one — proves a mid-list failure doesn't
+  // stop the loop, and the overall exit code still reflects it
+  const r = await cli("push", "--no-typecheck", "wf-not-pulled", "wf123");
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /\[1\/2\] wf-not-pulled: workflow wf-not-pulled not found under .* — pull it first/);
+  assert.match(r.out, /\[2\/2\] pushed "Order Sync v2" \(wf123\)/, "the item after the failure must still be processed: " + r.out);
+});
+
+await step("resolveRef: pull resolves an unpulled remote workflow by name; a shared local prefix is ambiguous", async () => {
+  db.set("wfZ1", { ...structuredClone(db.get("wf123")), id: "wfZ1", name: "Zeta Flow One" });
+  db.set("wfZ2", { ...structuredClone(db.get("wf123")), id: "wfZ2", name: "Zeta Flow Two" });
+  try {
+    // only `pull` falls back to the remote workflow list to resolve a name
+    // that isn't pulled locally yet (push/status don't — they'd need the
+    // folder to already exist)
+    let r = await cli("pull", "Zeta Flow One");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(existsSync(wfDir("Zeta Flow One")), "pulled by remote name: " + r.out);
+    r = await cli("pull", "wfZ2");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(existsSync(wfDir("Zeta Flow Two")), r.out);
+
+    // now that both are pulled locally, a shared name prefix is ambiguous — no prompt, just an error
+    r = await cli("Zeta Flow", "status");
+    assert.equal(r.code, 1);
+    assert.match(r.out, /ambiguous workflow "Zeta Flow"/);
+    assert.match(r.out, /"Zeta Flow One" \(wfZ1\)/);
+    assert.match(r.out, /"Zeta Flow Two" \(wfZ2\)/);
+  } finally {
+    rmSync(wfDir("Zeta Flow One"), { recursive: true, force: true });
+    rmSync(wfDir("Zeta Flow Two"), { recursive: true, force: true });
+    db.delete("wfZ1");
+    db.delete("wfZ2");
+  }
+});
+
 await step("list: name, id, and folder per pulled workflow; --remote adds unpulled ones", async () => {
   let r = await cli("list");
   assert.equal(r.code, 0, r.out);
@@ -1446,6 +1515,9 @@ await step("executions: fetches run JSON into a self-gitignored dir; filters pas
   assert.ok(existsSync(path.join(exDir, "202.json")));
   assert.ok(!existsSync(path.join(exDir, "201.json")));
   r = await cli("executions", "wf123", "--limit", "0");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /--limit must be an integer between 1 and 250/);
+  r = await cli("executions", "wf123", "--limit", "251"); // upper bound of the executions API page cap
   assert.equal(r.code, 1);
   assert.match(r.out, /--limit must be an integer between 1 and 250/);
 
