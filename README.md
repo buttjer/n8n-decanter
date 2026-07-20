@@ -4,11 +4,16 @@
 [![npm](https://img.shields.io/npm/v/n8n-decanter)](https://www.npmjs.com/package/n8n-decanter)
 [![Docs](https://img.shields.io/badge/docs-website-blue.svg)](https://buttjer.github.io/n8n-decanter/)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![vibe coded](https://img.shields.io/badge/vibe%20coded-with%20Claude%20Code-8A2BE2)](https://claude.com/claude-code)
 
 **Work on n8n like a codebase — built for AI coding agents.**
 
 **Pre-1.0 — breaking changes to the data model or CLI may ship in minor
 versions until v1.0.**
+
+> **Built with AI agents.** Much of this codebase was written by Claude Code
+> under human review. It's tested (CI + a real-n8n integration suite) and used
+> in earnest, but treat pre-1.0 the way the version implies.
 
 n8n-decanter syncs your n8n instance into a git-friendly, folder-per-workflow
 layout: every Code node's source becomes its own `.js` or `.ts` file,
