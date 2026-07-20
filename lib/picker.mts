@@ -150,7 +150,18 @@ const SKELETON_WIDTHS: ReadonlyArray<readonly [number, number]> = [[14, 8], [9, 
 
 const truncate = (text: string, max: number): string => (text.length > max ? text.slice(0, max - 1) + "…" : text);
 
-function renderLines(state: PickerState): string[] {
+/** Filled = pulled, hollow = not pulled — differs by *shape*, so the state
+ * survives NO_COLOR/monochrome without the old trailing `(not pulled)` words. */
+const statusGlyph = (pulled: boolean): string => (pulled ? style.green("●") : style.yellow("○"));
+
+/**
+ * Pure view: `PickerState` → the lines to paint. Fed the docs-site
+ * simulation's polish (Plan 23) — an aligned id column, `●`/`○` shape-based
+ * status glyphs, and a per-stage title. Color is decoration only; every
+ * distinction is carried by shape or words too, so `NO_COLOR` output stays
+ * legible. Exported for the render unit tests (no TTY needed).
+ */
+export function renderLines(state: PickerState): string[] {
   const d = style.dim;
   const lines: string[] = [];
   if (state.stage === "verb") {
@@ -163,23 +174,29 @@ function renderLines(state: PickerState): string[] {
     return lines;
   }
   const filtered = filterEntries(state.entries, state.query);
-  lines.push(`${style.bold("?")} ${state.query === "" ? d("type to filter") : state.query}`);
+  lines.push(style.bold("pick a workflow"));
+  lines.push(`${d("?")} ${state.query === "" ? d("type to filter") : state.query}`);
   const { start, end } = visibleWindow(filtered.length, state.cursor, LIST_HEIGHT);
+  // Pad names to the widest one in the current window so the dim ids line up.
+  let nameWidth = 0;
+  for (let i = start; i < end; i++) nameWidth = Math.max(nameWidth, truncate(filtered[i].name, 48).length);
   for (let i = start; i < end; i++) {
     const e = filtered[i];
     const pointer = i === state.cursor ? style.green("❯") : " ";
-    const name = e.pulled ? style.green(truncate(e.name, 48)) : style.yellow(truncate(e.name, 48));
-    // "(not pulled)" in words, not only color — NO_COLOR/monochrome safety
-    lines.push(`${pointer} ${name}  ${d(e.id)}${e.pulled ? "" : `  ${d("(not pulled)")}`}`);
+    const display = truncate(e.name, 48);
+    const name = (e.pulled ? style.green(display) : style.yellow(display)) + " ".repeat(nameWidth - display.length);
+    lines.push(`${pointer} ${statusGlyph(e.pulled)} ${name}  ${d(e.id)}`);
   }
   if (filtered.length === 0 && !state.loadingRemote) lines.push(d(state.entries.length === 0 ? "  nothing pulled yet" : "  no match"));
   if (end < filtered.length) lines.push(d(`  … ${filtered.length - end} more`));
   if (state.loadingRemote) {
-    for (const [nameWidth, idWidth] of SKELETON_WIDTHS) {
-      lines.push(`  ${d("░".repeat(nameWidth))}  ${d("░".repeat(idWidth))}`);
+    for (const [nameW, idWidth] of SKELETON_WIDTHS) {
+      lines.push(`  ${d("░".repeat(nameW))}  ${d("░".repeat(idWidth))}`);
     }
   }
   if (state.notice) lines.push(d(state.notice));
+  // Legend states the glyph key once (footer), not on every row.
+  if (filtered.length > 0) lines.push(d(`${statusGlyph(true)} pulled · ${statusGlyph(false)} not pulled`));
   const enterHint = filtered[state.cursor]?.pulled === false ? "enter pull" : "enter select";
   lines.push(d(`↑↓ move · ${enterHint} · esc quit`));
   return lines;

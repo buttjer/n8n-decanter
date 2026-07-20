@@ -1,7 +1,7 @@
 # Plan 23 — Picker visual refinements
 
 **Priority:** P2
-**Status:** Not started
+**Status:** Done
 **Theme:** Feed the docs-site picker *simulation*'s visual polish (aligned
 columns, shape-based status glyphs, a titled stage header) back into the real
 `lib/picker.mts` — presentation only, the state machine is untouched.
@@ -84,3 +84,22 @@ Flag for the user if they'd rather keep the words.
 - **Git:** code change → **worktree**, not the docs fast path.
 - Keep the split the file already documents: pure state machine (exported,
   tested) vs. the thin TTY IO block — all of this lives in the IO half.
+
+## Outcome
+
+Done 2026-07-20. All four tasks landed in `renderLines` (now exported for
+tests, still the only thing touched — reducer/filter/window untouched):
+
+- **Aligned ids** by padding each visible name to the window's widest
+  (48-char truncation + `… N more` overflow preserved).
+- **`●`/`○` glyphs** (green/yellow) between the `❯` cursor and the name; the
+  per-row `(not pulled)` words dropped per the Design decision, with the key
+  restated once in a footer legend `● pulled · ○ not pulled`.
+- **Titles:** `pick a workflow` over the filter line; the workflow name stays
+  the verb-stage heading. **Box-drawing frame skipped** — at a real 10-row
+  `LIST_HEIGHT` a bold title line reads lighter than the sim's `┌─┐` frame.
+- **Pure render tests** added to `test/unit/picker.test.mts` (ANSI-stripped
+  assertions: title present, glyphs by shape, ids aligned, no `(not pulled)`).
+
+`npm test` (167) + typecheck green. The docs-site simulation keeps its `┌─┐`
+frame and inline words — it's a stylized animation, not the CLI's ground truth.
