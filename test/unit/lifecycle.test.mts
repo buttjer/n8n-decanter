@@ -1,13 +1,13 @@
 // Unit tests for the publish/unpublish/delete branch logic (lib/lifecycle.mts),
 // with a stubbed N8nApi and a capturing log — no HTTP server, no fs watchers.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { N8nApi } from "../../lib/api.mts";
-import { deleteWorkflow, publishWorkflow, unpublishWorkflow } from "../../lib/lifecycle.mts";
-import type { DecanterConfig, Log, Workflow } from "../../lib/types.mts";
+import { deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "../../lib/lifecycle.mts";
+import type { DecanterConfig, Log, Workflow, WorkflowPut } from "../../lib/types.mts";
 
 const wf = (over: Partial<Workflow> = {}): Workflow => ({ id: "wf1", name: "Demo", nodes: [], connections: {}, ...over });
 
@@ -105,5 +105,75 @@ describe("deleteWorkflow", () => {
     const { log, lines } = capturingLog();
     await deleteWorkflow(api, baseConfig(withTmp(), ["wf1"]), "wf1", { force: true }, log);
     assert.match(lines.join("\n"), /wf1 is still listed in decanter\.config\.json "workflows"/);
+  });
+});
+
+describe("duplicateWorkflow", () => {
+  let tmp: string | undefined;
+  afterEach(() => {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    tmp = undefined;
+  });
+
+  /** A pulled source folder with one JS Code node behind a placeholder. */
+  function seedSource(root: string): void {
+    const dir = path.join(root, "Source");
+    mkdirSync(path.join(dir, "code"), { recursive: true });
+    writeFileSync(path.join(dir, "code", "transform.js"), "return $input.all();\n");
+    writeFileSync(path.join(dir, ".decanter.json"), JSON.stringify({ workflowId: "src1", nodes: { n1: { file: "code/transform.js" } } }));
+    writeFileSync(path.join(dir, "workflow.json"), JSON.stringify({
+      id: "src1", name: "Source",
+      nodes: [{ id: "n1", name: "Transform", type: "n8n-nodes-base.code", typeVersion: 2, position: [0, 0], parameters: { jsCode: "//@file:code/transform.js" } }],
+      connections: {},
+    }, null, 2));
+  }
+
+  /** Stub whose createWorkflow records the POSTed body and getWorkflow serves the clone. */
+  function stubDup() {
+    let posted: WorkflowPut | undefined;
+    let createdId = "clone1";
+    const api = {
+      createWorkflow: async (body: WorkflowPut) => {
+        posted = body;
+        return { id: createdId, name: body.name, active: false, nodes: body.nodes, connections: body.connections, settings: body.settings, versionId: "v1" };
+      },
+      getWorkflow: async (id: string) => ({ id, name: posted!.name, active: false, nodes: posted!.nodes, connections: posted!.connections, settings: posted!.settings, versionId: "v1" }),
+    } as unknown as N8nApi;
+    return { api, body: () => posted, setId: (id: string) => (createdId = id) };
+  }
+
+  it("posts the source's assembled body under a new name and pulls the clone", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-dup-"));
+    seedSource(tmp);
+    const { api, body } = stubDup();
+    const { log, lines } = capturingLog();
+    const { id } = await duplicateWorkflow(api, baseConfig(tmp), "src1", "My Clone", log);
+    assert.equal(id, "clone1");
+    // POSTed body carries the reconstituted code (placeholder replaced) under the new name
+    assert.equal(body()!.name, "My Clone");
+    assert.equal(body()!.nodes[0].parameters.jsCode, "return $input.all();\n");
+    assert.match(lines.join("\n"), /duplicated "Source" -> "My Clone" \(clone1\) on the server — unpublished draft/);
+    // pulled into its own folder
+    assert.equal(JSON.parse(readFileSync(path.join(tmp!, "My Clone", ".decanter.json"), "utf8")).workflowId, "clone1");
+    // source folder untouched
+    assert.equal(JSON.parse(readFileSync(path.join(tmp!, "Source", "workflow.json"), "utf8")).name, "Source");
+  });
+
+  it("defaults the name to \"<name> (copy)\" when none is given", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-dup-"));
+    seedSource(tmp);
+    const { api, body, setId } = stubDup();
+    setId("clone2");
+    const { log } = capturingLog();
+    await duplicateWorkflow(api, baseConfig(tmp), "src1", undefined, log);
+    assert.equal(body()!.name, "Source (copy)");
+  });
+
+  it("throws for an unknown workflow id", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-dup-"));
+    seedSource(tmp);
+    const { api } = stubDup();
+    const { log } = capturingLog();
+    await assert.rejects(duplicateWorkflow(api, baseConfig(tmp), "nope", "X", log), /workflow nope not found/);
   });
 });

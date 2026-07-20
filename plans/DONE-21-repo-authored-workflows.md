@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P2 |
-| **Status** | Not started |
+| **Status** | Done |
 | **Theme** | Two repo-side authoring conveniences that create new workflow surface **without inverting the pull-first model**: `add` scaffolds a Code node into a workflow (offline); `duplicate` clones an existing workflow into a brand-new remote one via the n8n 2.x `POST /api/v1/workflows` endpoint, landing the copy through a fresh pull. Neither touches the "born in n8n" invariant. |
 | **Model** | **Sonnet** — both are mechanical wiring over machinery that already exists (uuid/kebab/rename for `add`; push-assembly + `createWorkflow` + pull for `duplicate`), gated on the same smoke work Plan 20 already carries. No novel design. |
 
@@ -119,3 +119,36 @@ the inverting variant was cut entirely.
   network half — preserves the offline-verb set the agent permission configs
   rely on. `duplicate` needs credentials (it POSTs), like the other create-side
   verbs.
+
+## Outcome (2026-07-20)
+
+- **`add`** (`lib/add.mts`, offline): mints a v4 uuid, writes the kebab-case
+  `code/` source (with the `-<id8>` collision suffix shared with pull/rename),
+  appends the `n8n-nodes-base.code` node object (`typeVersion: 2`, `mode:
+  runOnceForAllItems`, a `//@file:` placeholder) to `workflow.json`, registers
+  it in `.decanter.json`, then re-runs `validateWorkflowDir` and fails loudly
+  on any violation — the same shape as `rename`. `--ts` scaffolds a `.ts`
+  source. Lands disconnected; `push` propagates.
+- **`duplicate`** (`lib/lifecycle.mts`, needs credentials): assembles the body
+  from the local folder exactly as `push` does (reusing the now-exported
+  `assertCompliant` + `buildNodeCode`), sets the new name (arg or `"<name>
+  (copy)"`), POSTs via `N8nApi.createWorkflow`, then pulls the returned id.
+- **`createWorkflow` generalized** to take a full `WorkflowPut` body (was
+  name-only); `create` now passes the minimal `{ name, nodes: [], connections:
+  {}, settings: {} }`, `duplicate` passes the sanitized clone body. The
+  `POST /workflows` gate stays shared — not re-introduced.
+- **Tests:** e2e gains self-contained `add` + `duplicate` steps; new
+  `test/unit/add.test.mts` and a `duplicateWorkflow` block in
+  `lifecycle.test.mts`. Two dedicated smoke steps prove the real-n8n-only
+  facts: a scaffolded node's **default body executes** in the Code sandbox
+  (webhook-triggered) and a `duplicate` clone is **born unpublished from a
+  published source** and **independent** (editing the clone leaves the source
+  untouched; connections preserved; `.js` byte-clean round-trip). All green —
+  `npm test` (186 unit + 69 e2e + 10 proxy + 12 interactive) and
+  `npm run test:smoke` (21/21 against `n8nio/n8n:2.30.7`).
+- **Picker menu wiring left to Plan 19** as noted (verb landed first).
+- **`uuid` verb retired (breaking).** Its sole purpose — minting a node id for
+  hand-adding a Code node — is now subsumed by `add` (which mints the id as
+  part of the scaffold), so the bare generator was removed rather than left as
+  a redundant surface. CLI, docs, agent template, and the offline-verb sets
+  updated to point at `add`.

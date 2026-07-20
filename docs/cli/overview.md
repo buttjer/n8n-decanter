@@ -13,8 +13,10 @@ n8n-decanter [ref...] status [--diff]
 n8n-decanter [ref...] check [--no-typecheck]
 n8n-decanter <ref> rename "<old node>" "<new node>"
 n8n-decanter <ref> rename --workflow "<new name>"
+n8n-decanter <ref> add "<Node name>" [--ts]           # scaffold a Code node (offline)
 n8n-decanter [ref] watch [--force]
 n8n-decanter create "<name>"                          # blank workflow, then pull
+n8n-decanter <ref> duplicate ["<new name>"]           # clone a workflow, then pull
 n8n-decanter [ref...] publish                         # take the draft(s) live
 n8n-decanter [ref...] unpublish                       # back to draft-only
 n8n-decanter <ref> delete [--force]                   # delete from the server
@@ -23,7 +25,6 @@ n8n-decanter [ref...] executions clean
 n8n-decanter list [--remote]
 n8n-decanter completion zsh|bash
 n8n-decanter <node-file> run [fixture.json] [--allow-env]
-n8n-decanter uuid [count]
 ```
 
 ## Interactive picker
@@ -57,9 +58,9 @@ may appear in any position too.
 
 | Verbs | Network |
 | --- | --- |
-| `check`, `run`, `uuid`, `rename`, `list`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception) |
+| `check`, `run`, `rename`, `add`, `list`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception) |
 | `status`, `executions` | Read the remote, never write |
-| `pull`, `push`, `watch`, `create`, `publish`, `unpublish`, `delete` | Read/write the live instance |
+| `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish`, `delete` | Read/write the live instance |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward
 from the current directory) or the environment (`N8N_HOST`, `N8N_API_KEY`).

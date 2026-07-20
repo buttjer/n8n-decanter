@@ -14,12 +14,13 @@ n8n-decanter/
   .env.example
   decanter.config.json
   n8n-decanter.mts        # CLI entry: init | pull | push | status | check |
-                          #   rename | watch | run | list | executions |
-                          #   uuid | completion
-  lib/                    # implementation: api, compile, config, diff,
-                          #   executions, git, init, picker, prompt, proxy,
-                          #   pull, push, rename, run, state, status, style,
-                          #   template, util, validate, watch (one .mts each)
+                          #   rename | add | watch | create | duplicate |
+                          #   publish | unpublish | delete | run | list |
+                          #   executions | completion
+  lib/                    # implementation: add, api, compile, config, diff,
+                          #   executions, git, init, lifecycle, picker, prompt,
+                          #   proxy, pull, push, rename, run, state, status,
+                          #   style, template, util, validate, watch (one .mts each)
                           #   + types.mts (shared data-model shapes)
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md

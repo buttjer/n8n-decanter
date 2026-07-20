@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { addCodeNode } from "./lib/add.mts";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
-import { createWorkflow, deleteWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
+import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
@@ -56,6 +56,8 @@ const usage = (): string => {
   ${b("n8n-decanter")} [ref...] ${b("check")} [--no-typecheck]   ${d("offline layout-compliance check")}
   ${b("n8n-decanter")} <ref> ${b("rename")} "<old node>" "<new node>"   ${d("rename a node everywhere (offline)")}
   ${b("n8n-decanter")} <ref> ${b("rename")} --workflow "<new name>"     ${d("rename the workflow itself")}
+  ${b("n8n-decanter")} <ref> ${b("add")} "<Node name>" [--ts]   ${d("scaffold a disconnected Code node (offline)")}
+  ${b("n8n-decanter")} <ref> ${b("duplicate")} ["<new name>"]   ${d("clone a workflow into a new remote one, then pull it")}
   ${b("n8n-decanter")} [ref...] ${b("publish")}     ${d("take the draft(s) live (unpublish returns to draft-only)")}
   ${b("n8n-decanter")} [ref...] ${b("unpublish")}
   ${b("n8n-decanter create")} "<name>"     ${d("create a blank workflow on the server, then pull it")}
@@ -74,7 +76,6 @@ const usage = (): string => {
   ${b("n8n-decanter completion")} zsh|bash  ${d("print a shell completion script for your rc file")}
   ${b("n8n-decanter")} <node-file> ${b("run")} [fixture.json] [--allow-env]   ${d("run a node locally (offline;")}
                                    ${d("$env is empty unless the fixture sets env or --allow-env inherits process.env)")}
-  ${b("n8n-decanter uuid")} [count]         ${d("print lowercase v4 UUID(s) for new node ids")}
 
 A workflow <ref> is its id, its workflow/folder name, or a unique name prefix
 (case-insensitive; ambiguity is an error, never a prompt). A workflow named
@@ -86,7 +87,7 @@ Config: decanter.config.json (searched upward from cwd), credentials from .env
 next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 };
 
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "run", "uuid", "list", "executions", "publish", "unpublish", "create", "delete", "completion", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "add", "duplicate", "watch", "run", "list", "executions", "publish", "unpublish", "create", "delete", "completion", "__complete", "help"]);
 /** Verbs whose workflow arguments go through name resolution. */
 const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "publish", "unpublish", "delete"]);
 
@@ -141,6 +142,7 @@ async function main() {
   const workflowFlag = args.includes("--workflow");
   const remoteFlag = args.includes("--remote");
   const diffFlag = args.includes("--diff");
+  const tsFlag = args.includes("--ts");
   const positional = args.filter((a) => !a.startsWith("--"));
   // id-first support: the first token matching a known verb is the command,
   // wherever it sits — `push wf123` and `wf123 push` are equivalent.
@@ -177,13 +179,6 @@ async function main() {
   }
 
   // Offline, config-free verbs — no decanter.config.json or credentials needed.
-  if (command === "uuid") {
-    const count = rest[0] ? Number(rest[0]) : 1;
-    if (!Number.isInteger(count) || count < 1) throw new Error("uuid count must be a positive integer");
-    for (let i = 0; i < count; i++) console.log(randomUUID());
-    return;
-  }
-
   if (command === "run") {
     if (rest.length < 1) throw new Error("run needs a node file argument: n8n-decanter run <node-file> [fixture.json]");
     await runNode(rest[0], rest[1], log, { allowEnv });
@@ -201,7 +196,7 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--help");
+    words.push("--force", "--no-typecheck", "--workflow", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireCredentials: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -212,7 +207,7 @@ async function main() {
     return;
   }
 
-  await dispatch(command, rest, { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, valueFlags });
+  await dispatch(command, rest, { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, tsFlag, valueFlags });
 }
 
 interface Flags {
@@ -221,11 +216,12 @@ interface Flags {
   workflowFlag: boolean;
   remoteFlag: boolean;
   diffFlag: boolean;
+  tsFlag: boolean;
   valueFlags: Map<string, string>;
 }
 
 /** Flag defaults for picker-launched verbs (no CLI flags in play). */
-const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, workflowFlag: false, remoteFlag: false, diffFlag: false, valueFlags: new Map() };
+const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, workflowFlag: false, remoteFlag: false, diffFlag: false, tsFlag: false, valueFlags: new Map() };
 
 /**
  * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
@@ -275,8 +271,8 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
 
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
 async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
-  const { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, valueFlags } = flags;
-  const offline = command === "check" || command === "rename" || (command === "list" && !remoteFlag)
+  const { force, noTypecheck, workflowFlag, remoteFlag, diffFlag, tsFlag, valueFlags } = flags;
+  const offline = command === "check" || command === "rename" || command === "add" || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"));
   const config = loadConfig(process.cwd(), { requireCredentials: !offline });
   const api = new N8nApi(config);
@@ -308,7 +304,9 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   if (REF_VERBS.has(command)) {
     refs = [];
     for (const r of rest) refs.push(await resolveRef(r));
-  } else if (command === "rename" && rest.length > 0) {
+  } else if ((command === "rename" || command === "add" || command === "duplicate") && rest.length > 0) {
+    // ref-plus-literals verbs: only the first argument is a workflow ref;
+    // the rest are names (node names, a new workflow name) — not resolved.
     refs = [await resolveRef(rest[0]), ...rest.slice(1)];
   }
   const ids = refs.length > 0 ? refs : config.workflows;
@@ -486,6 +484,20 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         if (names.length !== 2) throw new Error('rename needs the old and new node name: n8n-decanter rename <id> "<old node>" "<new node>"');
         renameNode(config.root, id, names[0], names[1], log);
       }
+      break;
+    }
+    case "add": {
+      const [id, ...names] = refs;
+      if (!id) throw new Error('add needs a workflow ref and a node name: n8n-decanter <ref> add "<Node name>" [--ts]');
+      if (names.length !== 1) throw new Error('add needs exactly one node name: n8n-decanter <ref> add "<Node name>" [--ts]');
+      addCodeNode(config.root, id, names[0], { ts: tsFlag }, log);
+      break;
+    }
+    case "duplicate": {
+      const [id, ...names] = refs;
+      if (!id) throw new Error('duplicate needs a workflow ref: n8n-decanter <ref> duplicate ["<new name>"]');
+      if (names.length > 1) throw new Error('duplicate takes at most one new name: n8n-decanter <ref> duplicate ["<new name>"]');
+      await duplicateWorkflow(api, config, id, names[0], log);
       break;
     }
     case "watch": {

@@ -105,7 +105,7 @@ PostToolUse hook that runs `check` after node edits. Verification routes through
 the CLI, so `n8n-decanter` must be on the sync dir's PATH: install it globally
 (`npm i -g n8n-decanter`), add it to the sync dir's `devDependencies`, or
 `npm link` a git checkout (build it first — Node won't type-strip `.mts`
-under `node_modules`). The verbs `check`, `run`, and `uuid` are fully
+under `node_modules`). The verbs `check`, `run`, `rename`, and `add` are fully
 offline (no credentials, no network).
 
 ## Commands
@@ -125,11 +125,13 @@ n8n-decanter [ref...] status [--diff]   # drift report (--diff: line diffs);
 n8n-decanter [ref...] check         # offline layout-compliance + typecheck
 n8n-decanter <ref> rename "<old node>" "<new node>"   # rename a node everywhere
 n8n-decanter <ref> rename --workflow "<new name>"     # rename the workflow
+n8n-decanter <ref> add "<Node name>" [--ts]           # scaffold a Code node (offline)
 n8n-decanter [ref] watch            # push a workflow's nodes on save
                                     #   (+ browser live-reload, opt-in)
 n8n-decanter [ref...] publish       # take the draft(s) live
 n8n-decanter [ref...] unpublish     #   (unpublish returns to draft-only)
 n8n-decanter create "<name>"        # create a blank workflow, then pull it
+n8n-decanter <ref> duplicate ["<new name>"]   # clone a workflow, then pull it
 n8n-decanter <ref> delete [--force]   # delete a workflow from the server
                                     #   (y/N confirm; --force skips it; the
                                     #   local folder is left untouched)
@@ -143,7 +145,6 @@ n8n-decanter list [--remote]        # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones)
 n8n-decanter completion zsh|bash    # print a shell completion script
 n8n-decanter <node-file> run [fixture.json] [--allow-env]   # run a node offline, print items
-n8n-decanter uuid [count]           # lowercase v4 UUID(s) for new node ids
 ```
 
 A workflow `<ref>` is its **id, its workflow/folder name, or a unique name

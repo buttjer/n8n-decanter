@@ -86,7 +86,7 @@ belong in one plan.
    create → edit → push → publish is a complete CLI loop. This does *not*
    invert PLAN.md's "born in n8n" rule: the server still assigns the id and
    owns the birth; the CLI just triggers it. **Boundary to
-   [Plan 21](OPEN-21-repo-authored-workflows.md):** `create` starts from
+   [Plan 21](DONE-21-repo-authored-workflows.md):** `create` starts from
    nothing; Plan 21's `duplicate` starts from an existing (already-pulled)
    workflow and clones it — both preserve pull-first, and both call this same
    `createWorkflow` method (this plan introduces it; `duplicate` reuses it —
@@ -167,7 +167,7 @@ belong in one plan.
   create body (task 3), and `DELETE`'s behavior on a published workflow
   (task 4) must be confirmed via the Plan 15 smoke rig first — mirrors how
   the folder-placement question was resolved.
-- Pairs naturally with [Plan 21](OPEN-21-repo-authored-workflows.md)'s
+- Pairs naturally with [Plan 21](DONE-21-repo-authored-workflows.md)'s
   **`add`** (scaffold a node) and **`duplicate`** (clone an existing workflow)
   verbs: together they'd make the whole author→create→publish loop CLI-native.
   `create` (from nothing) and `duplicate` (from an existing workflow) share the

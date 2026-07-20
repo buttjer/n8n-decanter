@@ -35,9 +35,9 @@ Violating these corrupts sync state, which is why they're machine-enforced:
 
 | Commands | Agent policy |
 | --- | --- |
-| `check`, `run`, `uuid`, `rename` | Offline and safe — run freely. |
+| `check`, `run`, `rename`, `add` | Offline and safe — run freely. |
 | `status` | Reads the remote, no writes — safe, but it does contact the instance. |
-| `pull`, `push`, `watch`, `create`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks (`publish` takes the draft live). |
+| `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks (`publish` takes the draft live). |
 | `delete` | **Destructive** — removes a workflow from the server (hard delete, even if published). Never without an explicit instruction to delete *that* workflow. |
 | `push --force` | Never without explicit instruction — it overrides the drift guard protecting UI edits. (On `delete`, `--force` instead skips the confirmation — same rule.) |
 

@@ -1,7 +1,7 @@
 ---
 title: create
 description: Create a blank workflow on the server, then pull it into the layout.
-order: 9
+order: 10
 ---
 
 ```sh

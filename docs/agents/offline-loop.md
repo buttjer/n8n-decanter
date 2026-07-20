@@ -1,10 +1,10 @@
 ---
 title: The offline feedback loop
-description: check, run, and uuid give agents a credential-free verify loop.
+description: check, run, and add give agents a credential-free verify loop.
 order: 2
 ---
 
-Three verbs are fully offline — no credentials, no network, no live n8n —
+Several verbs are fully offline — no credentials, no network, no live n8n —
 which makes them safe for agents to run without supervision:
 
 - **[`check`](/docs/cli/check/)** — the layout-compliance guard plus the
@@ -15,8 +15,9 @@ which makes them safe for agents to run without supervision:
   context and prints the items it returns. With a fixture, `$input`,
   `$('Node Name')`, env, and static data are all controllable — real
   execution feedback without touching the instance.
-- **[`uuid`](/docs/cli/uuid/)** — node ids in n8n's format, for adding node
-  objects to `workflow.json`.
+- **[`add`](/docs/cli/add/)** — scaffolds a Code node (node object, `//@file:`
+  placeholder, `code/` source, state entry) in one guard-checked step, so
+  there is no hand-editing of `workflow.json` to get a node id right.
 
 A typical agent iteration:
 
@@ -27,10 +28,12 @@ n8n-decanter check
 # both green -> report "ready to push" to the user
 ```
 
-Adding a Code node from scratch: generate an id with `uuid`, add the node
-object with a `//@file:` placeholder, create the source file in `code/`,
-verify with `run` + `check` — the
-[sync layout](/docs/concepts/sync-layout/) page shows the shapes.
+Adding a Code node from scratch: run
+[`add "<Node name>" [--ts]`](/docs/cli/add/) — it mints the node id, writes the
+`code/` source, adds the placeholder, and re-checks the folder in one step (the
+node lands disconnected; wire it in the editor). Then edit the source and verify
+with `run` + `check`. The [sync layout](/docs/concepts/sync-layout/) page shows
+the shapes.
 
 Because verification routes through the CLI, `n8n-decanter` must be on the
 sync dir's PATH — see [Installation](/docs/getting-started/installation/).

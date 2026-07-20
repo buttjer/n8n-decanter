@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-20
+
+### Added
+
+- **`add` verb** — `n8n-decanter <ref> add "<Node name>" [--ts]` scaffolds a
+  Code node into a pulled workflow in one offline step: it mints the node id,
+  writes the `code/` source file (kebab-case, with the `-<id8>` collision
+  suffix), adds the node object plus its `//@file:` placeholder, and registers
+  it in `.decanter.json`, then re-checks the folder. The node lands
+  **disconnected** (wire it in the editor); `--ts` scaffolds a `.ts` source.
+  The next `push` propagates it.
+- **`duplicate` verb** — `n8n-decanter <ref> duplicate ["<new name>"]` clones an
+  already-pulled workflow into a **new workflow on the server** and pulls the
+  copy. The clone carries the repo's current content (placeholders
+  reconstituted from `code/`, `.ts` nodes compiled), is born **unpublished**,
+  and defaults its name to `"<name> (copy)"`. The source folder and the source
+  remote workflow are left untouched.
+
+### Removed
+
+- **Breaking: the `uuid` verb is gone.** Its only job was minting a node id for
+  hand-adding a Code node — now `add` does the whole scaffold (id included) in
+  one guard-checked step, so a bare id generator is redundant. Use
+  `n8n-decanter <ref> add "<Node name>"` instead.
+
 ## [0.3.4] - 2026-07-20
 
 ### Added
