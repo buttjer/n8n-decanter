@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P3 (spike may promote the rest; **unblocked** 2026-07-19 — Plan 3 C shipped as the `executions` verb) |
-| **Status** | **In progress** — spike + Task 2 done 2026-07-20 (route B validated; `lib/simulate.mts` loader+transform shipped & engine-validated); tasks 3–6 open |
+| **Status** | **In progress** — spike + tasks 2, 3, 5 done and task 4 (Docker isolation) done 2026-07-20: the `simulate` verb ships and replays engine-true against real n8n. Remaining: task 6 (`--fill-gaps`, severable) and the npx engine backend (task 4's dependency-free default — Docker backend shipped first as the validated path). |
 | **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (LLM-guessed fixtures fill the gaps), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
 | **Model** | **Opus** — the highest-reasoning plan in the backlog: the route-B transform, the `n8n execute` subprocess orchestration, and above all the *safety-critical* default-deny node classification (a misclassified node runs for real) reward the strongest model. Once the spike (task 1) and transform are designed, the CLI/test wiring can drop to Sonnet. |
 
@@ -240,7 +240,16 @@ slower per run; output scraped from `n8n execute`'s result JSON.
      if any surviving executable node is outside the pure allowlist, and strip
      `credentials` from every node — the structural half of the dry-run
      guarantee.
-3. **`simulate` verb.** `n8n-decanter simulate <ref> --execution <execId>` in
+3. **`simulate` verb.** ✅ **Done 2026-07-20** — `n8n-decanter <ref> simulate
+   --execution <id>` ships (registered in `VERBS` + `REF_VERBS`), with
+   `lib/engine.mts` (Docker backend, route B), per-node diff, `--json`,
+   `--pin`, `--network-none`, and the `n8nVersion` config field
+   (`--n8n-version` override). Exits 1 on divergence. Diff unit-tested;
+   full path verified live by `test:sim` (task 5) against n8n 2.30.7,
+   including a deliberately-broken Code node failing and `--network-none`
+   passing. **Deferred:** the npx backend (task 4's dependency-free default;
+   Docker shipped first as validated). Original spec:
+   `n8n-decanter simulate <ref> --execution <execId>` in
    `n8n-decanter.mts` (register in `VERBS` + `REF_VERBS`; the picker's verb
    menu stays unchanged — simulate needs an execution argument the menu can't
    supply): transform to a temp file, run the engine per the chosen route,

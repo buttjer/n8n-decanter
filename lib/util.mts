@@ -155,6 +155,11 @@ function orderDeep(value: unknown, preferred: string[] = []): unknown {
   return value;
 }
 
+/** Canonical JSON for value comparison: recursively key-sorted, compact. */
+export function canonicalJson(value: unknown): string {
+  return JSON.stringify(orderDeep(value));
+}
+
 /** Deterministic pretty JSON for a workflow: stable key order, clean diffs. */
 export function stableWorkflowJson(wf: Workflow): string {
   const ordered: Record<string, unknown> = {};

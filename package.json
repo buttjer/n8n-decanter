@@ -1,6 +1,6 @@
 {
   "name": "n8n-decanter",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Work on n8n like a codebase — built for AI coding agents",
   "keywords": [
     "n8n",
@@ -35,7 +35,8 @@
     "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.cli.json && node scripts/typecheck.mts",
     "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/proxy.mts && node test/interactive.mts",
-    "test:smoke": "node test/smoke-n8n.mts"
+    "test:smoke": "node test/smoke-n8n.mts",
+    "test:sim": "node test/sim.mts"
   },
   "engines": {
     "node": ">=22.18"

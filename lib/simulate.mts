@@ -11,13 +11,14 @@
 // trigger node as entry point. So pinning is done by *node replacement* — the
 // trigger and each network node become a name-preserving Code node that
 // `return`s the captured items — plus a synthetic manual-trigger entry point.
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { runEngine } from "./engine.mts";
 import { EXECUTIONS_DIR, warnStaleFixtures } from "./executions.mts";
 import { buildNodeCode } from "./push.mts";
 import { readState } from "./state.mts";
 import type { Execution, Log, Workflow, WorkflowNode } from "./types.mts";
-import { forEachConnectionTarget, isJsCodeNode, placeholderFile } from "./util.mts";
+import { canonicalJson, forEachConnectionTarget, isJsCodeNode, kebabCase, placeholderFile } from "./util.mts";
 
 export const FIXTURES_DIR = "fixtures";
 /** Name of the synthetic Manual Trigger the transform prepends as the entry point. */
@@ -303,4 +304,110 @@ export function assertDryRunSafe(wf: Workflow): void {
       throw new Error(`simulation refused: node "${node.name}" (${node.type}) is not on the pure allowlist and was not pinned`);
     }
   }
+}
+
+/** One pure node's replayed output vs the capture — the regression signal. */
+export interface NodeDiff {
+  node: string;
+  equal: boolean;
+  /** Captured item `.json` payloads (what the diff expects). */
+  expected: unknown[];
+  /** Engine-replayed item `.json` payloads. */
+  actual: unknown[];
+}
+
+/** Full result of a `simulate` run — the report the verb prints / emits as JSON. */
+export interface SimulationReport {
+  execId: string;
+  version: string;
+  networkNone: boolean;
+  /** Trigger + network nodes pinned to captured output. */
+  pinned: string[];
+  /** Pure nodes that executed for real. */
+  pure: string[];
+  /** Per-pure-node diffs of replay vs capture. */
+  diffs: NodeDiff[];
+  /** Names of nodes whose replayed output diverged from the capture. */
+  divergent: string[];
+  /** True when the engine reported the run itself as successful. */
+  engineOk: boolean;
+  engineError?: string;
+  /** Overall pass: engine ran clean AND nothing diverged. */
+  ok: boolean;
+}
+
+/**
+ * Diff policy (v1): exact compare of item `json` payloads, key-order-insensitive
+ * (stable stringify, like the structure hash); `pairedItem`/metadata excluded.
+ * Nondeterministic node output ($now, Math.random, new Date()) legitimately
+ * diverges — a documented failure mode, not masked.
+ */
+export function diffItems(expected: RunItem[], actual: RunItem[]): boolean {
+  const json = (items: RunItem[]) => items.map((i) => i.json);
+  return canonicalJson(json(expected)) === canonicalJson(json(actual));
+}
+
+/**
+ * Build the simulation, run it through the real engine, and diff each pure
+ * node's replayed output against the capture. The engine run needs Docker (the
+ * caller should have checked `dockerAvailable`); everything else is offline.
+ */
+export async function runSimulation(
+  dir: string,
+  execId: string,
+  opts: { version: string; networkNone?: boolean },
+  log: Log,
+): Promise<SimulationReport> {
+  const sim = await buildSimulation(dir, execId, log);
+  const run = await runEngine(sim.workflow, { version: opts.version, networkNone: opts.networkNone }, log);
+  const diffs: NodeDiff[] = [];
+  for (const node of sim.pure) {
+    const expected = sim.captured.get(node);
+    if (!expected) continue; // node didn't run in the capture — nothing to compare
+    const actual = run.runData.get(node) ?? [];
+    diffs.push({ node, equal: diffItems(expected, actual), expected: expected.map((i) => i.json), actual: actual.map((i) => i.json) });
+  }
+  const divergent = diffs.filter((d) => !d.equal).map((d) => d.node);
+  return {
+    execId, version: opts.version, networkNone: opts.networkNone === true,
+    pinned: sim.pinned, pure: sim.pure, diffs, divergent,
+    engineOk: run.ok, engineError: run.error, ok: run.ok && divergent.length === 0,
+  };
+}
+
+/**
+ * `simulate --pin`: copy the capture's network-node outputs into committed,
+ * provenance-stamped `fixtures/<node>.json` files, so a gitignored capture
+ * becomes a reproducible, reviewable fixture. Warns about PII — execution data
+ * can hold credentials/personal data (why `executions/` is gitignored).
+ */
+export function pinFixtures(dir: string, execId: string, log: Log): void {
+  const wfFile = path.join(dir, "workflow.json");
+  if (!existsSync(wfFile)) throw new Error(`no workflow.json in ${dir} — pull the workflow first`);
+  const wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
+  const { exec, runData } = readCapture(dir, execId);
+  const fixturesDir = path.join(dir, FIXTURES_DIR);
+  mkdirSync(fixturesDir, { recursive: true });
+  const date = new Date().toISOString().slice(0, 10);
+  let pinned = 0;
+  for (const node of wf.nodes) {
+    if (isPureNode(node)) continue; // only network nodes get pinned
+    const items = firstRunItems(runData[node.name]);
+    if (!items) continue;
+    const fixture: Fixture = {
+      source: "capture", node: node.name, execId,
+      workflowVersionId: typeof exec.workflowVersionId === "string" ? exec.workflowVersionId : undefined,
+      date, items,
+    };
+    const file = path.join(fixturesDir, `${kebabCase(node.name)}.json`);
+    writeFileSync(file, JSON.stringify(fixture, null, 2) + "\n");
+    log.info(`pinned ${node.name} -> ${path.relative(process.cwd(), file)}`);
+    pinned++;
+  }
+  if (pinned === 0) {
+    log.warn(`no network nodes with captured output in execution ${execId} — nothing to pin`);
+    return;
+  }
+  log.warn("review pinned fixtures before committing — execution data can contain credentials/PII");
+  log.ok(`pinned ${pinned} node${pinned === 1 ? "" : "s"} from execution ${execId} into ${FIXTURES_DIR}/`);
 }
