@@ -14,6 +14,10 @@ n8n-decanter [ref...] check [--no-typecheck]
 n8n-decanter <ref> rename "<old node>" "<new node>"
 n8n-decanter <ref> rename --workflow "<new name>"
 n8n-decanter [ref] watch [--force]
+n8n-decanter create "<name>"                          # blank workflow, then pull
+n8n-decanter [ref...] publish                         # take the draft(s) live
+n8n-decanter [ref...] unpublish                       # back to draft-only
+n8n-decanter <ref> delete [--force]                   # delete from the server
 n8n-decanter [ref...] executions [--status=…] [--limit=N]
 n8n-decanter [ref...] executions clean
 n8n-decanter list [--remote]
@@ -53,7 +57,7 @@ may appear in any position too.
 | --- | --- |
 | `check`, `run`, `uuid`, `rename`, `list`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception) |
 | `status`, `executions` | Read the remote, never write |
-| `pull`, `push`, `watch` | Read/write the live instance |
+| `pull`, `push`, `watch`, `create`, `publish`, `unpublish`, `delete` | Read/write the live instance |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward
 from the current directory) or the environment (`N8N_HOST`, `N8N_API_KEY`).

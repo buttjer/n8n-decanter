@@ -74,8 +74,10 @@ n8n-decanter/
   `SMOKE_N8N_TAG`, instead of asserting it from one pinned point release.
   Passing set recorded in `test/smoke-n8n.mts`'s header comment. A
   consequence recorded 2026-07-19: the 2.x public API *does* offer `POST
-  /api/v1/workflows`, so repo-born workflows are possible (backlog: "Create
-  workflows from the repo").
+  /api/v1/workflows`, so workflow birth can be **triggered from the CLI** — the
+  `create` verb (plans/20) posts a blank draft and pulls it. The server still
+  assigns the id and owns the birth (born-in-n8n holds; the CLI just triggers
+  it); there is no id-less repo folder that becomes a workflow on push.
 
 ## Synced content layout
 
@@ -229,9 +231,12 @@ For each configured workflow:
 4. Write `workflow.json` with each `jsCode` replaced by `//@file:<filename>`,
    keeping the file to the workflow itself: the n8n 2.x derived fields
    `activeVersion` (a server-side copy of the published version, code
-   included) and `shared` (sharing metadata) are left out — code exists
-   exactly once (in `code/`), and diffs show your changes, not publish
-   churn. Neither field is pushable (PUT whitelist), so nothing is lost.
+   included), `shared` (sharing metadata), and `activeVersionId` (the
+   published-version pointer, which churns on every publish and has no local
+   reader — version-aware `status` reads it off the live GET) are left out —
+   code exists exactly once (in `code/`), and diffs show your changes, not
+   publish churn. None is pushable (PUT whitelist), so nothing is lost. The
+   draft `versionId` is kept (the executions stale-fixture warning reads it).
 5. Update `.decanter.json` hashes.
 
 ## Push flow (`n8n-decanter push [id…]`)
@@ -352,7 +357,11 @@ Two decisions from the 2026-07-18 review (plans/3):
 
 Caveat (recorded in plans/3, smoke-verified): executions run the *published*
 workflow version (per-execution `workflowVersionId`, n8n 2.x) — possibly
-older than the draft/repo state. Convenience data, not ground truth.
+older than the draft/repo state. Convenience data, not ground truth. **Enforced
+(plans/20):** after writing execution files, the verb compares each
+`workflowVersionId` against the local draft `versionId` (from `workflow.json`)
+and warns when they differ — the captured data may not match the code you're
+editing. A warning, not an error; the data is still useful.
 `run --from-execution` (auto-building a fixture from a captured execution)
 was deliberately deferred to the backlog — agents read the JSON directly.
 
@@ -702,6 +711,33 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
     live now` / `— unpublished: draft only`, watch warns at start on a
     published workflow, `status` shows the state. Servers without an
     `active` field (mocks, exotic versions) get unchanged output.
+  - **Lifecycle verbs (plans/20, 2026-07-20).** The CLI can now *act* on the
+    publish bit, not only observe it:
+    - `publish` / `unpublish` (`lib/lifecycle.mts`) call `POST
+      /api/v1/workflows/:id/activate` / `.../deactivate` (both return the full
+      workflow, both idempotent server-side; separate scopes
+      `workflow:activate` / `workflow:deactivate`). Already-in-that-state is a
+      no-op with a note, not an error.
+    - `create "<name>"` calls `POST /api/v1/workflows` with a minimal body
+      (`{ name, nodes: [], connections: {}, settings: {} }` — the accepted
+      minimum) then pulls the returned id. Born **unpublished**
+      (`active:false`, `activeVersionId:null`). Shares `api.createWorkflow`
+      with plans/21's `duplicate`. This does **not** invert the born-in-n8n
+      rule — the server assigns the id and owns the birth; the CLI triggers it.
+    - `delete <ref>` calls `DELETE /api/v1/workflows/:id`, which **hard-deletes
+      even a published workflow** (verified: no refusal, no archive — GET after
+      → 404). So the CLI's `y/N` confirmation (`--force` to skip; required
+      non-interactively) is the *only* guard. The local folder is never
+      touched; a stale config `workflows` entry is flagged. Ref-required, one
+      per call — never cascades over config.
+  - **Version-aware `status` (plans/20).** The 2.x GET carries `versionId`
+    (draft) and `activeVersionId` (published; `null` when unpublished, `==
+    versionId` when in sync). `publishedVersionLagsDraft` (`lib/util.mts`) flags
+    a published workflow whose live version is older than the draft (a UI edit
+    not yet published) → `status` says so instead of the plain `published`
+    note. Both fields are stripped from `workflow.json` on pull
+    (remote/derived; `activeVersionId` churns on publish, no local reader — the
+    draft `versionId` is kept, the executions warning below reads it).
   - Upstream: PR n8n-io/n8n#31954 (`publishBehavior: "skip"` on
     `WorkflowService.update`) was closed unmerged and never exposed the
     choice to API clients anyway; draft-only pushes need a new upstream
@@ -731,3 +767,16 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
   n8n ≥ 2.30.7 (the earlier "cannot" note was a stale 1.x-era claim) —
   and the round-trip leaves it intact, since the PUT whitelist never sends
   it and the server keeps its stored copy.
+- ~~The exact activate/deactivate endpoint shapes, whether the 2.x GET carries
+  `versionId`/`activeVersionId`, the minimal `POST /workflows` create body, and
+  what `DELETE` does to a *published* workflow (plans/20 live gates).~~
+  **Answered against n8n 2.30.7 (2026-07-20, plans/15 smoke rig + a throwaway
+  probe):** `POST /workflows/:id/activate` and `.../deactivate` both return the
+  full workflow and are idempotent, on **separate** scopes
+  (`workflow:activate` / `workflow:deactivate`); the GET carries both
+  `versionId` and `activeVersionId` (the latter `null` when unpublished); the
+  minimal accepted create body is `{ name, nodes, connections, settings }`
+  (name-only is rejected) and returns an **unpublished** draft; `DELETE`
+  **hard-deletes even a published workflow** (no refusal, no archive — GET
+  after → 404). All four are now asserted by the smoke suite. Re-check on
+  version bumps.

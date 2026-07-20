@@ -1,10 +1,37 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { findWorkflowDir, listWorkflowDirs } from "./state.mts";
-import type { Execution, Log } from "./types.mts";
+import type { Execution, Log, Workflow } from "./types.mts";
 
 export const EXECUTIONS_DIR = "executions";
+
+/**
+ * Warn when fetched executions ran a *published* version that differs from the
+ * local draft (`workflow.json`'s `versionId`) — the captured data may not match
+ * the code you're now editing (PLAN.md's "convenience data, not ground truth"
+ * caveat, enforced). A warning, not an error: the data is still useful. Deduped
+ * by version so a page of same-version executions warns once; silent when the
+ * draft version or the execution version is unavailable (defensive).
+ */
+function warnStaleFixtures(dir: string, executions: Execution[], log: Log): void {
+  const wfFile = path.join(dir, "workflow.json");
+  if (!existsSync(wfFile)) return;
+  let draft: unknown;
+  try {
+    draft = (JSON.parse(readFileSync(wfFile, "utf8")) as Workflow).versionId;
+  } catch {
+    return; // unparsable workflow.json — nothing to compare against
+  }
+  if (typeof draft !== "string") return;
+  const stale = new Set<string>();
+  for (const exec of executions) {
+    if (typeof exec.workflowVersionId === "string" && exec.workflowVersionId !== draft) stale.add(exec.workflowVersionId);
+  }
+  for (const ran of stale) {
+    log.warn(`captured executions ran published version ${ran}; your draft is ${draft} — the data may not match the code you're editing`);
+  }
+}
 
 /**
  * Materialize execution JSON under `<workflow>/executions/`. The dir is made
@@ -40,6 +67,7 @@ export async function fetchExecutions(
     return;
   }
   writeExecutionFiles(dir, executions, log);
+  warnStaleFixtures(dir, executions, log);
   log.ok(`${executions.length} execution${executions.length === 1 ? "" : "s"} -> ${path.relative(process.cwd(), path.join(dir, EXECUTIONS_DIR))} (gitignored — temp data, "executions clean" removes it)`);
 }
 
@@ -54,6 +82,7 @@ export async function fetchExecutionById(api: N8nApi, root: string, executionId:
   const dir = findWorkflowDir(root, workflowId, log);
   if (!dir) throw new Error(`execution ${executionId} belongs to workflow ${workflowId}, which is not pulled under ${root} — pull it first`);
   writeExecutionFiles(dir, [exec], log);
+  warnStaleFixtures(dir, [exec], log);
   log.ok(`execution ${executionId} -> ${path.relative(process.cwd(), path.join(dir, EXECUTIONS_DIR))}`);
 }
 

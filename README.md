@@ -75,6 +75,8 @@ limited to the permissions the CLI actually uses rather than a full-access one,
 so a leaked `.env` has a small blast radius:
 
 - `workflow:read`, `workflow:list`, `workflow:update` — `pull` / `status` / `push`
+- `workflow:create`, `workflow:delete` — `create` / `delete`
+- `workflow:activate`, `workflow:deactivate` — `publish` / `unpublish`
 - `execution:read`, `execution:list` — the `executions` verb
 
 A full-access key also works if your n8n version predates scoped keys.
@@ -113,6 +115,12 @@ n8n-decanter <ref> rename "<old node>" "<new node>"   # rename a node everywhere
 n8n-decanter <ref> rename --workflow "<new name>"     # rename the workflow
 n8n-decanter [ref] watch            # push a workflow's nodes on save
                                     #   (+ browser live-reload, opt-in)
+n8n-decanter [ref...] publish       # take the draft(s) live
+n8n-decanter [ref...] unpublish     #   (unpublish returns to draft-only)
+n8n-decanter create "<name>"        # create a blank workflow, then pull it
+n8n-decanter <ref> delete [--force]   # delete a workflow from the server
+                                    #   (y/N confirm; --force skips it; the
+                                    #   local folder is left untouched)
 n8n-decanter [ref...] executions [--status=success|error|waiting] [--limit=N]
                                     # fetch recent execution data (run JSON)
                                     #   into workflows/<Name>/executions/
@@ -212,9 +220,13 @@ already run, so Claude Code on a Claude subscription needs no extra API tokens.
   update through the API** (pushing to an *unpublished* workflow only updates
   its draft). This is an n8n API limitation, not decanter's; decanter surfaces
   the outcome — push prints `published: code is live now` vs `unpublished:
-  draft only`, and `status`/`watch` show the state. For a staged rollout,
-  unpublish → push → publish (triggers are down in between), or push to a
-  staging-copy workflow.
+  draft only`, and `status`/`watch` show the state. The **`publish`** and
+  **`unpublish`** verbs take a draft live / return it to draft-only from the
+  CLI, so a staged rollout is `unpublish` → `push` → `publish` (triggers are
+  down in between) without leaving the terminal, or push to a staging-copy
+  workflow. On a published workflow whose draft has moved ahead in the UI,
+  `status` says the live version is older than the draft (`push` or `publish`
+  to catch it up).
 - **n8n's optimistic locking isn't reachable through the API.** That same `PUT`
   also forces `forceSave: true` and exposes no version checksum, so the server
   won't reject a stale write. Decanter's **drift guard** is the only thing

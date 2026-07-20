@@ -36,9 +36,13 @@ runtime. It is **wrong** about how code is stored here. The deviations:
    pushes. Never edit `.remote.js` itself; never push while one exists.
 6. **Renames have no UI magic here.** The n8n editor auto-updates references on
    rename; raw JSON editing does not. See the rename checklist below.
-7. **New workflows are born in n8n, not here.** The tool has no create. To add a
-   workflow: create it (even empty) in the n8n UI, add its id to
-   `decanter.config.json`, then the user runs `pull`.
+7. **New workflows are born on the server, not from a repo folder.** There is no
+   id-less folder that becomes a workflow on push. Use `n8n-decanter create
+   "<name>"` — it posts a blank draft to n8n and pulls it back (the server
+   assigns the id) — or create it in the n8n UI and `pull`. Then add its id to
+   `decanter.config.json`. A created workflow is **unpublished**; `publish`
+   takes it live, `unpublish` returns it to draft-only, and `<ref> delete`
+   removes one from the server (the local folder is kept).
 
 > **Enforcement.** Rules 1, 3, 4, 5 are *hard invariants* — violating them corrupts
 > sync state. They are enforced by the CLI at `push` time regardless of who made the
@@ -295,8 +299,17 @@ Rules:
   (fetches execution data, read-only) — safe to run, but they do contact the
   instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
-  pull` / `push` / `watch` read/write the real instance and `push` deploys.
-  Otherwise finish edits, verify with `check` + `run`, and report that the
-  change is ready to push.
+  pull` / `push` / `watch` read/write the real instance and `push` deploys;
+  `create "<name>"` adds a new workflow, and `publish` / `unpublish` change what
+  is live (`publish` takes the draft live immediately, `unpublish` returns it to
+  draft-only). Otherwise finish edits, verify with `check` + `run`, and report
+  that the change is ready to push (or publish).
+- **Destructive — never without an explicit instruction:** `n8n-decanter <ref>
+  delete` removes a workflow from the server (hard delete, even if published;
+  the local folder is kept as the git record). Run it only when the user has
+  clearly asked to delete that specific workflow; it prompts for `y/N` and needs
+  `--force` to run non-interactively.
 - Never use `--force` on push without the user's explicit instruction — it
-  overrides the drift guard that protects edits made in the n8n UI.
+  overrides the drift guard that protects edits made in the n8n UI. (On
+  `delete`, `--force` instead means "skip the confirmation" — same rule: only
+  on an explicit instruction.)

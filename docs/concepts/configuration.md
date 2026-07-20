@@ -43,6 +43,8 @@ full-access one, so a leaked `.env` has a smaller blast radius. The scopes the
 CLI actually uses:
 
 - `workflow:read`, `workflow:list`, `workflow:update` — pull, push, status, watch
+- `workflow:create`, `workflow:delete` — [create](/docs/cli/create/), [delete](/docs/cli/delete/)
+- `workflow:activate`, `workflow:deactivate` — [publish / unpublish](/docs/cli/publish/)
 - `execution:read`, `execution:list` — the [executions](/docs/cli/executions/) verb
 
 `check`, `run`, `uuid`, `rename`, and plain `list` need no credentials at all.

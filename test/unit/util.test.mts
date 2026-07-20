@@ -8,6 +8,7 @@ import {
   kebabCase,
   placeholderFile,
   publicationState,
+  publishedVersionLagsDraft,
   renameNodeRefs,
   sanitizeFilename,
   sanitizeForPut,
@@ -229,6 +230,25 @@ describe("publicationState", () => {
     assert.equal(publicationState(wf), undefined);
     assert.equal(publicationState({ ...baseWorkflow(), active: "yes" as unknown as boolean }), undefined);
     assert.equal(publicationState(undefined), undefined);
+  });
+});
+
+describe("publishedVersionLagsDraft", () => {
+  const published = (versionId: string, activeVersionId: string | null): Workflow =>
+    ({ ...baseWorkflow(), active: true, versionId, activeVersionId });
+  it("is true only when a published workflow's live version differs from the draft", () => {
+    assert.equal(publishedVersionLagsDraft(published("v2", "v1")), true);
+    assert.equal(publishedVersionLagsDraft(published("v1", "v1")), false);
+  });
+  it("is undefined on an unpublished workflow (the check is publish-only)", () => {
+    assert.equal(publishedVersionLagsDraft({ ...baseWorkflow(), active: false, versionId: "v2", activeVersionId: "v1" }), undefined);
+  });
+  it("is undefined when either version field is missing (defensive, like publicationState)", () => {
+    assert.equal(publishedVersionLagsDraft(published("v1", null)), undefined);
+    const noDraft = published("v1", "v1");
+    delete noDraft.versionId;
+    assert.equal(publishedVersionLagsDraft(noDraft), undefined);
+    assert.equal(publishedVersionLagsDraft(undefined), undefined);
   });
 });
 

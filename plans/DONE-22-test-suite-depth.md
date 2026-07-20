@@ -163,7 +163,7 @@ don't drift to the wrong layer:
 - **Ordering:** tasks 1–5 are offline and independent of task 6 (Docker), which
   can run in parallel. Task 2 (picker) is the single highest-value item — the
   largest surface with zero CI coverage today.
-- **Ties in:** when [Plan 20](OPEN-20-cli-publish-lifecycle.md)'s
+- **Ties in:** when [Plan 20](DONE-20-cli-publish-lifecycle.md)'s
   publish/unpublish verbs land, add their activate/deactivate assertions to the
   smoke suite; [Plan 7](OPEN-7-engine-true-simulation-suite.md)'s `simulate`
   keeps its own `test:sim` — don't fold it in here.

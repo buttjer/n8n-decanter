@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-20
+
+### Added
+
+- **`publish` / `unpublish` verbs** close the n8n 2.x workflow lifecycle from
+  the CLI: `n8n-decanter <ref> publish` takes a draft live, `unpublish` returns
+  it to draft-only. Already-in-that-state is a no-op with a note, not an error.
+  A staged rollout is now `unpublish` → `push` → `publish` without leaving the
+  terminal.
+- **`create` verb** — `n8n-decanter create "<name>"` creates a blank workflow
+  on the server (born unpublished) and immediately pulls it, so the folder and
+  the new id are ready to edit → push → `publish`.
+- **`delete` verb** — `n8n-decanter <ref> delete` removes a workflow from the
+  server. It asks for a `y/N` confirmation naming the workflow; non-interactive
+  runs require `--force`. The **local folder is left untouched** as the
+  git-tracked record, and a stale `decanter.config.json` `workflows` entry is
+  flagged. Requires a ref (never deletes config workflows by default), one at a
+  time.
+
+### Changed
+
+- **`status` is version-aware.** On a published workflow whose draft has moved
+  ahead of the live version (a UI edit not yet published), `status` now says
+  the live version is older than the draft (`push` or `publish` to catch it
+  up) instead of the plain `published` note.
+- **`executions` warns on stale fixtures.** When a fetched execution ran a
+  published version different from your local draft, the fetch now warns that
+  the captured data may not match the code you're editing (still written — a
+  warning, not an error).
+- The recommended **scoped API key** now includes `workflow:create`,
+  `workflow:delete`, `workflow:activate`, and `workflow:deactivate` so the new
+  lifecycle verbs work (`README`, `.env.example`).
+
 ## [0.3.0] - 2026-07-20
 
 ### Security

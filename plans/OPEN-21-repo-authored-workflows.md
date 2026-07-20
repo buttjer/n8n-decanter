@@ -101,7 +101,7 @@ the inverting variant was cut entirely.
   `push --create`, which *would* have inverted the model, was dropped.)
 - **`createWorkflow` ownership.** The `N8nApi.createWorkflow` method and its
   `POST /api/v1/workflows` smoke verification are shared with
-  [Plan 20](OPEN-20-cli-publish-lifecycle.md)'s `create`. One plan introduces
+  [Plan 20](DONE-20-cli-publish-lifecycle.md)'s `create`. One plan introduces
   them; the other reuses. Don't duplicate the method or the gate.
 - **CHANGELOG:** the `add` and `duplicate` verbs are user-facing → `Added`
   under `[Unreleased]` when they land.
@@ -112,7 +112,7 @@ the inverting variant was cut entirely.
   disconnected — a typed verb, not a menu pick). Wiring is Plan 19's surface;
   land the verb first. (Plan 20's picker note covers the publish-toggle,
   `delete`, and `create` sides of the same menu question.)
-- Pairs with [Plan 20](OPEN-20-cli-publish-lifecycle.md): `create` (blank) /
+- Pairs with [Plan 20](DONE-20-cli-publish-lifecycle.md): `create` (blank) /
   `duplicate` (from an existing workflow) / `add` (a node) / `publish` together
   make the whole author→create→publish loop CLI-native.
 - Keep `add` strictly offline (like `rename`): no credentials, `push` does the

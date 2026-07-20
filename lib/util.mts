@@ -200,6 +200,20 @@ export function publicationState(wf: Workflow | undefined): "published" | "unpub
 }
 
 /**
+ * True when a **published** workflow's live version lags its draft — i.e. the
+ * draft was edited (in the n8n UI) without being published, so the live code is
+ * older than what `pull` would bring down. Compares the n8n 2.x GET fields
+ * `versionId` (draft) and `activeVersionId` (published). Undefined when the
+ * workflow is unpublished or the server omits either field (mocks, exotic
+ * versions) — the same defensive stance as `publicationState`.
+ */
+export function publishedVersionLagsDraft(wf: Workflow | undefined): boolean | undefined {
+  if (publicationState(wf) !== "published") return undefined;
+  if (typeof wf?.versionId !== "string" || typeof wf?.activeVersionId !== "string") return undefined;
+  return wf.activeVersionId !== wf.versionId;
+}
+
+/**
  * Hash of the sanitized, code-stripped workflow — detects structural edits
  * (nodes added/moved/reconnected, settings changed) independent of code edits.
  */

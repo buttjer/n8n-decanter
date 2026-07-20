@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P2 |
-| **Status** | Not started |
+| **Status** | Done |
 | **Theme** | Close the n8n 2.x workflow lifecycle from the CLI: `publish` / `unpublish`, `create` / `delete` verbs, a version-aware `status` line, and a stale-fixture warning for `executions` — all hanging off the publish/API semantics already researched and recorded in `PLAN.md`. |
 | **Model** | **Sonnet** — well-scoped, API-shaped work (thin verbs, a couple of threaded response fields, one warning) gated on smoke verification, no novel design; the semantics are already nailed in `PLAN.md`. Give the destructive `delete` path (confirmation gate, irreversibility) a careful review pass — Opus if you want a second set of eyes on that one verb. |
 
