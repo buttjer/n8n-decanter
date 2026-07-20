@@ -1,10 +1,15 @@
 import { createInterface } from "node:readline/promises";
 
+export interface Prompt {
+  question(prompt: string): Promise<string>;
+  close(): void;
+}
+
 /**
  * Prompt helper that also works with piped stdin: plain readline/promises
  * drops lines arriving before question() is called and hangs forever on EOF.
  */
-export function createPrompt(): { question(prompt: string): Promise<string>; close(): void } {
+export function createPrompt(): Prompt {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const buffered: string[] = [];
   const waiters: Array<(line: string) => void> = [];

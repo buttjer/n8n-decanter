@@ -3,7 +3,7 @@ import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { commitWorkflowDir } from "./git.mts";
 import { startProxy, type ProxyHandle } from "./proxy.mts";
-import { createPrompt } from "./prompt.mts";
+import { createPrompt, type Prompt } from "./prompt.mts";
 import { pullWorkflow } from "./pull.mts";
 import { pushSingleNode, pushWorkflow } from "./push.mts";
 import { findWorkflowDir, readState } from "./state.mts";
@@ -65,8 +65,21 @@ export function structureAction(localHash: string, remoteHash: string, baseline:
  * With `browserReload: "proxy"` a transparent dev proxy boots first (Plan 5);
  * each successful push signals the browser tab to refresh (notifyPushed in
  * lib/proxy).
+ *
+ * `promptFactory` (default `createPrompt`) supplies the conflict-resolution
+ * prompt — injectable so tests can drive `[m]`/`[l]`/`[r]`/Enter with canned
+ * answers (Plan 22) without a real TTY. Passing one explicitly also bypasses
+ * the non-interactive (`!process.stdin.isTTY`) skip below, since a test
+ * deliberately supplying answers isn't the "no one is there to answer" case
+ * that skip exists for.
  */
-export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: string, { force = false }: { force?: boolean } = {}, log: Log): Promise<WatchHandle> {
+export async function watchWorkflow(
+  api: N8nApi,
+  config: DecanterConfig,
+  id: string,
+  { force = false, promptFactory }: { force?: boolean; promptFactory?: () => Prompt } = {},
+  log: Log,
+): Promise<WatchHandle> {
   const found = findWorkflowDir(config.root, id, log);
   if (!found) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
   let dir = found;
@@ -173,11 +186,11 @@ export async function watchWorkflow(api: N8nApi, config: DecanterConfig, id: str
   /** Interactive conflict resolution; returns true when the workflow got fully synced. */
   const resolveConflict = async (remote: Workflow): Promise<boolean> => {
     log.error("structural conflict: workflow.json and the remote workflow both changed since last sync");
-    if (!process.stdin.isTTY) {
+    if (!promptFactory && !process.stdin.isTTY) {
       log.error("non-interactive session — skipped the structural push; pull (or push --force) to resolve");
       return false;
     }
-    const rl = createPrompt();
+    const rl = (promptFactory ?? createPrompt)();
     let choice: string;
     try {
       choice = (await rl.question(

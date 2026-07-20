@@ -445,6 +445,182 @@ await step("watch: debounce coalesces, queued save re-pushes, close() stops", as
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, original);
 });
 
+// ---------- watch: structural conflict prompt (Plan 22 task 3) ----------
+// watchWorkflow's injectable promptFactory (default createPrompt) lets these
+// tests supply canned [m]/[l]/[r]/Enter answers without a real TTY — and,
+// since a factory is explicitly given, bypasses the `!process.stdin.isTTY`
+// skip that guards the *no one is there to answer* case.
+const cannedPrompt = (answer: string) => () => ({ question: async () => answer, close: () => {} });
+
+await step("watch: structural conflict — [l]ocal force-pushes workflow.json over the remote change", async () => {
+  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
+  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
+  await cli("pull"); // fresh, known baseline
+  const dir2 = wfDir("Order Sync v2");
+  const wfJsonPath = path.join(dir2, "workflow.json");
+  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
+  const config = {
+    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
+    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+  };
+  const logs: string[] = [];
+  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // baseline (local, unmutated) n2 position — [l] must push exactly this,
+  // overwriting whatever the remote-only mutation below sets it to
+  const baselineN2Position = JSON.parse(read(wfJsonPath)).nodes.find((n: any) => n.id === "n2").position;
+  db.get("wf123").nodes.find((n: any) => n.id === "n2").position = [9999, 9999]; // remote structural change
+
+  const handle = await watchWorkflow(api, config, "wf123", { promptFactory: cannedPrompt("l") }, log);
+  try {
+    // the local structural edit must land AFTER the watcher is armed — it's
+    // the fs event on workflow.json that triggers pushStructure()
+    const localWf = JSON.parse(read(wfJsonPath));
+    const localN3Position = [440, 888];
+    localWf.nodes.find((n: any) => n.id === "n3").position = localN3Position; // local structural change (different node)
+    writeFileSync(wfJsonPath, JSON.stringify(localWf, null, 2));
+    await sleep(500); // debounce (200ms) + conflict fetch + canned prompt round-trip
+    assert.ok(logs.some((m) => m.includes("structural conflict")), logs.join("\n"));
+    const remote = db.get("wf123");
+    assert.deepEqual(remote.nodes.find((n: any) => n.id === "n2").position, baselineN2Position, "[l] overwrites the remote's structural change with local");
+    assert.deepEqual(remote.nodes.find((n: any) => n.id === "n3").position, localN3Position, "[l] pushes the local structural change through");
+    assert.ok(!existsSync(path.join(dir2, "workflow.remote.json")), "[l] leaves no merge artifact");
+  } finally {
+    await handle.close();
+  }
+  await cli("pull"); // re-baseline for the next sub-scenario
+});
+
+await step("watch: structural conflict — [r]emote pulls over workflow.json, previous version stays in git-less local state", async () => {
+  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
+  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
+  await cli("pull");
+  const dir2 = wfDir("Order Sync v2");
+  const wfJsonPath = path.join(dir2, "workflow.json");
+  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
+  const config = {
+    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
+    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+  };
+  const logs: string[] = [];
+  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // baseline (remote, unmutated) n3 position — [r] must adopt exactly this,
+  // discarding whatever the local-only mutation below sets it to
+  const baselineN3Position = JSON.parse(read(wfJsonPath)).nodes.find((n: any) => n.id === "n3").position;
+  const remoteN2Position = [8888, 8888];
+  db.get("wf123").nodes.find((n: any) => n.id === "n2").position = remoteN2Position;
+
+  const handle = await watchWorkflow(api, config, "wf123", { promptFactory: cannedPrompt("r") }, log);
+  try {
+    const localWf = JSON.parse(read(wfJsonPath));
+    localWf.nodes.find((n: any) => n.id === "n3").position = [440, 666];
+    writeFileSync(wfJsonPath, JSON.stringify(localWf, null, 2)); // fs event fires only once the watcher is armed
+    await sleep(500);
+    assert.ok(logs.some((m) => m.includes("structural conflict")), logs.join("\n"));
+    assert.ok(logs.some((m) => m.includes("workflow.json overwritten with the remote version")), logs.join("\n"));
+    const local = JSON.parse(read(wfJsonPath));
+    assert.deepEqual(local.nodes.find((n: any) => n.id === "n2").position, remoteN2Position, "[r] pulls the remote structure over local");
+    assert.deepEqual(local.nodes.find((n: any) => n.id === "n3").position, baselineN3Position, "[r] discards the local structural edit, keeping remote's n3");
+  } finally {
+    await handle.close();
+  }
+  await cli("pull");
+});
+
+await step("watch: structural conflict — Enter skips for now and re-prompts on the next save", async () => {
+  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
+  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
+  await cli("pull");
+  const dir2 = wfDir("Order Sync v2");
+  const wfJsonPath = path.join(dir2, "workflow.json");
+  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
+  const config = {
+    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
+    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+  };
+  const logs: string[] = [];
+  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  db.get("wf123").nodes.find((n: any) => n.id === "n2").position = [220, 555];
+
+  const handle = await watchWorkflow(api, config, "wf123", { promptFactory: cannedPrompt("") }, log);
+  try {
+    const localWf = JSON.parse(read(wfJsonPath));
+    localWf.nodes.find((n: any) => n.id === "n3").position = [440, 444];
+    writeFileSync(wfJsonPath, JSON.stringify(localWf, null, 2)); // fs event fires only once the watcher is armed
+    await sleep(500);
+    assert.ok(logs.some((m) => m.includes("structural conflict")), logs.join("\n"));
+    assert.ok(logs.some((m) => m.includes("skipped — the conflict prompt returns on the next")), logs.join("\n"));
+    assert.deepEqual(db.get("wf123").nodes.find((n: any) => n.id === "n2").position, [220, 555], "[Enter] leaves the remote untouched");
+    assert.deepEqual(JSON.parse(read(wfJsonPath)).nodes.find((n: any) => n.id === "n3").position, [440, 444], "[Enter] leaves workflow.json untouched");
+
+    // touching workflow.json again re-prompts (the skip doesn't advance the baseline)
+    logs.length = 0;
+    writeFileSync(wfJsonPath, read(wfJsonPath)); // same bytes, new fs event
+    await sleep(500);
+    assert.ok(logs.some((m) => m.includes("structural conflict")), "re-save must re-trigger the prompt:\n" + logs.join("\n"));
+  } finally {
+    await handle.close();
+  }
+  // resolve out-of-band so the next sub-scenario starts clean, like [r] would
+  await cli("pull");
+});
+
+await step("watch: structural conflict — [m]erge writes workflow.remote.json, placeholders only where remote code still matches last sync", async () => {
+  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
+  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
+  await cli("pull");
+  const dir2 = wfDir("Order Sync v2");
+  const wfJsonPath = path.join(dir2, "workflow.json");
+  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
+  const config = {
+    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
+    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+  };
+  const logs: string[] = [];
+  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  // remote: n2's position moves (structural) but its code is untouched -> placeholder-eligible;
+  // n3's compiled code gets a UI hotfix ahead of its trailing @ts-n8n marker -> must stay inline
+  const wf = db.get("wf123");
+  wf.nodes.find((n: any) => n.id === "n2").position = [220, 333];
+  const n3remote = wf.nodes.find((n: any) => n.id === "n3");
+  n3remote.parameters.jsCode = n3remote.parameters.jsCode.replace(/(\n\/\/ @ts-n8n sha256:[0-9a-f]{64})\s*$/, "\n// remote hotfix$1");
+
+  const handle = await watchWorkflow(api, config, "wf123", { promptFactory: cannedPrompt("m") }, log);
+  try {
+    // local: a different structural change — must land after the watcher is armed
+    const localWf = JSON.parse(read(wfJsonPath));
+    localWf.nodes.find((n: any) => n.id === "n3").position = [440, 222];
+    writeFileSync(wfJsonPath, JSON.stringify(localWf, null, 2));
+    await sleep(500);
+    assert.ok(logs.some((m) => m.includes("structural conflict")), logs.join("\n"));
+    assert.ok(logs.some((m) => m.includes("wrote workflow.remote.json")), logs.join("\n"));
+    const remoteFile = JSON.parse(read(dir2, "workflow.remote.json"));
+    const n2 = remoteFile.nodes.find((n: any) => n.id === "n2");
+    assert.equal(n2.parameters.jsCode, "//@file:code/transform-eu-us.js", "n2's remote code matches the last sync -> placeholder substituted");
+    assert.deepEqual(n2.position, [220, 333], "workflow.remote.json reflects the remote structure");
+    const n3 = remoteFile.nodes.find((n: any) => n.id === "n3");
+    assert.match(n3.parameters.jsCode, /remote hotfix/, "n3's remote code changed -> stays inline, not placeholder'd");
+    // [m] resolves nothing itself: both sides are still exactly as they were
+    assert.deepEqual(JSON.parse(read(wfJsonPath)).nodes.find((n: any) => n.id === "n3").position, [440, 222]);
+    assert.deepEqual(db.get("wf123").nodes.find((n: any) => n.id === "n2").position, [220, 333]);
+  } finally {
+    await handle.close();
+  }
+  // clean up: resolve the ts drift and the merge artifact, restore the clean, in-sync tree
+  // that the following steps expect (pull surfaces the ts drift; push restores it)
+  await cli("pull");
+  await cli("push");
+  rmSync(path.join(dir2, "code", "amazon-feed.remote.js"), { force: true });
+  rmSync(path.join(dir2, "workflow.remote.json"), { force: true });
+});
+
 await step("check: clean tree passes, typecheck skipped without tsconfig", async () => {
   const r = await cli("check");
   assert.equal(r.code, 0, r.out);
