@@ -3,13 +3,28 @@
 This is the **source of truth** for working in this repository, and it is written to
 be tool-agnostic. Codex and opencode read this file natively; Claude Code reads it
 through a one-line `@AGENTS.md` import in `CLAUDE.md`; other agents can be pointed at
-it (see `SCAFFOLD.md`). Keep project-specific rules here so every agent stays in sync.
+this file directly. Keep project-specific rules here so every agent stays in sync.
 
 This repo holds n8n workflows *decanted* into git-friendly form: one folder per
 workflow containing `workflow.json` plus a `code/` subdir with one source file
 per Code node. The
 `n8n-decanter` CLI moves content between here and the live n8n instance
 (`pull` / `push`). This document is the contract for creating and editing these files.
+
+## The short version
+
+- **Code lives in `code/`, never in `workflow.json`.** A node's `jsCode` is only
+  a `//@file:code/<name>` placeholder — edit the file it points at.
+- **Never hand-edit `.decanter.json` or a `*.remote.js`, and never write a
+  `// @ts-n8n sha256:` marker.** These are machine-owned; touching them corrupts
+  sync state and the CLI blocks it at `push`.
+- **Structural edits have verbs — use them instead of hand-editing JSON:**
+  `add` a Code node, `rename` a node/workflow, `create`/`duplicate` a workflow.
+  Each does the fiddly multi-file edit atomically and re-validates the folder.
+- **`push` is a deploy to the live instance — only when the user asks.** Edit,
+  then verify offline with `n8n-decanter check` and `n8n-decanter run`.
+
+The rest of this document is the full contract behind those four points.
 
 ## How this differs from standard n8n editing — read this first
 
@@ -35,12 +50,14 @@ runtime. It is **wrong** about how code is stored here. The deviations:
    diff: port the change into the `.ts`, delete the `.remote.js`, then the user
    pushes. Never edit `.remote.js` itself; never push while one exists.
 6. **Renames have no UI magic here.** The n8n editor auto-updates references on
-   rename; raw JSON editing does not. See the rename checklist below.
+   rename; editing files does not. Use `n8n-decanter <ref> rename` — it rewrites
+   every reference atomically. See "Renaming a node" below.
 7. **New workflows are born on the server, not from a repo folder.** There is no
    id-less folder that becomes a workflow on push. Use `n8n-decanter create
    "<name>"` — it posts a blank draft to n8n and pulls it back (the server
-   assigns the id) — or create it in the n8n UI and `pull`. Then add its id to
-   `decanter.config.json`. A created workflow is **unpublished**; `publish`
+   assigns the id) — `n8n-decanter <ref> duplicate` to clone an existing
+   workflow into a new one, or create it in the n8n UI and `pull`. Then add its
+   id to `decanter.config.json`. A created workflow is **unpublished**; `publish`
    takes it live, `unpublish` returns it to draft-only, and `<ref> delete`
    removes one from the server (the local folder is kept).
 
@@ -103,18 +120,27 @@ Rules:
   (whitelisted keys), `staticData`. Activation is managed in the n8n UI.
 - **Position:** keep a sensible grid; new nodes roughly +200 x from their input.
 
-### Renaming a node — checklist (all four, atomically)
+### Renaming a node
+
+Use the verb — it rewrites every reference atomically, offline, and re-validates
+the folder:
+
+```sh
+n8n-decanter <ref> rename "<Old Name>" "<New Name>"
+```
+
+It touches all four places a rename must hit at once — the same four you'd have
+to keep in sync **by hand** (and atomically) if you ever edit the raw JSON:
 
 1. `name` in the node object.
 2. Every reference in `connections` (keys *and* target `"node"` values).
 3. Every `$('Old Name')` in **all** code files of the workflow.
-4. The source file name and its `//@file:` placeholder (keep the kebab-case
-   name-file convention, file stays in `code/`). The tool re-maps by node id
-   on the next pull, but the repo must be self-consistent immediately.
+4. The source file name and its `//@file:` placeholder (kebab-case convention,
+   file stays in `code/`).
 
-Renaming a **workflow**: change `name` in `workflow.json`; folder rename happens
-on the next pull (or do it yourself, folder names are cosmetic — the id inside
-`workflow.json` is authoritative).
+Renaming a **workflow**: `n8n-decanter <ref> rename --workflow "<New Name>"`.
+The folder rename follows on the next pull — folder names are cosmetic; the id
+inside `workflow.json` is authoritative.
 
 ### Adding a Code node
 
@@ -144,12 +170,11 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
     workspace TypeScript: `npm install`, then in VS Code accept
     *Use Workspace Version* (offered via `.vscode/settings.json`'s
     `typescript.tsdk`; JetBrains uses the project TypeScript by default).
-- Available globals (extend `n8n-globals.d.ts` when you use one it lacks):
-  `$input.all()/.first()/.last()/.item` · `$('Node Name').all()/.first()/.item/.itemMatching(i)` ·
-  `$json`, `$binary`, `$itemIndex` (each-item mode) ·
-  `DateTime`, `Duration`, `Interval` (Luxon), `$now`, `$today` ·
-  `$jmespath()` · `$workflow`, `$execution`, `$prevNode`, `$runIndex` ·
-  `$getWorkflowStaticData('global' | 'node')`.
+- **Available globals: `n8n-globals.d.ts` is the authoritative list.** Open it
+  to see every global in scope with its exact signature (`$input`, `$('Node
+  Name')`, `$json`, `$binary`, the Luxon `DateTime`/`$now`/`$today`, `$workflow`,
+  `$execution`, `$getWorkflowStaticData`, …). If node code needs a global that
+  file doesn't declare yet, add it there.
 - **Imports**: `.js` nodes — none at all (they run verbatim; assume the
   instance allows no external or built-in modules). `.ts` nodes — imports
   from inside this repo (`shared/`, relative paths) and from npm packages
@@ -160,7 +185,7 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
   builtins (`node:*`, `fs`, `crypto`, …) are compile errors. Never
   `require()`.
 - `console.log` is available for debugging (visible in the execution view).
-- `$('Node Name')` takes the node's **name** — see the rename checklist.
+- `$('Node Name')` takes the node's **name** — so `rename` keeps it in sync.
 
 ### `.js` nodes (default — lossless)
 
@@ -296,17 +321,19 @@ Rules:
 
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
   `n8n-decanter run <file> [fixture]`, `n8n-decanter <ref> add "<Node name>"`,
-  `n8n-decanter executions clean`. These never touch the network.
+  `n8n-decanter <ref> rename …`, `n8n-decanter executions clean`. These never
+  touch the network.
 - **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line
   diffs; exits 1 on conflict/remote drift) and `n8n-decanter <ref> executions`
   (fetches execution data, read-only) — safe to run, but they do contact the
   instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
   pull` / `push` / `watch` read/write the real instance and `push` deploys;
-  `create "<name>"` adds a new workflow, and `publish` / `unpublish` change what
-  is live (`publish` takes the draft live immediately, `unpublish` returns it to
-  draft-only). Otherwise finish edits, verify with `check` + `run`, and report
-  that the change is ready to push (or publish).
+  `create "<name>"` adds a new workflow and `<ref> duplicate` clones an existing
+  one into a new (unpublished) remote workflow, and `publish` / `unpublish`
+  change what is live (`publish` takes the draft live immediately, `unpublish`
+  returns it to draft-only). Otherwise finish edits, verify with `check` +
+  `run`, and report that the change is ready to push (or publish).
 - **Destructive — never without an explicit instruction:** `n8n-decanter <ref>
   delete` removes a workflow from the server (hard delete, even if published;
   the local folder is kept as the git record). Run it only when the user has
