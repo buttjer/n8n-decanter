@@ -26,10 +26,10 @@ feed these design decisions back (2026-07-20, "I like your style").
 
 Direct user request (2026-07-20), building on
 [Plan 19](DONE-19-interactive-workflow-picker.md) (the picker) and the
-[Plan 16](INPROGRESS-16-docs-website.md) simulation. Folds in the open
-[Plan 0](BACKLOG.md) item *"`executions` missing from the interactive menu"*
-(same `PICKER_VERBS`/render surface). Cross-links
-[Plan 22](OPEN-22-test-suite-depth.md) (picker-IO tests).
+[Plan 16](INPROGRESS-16-docs-website.md) simulation. Cross-links
+[Plan 22](OPEN-22-test-suite-depth.md) (picker-IO tests). The related
+*"`executions` missing from the interactive menu"* backlog item shipped
+separately in **v0.3.0** (#29), so it's dropped from the tasks below.
 
 ## Tasks
 
@@ -50,18 +50,15 @@ All edits are confined to `renderLines` (and small pure helpers beside it) in
    stage already prints `name  id`; make it read as a heading). Match the
    simulation's tone; **skip the heavy box-drawing frame** unless it still feels
    light at a real 10-row `LIST_HEIGHT` (decide during implementation).
-4. **`executions` in the verb menu** (closes the BACKLOG item). Add
-   `"executions"` to `PICKER_VERBS`; confirm the resume-index mapping
-   (`initialState`) and the letter-jump cycle still behave with six verbs.
-5. **Pure render tests.** `renderLines` is currently untested by CI. Add a
+4. **Pure render tests.** `renderLines` is currently untested by CI. Add a
    handful of `node:test` cases (feed a `PickerState`, assert the rendered
-   strings: glyphs present, ids aligned, `executions` listed, monochrome-safe
-   output). Dovetails with [Plan 22](OPEN-22-test-suite-depth.md)'s picker goal.
+   strings: glyphs present, ids aligned, monochrome-safe output). Dovetails
+   with [Plan 22](OPEN-22-test-suite-depth.md)'s picker goal.
 
 ## Acceptance / verification
 
 - Bare `n8n-decanter` on a TTY shows aligned ids, `●/○` status glyphs, and a
-  per-stage title; `executions` appears in the verb menu and runs.
+  per-stage title.
 - Output stays legible with `NO_COLOR=1` (glyphs distinguish state by shape,
   not color alone) — the guarantee Plan 19 protected with the `(not pulled)`
   words.
@@ -81,7 +78,7 @@ Flag for the user if they'd rather keep the words.
 ## Notes
 
 - **CHANGELOG:** user-facing appearance change → a `Changed` entry when it
-  lands (the `executions`-in-menu task is an `Added`/`Fixed`-flavored line).
+  lands.
 - **PLAN.md:** no data-model or flow change — presentation only; no PLAN.md
   edit expected.
 - **Git:** code change → **worktree**, not the docs fast path.
