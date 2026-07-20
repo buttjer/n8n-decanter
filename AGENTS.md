@@ -47,7 +47,11 @@ class. (Backlog mechanics otherwise per `CLAUDE.md`.)
 The GitHub ruleset blocks *pushes* to main, but nothing upstream stops a
 *local* commit made on main when the worktree/branch rule gets skipped. A
 tracked `scripts/hooks/pre-commit` catches that: it aborts any commit whose
-current branch is `main`. Enable it once per clone (and per worktree parent):
+current branch is `main`. It's **self-installing** — the `prepare` npm script
+(`scripts/setup-hooks.mts`) points `core.hooksPath` at `scripts/hooks` on
+every `npm install`, so the guard activates automatically in each clone and
+worktree (which already run their own `npm install`). No hand-wiring needed;
+the manual equivalent, if you ever want it, is:
 
 ```sh
 git config core.hooksPath scripts/hooks
