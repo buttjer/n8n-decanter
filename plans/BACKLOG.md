@@ -18,13 +18,6 @@ entries carry no priority field) — adjust freely.
 
 ### Open — high (small, cheap, high-value)
 
-- [ ] **Recommend scoped API keys** (2026-07-19) — n8n 2.x API keys carry
-      scopes; init/template docs should recommend a minimal-scope key
-      (workflow read/update/list + what the user needs) instead of a
-      full-access one. Docs-only, no code.
-      - Reinforced by the 2026-07-20 sweep: with `run`'s env exposure (below)
-        and `.env` living next to the config, a minimal-scope key is the
-        cheapest blast-radius reduction — fold into the same docs pass.
 - [ ] **`run`'s `$env` leaks the entire `process.env` by default.**
       `lib/run.mts:150` — `$env: fixture.env ?? { ...process.env }`. A node
       that reads or prints `$env` gets every exported variable of the CLI
@@ -178,6 +171,11 @@ entries carry no priority field) — adjust freely.
 
 ### Done
 
+- [x] **Recommend scoped API keys** (2026-07-19; done 2026-07-20) — `.env.example`,
+      README, and PLAN.md now recommend a minimal-scope key over a full-access
+      one, naming the exact scopes the CLI uses (`workflow:read`/`list`/`update`,
+      `execution:read`/`list`; canonical strings from n8n's
+      `public-api-permissions.ee.ts`). Docs-only, no code.
 - [x] **Kebab-case code layout** — js node files to kebab-case, moved into a
       `workflows/*/code/` subdir.
 - [x] **Id-first argument order** — accept `n8n-decanter.mts [id...] <verb>`

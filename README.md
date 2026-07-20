@@ -67,6 +67,15 @@ fill it in. Then add workflow ids to `decanter.config.json`:
 { "root": "./workflows", "workflows": ["0cXNQKKzmO0pXiCq"] }
 ```
 
+**Prefer a scoped API key.** In n8n (Settings → n8n API → Create) create a key
+limited to the permissions the CLI actually uses rather than a full-access one,
+so a leaked `.env` has a small blast radius:
+
+- `workflow:read`, `workflow:list`, `workflow:update` — `pull` / `status` / `push`
+- `execution:read`, `execution:list` — the `executions` verb
+
+A full-access key also works if your n8n version predates scoped keys.
+
 After every successful push **and pull**, the workflow's folder is
 git-committed automatically (scoped to that folder; outside a git repo it
 just warns). Set `"commitOnPush": false` / `"commitOnPull": false` to turn

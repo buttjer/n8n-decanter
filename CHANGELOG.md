@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `.env.example` and the README now recommend a **scoped** n8n API key —
+  limited to the scopes the CLI uses (`workflow:read`/`list`/`update`,
+  `execution:read`/`list`) — instead of a full-access key, so a leaked `.env`
+  has a smaller blast radius.
+
 ## [0.2.3] - 2026-07-20
 
 ### Changed
