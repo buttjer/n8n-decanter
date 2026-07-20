@@ -7,6 +7,11 @@ Plan 3 C shipped as the `executions` verb)
 network nodes pinned with captured execution data (LLM-guessed fixtures fill
 the gaps), side-effect-free nodes executing for real — with a hard guarantee
 that nothing external is written.
+**Model:** **Opus** — the highest-reasoning plan in the backlog: the route-B
+transform, the `n8n execute` subprocess orchestration, and above all the
+*safety-critical* default-deny node classification (a misclassified node runs
+for real) reward the strongest model. Once the spike (task 1) and transform
+are designed, the CLI/test wiring can drop to Sonnet.
 
 ## Why
 

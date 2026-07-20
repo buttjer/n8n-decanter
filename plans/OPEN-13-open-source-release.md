@@ -5,6 +5,10 @@
 **Theme:** Everything between "the code is done" and "v0.1.0 is public on
 GitHub and npm": identity rewrite, repo hygiene, publish pipeline,
 post-publish verification.
+**Model:** **Haiku** (or Sonnet) — what's left for a model is small and
+mechanical (re-run the tarball `init` smoke, the `createRequire` typescript
+fix); the substance is a *human* checklist (create the repo, npm publish,
+security settings) that no model should drive. Low reasoning load.
 
 ## Why
 

@@ -8,6 +8,11 @@ watch↔proxy wiring) and a handful of uncovered CLI branches — and make the
 Docker smoke suite actually prove the "n8n 2.x" claim across versions while
 flaking less. Reduce the monolithic e2e's coupling so adding tests doesn't
 compound its fragility.
+**Model:** **Sonnet** — testability refactors (injectable streams/prompts) and
+test authoring against a clear spec; the fiddly parts (keypress/stream
+simulation, harness step-filtering, the Docker version matrix) are engineering,
+not research. High-volume, well-defined work where a strong coder is the
+efficient pick.
 
 ## Why
 

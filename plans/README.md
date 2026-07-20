@@ -133,6 +133,10 @@ mergeable:
     priorities per task (e.g. "P1 (validator) / P2 (rename)").
   - `**Status:**` `Not started` / `In progress` / `Done`.
   - `**Theme:**` one-line what-and-why.
+  - `**Model:**` *(optional, advisory)* the Claude model best suited to
+    *implement* the plan — Opus for high-reasoning / safety-critical / novel
+    design, Sonnet for well-specified broad implementation, Haiku for
+    mechanical low-risk work; may split per task. A hint, not a rule.
 - **Sections**, in order:
   - `## Why` — the motivation/context.
   - `## Source` — the backlog entries ([Plan 0](BACKLOG.md), or
