@@ -33,8 +33,9 @@ items not yet claimed by one. Recommended order:
 7. [Engine-true simulation suite](OPEN-7-engine-true-simulation-suite.md) —
    replay a whole workflow through the real n8n engine offline: network nodes
    pinned from captured executions (LLM guesses fill gaps), pure nodes run for
-   real, enforced no-side-effects. Depends on Plan 3's execution-dataset
-   capture, so it goes last.
+   real, enforced no-side-effects. Unblocked since Plan 3's `executions` verb
+   shipped (2026-07-19); next step is the timeboxed engine spike. Refreshed
+   2026-07-20.
 8. [Folder hierarchy in sync layout](OPEN-8-folder-hierarchy-in-sync-layout.md) —
    local dirs above a workflow folder become its n8n folder path, pushed
    one-way via the folders public API (the API can write placement but not
