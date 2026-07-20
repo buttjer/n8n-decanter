@@ -14,6 +14,8 @@ n8n-decanter syncs your n8n instance into a git-friendly, folder-per-workflow
 layout: every Code node's source becomes its own `.js` or `.ts` file,
 editable in your IDE or by your agent, and pushed back through the n8n API.
 
+![Terminal demo — the interactive picker: filter workflows, choose a verb, sync](./docs/terminal-demo.gif)
+
 - **Real version control** — meaningful diffs, PRs, blame; every push and
   pull is auto-committed.
 - **TypeScript or typed JS** — write nodes in TS (compiled on push); n8n
@@ -36,8 +38,6 @@ editable in your IDE or by your agent, and pushed back through the n8n API.
   (push tells you whether code went live or stayed a draft), and every
   behavior that touches the API is verified against a real n8n 2.x instance
   by an automated integration suite.
-
-![Terminal demo — the interactive picker: filter workflows, choose a verb, sync](./docs/terminal-demo.gif)
 
 ![Agent demo — a coding agent edits a Code node, tests it offline, then pushes live](./docs/agent-demo.gif)
 

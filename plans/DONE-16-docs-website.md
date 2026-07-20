@@ -1,7 +1,7 @@
 # Plan 16 — Documentation website
 
 **Priority:** P2
-**Status:** In progress
+**Status:** Done (2026-07-20)
 **Theme:** A static documentation website (Tailwind-styled) for n8n-decanter:
 landing page + real docs pages carved out of the README, deployed alongside
 the open-source release.
@@ -164,14 +164,39 @@ and optional task 8 (Pagefind).
 - [x] `npm run dev` / `npm run build` in `website/` work locally; build is
       green in CI on PRs. (local build + link check green 2026-07-19; CI
       run pends the push)
-- [ ] Site live on GitHub Pages; every CLI verb has a page; landing page
-      renders the theme (placeholder until user settings, real after).
-      (all verbs have pages; "live" gated on Plan 13)
+- [x] Site live on GitHub Pages; every CLI verb has a page; landing page
+      renders the theme. (live at buttjer.github.io/n8n-decanter, HTTP 200,
+      2026-07-20; theme renders with the **placeholder amber** palette — real
+      user-provided settings still deferred, see Closing note)
 - [x] Link check passes (internal links + README ↔ site cross-links).
-      (25 pages, 0 broken; README cross-link lands with task 7)
+      (25 pages, 0 broken; README cross-link shipped in #43)
 - [x] `npm pack --dry-run` of the CLI package lists nothing from `website/`.
-- [ ] README links to the site; no content exists only in a stale copy on
-      both sides (each topic has one home). (task 7, after go-live)
+- [x] README links to the site. (badge + inline link, #43) — the *full*
+      slim-down (removing per-verb/data-model detail so each topic has one
+      home) was consciously **not** done; see Closing note.
+
+## Closing note (2026-07-20)
+
+Closed at user request ("no further action needed"). Shipped: the whole site
+(scaffold, theme slot, docs shell, 25 pages, deploy workflow, polish) is **live
+on GitHub Pages** and the README links to it (#43). Deliberately **not** done —
+these are accepted, not oversights:
+
+- **Task 7 README slim-down** — the README still carries the full command
+  reference, data-model, watch, and type-checking sections that also live on
+  the site. The README stays the fuller npm/GitHub front door; the mild
+  two-way drift risk is accepted. `package.json` `homepage` keeps pointing at
+  `…#readme` (not the docs URL).
+- **Real Tailwind/accent settings (task 2 tail)** — never provided; the site
+  ships with the placeholder amber palette. Swap remains isolated to
+  `website/src/styles/theme.css` if ever supplied.
+- **Task 8 Pagefind search** — dropped; the grouped nav suffices at this page
+  count.
+- **"How it compares"** stays commented out (landing + README) pending the
+  n8n-as-code maintainer's sign-off — an external gate, not site work.
+
+Any future revival of these lands as its own small plan/PR, not by reopening
+this one.
 
 ## Non-goals
 
