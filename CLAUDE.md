@@ -59,15 +59,17 @@ Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
   this step. Internal-only PRs (no `[Unreleased]` entries per the Changelog
   rules) merge without a version bump — so user-facing work never sits
   unreleased on main.
-- CI (typecheck + `npm test`) must be green before merge. **Docs fast-path
-  PRs are exempt from waiting** — markdown-only changes can't fail
-  typecheck/tests (real enforcement arrives with the public-repo ruleset,
-  plans/OPEN-13).
+- CI (typecheck + `npm test`) must be green before merge, now enforced
+  GitHub-side (see the ruleset bullet below). **The docs fast path no longer
+  skips the wait** — markdown-only changes still can't *fail* the checks, but
+  the ruleset gates every merge on them, so watch them to green (`gh pr checks
+  <n> --watch`) before merging.
 - **Docs fast path:** a change touching only Markdown (`plans/`, `*.md`)
   skips the worktree — branch directly in the main checkout
-  (`git switch -c chore/x`), commit, PR, merge immediately without waiting
-  for CI, then `git switch main && git pull` (merged branches auto-delete
-  on GitHub). **Never commit to main directly, fast path included.**
+  (`git switch -c chore/x`), commit, PR, wait for the required checks
+  (`gh pr checks <n> --watch` — markdown can't fail them), merge, then
+  `git switch main && git pull` (merged branches auto-delete on GitHub).
+  **Never commit to main directly, fast path included.**
 - **Worktrees for code:** any other repo-modifying task (code, config,
   tests, template, or anything mixing code with docs) starts by
   creating a worktree in the gitignored `.worktrees/` dir (`git worktree
@@ -82,9 +84,11 @@ Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
   **Never run `git clean -fdx`/`-fdX` from the repo root** — it deletes
   `.worktrees/` including uncommitted work; clean inside subdirs (e.g.
   `dist/`) instead.
-- GitHub-side enforcement (require PR + green CI, block force-push) needs a
-  ruleset, which the Free plan only enforces on public repos — enable it
-  when the repo goes public (plans/OPEN-13).
+- GitHub-side enforcement (require PR + green required checks, block
+  force-push) is **live** via the public-repo ruleset (plans/OPEN-13).
+  Auto-merge is not enabled on the repo and admin-bypass is disallowed, so a
+  blocked merge means "checks still pending" — wait them out, don't try to
+  force it.
 - **Sandboxed shells:** `git push`/`gh` fail in the command sandbox
   (credential helper unreachable — "could not read Username"); rerun that
   command with sandbox escalation. Details + `.git/config` gotcha:
