@@ -8,6 +8,19 @@ changelog/docs/backlog duties, commands, architecture). Treat `CLAUDE.md` as
 authoritative for those rules regardless of which agent you are; this file
 carries the shared, tool-agnostic recipes.
 
+## Before you start: read your permission allowlist
+
+Every task/plan execution starts by **reading the harness's permission config
+so you know what's already pre-approved** — this is the single biggest lever
+for not interrupting the user with questions about commands you were always
+allowed to run. For Claude Code that's `.claude/settings.json` (shared) and
+`.claude/settings.local.json` (per-machine): the `allow` / `deny` / `ask`
+lists spell out which `Bash(...)`, `WebFetch`, and other calls run without a
+prompt. Other harnesses (Codex, opencode) have their own allowlist config —
+read whichever applies. Don't ask permission for something the allowlist
+already grants, and don't re-run a variant just to dodge a prompt when the
+plain command is allowed.
+
 ## Docs (`/docs`) are part of every user-facing PR
 
 The user docs live in `/docs` (plain Markdown, rendered by the site in
@@ -29,6 +42,25 @@ group**, kept separate from the priority buckets and the parity/hardening
 work. This keeps the tool's differentiators visible and tracked as a distinct
 class. (Backlog mechanics otherwise per `CLAUDE.md`.)
 
+## main is guarded locally too (pre-commit hook)
+
+The GitHub ruleset blocks *pushes* to main, but nothing upstream stops a
+*local* commit made on main when the worktree/branch rule gets skipped. A
+tracked `scripts/hooks/pre-commit` catches that: it aborts any commit whose
+current branch is `main`. Enable it once per clone (and per worktree parent):
+
+```sh
+git config core.hooksPath scripts/hooks
+```
+
+A missing hook is a no-op, so this is safe to set before the file exists.
+There is never a legitimate local commit on main (the only local touch is
+`git switch main && git pull` after a merge); the emergency override is
+`ALLOW_MAIN_COMMIT=1 git commit …`. If a commit is refused with "Refusing to
+commit directly on 'main'", you skipped the branch step — branch first
+(`git switch -c chore/x` for docs, or a `.worktrees/` worktree for code) and
+retry.
+
 ## Sandboxed shells: git push / gh need escalation
 
 Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) block
@@ -40,7 +72,10 @@ the network credential path git needs, while local git works fine:
   the sandbox. This is an environment artifact, not an auth problem: rerun
   the *same* command with the sandbox escalation your harness provides
   (Claude Code: retry the Bash call with `dangerouslyDisableSandbox: true`;
-  don't loosen the sandbox config for this).
+  don't loosen the sandbox config for this). `git push *` is on the Claude
+  Code allowlist (`.claude/settings.json`) so it runs without a permission
+  prompt — only the sandbox escalation is still required; force-push
+  (`--force`/`-f`) stays denied.
 - **`.git/config` writes are blocked sandboxed** — e.g. `git branch -D` of
   a branch with an upstream deletes the branch but then warns `could not
   lock config file`, leaving a stale `branch.<name>` section. Clean up

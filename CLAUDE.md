@@ -48,7 +48,10 @@ Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
 
 - **main is protected — never commit to or push main directly.** Every change
   lands via PR from a short-lived branch (`feat/…`, `fix/…`, `docs/…`,
-  `chore/…`), squash-merged so main stays linear: one commit per PR.
+  `chore/…`), squash-merged so main stays linear: one commit per PR. A local
+  `pre-commit` hook (`scripts/hooks/pre-commit`, enabled via `git config
+  core.hooksPath scripts/hooks`) refuses commits made on main — see AGENTS.md
+  "main is guarded locally too".
 - **Merging a PR with a non-empty `[Unreleased]` section is a release.** That
   PR itself rolls `[Unreleased]` → `[x.y.z] - <date>` and bumps
   `package.json` (semver; while 0.x: breaking → minor, everything else →

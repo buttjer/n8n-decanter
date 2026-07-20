@@ -1,0 +1,25 @@
+#!/bin/sh
+# Refuse commits made directly on the protected branch.
+#
+# main is protected: every change lands via PR from a short-lived branch
+# (feat/fix/docs/chore) and is squash-merged on GitHub. There is never a
+# legitimate LOCAL commit on main — the only local touch is
+# `git switch main && git pull` after a merge. Agents (and humans) skipping
+# the worktree/branch rule get caught here instead of on the push.
+#
+# Escape hatch for the rare emergency: ALLOW_MAIN_COMMIT=1 git commit …
+# Enable this hook once per clone/worktree parent:
+#   git config core.hooksPath scripts/hooks
+
+protected="main"
+
+branch=$(git symbolic-ref --short -q HEAD)
+
+if [ "$branch" = "$protected" ] && [ "$ALLOW_MAIN_COMMIT" != "1" ]; then
+	echo "✋ Refusing to commit directly on '$protected'." >&2
+	echo "   main is PR-only — branch first:" >&2
+	echo "     git switch -c chore/my-change   (docs fast path), or" >&2
+	echo "     git worktree add -b feat/x .worktrees/feat-x main   (code)" >&2
+	echo "   Override (emergencies only): ALLOW_MAIN_COMMIT=1 git commit …" >&2
+	exit 1
+fi
