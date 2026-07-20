@@ -150,6 +150,57 @@ must never land in git); executions reflect the *published* workflow version
 (n8n 2.x), so treat them as convenience data, not ground truth, and remove
 them with `executions clean` when done.
 
+## How it compares
+
+n8n-decanter is **Code-node-first**: it optimizes the loop of writing, typing,
+testing, and shipping the JavaScript/TypeScript *inside* your workflows. Here's
+how that focus stacks up against the native editor and against
+[n8n-as-code](https://github.com/EtienneLescot/n8n-as-code) — a broader,
+whole-workflow authoring toolkit.
+
+| Capability | Native n8n (browser) | n8n-as-code | n8n-decanter |
+|---|---|---|---|
+| **TypeScript for Code nodes** | ❌ JavaScript or Python only | ❌ TS is at workflow level, not node logic | ✅ Code nodes as `.ts`, compiled on push, typed n8n globals |
+| **Shared code in Code nodes** | ❌ self-host `NODE_FUNCTION_ALLOW_*` only; no libraries | ❌ not part of its model | ✅ `shared/*.ts` + npm bundled into self-contained nodes (Cloud-safe) |
+| **Code as individual files** | ❌ no source files (JSON blob) | 🟡 one `.workflow.ts` per workflow | ✅ folder per workflow; each Code node its own `.js`/`.ts` |
+| **Versioning** | 🟡 in-app history (DB snapshots, tiered retention); Git source control is Enterprise-only | ✅ GitOps sync of workflow source | ✅ real git — diffs, PRs, blame; auto-commit each push/pull |
+| **Live editing** | ✅ the canvas (baseline) | 🟡 explicit pull/push, no auto-watch | ✅ `watch`: push on save + auto-reload the editor tab |
+| **Offline testing on historic executions** | 🟡 re-run past executions / pin data, but online in-editor | 🟡 inspect executions against a live env | ✅ fetch real run JSON → offline `run` fixtures, no creds/network |
+| **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs + MCP; offline `check`/`run` loop; guardrails |
+| **Model ownership** | ❌ locked to n8n's own hosted AI; can't use your Claude subscription | 🟡 beta Claude Code plugin uses your subscription; flagship Workbench needs an Anthropic key for Claude | ✅ never calls an LLM itself — your agent/subscription does 100%, no key or model config ever |
+| **Agentic workflow creation** | 🟡 AI Workflow Builder (natural language), but Cloud / plan-gated — credits, self-host needs setup | ✅ 537 node schemas + 7,700+ templates + skills | 🟡 today via scaffolded n8n-mcp; first-party repo-authored creation planned (`add` + `push --create`) |
+| **Whole-workflow TypeScript authoring** | ❌ | ✅ `.workflow.ts` decorator classes (structure + links) | ❌ keeps `workflow.json`; extracts Code-node source only |
+| **Multi-environment promotion** | 🟡 Enterprise source control / environments | ✅ `promote` remaps creds + refs Dev→Prod | 🟡 separate sync dir per instance, but no `promote` (IDs/creds/refs not remapped) |
+
+Legend: ✅ first-class · 🟡 partial or indirect · ❌ not supported.
+
+**Bottom line:** reach for n8n-decanter when your workflows live or die by their
+Code nodes — TypeScript, shared libraries, offline tests, and real git diffs.
+n8n-as-code shines for whole-workflow authoring/generation and multi-environment
+ops; the native editor stays the live visual canvas everything syncs back to. And
+decanter makes no LLM calls of its own — you drive it with the coding agent you
+already run, so Claude Code on a Claude subscription needs no extra API tokens.
+
+## Caveats
+
+- **Pushing to a *published* workflow republishes it immediately.** n8n 2.x
+  splits each workflow into a draft and a published version — in the editor,
+  *Save* updates the draft and *Publish* makes it live. The public API has no
+  such split: `PUT /workflows/:id` hardcodes `publishIfActive: true`, so a push
+  to an already-published workflow **goes live at once — there is no draft-only
+  update through the API** (pushing to an *unpublished* workflow only updates
+  its draft). This is an n8n API limitation, not decanter's; decanter surfaces
+  the outcome — push prints `published: code is live now` vs `unpublished:
+  draft only`, and `status`/`watch` show the state. For a staged rollout,
+  unpublish → push → publish (triggers are down in between), or push to a
+  staging-copy workflow.
+- **n8n's optimistic locking isn't reachable through the API.** That same `PUT`
+  also forces `forceSave: true` and exposes no version checksum, so the server
+  won't reject a stale write. Decanter's **drift guard** is the only thing
+  protecting remote edits from being clobbered — so always `pull` (or check
+  `status`) before pushing. `--force` deliberately bypasses only this guard,
+  never the compliance guard.
+
 ## How node files work
 
 Node sources live in a `code/` subdir inside the workflow folder, named in
