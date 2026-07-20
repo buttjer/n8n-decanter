@@ -122,9 +122,10 @@ items not yet claimed by one. Recommended order:
 23. [Picker visual refinements](OPEN-23-picker-visual-refinements.md) — feed
     the Plan 16 docs-site picker *simulation*'s styling back into the real
     `lib/picker.mts`: aligned id column, `●`/`○` shape-based status glyphs
-    (retiring the `(not pulled)` words), a per-stage title, plus `executions`
-    in the verb menu and the first pure `renderLines` tests. Presentation only
-    — the state machine is untouched. Proposed 2026-07-20.
+    (retiring the `(not pulled)` words), a per-stage title, and the first pure
+    `renderLines` tests. Presentation only — the state machine is untouched
+    (`executions` in the verb menu already shipped in v0.3.0). Proposed
+    2026-07-20.
 
 ## Conventions
 
