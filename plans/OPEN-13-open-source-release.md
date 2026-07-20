@@ -120,7 +120,7 @@ Direct user request (2026-07-18): release-readiness review. No Plan 0 entry.
    (`200`, verified via `curl`). This wasn't an original Plan 13 item but
    was blocked on the same public-repo gate; noting it here since it's the
    same unblock event. Consider linking this from
-   [Plan 16](INPROGRESS-16-docs-website.md) too.
+   [Plan 16](DONE-16-docs-website.md) too.
 6. **npm account:** enable 2FA. Prefer **trusted publishing** (OIDC from
    GitHub Actions, configured on npmjs.com under the package's settings) or
    `npm publish --provenance` — verified-build badge. The `repository` field

@@ -26,7 +26,7 @@ feed these design decisions back (2026-07-20, "I like your style").
 
 Direct user request (2026-07-20), building on
 [Plan 19](DONE-19-interactive-workflow-picker.md) (the picker) and the
-[Plan 16](INPROGRESS-16-docs-website.md) simulation. Cross-links
+[Plan 16](DONE-16-docs-website.md) simulation. Cross-links
 [Plan 22](DONE-22-test-suite-depth.md) (picker-IO tests). The related
 *"`executions` missing from the interactive menu"* backlog item shipped
 separately in **v0.3.0** (#29), so it's dropped from the tasks below.
