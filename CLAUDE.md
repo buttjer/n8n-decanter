@@ -31,6 +31,19 @@ Internal refactors and test-only changes get no entry. Prefix breaking
 changes with **Breaking:**. On release, rename `[Unreleased]` to
 `[<version>] - <date>` and start a fresh `[Unreleased]`.
 
+## Documentation site
+
+The user-facing docs live in **`/docs`** as plain Markdown (repo root, outside
+`website/` so they outlive the Astro tooling — Astro reads them via a `glob`
+loader). **Keeping them current is a PR acceptance criterion**, on par with the
+changelog: any change to CLI commands/flags, sync behavior, the data model,
+guards, or config that a user would look up must update the matching page(s)
+under `/docs` in the *same* PR — add a page for a new verb, revise the
+[overview](docs/cli/overview.md) command surface, etc. Same test as the
+changelog: user-facing → docs; internal refactor/test-only → none. Docs stay
+usage-level; PLAN.md remains the internal design source of truth. Keep it plain
+Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
+
 ## Git workflow & releases
 
 - **main is protected — never commit to or push main directly.** Every change

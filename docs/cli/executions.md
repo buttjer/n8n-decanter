@@ -1,0 +1,55 @@
+---
+title: executions
+description: Fetch recent execution run data as JSON, for building accurate run fixtures.
+order: 9
+---
+
+```sh
+n8n-decanter [ref...] executions [--status=success|error|waiting] [--limit=N]
+n8n-decanter <execId>  executions          # fetch one execution by id
+n8n-decanter [ref...]  executions clean     # delete fetched data (offline)
+```
+
+Fetches recent execution data — the full run JSON, newest first — for each
+workflow into `workflows/<Name>/executions/<execId>.json`. Read-only against
+the API. The point is to see the **real items each node produced** and copy
+those shapes into [run](/docs/cli/run/) fixtures, instead of guessing.
+
+## Options
+
+| Flag | Meaning |
+| --- | --- |
+| `--status=success\|error\|waiting` | Only fetch executions in that state |
+| `--limit=N` | How many to fetch (default 5, API cap 250; `--limit N` also works) |
+
+A **numeric argument** is treated as a single execution id: it fetches just
+that execution and routes the file to its workflow's folder.
+
+## Where the items live in the JSON
+
+Each node's output items are at:
+
+```txt
+data.resultData.runData["<Node>"][0].data.main[0][]
+```
+
+That array is exactly the `items` a [run](/docs/cli/run/) fixture feeds a node
+— copy a real shape in and your offline run matches production.
+
+## Never commit run data
+
+Each `executions/` dir is written **self-ignored** (it contains a `.gitignore`
+of just `*`) because run data can hold credentials and PII — it must never
+reach git. `init`'s scaffolded root `.gitignore` also lists
+`workflows/*/executions/`.
+
+## `executions clean`
+
+Offline. Deletes the fetched `executions/` dirs for the given workflow refs,
+or for every pulled workflow when no ref is given. Run it when you're done.
+
+## Caveat: published version
+
+Executions run the **published** workflow version (n8n 2.x), not necessarily
+your local draft — so treat the data as convenience reference, not ground
+truth about your current code.

@@ -1,0 +1,68 @@
+---
+// Looping simulation of a coding agent working a decanted workflow: it gets a
+// prompt, edits a node, verifies offline (run/check), and pushes. Generic
+// "agent" framing — not tied to a specific product. Reveals line-by-line,
+// then resets. Honors prefers-reduced-motion.
+---
+
+<div class="mx-auto w-full max-w-3xl overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-lg">
+  <div class="flex items-center gap-2 border-b border-zinc-800 px-4 py-2.5">
+    <span class="h-3 w-3 rounded-full bg-red-500/80"></span>
+    <span class="h-3 w-3 rounded-full bg-yellow-500/80"></span>
+    <span class="h-3 w-3 rounded-full bg-green-500/80"></span>
+    <span class="ml-2 font-mono text-xs text-zinc-500">coding agent — Order Sync</span>
+  </div>
+  <div
+    id="agent-demo-body"
+    role="img"
+    aria-label="Animated demo: a coding agent receives a prompt, edits a Code node, tests it offline, and pushes it live."
+    class="h-[19rem] overflow-hidden px-4 py-3 font-mono text-[12px] leading-[1.6] text-zinc-100 sm:text-[13px]"
+  ></div>
+</div>
+
+<style>
+  #agent-demo-body :global(.who) { color: #a1a1aa; }
+  #agent-demo-body :global(.you) { color: #60a5fa; }
+  #agent-demo-body :global(.bot) { color: #c4b5fd; }
+  #agent-demo-body :global(.tool) { color: #34d399; }
+  #agent-demo-body :global(.add) { color: #34d399; }
+  #agent-demo-body :global(.ok) { color: #34d399; }
+  #agent-demo-body :global(.dim) { color: #71717a; }
+  #agent-demo-body :global(.blk) { margin-top: 0.5rem; }
+</style>
+
+<script>
+  const body = document.getElementById("agent-demo-body");
+  if (body) {
+    // Each entry: [html, ms to linger before revealing the next].
+    const steps: [string, number][] = [
+      ['<div><span class="who you">▌ You</span></div><div>Add 19% VAT to the order totals, then verify it before shipping.</div>', 1400],
+      ['<div class="blk"><span class="who bot">▌ Agent</span></div><div class="dim">Editing the Code node, then testing it offline.</div>', 1200],
+      ['<div class="blk"><span class="tool">⏺ Edit</span> code/calc-totals.ts</div><div class="add">+   const vat = round(subtotal * 0.19);</div><div class="add">+   return [{ json: { subtotal, vat, total: subtotal + vat } }];</div>', 1500],
+      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter calc-totals run fixture.json</div><div class="ok">✓ 1 item · subtotal 100.00 · vat 19.00 · total 119.00</div>', 1600],
+      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter "Order Sync" check</div><div class="ok">✓ compliance + typecheck passed</div>', 1500],
+      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter "Order Sync" push</div><div class="ok">✓ pushed — code is live now</div>', 1600],
+      ['<div class="blk"><span class="who bot">▌ Agent</span></div><div>Done — VAT added, tested offline against a real payload, and pushed live.</div>', 2600],
+    ];
+
+    const render = (n: number) => {
+      body.innerHTML = steps.slice(0, n).map((s) => s[0]).join("");
+      // Keep the newest line in view — the panel scrolls, it doesn't resize.
+      body.scrollTop = body.scrollHeight;
+    };
+
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      render(steps.length);
+    } else {
+      let n = 0;
+      const tick = () => {
+        n = n >= steps.length ? 1 : n + 1;
+        render(n);
+        const ms = n >= steps.length ? steps[steps.length - 1][1] : steps[n - 1][1];
+        window.setTimeout(tick, ms);
+      };
+      tick();
+    }
+  }
+</script>

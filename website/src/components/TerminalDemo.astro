@@ -1,0 +1,125 @@
+---
+// Looping, scripted simulation of the interactive picker — types the bare
+// command, filters the list, picks a verb, streams push output, repeats.
+// Pure client-side DOM swapping (no framework); honors prefers-reduced-motion.
+---
+
+<div class="mx-auto w-full max-w-3xl overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-lg">
+  <div class="flex items-center gap-2 border-b border-zinc-800 px-4 py-2.5">
+    <span class="h-3 w-3 rounded-full bg-red-500/80"></span>
+    <span class="h-3 w-3 rounded-full bg-yellow-500/80"></span>
+    <span class="h-3 w-3 rounded-full bg-green-500/80"></span>
+    <span class="ml-2 font-mono text-xs text-zinc-500">zsh — workflows</span>
+  </div>
+  <div
+    id="term-demo-body"
+    role="img"
+    aria-label="Animated demo: running n8n-decanter opens a picker; you filter workflows, choose a verb, and it syncs."
+    class="h-[16rem] overflow-hidden whitespace-pre px-4 py-3 font-mono text-[12px] leading-[1.55] text-zinc-100 sm:text-[13px]"
+  ></div>
+</div>
+
+<style>
+  #term-demo-body :global(.pmt) { color: #34d399; }
+  #term-demo-body :global(.dir) { color: #60a5fa; }
+  #term-demo-body :global(.cmd) { color: #f4f4f5; }
+  #term-demo-body :global(.ok) { color: #34d399; }
+  #term-demo-body :global(.warn) { color: #fbbf24; }
+  #term-demo-body :global(.dim) { color: #71717a; }
+  #term-demo-body :global(.sel) {
+    background: #27272a;
+    border-radius: 4px;
+    color: #fafafa;
+  }
+  #term-demo-body :global(.cur) { animation: term-blink 1s steps(1) infinite; }
+  @keyframes term-blink { 50% { opacity: 0; } }
+</style>
+
+<script>
+  const body = document.getElementById("term-demo-body");
+  if (body) {
+    const pad = (s: string, n: number) => (s.length >= n ? s : s + " ".repeat(n - s.length));
+
+    const workflows = [
+      { name: "Order Sync", id: "wf_8kQ2", pulled: true },
+      { name: "Lead Enrichment", id: "wf_3mAz", pulled: false },
+      { name: "Invoice Sync", id: "wf_9pLx", pulled: true },
+    ];
+    const verbs = ["status", "pull", "push", "watch", "check"];
+
+    const prompt = (cmd: string, cur = false) =>
+      `<div><span class="pmt">➜</span> <span class="dir">~/workflows</span> ${cmd}${cur ? '<span class="cur">█</span>' : ""}</div>`;
+
+    const picker = (cursor: number) => {
+      const rows = workflows
+        .map((w, i) => {
+          const dot = w.pulled ? '<span class="ok">●</span>' : '<span class="warn">○</span>';
+          const state = w.pulled ? '<span class="ok">pulled</span>' : '<span class="warn">not pulled</span>';
+          const head = `${i === cursor ? "❯" : " "} ${pad(w.name, 17)} ${pad(w.id, 8)} `;
+          return `<div class="${i === cursor ? "sel" : ""}">${head}${dot} ${state}</div>`;
+        })
+        .join("");
+      return (
+        '<div class="dim">┌ pick a workflow ─────────────────────────┐</div>' +
+        rows +
+        '<div class="dim">type to filter · ↑↓ move · ⏎ select · esc quit</div>'
+      );
+    };
+
+    const menu = (name: string, cursor: number) => {
+      const rows = verbs
+        .map((v, i) => `<div class="${i === cursor ? "sel" : ""}">${i === cursor ? "❯" : " "} ${v}</div>`)
+        .join("");
+      return (
+        `<div class="dim">┌ ${name} ────────────────────────────────┐</div>` +
+        rows +
+        '<div class="dim">↑↓ move · ⏎ run · esc back</div>'
+      );
+    };
+
+    const cmdLine = prompt('<span class="cmd">n8n-decanter</span>');
+    const running = cmdLine + '<div><span class="warn">⠹</span> pushing Invoice Sync…</div>';
+    const output =
+      cmdLine +
+      '<div><span class="ok">✓</span> Invoice Sync pushed — 3 nodes live <span class="dim">(0.4s)</span></div>' +
+      '<div class="dim">  workflows/Invoice Sync/workflow.json</div>' +
+      '<div class="dim">  code/parse-invoice.js · code/format.ts</div>';
+
+    const typed = "n8n-decanter";
+    // Type the command out one character at a time, slowly.
+    const typing: [string, number][] = [...typed].map((_, n) => [
+      prompt(`<span class="cmd">${typed.slice(0, n + 1)}</span>`, true),
+      130,
+    ]);
+
+    // [html, ms] frames; the loop cycles through them forever.
+    const frames: [string, number][] = [
+      [prompt("", true), 700],
+      ...typing,
+      [prompt('<span class="cmd">n8n-decanter</span>', true), 900],
+      [picker(0), 950],
+      [picker(1), 780],
+      [picker(2), 950],
+      [menu("Invoice Sync", 0), 820],
+      [menu("Invoice Sync", 1), 820],
+      [menu("Invoice Sync", 2), 900],
+      [running, 850],
+      [output, 2400],
+      [picker(2), 1600],
+    ];
+
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      body.innerHTML = picker(2);
+    } else {
+      let i = 0;
+      const tick = () => {
+        const [html, ms] = frames[i];
+        body.innerHTML = html;
+        i = (i + 1) % frames.length;
+        window.setTimeout(tick, ms);
+      };
+      tick();
+    }
+  }
+</script>

@@ -1,0 +1,74 @@
+---
+import { href } from "../lib/url";
+import ThemeToggle from "./ThemeToggle.astro";
+
+// The CLI's block-minifont wordmark (lib/init.mts), rendered as crisp SVG
+// pixels instead of text so it tiles perfectly in any font. Each glyph is a
+// 2×2 quadrant cell; we expand it to unit rects. Chars 0–5 ("n8n") are the
+// brand-orange group, the rest ("decanter") uses the current text color.
+const LOGO_ROWS = [
+  "  ▄▖     ▌        ▗",
+  "▛▌▙▌▛▌  ▛▌█▌▛▘▀▌▛▌▜▘█▌▛▘",
+  "▌▌▙▌▌▌  ▙▌▙▖▙▖█▌▌▌▐▖▙▖▌",
+];
+// Filled quadrants per glyph, order [TL, TR, BL, BR].
+const QUAD: Record<string, [number, number, number, number]> = {
+  " ": [0, 0, 0, 0],
+  "▘": [1, 0, 0, 0], "▝": [0, 1, 0, 0], "▖": [0, 0, 1, 0], "▗": [0, 0, 0, 1],
+  "▀": [1, 1, 0, 0], "▄": [0, 0, 1, 1], "▌": [1, 0, 1, 0], "▐": [0, 1, 0, 1],
+  "█": [1, 1, 1, 1],
+  "▙": [1, 0, 1, 1], "▟": [0, 1, 1, 1], "▛": [1, 1, 1, 0], "▜": [1, 1, 0, 1],
+  "▚": [1, 0, 0, 1], "▞": [0, 1, 1, 0],
+};
+const OFFSETS = [[0, 0], [1, 0], [0, 1], [1, 1]]; // TL, TR, BL, BR
+const N8N_COLS = 6; // glyph columns 0–5 are "n8n"
+const accentRects: string[] = [];
+const fgRects: string[] = [];
+let width = 0;
+LOGO_ROWS.forEach((row, r) => {
+  [...row].forEach((ch, c) => {
+    (QUAD[ch] ?? QUAD[" "]).forEach((on, k) => {
+      if (!on) return;
+      const x = c * 2 + OFFSETS[k][0];
+      const y = r * 2 + OFFSETS[k][1];
+      width = Math.max(width, x + 1);
+      (c < N8N_COLS ? accentRects : fgRects).push(`<rect x="${x}" y="${y}" width="1" height="1"/>`);
+    });
+  });
+});
+const logoSvg = `<svg viewBox="0 0 ${width} 6" height="24" width="${(width / 6) * 24}" shape-rendering="crispEdges" role="img" aria-label="n8n-decanter" style="display:block"><g fill="var(--color-accent-500)">${accentRects.join("")}</g><g fill="currentColor">${fgRects.join("")}</g></svg>`;
+---
+
+<header
+  class="sticky top-0 z-20 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90"
+>
+  <div class="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+    <a
+      href={href("/")}
+      aria-label="n8n-decanter"
+      class="block text-zinc-900 dark:text-zinc-100"
+      set:html={logoSvg}
+    />
+    <nav class="flex items-center gap-4 text-sm">
+      <a
+        href={href("/docs/getting-started/installation/")}
+        class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        Docs
+      </a>
+      <a
+        href="https://github.com/buttjer/n8n-decanter"
+        class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        GitHub
+      </a>
+      <a
+        href="https://www.npmjs.com/package/n8n-decanter"
+        class="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        npm
+      </a>
+      <ThemeToggle />
+    </nav>
+  </div>
+</header>

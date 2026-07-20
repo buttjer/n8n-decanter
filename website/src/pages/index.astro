@@ -1,0 +1,189 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import TerminalDemo from "../components/TerminalDemo.astro";
+import AgentDemo from "../components/AgentDemo.astro";
+import { href } from "../lib/url";
+
+const features = [
+  {
+    icon: "⎇",
+    title: "Real version control",
+    text: "Meaningful diffs, PRs, blame; every push and pull is auto-committed.",
+  },
+  {
+    icon: "{ }",
+    title: "TypeScript or typed JS",
+    text: "Write nodes in TS (compiled on push); n8n globals ($input, $('…'), …) are typed in both.",
+  },
+  {
+    icon: "❖",
+    title: "Agent-native",
+    text: "init scaffolds Claude Code / Cursor / Codex configs and verification hooks; offline check and run give agents a credential-free feedback loop.",
+  },
+  {
+    icon: "⊘",
+    title: "Guardrails",
+    text: "A compliance guard and typecheck gate block broken pushes; a drift guard keeps you from clobbering remote edits.",
+  },
+  {
+    icon: "☰",
+    title: "Real execution data on tap",
+    text: "executions fetches recent run JSON into a gitignored temp dir, so agents see actual payload shapes (and build accurate run fixtures) instead of guessing; executions clean removes it when done.",
+  },
+  {
+    icon: "↯",
+    title: "Live editing",
+    text: "watch pushes on save and auto-reloads the n8n editor tab via a local proxy.",
+  },
+  {
+    icon: "⧉",
+    title: "Shared code and small libraries",
+    text: ".ts nodes import helpers and types from shared/ and opted-in npm packages; push bundles them into self-contained nodes that run anywhere, n8n Cloud included.",
+  },
+  {
+    icon: "⌘",
+    title: "Bring your own agent",
+    text: "decanter never calls an LLM itself — your coding agent and your subscription do 100% of the work, no API key or model config, ever.",
+  },
+  {
+    icon: "⬡",
+    title: "Built for n8n 2.x",
+    text: "The draft/publish model is a first-class citizen (push tells you whether code went live or stayed a draft), and every API-touching behavior is verified against a real n8n 2.x instance by an automated integration suite.",
+  },
+];
+
+// "How it compares" — condensed from the README table. ✅ first-class ·
+// 🟡 partial/indirect · ❌ not supported.
+// TEMPORARILY HIDDEN (with the section below) pending the n8n-as-code
+// maintainer's sign-off on the scorings (asked 2026-07-20). Uncomment both to
+// restore.
+/*
+const compareHead = ["Capability", "Native n8n", "n8n-as-code", "n8n-decanter"];
+const compareRows = [
+  ["TypeScript for Code nodes", "❌ JS or Python only", "❌ TS at workflow level, not node logic", "✅ Code nodes as .ts, compiled on push, typed globals"],
+  ["Shared code in Code nodes", "❌ self-host allow-list only, no libraries", "❌ not part of its model", "✅ shared/*.ts + npm bundled into self-contained nodes"],
+  ["Code as individual files", "❌ no source files (JSON blob)", "🟡 one .workflow.ts per workflow", "✅ folder per workflow; each Code node its own .js/.ts"],
+  ["Versioning", "🟡 in-app history; Git is Enterprise-only", "✅ GitOps sync of workflow source", "✅ real git — diffs, PRs, blame; auto-commit each sync"],
+  ["Live editing", "✅ the canvas (baseline)", "🟡 explicit pull/push, no auto-watch", "✅ watch: push on save + auto-reload the editor tab"],
+  ["Offline testing on real executions", "🟡 re-run in-editor, online only", "🟡 inspect against a live env", "✅ fetch real run JSON → offline run fixtures, no creds"],
+  ["Agent-native tooling", "🟡 n8n's own canvas AI, not your agent", "✅ Workbench, skills, MCP, plugins", "✅ scaffolds Claude/Cursor/Codex + MCP; offline loop"],
+  ["Model ownership", "❌ locked to n8n's hosted AI", "🟡 plugin uses your sub; Workbench needs a key", "✅ never calls an LLM — your agent/subscription does 100%"],
+  ["Whole-workflow TS authoring", "❌", "✅ .workflow.ts decorator classes", "❌ keeps workflow.json; Code-node source only"],
+  ["Multi-environment promotion", "🟡 Enterprise environments", "✅ promote remaps creds + refs", "🟡 a sync dir per instance, no promote yet"],
+];
+*/
+---
+
+<BaseLayout title="n8n-decanter — work on n8n like a codebase">
+  <main class="mx-auto w-full max-w-6xl px-4 sm:px-6">
+    <section class="py-16 text-center sm:py-24">
+      <h1 class="mx-auto max-w-4xl text-5xl tracking-tight text-balance sm:text-7xl">
+        Work on n8n like a codebase —
+        <span class="text-accent-600 dark:text-accent-400">built for AI coding agents.</span>
+      </h1>
+      <p class="mx-auto mt-6 max-w-2xl text-lg text-zinc-600 dark:text-zinc-400">
+        n8n-decanter syncs your n8n instance into a git-friendly, folder-per-workflow layout:
+        every Code node's source becomes its own <code class="font-mono text-base">.js</code> or
+        <code class="font-mono text-base">.ts</code> file, editable in your IDE or by your agent,
+        and pushed back through the n8n API.
+      </p>
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+        <a
+          href={href("/docs/getting-started/installation/")}
+          class="rounded-lg bg-accent-600 px-5 py-2.5 font-medium text-white hover:bg-accent-700"
+        >
+          Get started
+        </a>
+        <a
+          href="https://github.com/buttjer/n8n-decanter"
+          class="rounded-lg border border-zinc-300 px-5 py-2.5 font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          GitHub
+        </a>
+      </div>
+      <pre
+        class="mx-auto mt-8 w-fit max-w-full overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-50 px-5 py-3 text-left font-mono text-sm dark:border-zinc-800 dark:bg-zinc-900"><code>npm install -g n8n-decanter</code></pre>
+    </section>
+
+    <section class="pb-16">
+      <TerminalDemo />
+      <p class="mt-3 text-center text-sm text-zinc-500 dark:text-zinc-400">
+        Run <code class="font-mono">n8n-decanter</code> with no arguments — pick a workflow, run a verb.
+      </p>
+    </section>
+
+    <section class="grid gap-6 pb-16 sm:grid-cols-2 lg:grid-cols-3">
+      {
+        features.map((feature) => (
+          <div class="group rounded-xl border border-zinc-200 p-5 transition-colors hover:border-accent-400 dark:border-zinc-800 dark:hover:border-accent-500">
+            <div
+              aria-hidden="true"
+              class="flex h-11 w-11 items-center justify-center rounded-lg bg-accent-500/10 font-mono text-lg leading-none text-accent-600 ring-1 ring-inset ring-accent-500/25 transition-colors group-hover:bg-accent-500/20 dark:bg-accent-400/10 dark:text-accent-400"
+            >
+              {feature.icon}
+            </div>
+            <h2 class="mt-4">{feature.title}</h2>
+            <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{feature.text}</p>
+          </div>
+        ))
+      }
+    </section>
+
+    <section class="pb-20">
+      <AgentDemo />
+      <p class="mt-3 text-center text-sm text-zinc-500 dark:text-zinc-400">
+        …or hand it to your coding agent — it edits, tests offline, and pushes.
+      </p>
+    </section>
+
+    {/* TEMPORARILY HIDDEN pending the n8n-as-code maintainer's sign-off on the
+        scorings (asked 2026-07-20). Uncomment this section + the
+        compareHead/compareRows data above to restore.
+    <section class="pb-24">
+      <h2 class="text-center text-3xl sm:text-5xl">How it compares</h2>
+      <p class="mx-auto mt-3 max-w-2xl text-center text-sm text-zinc-600 dark:text-zinc-400">
+        n8n-decanter is <strong class="font-medium">Code-node-first</strong> — the loop of writing,
+        typing, testing, and shipping the code inside your workflows. Against the native editor and
+        <a href="https://github.com/EtienneLescot/n8n-as-code" class="text-accent-600 hover:underline dark:text-accent-400">n8n-as-code</a>:
+      </p>
+      <div class="mt-8 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <table class="w-full min-w-[760px] border-collapse text-left text-sm">
+          <thead>
+            <tr class="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
+              {
+                compareHead.map((h, i) => (
+                  <th class:list={["px-4 py-3 font-medium", i === 3 && "text-accent-700 dark:text-accent-400"]}>
+                    {h}
+                  </th>
+                ))
+              }
+            </tr>
+          </thead>
+          <tbody>
+            {
+              compareRows.map((row) => (
+                <tr class="border-b border-zinc-100 last:border-0 dark:border-zinc-800/60">
+                  {row.map((cell, i) => (
+                    <td
+                      class:list={[
+                        "px-4 py-3 align-top",
+                        i === 0 ? "font-medium" : "text-zinc-600 dark:text-zinc-400",
+                        i === 3 && "bg-accent-50/60 text-zinc-700 dark:bg-accent-950/20 dark:text-zinc-300",
+                      ]}
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-3 text-center text-xs text-zinc-500 dark:text-zinc-400">
+        ✅ first-class · 🟡 partial or indirect · ❌ not supported
+      </p>
+    </section>
+    */}
+  </main>
+</BaseLayout>

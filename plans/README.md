@@ -78,8 +78,11 @@ items not yet claimed by one. Recommended order:
     container: proves bundled nodes execute in the real sandbox and
     re-verifies the recorded API semantics (publish model, tags/pinned
     round-trip) on every version bump. Nothing user-facing.
-16. Documentation website — reserved (plan drafted in a parallel session,
-    not yet committed).
+16. [Documentation website](INPROGRESS-16-docs-website.md) — static docs site
+    (Astro + Tailwind, `website/` subproject) carved out of the README:
+    landing page, per-verb CLI reference, concepts, agent docs; deployed to
+    GitHub Pages once the repo is public (Plan 13). Theme tokens slot in
+    user-provided Tailwind settings.
 17. [Public trust pass](DONE-17-public-trust-pass.md) — pre-release
     hygiene on top of Plan 13: 100%-TypeScript language stats via
     `.gitattributes`, SECURITY.md, stale-docs fix, remote branch cleanup;
@@ -116,6 +119,12 @@ items not yet claimed by one. Recommended order:
     monolithic e2e for isolation/legibility, and extend the Docker smoke suite
     to a 2.x version matrix + polling instead of fixed sleeps. Proposed
     2026-07-20.
+23. [Picker visual refinements](OPEN-23-picker-visual-refinements.md) — feed
+    the Plan 16 docs-site picker *simulation*'s styling back into the real
+    `lib/picker.mts`: aligned id column, `●`/`○` shape-based status glyphs
+    (retiring the `(not pulled)` words), a per-stage title, plus `executions`
+    in the verb menu and the first pure `renderLines` tests. Presentation only
+    — the state machine is untouched. Proposed 2026-07-20.
 
 ## Conventions
 

@@ -1,0 +1,27 @@
+/*
+ * Theme tokens — the single place the site's look is defined (Plan 16 task 2).
+ *
+ * PLACEHOLDER palette: swap these values for the real Tailwind settings when
+ * they are provided; nothing outside this file hardcodes brand color or fonts.
+ * Components use `accent-*` utilities for brand color and Tailwind's built-in
+ * zinc scale for neutrals.
+ */
+@theme {
+  /* Brand accent (placeholder: warm amber) */
+  --color-accent-50: oklch(0.97 0.02 75);
+  --color-accent-100: oklch(0.94 0.05 73);
+  --color-accent-200: oklch(0.89 0.08 71);
+  --color-accent-300: oklch(0.84 0.11 68);
+  --color-accent-400: oklch(0.77 0.14 64);
+  --color-accent-500: oklch(0.7 0.15 60);
+  --color-accent-600: oklch(0.62 0.15 55);
+  --color-accent-700: oklch(0.53 0.13 51);
+  --color-accent-800: oklch(0.45 0.11 48);
+  --color-accent-900: oklch(0.39 0.09 46);
+  --color-accent-950: oklch(0.26 0.06 44);
+
+  /* Fonts: light sans body, medium serif headlines, mono for code. */
+  --font-sans: ui-sans-serif, sans-serif;
+  --font-serif: ui-serif, serif;
+  --font-mono: ui-monospace, monospace;
+}
