@@ -55,57 +55,59 @@ outputs.
   where the engine-interface canary belongs (its notes already keep
   `test:sim` separate from `npm test`).
 
-## Design decision — how to get a real engine
+## Design decision — the engine (decided 2026-07-20, user)
 
-Three candidate routes; the workflow transform in task 2 is shared by A and B,
-so it can be built before the route is final.
+**Route B: workflow transform + real n8n (`n8n execute`).** The spike
+(task 1) now de-risks this design rather than gating a choice.
 
-- **A. In-process engine embed.** Dev-depend on `n8n-workflow` + `n8n-core`,
-  instantiate `WorkflowExecute` with a custom `INodeTypes` registry: the real
-  implementations for Code and pure nodes plus a synthetic "replay" node type
-  that returns pinned items for network nodes.
-  - Pros: fast, in-process, no Docker, debuggable.
-  - Cons: `n8n-core`'s embedding surface is effectively internal and shifts
-    across releases; the Code node needs `n8n-nodes-base` (huge) and newer n8n
-    runs it via task runners; version skew vs the user's instance is on us.
-- **B. Workflow transform + real n8n (`n8n execute`), in Docker.** Rewrite a
-  *copy* of the workflow: materialize `//@file:` placeholders into real code
-  (reusing `buildNodeCode` from `lib/push.mts`); keep side-effect-free nodes
-  (Set, IF, Switch, Merge, Filter, …) intact so they *really* execute; replace
-  every network/side-effectful node — anything credentialed, HTTP, DB,
-  messaging, or of unknown type (default-deny) — in-place with a node
-  returning its pinned items (same name and connections, so `$('…')` and
-  expressions still resolve). The trigger is replaced the same way — a pinned
-  node **keeping its name** emitting the captured trigger output (the exact
-  manual-start mechanics are a task 1 probe; a bare "swap in a Manual
-  Trigger" would break `$('<Trigger>')` references). Then run it on the n8n
-  engine pinned per the version policy below, `--network none`, no
-  credentials mounted. n8n 1.x removed `execute --file`, so the in-container
-  flow is `n8n import:workflow --input=sim.json && n8n execute --id=<id>`
-  against the container's throwaway SQLite (import deactivates workflows by
-  default — a free extra safety layer). Code node runs via internal-mode task
-  runners (loopback broker, works under `--network none`) or in-process with
-  `N8N_RUNNERS_ENABLED=false`.
-  - Pros: engine-true by construction on *any* n8n version (pull the matching
-    image); the no-side-effects guarantee is structural (no I/O-capable node
-    remains) *and* enforced (no network); no fragile internal APIs.
-  - The engine backend is pluggable, Docker is not required: default to
-    `npx n8n@<ver>` with `N8N_USER_FOLDER` in a scratch dir (throwaway
-    SQLite/config, per-run version pinning, keeps n8n out of the decanter's
-    own dependency tree); Docker `--network none` is the opt-in hard-isolation
-    mode (CI). Without Docker the no-side-effects guarantee is structural +
-    sandbox-config (empty task-runner stdlib allowlist, telemetry/version
-    fetches disabled via env), not a physical network cutoff.
-  - Cons: heavy engine install either way (npx cache or image, native sqlite
-    bindings, first-boot DB migrations); slower per run; output has to be
-    scraped from `n8n execute`'s result JSON.
-- **C. Grow `lib/run.mts` into a graph walker.** Already deferred by Plan 3
-  (`run --chain`). **Rejected as the answer to this item** — it approximates
-  the engine, which is precisely what the item wants to stop doing.
+The transform rewrites a *copy* of the workflow: materialize `//@file:`
+placeholders into real code (reusing `buildNodeCode` from `lib/push.mts`);
+keep side-effect-free nodes (Set, IF, Switch, Merge, Filter, …) intact so
+they *really* execute; replace every network/side-effectful node — anything
+credentialed, HTTP, DB, messaging, or of unknown type (default-deny) —
+in-place with a node returning its pinned items (same name and connections,
+so `$('…')` and expressions still resolve). The trigger is replaced the same
+way — a pinned node **keeping its name** emitting the captured trigger output
+(the exact manual-start mechanics are a task 1 probe; a bare "swap in a
+Manual Trigger" would break `$('<Trigger>')` references).
 
-**Leaning B**, with A as the fallback if the spike shows the engine round-trip
-is too slow or `n8n execute`'s output too lossy for diffing. Decision gets
-recorded here (and raised for PLAN.md) after task 1.
+The engine runs the transformed copy, pinned per the version policy below,
+with no credentials mounted. n8n 1.x removed `execute --file`, so the flow is
+`n8n import:workflow --input=sim.json && n8n execute --id=<id>` against a
+throwaway SQLite (import deactivates workflows by default — a free extra
+safety layer). The Code node runs via internal-mode task runners (loopback
+broker, works under `--network none`) or in-process with
+`N8N_RUNNERS_ENABLED=false`.
+
+The engine backend is pluggable; Docker is optional:
+
+- **Default: `npx n8n@<ver>`** with `N8N_USER_FOLDER` in a scratch dir —
+  throwaway SQLite/config, per-run version pinning, keeps n8n out of the
+  decanter's own dependency tree. The no-side-effects guarantee here is
+  structural (no I/O-capable node survives the transform) plus sandbox
+  config (empty task-runner stdlib allowlist, telemetry/version fetches
+  disabled via env) — not a physical network cutoff.
+- **Opt-in hard isolation: Docker `--network none`** (CI) — adds the
+  enforced network cutoff on top.
+
+Why B: engine-true by construction on *any* n8n version (run the matching
+one); no fragile internal APIs. Accepted costs: heavy engine install either
+way (npx cache or image, native sqlite bindings, first-boot DB migrations);
+slower per run; output scraped from `n8n execute`'s result JSON.
+
+**Rejected routes (footnote):**
+
+- **A. In-process engine embed** — dev-depend on `n8n-workflow` + `n8n-core`,
+  instantiate `WorkflowExecute` over a custom `INodeTypes` registry (real
+  implementations for pure nodes, a synthetic replay type for pinned ones).
+  Fast and debuggable, but the embedding surface is effectively internal and
+  shifts across releases, the Code node drags in all of `n8n-nodes-base`,
+  newer n8n runs it via task runners, and version skew vs the user's
+  instance is on us. Kept only as the fallback if the task 1 checkpoint
+  fails — a stop-and-raise, never a silent pivot.
+- **C. Grow `lib/run.mts` into a graph walker** — Plan 3's deferred
+  `run --chain`; approximates the engine, which is precisely what this item
+  wants to stop doing.
 
 ## Design decision — engine version policy (2026-07-20)
 
@@ -134,7 +136,7 @@ recorded here (and raised for PLAN.md) after task 1.
 
 ## Tasks
 
-1. **Spike (timeboxed; gates the route).** Hand-capture one execution
+1. **Spike (timeboxed; de-risks route B).** Hand-capture one execution
    (`GET /executions/{id}?includeData=true` → `data.resultData.runData`) from
    the live instance. Manually build the transformed workflow for one real
    workflow and run it through route B via the npx backend (`npx n8n@<ver>`
@@ -155,11 +157,11 @@ recorded here (and raised for PLAN.md) after task 1.
    - A multi-run capture (loop workflow): confirm what
      `runData["<node>"].length > 1` looks like, backing the v1 hard-error
      (Non-goals).
-   - Skim route A's surface (`WorkflowExecute` constructor + `INodeTypes`)
-     enough to price it.
-   **Go/no-go:** route B stands if a warm (post-install) replay of the spike
-   workflow completes in ≈30 s wall or less and the execute output supports a
-   per-node diff; otherwise price A seriously. Record the decision above.
+   **Checkpoint:** a warm (post-install) replay of the spike workflow
+   completes in ≈30 s wall or less and the execute output supports a
+   per-node diff. If either fails, stop and raise — route A is the recorded
+   fallback (see the footnote), not a silent pivot. Record findings in this
+   file.
 2. **`lib/simulate.mts` — fixture loader + transform.**
    - Node classification: a maintained allowlist of side-effect-free node
      types executes for real; everything else is a **network node** and gets
@@ -289,6 +291,8 @@ recorded here (and raised for PLAN.md) after task 1.
   20/22: unblocked; version policy decided; `--pin` keep/pin story added;
   loops scoped out of v1; trigger-swap shorthand corrected (name
   preservation); allowlist seeded; LLM gap filling made severable.
+- **Route decided 2026-07-20 (user): B.** Route A reduced to a fallback
+  footnote; the spike de-risks B instead of gating a choice.
 - **Ordering:** independent now — the spike can start anytime. Soft ties:
   Plan 20 task 3 (shared staleness helper), Plan 22 task 6 (canary lands
   with the matrix).
@@ -299,7 +303,8 @@ recorded here (and raised for PLAN.md) after task 1.
   `CLAUDE.md`):** the `simulate` verb, the `n8nVersion` config field, the
   committed `workflows/<Name>/fixtures/` artifact (the guard already
   reserves the subdir), consumption of `executions/`, the pure-node
-  allowlist, and the route decision from task 1.
+  allowlist, and the route-B design (user-decided 2026-07-20 — PLAN.md gets
+  it when the feature lands).
 - **Allowlist maintenance:** curated, versioned; additions need
   justification. Default-deny carries the safety, not the list.
 - **Licensing:** n8n's Sustainable Use License permits running it for
