@@ -26,6 +26,8 @@ const ogImage = Astro.site ? new URL(href("/og.png"), Astro.site) : undefined;
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href={href("/favicon.svg")} />
     <link rel="sitemap" href={href("/sitemap-index.xml")} />
+    <link rel="alternate" type="text/plain" title="llms.txt" href={href("/llms.txt")} />
+    <link rel="alternate" type="text/plain" title="llms-full.txt" href={href("/llms-full.txt")} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
