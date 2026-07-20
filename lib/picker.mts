@@ -2,8 +2,9 @@
 // inited project. Two stages — type-to-filter workflow list (pulled green,
 // unpulled remote yellow), then a verb menu; unpulled entries pull directly.
 // The pure state machine (filter, reducer, window) is exported for unit
-// tests; only runPicker touches the terminal. Exists only behind a TTY gate,
-// so piped output never sees any of this.
+// tests; runPicker's terminal IO takes injectable input/output streams
+// (Plan 22) so test/interactive.mts can drive it without a real pty. Exists
+// only behind a TTY gate at the CLI, so piped output never sees any of this.
 import { emitKeypressEvents } from "node:readline";
 import { style } from "./style.mts";
 
@@ -139,7 +140,7 @@ function reduceVerbKey(state: PickerState, key: PickerKey): PickerStep {
   return { done: false, state };
 }
 
-// ---------- terminal IO (TTY only, untested by CI — keep this part thin) ----------
+// ---------- terminal IO (covered by test/interactive.mts via injected streams) ----------
 
 const LIST_HEIGHT = 10;
 
@@ -184,41 +185,49 @@ function renderLines(state: PickerState): string[] {
   return lines;
 }
 
+/** The subset of a TTY input stream runPicker needs — real `process.stdin`,
+ * or an injected `PassThrough` in tests (no `isRaw`/`setRawMode`, no real TTY). */
+export type PickerInputStream = NodeJS.ReadableStream & { isRaw?: boolean; setRawMode?: (mode: boolean) => void };
+/** The subset of a TTY output stream runPicker needs. */
+export type PickerOutputStream = Pick<NodeJS.WritableStream, "write">;
+
 /**
  * Run the picker on the current TTY. `remote` (when credentials exist) is
  * already in flight; its workflows are appended as they arrive. `resume`
  * re-opens a workflow's verb menu (the picker loop passes the last run).
  * Resolves with the chosen verb+id+name, or "quit" (Esc) / "interrupted"
- * (Ctrl-C).
+ * (Ctrl-C). `input`/`output` default to the real TTY streams — tests inject
+ * a `PassThrough` pair instead of needing a real pty (no new dependency).
  */
 export async function runPicker(
   local: PickerEntry[],
   remote: Promise<Array<{ id: string; name: string }>> | undefined,
-  opts: { resume?: PickerResume; notice?: string } = {},
+  opts: { resume?: PickerResume; notice?: string; input?: PickerInputStream; output?: PickerOutputStream } = {},
 ): Promise<PickerResult> {
+  const input: PickerInputStream = opts.input ?? process.stdin;
+  const output: PickerOutputStream = opts.output ?? process.stdout;
   let state = initialState(local, remote !== undefined, opts);
   let prevLines = 0;
   const repaint = (): void => {
     const lines = renderLines(state);
     const up = prevLines > 0 ? `\x1b[${prevLines}A` : "";
-    process.stdout.write(`${up}\r\x1b[J${lines.join("\n")}\n`);
+    output.write(`${up}\r\x1b[J${lines.join("\n")}\n`);
     prevLines = lines.length;
   };
   const erase = (): void => {
-    if (prevLines > 0) process.stdout.write(`\x1b[${prevLines}A\r\x1b[J`);
+    if (prevLines > 0) output.write(`\x1b[${prevLines}A\r\x1b[J`);
     prevLines = 0;
   };
 
-  const stdin = process.stdin;
-  emitKeypressEvents(stdin);
-  const wasRaw = stdin.isRaw === true;
+  emitKeypressEvents(input);
+  const wasRaw = input.isRaw === true;
   const restore = (): void => {
-    if (!wasRaw) stdin.setRawMode(false);
-    process.stdout.write("\x1b[?25h");
+    if (!wasRaw) input.setRawMode?.(false);
+    output.write("\x1b[?25h");
   };
-  stdin.setRawMode(true);
-  stdin.resume();
-  process.stdout.write("\x1b[?25l");
+  input.setRawMode?.(true);
+  input.resume();
+  output.write("\x1b[?25l");
   process.once("exit", restore); // belt and braces: never leave the terminal raw
   let finished = false;
   let onKeypress: ((str: string | undefined, key: PickerKey | undefined) => void) | undefined;
@@ -231,7 +240,7 @@ export async function runPicker(
         finished = true;
         resolve("quit");
       };
-      stdin.once("end", onEnd);
+      input.once("end", onEnd);
       onKeypress = (_str, key) => {
         const step = reduceKey(state, key ?? {});
         if (step.done) {
@@ -254,16 +263,16 @@ export async function runPicker(
           state = { ...state, loadingRemote: false, notice: `remote list unavailable (${err.message.split("\n")[0]})` };
           repaint();
         });
-      stdin.on("keypress", onKeypress);
+      input.on("keypress", onKeypress);
       repaint();
     });
   } finally {
     finished = true;
-    if (onKeypress) stdin.removeListener("keypress", onKeypress);
-    if (onEnd) stdin.removeListener("end", onEnd);
+    if (onKeypress) input.removeListener("keypress", onKeypress);
+    if (onEnd) input.removeListener("end", onEnd);
     erase();
     restore();
     process.removeListener("exit", restore);
-    stdin.pause();
+    input.pause();
   }
 }

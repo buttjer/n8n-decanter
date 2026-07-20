@@ -63,7 +63,7 @@ let KEY = "";
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-smoke-"));
 const ROOT = path.join(TMP, "workflows");
 
-const { step, passedCount } = createStepRunner({
+const { step, passedCount, hasFailed } = createStepRunner({
   onFail: () => {
     console.error(`work dir kept: ${TMP}`);
     void teardown();
@@ -499,8 +499,7 @@ try {
   });
 } finally {
   await teardown();
-  if (process.exitCode !== 1) rmSync(TMP, { recursive: true, force: true });
+  if (!hasFailed()) rmSync(TMP, { recursive: true, force: true });
 }
 
 console.log(`\n${passedCount()} smoke steps passed against ${IMAGE}`);
-process.exit(0);

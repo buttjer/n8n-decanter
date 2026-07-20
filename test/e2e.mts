@@ -142,7 +142,7 @@ const wfDir = (name: string) => path.join(ROOT, name);
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
 const state = (dir: string) => JSON.parse(read(dir, ".decanter.json"));
 const remoteNode = (id: string, nid: string) => db.get(id).nodes.find((n: any) => n.id === nid);
-const { step, passedCount } = createStepRunner({
+const { step, passedCount, hasFailed } = createStepRunner({
   onFail: () => {
     console.error(`work dir kept: ${TMP}`);
     server.close();
@@ -1254,6 +1254,8 @@ await step("executions clean: removes the dirs, credentials-free", async () => {
   }
 });
 
-server.close();
-rmSync(TMP, { recursive: true, force: true });
+if (!hasFailed()) {
+  server.close();
+  rmSync(TMP, { recursive: true, force: true });
+}
 console.log(`\n${passedCount()} steps passed`);
