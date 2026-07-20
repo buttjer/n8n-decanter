@@ -4,9 +4,20 @@ Tool-agnostic guidance for coding agents working **on the n8n-decanter CLI
 itself** (not on a synced workflow dir — that's the template's `AGENTS.md`).
 Codex and opencode read this file natively; Claude Code additionally reads
 `CLAUDE.md`, which holds the project rules (response style, PLAN.md contract,
-changelog/backlog duties, commands, architecture). Treat `CLAUDE.md` as
+changelog/docs/backlog duties, commands, architecture). Treat `CLAUDE.md` as
 authoritative for those rules regardless of which agent you are; this file
 carries the shared, tool-agnostic recipes.
+
+## Docs (`/docs`) are part of every user-facing PR
+
+The user docs live in `/docs` (plain Markdown, rendered by the site in
+`website/`). **Updating them is a PR acceptance criterion**, same bar as the
+changelog: a change to any CLI command/flag, sync behavior, the data model,
+guards, or config must revise the matching `/docs` page(s) in the same PR (new
+verb → new page + [overview](docs/cli/overview.md) command surface). Internal
+refactors and test-only changes need no docs edit. Keep it plain Markdown — no
+bespoke MDX components — so the corpus stays generator-agnostic. Full rule and
+rationale: `CLAUDE.md` → "Documentation site".
 
 ## Sandboxed shells: git push / gh need escalation
 

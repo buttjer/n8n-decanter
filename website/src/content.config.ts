@@ -2,7 +2,9 @@ import { glob } from "astro/loaders";
 import { defineCollection, z } from "astro:content";
 
 const docs = defineCollection({
-  loader: glob({ base: "./src/content/docs", pattern: "**/*.mdx" }),
+  // Content lives at the repo root in /docs — plain Markdown, generator-
+  // agnostic and outside this Astro project so it outlives the site tooling.
+  loader: glob({ base: "../docs", pattern: "**/*.md" }),
   schema: z.object({
     title: z.string(),
     description: z.string(),

@@ -119,6 +119,12 @@ items not yet claimed by one. Recommended order:
     monolithic e2e for isolation/legibility, and extend the Docker smoke suite
     to a 2.x version matrix + polling instead of fixed sleeps. Proposed
     2026-07-20.
+23. [Picker visual refinements](OPEN-23-picker-visual-refinements.md) — feed
+    the Plan 16 docs-site picker *simulation*'s styling back into the real
+    `lib/picker.mts`: aligned id column, `●`/`○` shape-based status glyphs
+    (retiring the `(not pulled)` words), a per-stage title, plus `executions`
+    in the verb menu and the first pure `renderLines` tests. Presentation only
+    — the state machine is untouched. Proposed 2026-07-20.
 
 ## Conventions
 

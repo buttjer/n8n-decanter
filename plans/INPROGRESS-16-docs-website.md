@@ -21,7 +21,17 @@ Direct user request (2026-07-19). No Plan 0 entry.
 
 ## Design decision
 
-- **Stack: Astro + Tailwind + MDX**, static output, in a `website/` dir with
+- **Content lives at the repo root in `/docs` as plain `.md`** (not `.mdx`,
+  not inside `website/`), so the corpus is generator-agnostic and outlives
+  the site tooling: Astro is replaceable, the Markdown is forever. The site
+  reads it via Astro 5's Content Layer `glob()` loader with `base: "../docs"`
+  ([content.config.ts](../website/src/content.config.ts)) — `entry.id` still
+  yields `<group>/<page>`, so nav grouping (by top dir) is unchanged. The
+  README screenshot (`docs/screenshot.webp`) is co-located there and reused
+  in docs pages. Plain Markdown is a deliberate portability constraint: no
+  bespoke MDX components — reach for one only as a conscious exception (the
+  `@astrojs/mdx` integration stays wired for that case).
+- **Stack: Astro + Tailwind**, static output, in a `website/` dir with
   its own `package.json` (a separate npm workspace-free subproject — the CLI
   keeps its no-build-for-dev property; the site is the one thing that
   builds, and only in its own dir).
@@ -102,11 +112,11 @@ Direct user request (2026-07-19). No Plan 0 entry.
 - [x] **Task 3 — docs shell:** header, grouped sidebar (active state,
       mobile `<details>` drawer), prev/next, class-based dark mode with
       pre-paint script + toggle, Shiki dual themes, typography prose.
-- [x] **Task 4 — content:** 21 MDX pages (2 getting-started, 12 CLI incl.
-      overview/completion, 6 concepts, 2 agents, 1 FAQ), sourced from
-      README + template `AGENTS.md`. Root-relative links get the deploy
-      base via a rehype plugin in `astro.config.mjs` — content never
-      hardcodes `/n8n-decanter`.
+- [x] **Task 4 — content:** 23 plain-`.md` pages (2 getting-started, 12 CLI
+      incl. overview/completion, 6 concepts, 2 agents, 1 FAQ) living at the
+      repo root in `/docs`, sourced from README + template `AGENTS.md`.
+      Root-relative links get the deploy base via a rehype plugin in
+      `astro.config.mjs` — content never hardcodes `/n8n-decanter`.
 - [x] **Task 5 — deploy workflow written:** `.github/workflows/docs.yml`
       (PR = build + link check; main = deploy to Pages). **Activation
       gated** on the repo being public + Pages enabled (Settings → Pages →
@@ -116,6 +126,30 @@ Direct user request (2026-07-19). No Plan 0 entry.
 
 Remaining: task 7 (README slim-down + `homepage`, after the site is live)
 and optional task 8 (Pagefind).
+
+## Landing-page + theme pass (2026-07-20)
+
+- **Fonts now user-specified** (partial unblock of task 2): serif headlines at
+  weight 500 (`ui-serif`), light sans body at 300 (`ui-sans-serif`), mono code
+  (`ui-monospace`) — set as `@theme` tokens in `theme.css` and applied via an
+  `@layer base` block in `global.css`. Landing headings get ~1.5× base sizes;
+  **docs prose headings and sidebar group headings are sized 1.75×** the
+  typography-plugin defaults so the light serif reads at the right scale.
+  **The accent palette is still the placeholder amber** — swap when provided.
+- **Header wordmark** is the CLI's block-minifont ASCII logo (from
+  `lib/init.mts`), but rendered as **crisp inline SVG** — each glyph's 2×2
+  quadrants expand to unit `<rect>`s at build time, so it tiles perfectly in
+  any font (text rendering left visible gaps). "n8n" uses the accent color
+  (`--color-accent-500`, the orange from the CLI logo); "decanter" uses
+  `currentColor`.
+- **Landing page** gained: 9 feature cards with **monochrome Unicode glyphs**
+  in accent-tinted badges (no emoji), a "How it compares" table condensed from
+  the README, and **two looping demo animations** — an interactive-picker
+  simulation (`TerminalDemo.astro`) and a coding-agent-at-work simulation
+  (`AgentDemo.astro`, fixed-height and **scrolling**, not resizing).
+- **Client-JS exception:** the two demos add a little vanilla client JS beyond
+  the dark-mode toggle (see Non-goals). Both are framework-free, self-contained
+  in their component `<script>`, and disabled under `prefers-reduced-motion`.
 
 ## Acceptance / verification
 
@@ -134,8 +168,9 @@ and optional task 8 (Pagefind).
 ## Non-goals
 
 - Docs versioning (single version while 0.x), i18n, blog, comments.
-- Any runtime/client framework beyond what Astro islands need (target:
-  zero client JS except the dark-mode toggle and optional search).
+- Any runtime/client framework beyond what Astro islands need (target: near
+  zero client JS — the dark-mode toggle, optional search, and the two
+  framework-free landing-page demo animations are the only client scripts).
 - Documenting PLAN.md internals — the site is user docs.
 
 ## Notes

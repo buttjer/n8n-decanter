@@ -5,6 +5,7 @@ order: 1
 ---
 
 ```sh
+n8n-decanter                        # interactive picker (terminal, inited project)
 n8n-decanter init [dir]             # interactive bootstrap
 n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
 n8n-decanter [ref...] push [--force] [--no-typecheck]
@@ -13,11 +14,24 @@ n8n-decanter [ref...] check [--no-typecheck]
 n8n-decanter <ref> rename "<old node>" "<new node>"
 n8n-decanter <ref> rename --workflow "<new name>"
 n8n-decanter [ref] watch [--force]
+n8n-decanter [ref...] executions [--status=…] [--limit=N]
+n8n-decanter [ref...] executions clean
 n8n-decanter list [--remote]
 n8n-decanter completion zsh|bash
 n8n-decanter <node-file> run [fixture.json]
 n8n-decanter uuid [count]
 ```
+
+## Interactive picker
+
+Running **bare `n8n-decanter`** (no verb, no arguments) in an inited project
+on a terminal opens a picker instead of printing usage: type to filter,
+`↑`/`↓` to move, pulled workflows shown green, not-yet-pulled remote ones
+yellow. `Enter` on a pulled workflow offers status/pull/push/watch/check;
+`Enter` on an unpulled one pulls it directly. It stays in the workflow's verb
+menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
+output and dirs without a `decanter.config.json` keep printing usage — scripts
+and LLM harnesses never see the picker.
 
 ## Workflow refs
 
@@ -38,7 +52,7 @@ may appear in any position too.
 | Verbs | Network |
 | --- | --- |
 | `check`, `run`, `uuid`, `rename`, `list`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception) |
-| `status` | Reads the remote, never writes |
+| `status`, `executions` | Read the remote, never write |
 | `pull`, `push`, `watch` | Read/write the live instance |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward

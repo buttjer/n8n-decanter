@@ -38,7 +38,11 @@ credentials come from `.env` next to it or from the environment.
   covers it).
 - Or the same variables from the process environment.
 
-Use a **minimal-scope API key** (n8n 2.x keys carry scopes): workflow
-read/update/list plus whatever your workflows need is enough for the sync
-verbs. `check`, `run`, `uuid`, `rename`, and plain `list` need no credentials
-at all.
+Use a **minimal-scope API key** (n8n 2.x keys carry scopes) rather than a
+full-access one, so a leaked `.env` has a smaller blast radius. The scopes the
+CLI actually uses:
+
+- `workflow:read`, `workflow:list`, `workflow:update` — pull, push, status, watch
+- `execution:read`, `execution:list` — the [executions](/docs/cli/executions/) verb
+
+`check`, `run`, `uuid`, `rename`, and plain `list` need no credentials at all.

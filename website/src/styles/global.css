@@ -5,6 +5,40 @@
 /* Class-based dark mode: the inline head script sets `.dark` on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Type system: light (300) sans body, medium (500) serif headlines, mono code.
+ * Set on the base layer so it holds site-wide; utilities can still override
+ * per element where a heavier weight is wanted.
+ */
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-weight: 300;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-serif);
+    font-weight: 500;
+  }
+  /* Base sizes (~1.5× the old defaults) for headings without a size utility;
+     explicit text-* utilities on a heading still win. */
+  h1 { font-size: 2.25rem; line-height: 1.15; }
+  h2 { font-size: 1.5rem; line-height: 1.25; }
+  h3 { font-size: 1.25rem; line-height: 1.3; }
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Prose (docs) headings follow the same serif/medium treatment, sized 1.75×
+   the typography-plugin defaults so the serif reads at the right scale. */
+.prose :is(h1, h2, h3, h4) {
+  font-family: var(--font-serif);
+  font-weight: 500;
+}
+.prose h1 { font-size: 3.94em; }
+.prose h2 { font-size: 2.63em; }
+.prose h3 { font-size: 2.19em; }
+
 /* Shiki dual themes: Astro inlines light colors plus --shiki-dark-* vars. */
 .dark .astro-code,
 .dark .astro-code span {
