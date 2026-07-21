@@ -35,6 +35,7 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git branch *)",
       "Bash(git push *)",
+      "Bash(gh pr create:*)",
       "Bash(docker version *)"
     ],
     "deny": [
@@ -42,6 +43,9 @@
       "Bash(git push --force *)",
       "Bash(git push -f *)",
       "Bash(git reset --hard *)"
+    ],
+    "ask": [
+      "Bash(gh pr merge:*)"
     ]
   },
   "sandbox": {

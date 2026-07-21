@@ -118,8 +118,9 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   lands via PR from a short-lived branch (`feat/…`, `fix/…`, `docs/…`,
   `chore/…`), squash-merged so main stays linear: one commit per PR. A local
   `pre-commit` hook (`scripts/hooks/pre-commit`, auto-wired by the `prepare`
-  npm script on every `npm install`) refuses commits made on main — see
-  "main is guarded locally too" below.
+  npm script on every `npm install`) refuses any commit made in the main
+  checkout (not just on the `main` branch) — see "The main checkout is guarded
+  locally too" below.
 - **Feature PRs are decoupled from releases — merging one is never a release.**
   A user-facing PR only appends its entry under `[Unreleased]` (per the
   Changelog rules); it does **not** bump `package.json`, tag, or cut a Release.
@@ -198,12 +199,16 @@ exact mess this rule prevents. So:
   .worktrees/<name> main`, `git -C <new worktree> apply patch`, then
   `git checkout -- <files>` in the original to revert them there.
 
-## main is guarded locally too (pre-commit hook)
+## The main checkout is guarded locally too (pre-commit hook)
 
 The GitHub ruleset blocks *pushes* to main, but nothing upstream stops a
-*local* commit made on main when the worktree/branch rule gets skipped. A
-tracked `scripts/hooks/pre-commit` catches that: it aborts any commit whose
-current branch is `main`. It's **self-installing** — the `prepare` npm script
+*local* commit made in the main checkout when the worktree rule gets skipped. A
+tracked `scripts/hooks/pre-commit` catches that: it aborts any commit **not**
+made from a linked `.worktrees/` worktree. It gates on the *working tree*, not
+the branch — a linked worktree's git-dir lives under `.git/worktrees/` (allowed)
+while the main checkout's is plain `.git` (refused) — which subsumes the old "no
+commits on the `main` branch" rule, since `main` only ever lives in the main
+checkout. It's **self-installing** — the `prepare` npm script
 (`scripts/setup-hooks.mts`) points `core.hooksPath` at `scripts/hooks` on
 every `npm install`, so the guard activates automatically in each clone and
 worktree (which already run their own `npm install`). No hand-wiring needed;
@@ -214,10 +219,10 @@ git config core.hooksPath scripts/hooks
 ```
 
 A missing hook is a no-op, so this is safe to set before the file exists.
-There is never a legitimate local commit on main (the only local touch is
-`git switch main && git pull` after a merge); the emergency override is
+There is never a legitimate local commit in the main checkout (the only local
+touch is `git switch main && git pull` after a merge); the emergency override is
 `ALLOW_MAIN_COMMIT=1 git commit …`. If a commit is refused with "Refusing to
-commit directly on 'main'", you skipped the worktree step — start a
+commit in the main working tree", you skipped the worktree step — start a
 `.worktrees/` worktree (`git worktree add -b <branch> .worktrees/<name> main`)
 and retry.
 
