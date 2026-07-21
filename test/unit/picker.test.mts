@@ -119,7 +119,7 @@ describe("verb stage", () => {
     let s = next(reduceKey(verbState(), { name: "down" }));
     assert.equal(PICKER_VERBS[s.verbCursor], "pull");
     for (let i = 0; i < 10; i++) s = next(reduceKey(s, { name: "down" }));
-    assert.equal(PICKER_VERBS[s.verbCursor], "executions");
+    assert.equal(PICKER_VERBS[s.verbCursor], "simulate");
   });
 
   it("a letter cycles through verbs starting with it", () => {
@@ -131,6 +131,11 @@ describe("verb stage", () => {
     assert.equal(PICKER_VERBS[s.verbCursor], "pull");
     s = next(reduceKey(s, { name: "e", sequence: "e" }));
     assert.equal(PICKER_VERBS[s.verbCursor], "executions");
+    // from executions, "s" cycles forward: simulate, then wraps to status
+    s = next(reduceKey(s, { name: "s", sequence: "s" }));
+    assert.equal(PICKER_VERBS[s.verbCursor], "simulate");
+    s = next(reduceKey(s, { name: "s", sequence: "s" }));
+    assert.equal(PICKER_VERBS[s.verbCursor], "status");
   });
 
   it("enter runs the highlighted verb on the selected workflow", () => {

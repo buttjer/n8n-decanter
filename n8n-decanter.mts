@@ -4,7 +4,7 @@ import { addCodeNode } from "./lib/add.mts";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
-import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
+import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
 import { pinFixtures, runSimulation, type SimulationReport } from "./lib/simulate.mts";
 import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
@@ -482,8 +482,11 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         pinFixtures(dir, pinId, log);
         break;
       }
-      const execId = valueFlags.get("execution");
-      if (execId === undefined) throw new Error("simulate needs --execution <id> (or --pin <id>): fetch one first with `executions`");
+      // No --execution → default to the newest local capture (also how the
+      // picker, which can't supply an id, runs simulate).
+      const execId = valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
+      if (execId === undefined) throw new Error(`no execution to simulate: pass --execution <id> or fetch one first with \`n8n-decanter ${refs[0]} executions\``);
+      if (valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
       if (!(await dockerAvailable())) {
         throw new Error("simulate needs a running Docker daemon (the engine backend) — start Docker and retry");
       }

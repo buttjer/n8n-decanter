@@ -24,6 +24,11 @@ edited Code nodes.
 Needs a captured execution ([executions](/docs/cli/executions/)) and a running
 **Docker** daemon (the engine backend).
 
+Without `--execution`, `simulate` uses the **newest capture** in the workflow's
+`executions/` dir — so `n8n-decanter <ref> simulate` just works after an
+`executions` fetch, and the [interactive picker](/docs/cli/overview/) can offer
+`simulate` in its verb menu (it runs against the latest capture).
+
 ## How it works
 
 1. **Transform** a copy of the workflow: materialize `//@file:` Code sources,
@@ -42,7 +47,7 @@ Safety never depends on recognizing a node type.
 
 | Flag | Meaning |
 | --- | --- |
-| `--execution <id>` | The captured execution to replay (fetch it first with `executions`) |
+| `--execution <id>` | The captured execution to replay (optional — defaults to the newest capture in `executions/`) |
 | `--pin <id>` | Instead of running, copy the capture's network-node outputs into committed `fixtures/` (offline) |
 | `--network-none` | Run the engine container with `--network none` — an enforced outbound cutoff on top of the structural guarantee |
 | `--json` | Emit the full report as JSON (for tooling) instead of the human summary |

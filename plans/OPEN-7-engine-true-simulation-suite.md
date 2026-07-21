@@ -250,9 +250,11 @@ slower per run; output scraped from `n8n execute`'s result JSON.
    passing. **Deferred:** the npx backend (task 4's dependency-free default;
    Docker shipped first as validated). Original spec:
    `n8n-decanter simulate <ref> --execution <execId>` in
-   `n8n-decanter.mts` (register in `VERBS` + `REF_VERBS`; the picker's verb
-   menu stays unchanged — simulate needs an execution argument the menu can't
-   supply): transform to a temp file, run the engine per the chosen route,
+   `n8n-decanter.mts` (register in `VERBS` + `REF_VERBS`). **Picker: added
+   2026-07-21** — the original "menu can't supply an execution id" objection was
+   resolved by defaulting `--execution` to the newest local capture, so the
+   picker offers `simulate` and runs it against the latest capture. Transform to
+   a temp file, run the engine per the chosen route,
    print per-node item counts, and diff each Code node's simulated output
    against the captured execution's output for that node. Divergence →
    nonzero exit (this is the regression check); a `--json` report for tooling.

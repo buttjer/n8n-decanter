@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-07-21
+
+### Added
+
+- **`simulate` in the interactive picker.** The verb menu for a pulled workflow
+  now offers `simulate` alongside status/pull/push/watch/check/executions; it
+  runs against the workflow's newest capture.
+
+### Changed
+
+- **`simulate` no longer requires `--execution`.** With the flag omitted it
+  defaults to the **newest capture** in the workflow's `executions/` dir, so
+  `n8n-decanter <ref> simulate` works right after an `executions` fetch (and
+  lets the picker offer it). Pass `--execution <id>` to pick a specific one.
+
 ## [0.4.2] - 2026-07-20
 
 ### Added

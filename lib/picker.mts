@@ -23,7 +23,7 @@ export interface PickerKey {
 }
 
 /** Verb menu for a pulled workflow, in display order. */
-export const PICKER_VERBS = ["status", "pull", "push", "watch", "check", "executions"] as const;
+export const PICKER_VERBS = ["status", "pull", "push", "watch", "check", "executions", "simulate"] as const;
 
 export interface PickerState {
   stage: "workflow" | "verb";
