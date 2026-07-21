@@ -58,18 +58,25 @@ part of every user-facing PR".
   `pre-commit` hook (`scripts/hooks/pre-commit`, auto-wired by the `prepare`
   npm script on every `npm install`) refuses commits made on main — see
   AGENTS.md "main is guarded locally too".
-- **Merging a PR with a non-empty `[Unreleased]` section is a release.** That
-  PR itself rolls `[Unreleased]` → `[x.y.z] - <date>` and bumps
-  `package.json` (semver; while 0.x: breaking → minor, everything else →
-  patch). After merge, tag the squash commit `vX.Y.Z` on main, push the tag,
-  and create the GitHub Release from it with that version's changelog
-  section as the notes (`gh release create vX.Y.Z --verify-tag --notes-file
-  <section>`). The package is on npm (plans/DONE-13), but **`npm publish` is
-  the maintainer's step — Claude never runs it.** Claude's release work ends
-  at the pushed tag + GitHub Release; the maintainer publishes to npm.
-  Internal-only PRs (no `[Unreleased]` entries per the
-  Changelog rules) merge without a version bump — so user-facing work never
-  sits unreleased on main.
+- **Feature PRs are decoupled from releases — merging one is never a release.**
+  A user-facing PR only appends its entry under `[Unreleased]` (per the
+  Changelog rules); it does **not** bump `package.json`, tag, or cut a Release.
+  `[Unreleased]` is meant to accumulate across many PRs, so user-facing work
+  sitting in `[Unreleased]` on main is the expected steady state, not a problem
+  to fix. Internal-only PRs (no `[Unreleased]` entry) likewise just merge.
+- **Releasing is a deliberate, separate act: a dedicated release PR.** When you
+  decide to cut version `x.y.z`, open a `chore/release-x.y.z` branch whose only
+  job is to roll `[Unreleased]` → `[x.y.z] - <date>` (starting a fresh empty
+  `[Unreleased]`) and bump `package.json` (semver; while 0.x: breaking → minor,
+  everything else → patch). **Merging that release PR is the release.** After
+  merge, tag the squash commit `vX.Y.Z` on main, push the tag, and create the
+  GitHub Release from it with that version's changelog section as the notes
+  (`gh release create vX.Y.Z --verify-tag --notes-file <section>`). The package
+  is on npm (plans/DONE-13), but **`npm publish` is the maintainer's step —
+  Claude never runs it.** Claude's release work ends at the pushed tag + GitHub
+  Release; the maintainer publishes to npm. **Cutting a release is the
+  maintainer's call — Claude opens a release PR only when explicitly asked,
+  never automatically because `[Unreleased]` is non-empty.**
 - CI (typecheck + `npm test`) must be green before merge, now enforced
   GitHub-side (see the ruleset bullet below). **The docs fast path no longer
   skips the wait** — markdown-only changes still can't *fail* the checks, but
