@@ -60,6 +60,33 @@ export interface Execution {
   [key: string]: unknown;
 }
 
+/**
+ * One n8n data table (project-scoped built-in table, n8n ≥ 2.x) as returned by
+ * `GET /data-tables`. Read-only in the decanter — never written through. Extra
+ * fields pass through; `columns` may be inlined by the list endpoint or fetched
+ * separately from `/data-tables/{id}/columns`.
+ */
+export interface DataTable {
+  id: string | number;
+  name: string;
+  /** Owning project — data tables are project-scoped, not workflow-scoped. */
+  projectId?: string;
+  columns?: DataTableColumn[];
+  [key: string]: unknown;
+}
+
+/** One data-table column (its schema entry). `type` is n8n's column type. */
+export interface DataTableColumn {
+  id?: string | number;
+  name: string;
+  /** n8n column type: `string` | `number` | `boolean` | `date` (extra pass through). */
+  type?: string;
+  [key: string]: unknown;
+}
+
+/** One data-table row: a flat column-name → value object (+ system id/timestamps). */
+export type DataTableRow = Record<string, unknown>;
+
 /** The subset of a workflow the PUT endpoint accepts (see sanitizeForPut). */
 export interface WorkflowPut {
   name: string;
@@ -104,6 +131,13 @@ export interface DecanterConfig {
   proxyPort: number;
   /** Per-request timeout for n8n API calls, milliseconds (default 30 000). */
   requestTimeoutMs: number;
+  /**
+   * Whether the read-only `data-tables` fetch is available (default `true`).
+   * `false` refuses the fetch with a clear message and the recommended key
+   * needn't carry the data-table read scopes; `data-tables clean` (offline)
+   * stays available regardless.
+   */
+  dataTables: boolean;
   /**
    * n8n version the `simulate` engine runs (npx tag / Docker tag). Optional —
    * absent, simulate defaults to the smoke pin (DEFAULT_N8N_VERSION) and hints

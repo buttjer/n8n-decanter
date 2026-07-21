@@ -3,6 +3,7 @@ import path from "node:path";
 import { addCodeNode } from "./lib/add.mts";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
+import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
@@ -69,6 +70,8 @@ ${b("Inspect & test")}
   ${b("check")} [workflow…] [--no-typecheck]      ${d("offline layout-compliance check")}
   ${b("executions")} [workflow…] [--status=…] [--limit=N]   ${d("fetch execution data (numeric arg = one by id)")}
   ${b("executions")} [workflow…] clean            ${d("delete fetched execution data (offline)")}
+  ${b("data-tables")} [table…] [--filter=… --search=… --sort=… --limit=N --all]   ${d("fetch data-table schema + rows (read-only)")}
+  ${b("data-tables")} [table…] clean              ${d("delete fetched data-table data (offline)")}
   ${b("simulate")} <workflow> [--execution <execution-id>] [--pin <execution-id>] [--network-none] [--json]
   ${d("                                            replay through a real n8n engine (Docker); exits 1 on divergence")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
@@ -88,7 +91,7 @@ next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 
 // Verb-first grammar (Plan 27): the command is positional[0]. `add`/`run` and
 // the node-rename overload moved under the `node` namespace (node create/rename/run).
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "duplicate", "watch", "list", "executions", "simulate", "publish", "unpublish", "create", "delete", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "duplicate", "watch", "list", "executions", "data-tables", "simulate", "publish", "unpublish", "create", "delete", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["create", "rename", "run"]);
 /** Verbs whose workflow arguments go through name resolution. */
@@ -129,7 +132,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version|filter|search|sort)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -147,6 +150,7 @@ async function main() {
   const tsFlag = args.includes("--ts");
   const jsonFlag = args.includes("--json");
   const networkNoneFlag = args.includes("--network-none");
+  const allFlag = args.includes("--all");
   const positional = args.filter((a) => !a.startsWith("--"));
   // Verb-first grammar (Plan 27): the command is the first positional; flags may
   // still sit anywhere. `node <sub> …` is the one exception — a contained
@@ -218,7 +222,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS); // node sub-verbs (create/rename/run) after `node`
-    words.push("--force", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--json", "--network-none", "--n8n-version=", "--help");
+    words.push("--force", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireCredentials: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -229,7 +233,7 @@ async function main() {
     return;
   }
 
-  await dispatch(command, rest, { force, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, valueFlags });
+  await dispatch(command, rest, { force, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags });
 }
 
 interface Flags {
@@ -240,11 +244,12 @@ interface Flags {
   tsFlag: boolean;
   jsonFlag: boolean;
   networkNoneFlag: boolean;
+  allFlag: boolean;
   valueFlags: Map<string, string>;
 }
 
 /** Flag defaults for picker-launched verbs (no CLI flags in play). */
-const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, remoteFlag: false, diffFlag: false, tsFlag: false, jsonFlag: false, networkNoneFlag: false, valueFlags: new Map() };
+const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, remoteFlag: false, diffFlag: false, tsFlag: false, jsonFlag: false, networkNoneFlag: false, allFlag: false, valueFlags: new Map() };
 
 /**
  * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
@@ -334,13 +339,14 @@ function printSimulationReport(r: SimulationReport, log: Log): void {
 
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
 async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
-  const { force, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, valueFlags } = flags;
+  const { force, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags } = flags;
   // simulate reads local captures + drives a throwaway engine — it never calls
   // the n8n API, so no credentials are required. Workflow `rename` and the node
   // namespace's create/rename only touch local files.
   const offline = command === "check" || command === "rename" || command === "node:create" || command === "node:rename" || command === "simulate"
     || (command === "list" && !remoteFlag)
-    || (command === "executions" && rest.includes("clean"));
+    || (command === "executions" && rest.includes("clean"))
+    || (command === "data-tables" && rest.includes("clean"));
   const config = loadConfig(process.cwd(), { requireCredentials: !offline });
   const api = new N8nApi(config);
 
@@ -536,6 +542,35 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       for (const e of execIds) await attempt(`execution ${e}`, () => fetchExecutionById(api, config.root, e, log));
       for (const id of wfIds) await attempt(id, () => fetchExecutions(api, config.root, id, { status, limit }, log));
       if (failed) process.exitCode = 1;
+      break;
+    }
+    case "data-tables": {
+      // grammar mirrors executions: "clean" may sit anywhere; every other
+      // positional is a data-table ref (id or exact name). Data tables are
+      // project-scoped, not per-workflow, so refs are NOT workflow refs and
+      // land here unresolved — fetchDataTables matches them against the table
+      // list. clean is offline; the fetch is online and config-gated.
+      const tableRefs = rest.filter((a) => a !== "clean");
+      if (rest.includes("clean")) {
+        cleanDataTables(config.configDir, log);
+        break;
+      }
+      if (!config.dataTables) {
+        throw new Error('data-table reads are disabled — set "dataTables": true in decanter.config.json to enable them');
+      }
+      const limitRaw = valueFlags.get("limit");
+      const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
+      if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 250)) {
+        throw new Error("--limit must be an integer between 1 and 250 (the data-table rows API page cap)");
+      }
+      await fetchDataTables(api, config.configDir, {
+        tableRefs,
+        limit,
+        filter: valueFlags.get("filter"),
+        search: valueFlags.get("search"),
+        sortBy: valueFlags.get("sort"),
+        all: allFlag,
+      }, log);
       break;
     }
     case "simulate": {

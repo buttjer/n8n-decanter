@@ -1,7 +1,7 @@
 ---
 title: node rename
 description: Rename a node everywhere it is referenced, atomically and offline.
-order: 17
+order: 18
 ---
 
 ```sh

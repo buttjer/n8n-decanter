@@ -81,6 +81,29 @@ const server = http.createServer((req, res) => {
       .writeHead(200, { "content-type": "application/json" })
       .end(JSON.stringify({ data: list.slice(0, limit), nextCursor: null }));
   }
+  // data tables (Plan 25): read-only list / columns / filtered rows. Shapes
+  // mirror the researched n8n ≥ 2.x endpoints (list is cursor-paginated like
+  // workflows; columns is a bare array; rows takes server-side filter/search/
+  // sortBy/limit + cursor). The CLI only ever GETs these.
+  if (req.method === "GET" && req.url!.startsWith("/api/v1/data-tables")) {
+    const cols = req.url!.match(/^\/api\/v1\/data-tables\/([^/?]+)\/columns/);
+    if (cols) {
+      const t = DATA_TABLES.find((d) => String(d.id) === cols[1]);
+      if (!t) return void res.writeHead(404).end("not found");
+      return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(t.columns));
+    }
+    const rows = req.url!.match(/^\/api\/v1\/data-tables\/([^/?]+)\/rows/);
+    if (rows) {
+      const t = DATA_TABLES.find((d) => String(d.id) === rows[1]);
+      if (!t) return void res.writeHead(404).end("not found");
+      const params = new URL(req.url!, "http://localhost").searchParams;
+      return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(queryRows(t.rows, params)));
+    }
+    // list — omit rows/columns so the separate columns fetch is exercised
+    return void res
+      .writeHead(200, { "content-type": "application/json" })
+      .end(JSON.stringify({ data: DATA_TABLES.map((d) => ({ id: d.id, name: d.name, projectId: d.projectId })), nextCursor: null }));
+  }
   const m = req.url!.match(/^\/api\/v1\/workflows\/([^/]+)$/);
   if (!m) return void res.writeHead(404).end("nope");
   const wf = db.get(m[1]);
@@ -133,6 +156,48 @@ const EXECUTIONS = [
     data: { resultData: { runData: {} } },
   },
 ];
+
+// data-table fixtures (Plan 25) + a tiny server-side query engine so the e2e
+// can assert that --filter/--search/--sort narrow rows on the server, not
+// client-side. Two tables, one with several rows to filter/paginate.
+const DATA_TABLES = [
+  {
+    id: 1, name: "Orders", projectId: "proj-1",
+    columns: [{ id: 1, name: "status", type: "string" }, { id: 2, name: "total", type: "number" }],
+    rows: [
+      { id: 1, status: "active", total: 10 },
+      { id: 2, status: "closed", total: 20 },
+      { id: 3, status: "active", total: 30 },
+    ],
+  },
+  {
+    id: 2, name: "Customers", projectId: "proj-1",
+    columns: [{ id: 1, name: "email", type: "string" }],
+    rows: [{ id: 1, email: "a@example.com" }, { id: 2, email: "b@example.com" }],
+  },
+];
+
+function queryRows(rows: any[], params: URLSearchParams): { data: any[]; nextCursor: string | null } {
+  let out = [...rows];
+  const filter = params.get("filter");
+  if (filter) {
+    const parsed = JSON.parse(filter) as { filters?: Array<{ columnName: string; condition: string; value: unknown }> };
+    for (const f of parsed.filters ?? []) {
+      if (f.condition === "eq") out = out.filter((r) => r[f.columnName] === f.value);
+    }
+  }
+  const search = params.get("search");
+  if (search) out = out.filter((r) => Object.values(r).some((v) => typeof v === "string" && v.includes(search)));
+  const sortBy = params.get("sortBy");
+  if (sortBy) {
+    const [col, dir] = sortBy.split(":");
+    out.sort((a, b) => ((a[col] > b[col] ? 1 : a[col] < b[col] ? -1 : 0) * (dir === "desc" ? -1 : 1)));
+  }
+  const limit = Number(params.get("limit") ?? 100);
+  const cursor = Number(params.get("cursor") ?? 0);
+  const page = out.slice(cursor, cursor + limit);
+  return { data: page, nextCursor: cursor + limit < out.length ? String(cursor + limit) : null };
+}
 
 const JS_CODE = "// @ts-check\nconst items = $input.all();\nfor (const item of items) {\n  item.json.total = Number(item.json.total ?? 0);\n}\nreturn items;\n";
 db.set("wf123", {
@@ -238,6 +303,7 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.equal(JSON.parse(read(target, "decanter.config.json")).root, "./workflows");
   assert.match(read(target, ".gitignore"), /^\.env$/m);
   assert.match(read(target, ".gitignore"), /^workflows\/\*\/executions\/$/m);
+  assert.match(read(target, ".gitignore"), /^data-tables\/$/m);
   assert.match(stdout + stderr, /credentials verified/);
   // piped init prints a plain version line instead of the TTY logo
   assert.match(stdout + stderr, /n8n-decanter v\d+\.\d+\.\d+/);
@@ -1630,6 +1696,112 @@ await step("executions clean: removes the dirs, credentials-free", async () => {
     assert.match(r.out, /no executions\/ dirs to clean/);
   } finally {
     env = savedEnv;
+  }
+});
+
+const dtDir = path.join(TMP, "data-tables");
+
+await step("data-tables: fetches schema + rows into a self-gitignored top-level dir; filters narrow server-side", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  let r = await cli("data-tables");
+  assert.equal(r.code, 0, r.out);
+  // project-scoped: a single top-level data-tables/ dir, one folder per table
+  const ordersDir = path.join(dtDir, "orders-1");
+  const customersDir = path.join(dtDir, "customers-2");
+  for (const f of ["meta.json", "columns.json", "rows.json"]) {
+    assert.ok(existsSync(path.join(ordersDir, f)), `missing orders/${f}`);
+    assert.ok(existsSync(path.join(customersDir, f)), `missing customers/${f}`);
+  }
+  // self-ignored — data tables may hold PII, must never reach git
+  assert.equal(read(dtDir, ".gitignore"), "*\n");
+  const cols = JSON.parse(read(ordersDir, "columns.json"));
+  assert.deepEqual(cols.map((c: any) => c.name), ["status", "total"]);
+  let rows = JSON.parse(read(ordersDir, "rows.json"));
+  assert.equal(rows.length, 3);
+  let meta = JSON.parse(read(ordersDir, "meta.json"));
+  assert.equal(meta.rowCount, 3);
+  assert.equal(meta.name, "Orders");
+  assert.equal(meta.projectId, "proj-1");
+  assert.equal(meta.filter, null, "unfiltered fetch records filter: null");
+  assert.match(r.out, /2 data tables -> .*data-tables \(gitignored/);
+
+  // a table ref scopes to one table (by exact name, case-insensitive)
+  rmSync(dtDir, { recursive: true, force: true });
+  r = await cli("data-tables", "orders");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(existsSync(ordersDir) && !existsSync(customersDir), "ref must scope to one table: " + r.out);
+  r = await cli("data-tables", "no-such-table");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /no data table matches "no-such-table"/);
+
+  // --filter narrows rows server-side, and meta.json records the applied filter
+  rmSync(dtDir, { recursive: true, force: true });
+  r = await cli("data-tables", "Orders", "--filter", '{"type":"and","filters":[{"columnName":"status","condition":"eq","value":"active"}]}');
+  assert.equal(r.code, 0, r.out);
+  rows = JSON.parse(read(ordersDir, "rows.json"));
+  assert.deepEqual(rows.map((x: any) => x.id), [1, 3], "filter kept only active rows: " + r.out);
+  meta = JSON.parse(read(ordersDir, "meta.json"));
+  assert.equal(meta.rowCount, 2);
+  assert.match(meta.filter, /"status"/, "meta records the applied filter");
+  assert.match(r.out, /\[filter /, "summary names the filter");
+
+  // --sort orders rows; --search filters string columns
+  rmSync(dtDir, { recursive: true, force: true });
+  r = await cli("data-tables", "Orders", "--sort", "total:desc");
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(JSON.parse(read(ordersDir, "rows.json")).map((x: any) => x.total), [30, 20, 10]);
+  rmSync(dtDir, { recursive: true, force: true });
+  r = await cli("data-tables", "Customers", "--search", "a@example");
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(JSON.parse(read(dtDir, "customers-2", "rows.json")).map((x: any) => x.id), [1]);
+
+  // --limit caps a page; --all follows the cursor to exhaust the result
+  rmSync(dtDir, { recursive: true, force: true });
+  r = await cli("data-tables", "Orders", "--limit", "1");
+  assert.equal(r.code, 0, r.out);
+  assert.equal(JSON.parse(read(ordersDir, "rows.json")).length, 1, "one page only");
+  rmSync(dtDir, { recursive: true, force: true });
+  r = await cli("data-tables", "Orders", "--limit", "1", "--all");
+  assert.equal(r.code, 0, r.out);
+  assert.equal(JSON.parse(read(ordersDir, "rows.json")).length, 3, "--all paginates through every row");
+  r = await cli("data-tables", "--limit", "251");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /--limit must be an integer between 1 and 250/);
+});
+
+await step("data-tables clean: removes the dir, credentials-free", async () => {
+  assert.ok(existsSync(dtDir), "previous step left fetched data");
+  const savedEnv = env;
+  env = { ...savedEnv };
+  delete env.N8N_HOST;
+  delete env.N8N_API_KEY;
+  try {
+    let r = await cli("data-tables", "clean");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(dtDir));
+    r = await cli("data-tables", "clean");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /no data-tables\/ dir to clean/);
+  } finally {
+    env = savedEnv;
+  }
+});
+
+await step('data-tables: "dataTables": false refuses the fetch but still cleans', async () => {
+  const configFile = path.join(TMP, "decanter.config.json");
+  const saved = read(configFile);
+  writeFileSync(configFile, JSON.stringify({ ...JSON.parse(saved), dataTables: false }, null, 2));
+  try {
+    let r = await cli("data-tables");
+    assert.equal(r.code, 1);
+    assert.match(r.out, /data-table reads are disabled — set "dataTables": true/);
+    assert.ok(!existsSync(dtDir), "refused fetch must write nothing");
+    // clean stays available regardless of the gate
+    r = await cli("data-tables", "clean");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /no data-tables\/ dir to clean/);
+  } finally {
+    writeFileSync(configFile, saved);
   }
 });
 

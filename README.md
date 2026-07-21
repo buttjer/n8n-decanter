@@ -95,6 +95,8 @@ so a leaked `.env` has a small blast radius:
 - `workflow:create`, `workflow:delete` — `create` / `delete`
 - `workflow:activate`, `workflow:deactivate` — `publish` / `unpublish`
 - `execution:read`, `execution:list` — the `executions` verb
+- `dataTable:list`, `dataTable:read`, `dataTableColumn:read`, `dataTableRow:read`
+  — the `data-tables` verb (only needed while `"dataTables"` is on, its default)
 
 A full-access key also works if your n8n version predates scoped keys.
 
@@ -149,6 +151,11 @@ n8n-decanter executions [workflow…] [--status=success|error|waiting] [--limit=
                                     #   into workflows/<folder>/executions/
                                     #   (gitignored; numeric arg = one by id)
 n8n-decanter executions [workflow…] clean   # delete fetched execution data (offline)
+n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=col:asc|desc] [--limit=N] [--all]
+                                    # fetch data-table schema + rows (read-only)
+                                    #   into a gitignored top-level data-tables/;
+                                    #   filter/search/sort pull a slice server-side
+n8n-decanter data-tables [table…] clean     # delete fetched data-table data (offline)
 n8n-decanter simulate <workflow> [--execution <execution-id>] [--network-none] [--json]
                                     # replay the whole workflow through a real
                                     #   n8n engine (Docker): pure nodes run for
@@ -206,6 +213,17 @@ The dir is written self-gitignored (run data can contain credentials/PII and
 must never land in git); executions reflect the *published* workflow version
 (n8n 2.x), so treat them as convenience data, not ground truth, and remove
 them with `executions clean` when done.
+
+`data-tables` is the data-table analogue: also read-only against the API, it
+fetches each n8n data table's schema (`columns.json`) and rows (`rows.json`)
+into a **top-level, gitignored** `data-tables/<table>/` dir (data tables are
+project-scoped, not owned by a workflow) so you can develop and debug against
+real table contents. `--filter='<json>'`, `--search`, and `--sort` pull only a
+slice of a large table server-side (the applied filter is recorded in each
+table's `meta.json`); `--limit`/`--all` control page size and exhaustion. It
+never writes a data table. It's gated by the `"dataTables"` config key
+(default on); `data-tables clean` removes the dir (offline). Data tables need
+n8n ≥ 2.x.
 
 ## How it compares
 

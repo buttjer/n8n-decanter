@@ -137,11 +137,12 @@ items not yet claimed by one. Recommended order:
     let a `.js` node `import` from `shared/` (and opted-in npm packages) the
     way `.ts` nodes already can (Plan 14), bundled into the pushed node.
     Changes the `.js` sync contract, so a real design pass. Proposed 2026-07-21.
-25. [Read data tables (dev/debug)](OPEN-25-data-tables-read.md) — a read-only
+25. [Read data tables (dev/debug)](DONE-25-data-tables-read.md) — a read-only
     `data-tables` verb that pulls n8n data-table schemas + rows into local
     gitignored files so you can develop/debug against real table contents;
-    config-gated, with the read scopes added to the recommended key. Proposed
-    2026-07-21.
+    config-gated, with the read scopes added to the recommended key. Done
+    2026-07-21 — endpoints + `dataTable:*` scopes live-verified on n8n 2.30.7
+    and 2.31.4; unit + e2e + smoke green.
 26. [npx engine backend for `simulate`](OPEN-26-npx-engine-backend.md) — a
     dependency-free `npx n8n@<ver>` engine backend so `simulate` runs without
     Docker (the accessibility default Plan 7 intended). The headless diff run
