@@ -118,8 +118,9 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   lands via PR from a short-lived branch (`feat/…`, `fix/…`, `docs/…`,
   `chore/…`), squash-merged so main stays linear: one commit per PR. A local
   `pre-commit` hook (`scripts/hooks/pre-commit`, auto-wired by the `prepare`
-  npm script on every `npm install`) refuses commits made on main — see
-  "main is guarded locally too" below.
+  npm script on every `npm install`) refuses any commit made in the main
+  checkout (not just on the `main` branch) — see "The main checkout is guarded
+  locally too" below.
 - **Feature PRs are decoupled from releases — merging one is never a release.**
   A user-facing PR only appends its entry under `[Unreleased]` (per the
   Changelog rules); it does **not** bump `package.json`, tag, or cut a Release.
@@ -140,30 +141,27 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   maintainer's call — open a release PR only when explicitly asked, never
   automatically because `[Unreleased]` is non-empty.**
 - CI (typecheck + `npm test`) must be green before merge, now enforced
-  GitHub-side (see the ruleset bullet below). **The docs fast path no longer
-  skips the wait** — markdown-only changes still can't *fail* the checks, but
-  the ruleset gates every merge on them, so watch them to green (`gh pr checks
-  <n> --watch`) before merging.
-- **Docs fast path:** a change touching only Markdown (`plans/`, `*.md`)
-  skips the worktree — branch directly in the main checkout
-  (`git switch -c chore/x`), commit, PR, wait for the required checks
-  (`gh pr checks <n> --watch` — markdown can't fail them), merge, then
-  `git switch main && git pull` (merged branches auto-delete on GitHub).
-  **Never commit to main directly, fast path included.**
-- **Worktrees for code:** any other repo-modifying task (code, config,
-  tests, template, or anything mixing code with docs) starts by
-  creating a worktree in the gitignored `.worktrees/` dir (`git worktree
-  add -b feat/x .worktrees/feat-x main`) and working there — don't edit
-  the main checkout unless the user explicitly says to. Read-only work
-  (questions, reviews, exploration) needs no worktree. Claude Code enters
-  it via `EnterWorktree` with `path: .worktrees/feat-x`. After the PR is
-  merged, remove the worktree and delete the branch. Each worktree needs
-  its own `npm install`. Concurrent `npm test` across worktrees is safe
-  (tests bind ephemeral ports), and so is concurrent `test:smoke`
-  (PID-suffixed container name, ephemeral host port, mkdtemp work dir).
-  **Never run `git clean -fdx`/`-fdX` from the repo root** — it deletes
-  `.worktrees/` including uncommitted work; clean inside subdirs (e.g.
-  `dist/`) instead.
+  GitHub-side (see the ruleset bullet below). The ruleset gates **every** merge
+  on the required checks — markdown-only changes can't *fail* them, but they
+  still gate the merge, so watch them to green (`gh pr checks <n> --watch`)
+  before merging.
+- **Every repo-modifying task runs in its own worktree — no exceptions,
+  docs and Markdown included.** There is no "fast path" that branches in the
+  main checkout: the main checkout is *shared*, so a concurrent session (or the
+  IDE's git integration) flips its `HEAD` and branch out from under you
+  mid-edit. Start by creating a worktree in the gitignored `.worktrees/` dir
+  (`git worktree add -b feat/x .worktrees/feat-x main`) and working there —
+  don't edit the main checkout unless the user explicitly says to. Read-only
+  work (questions, reviews, exploration) needs no worktree. Claude Code enters
+  it via `EnterWorktree` with `path: .worktrees/feat-x`. After the PR is merged,
+  remove the worktree, delete the branch, and refresh main with `git switch
+  main && git pull` **in the main checkout** (merged branches auto-delete on
+  GitHub). Each worktree needs its own `npm install`. Concurrent `npm test`
+  across worktrees is safe (tests bind ephemeral ports), and so is concurrent
+  `test:smoke` (PID-suffixed container name, ephemeral host port, mkdtemp work
+  dir). **Never run `git clean -fdx`/`-fdX` from the repo root** — it deletes
+  `.worktrees/` including uncommitted work; clean inside subdirs (e.g. `dist/`)
+  instead.
 - GitHub-side enforcement (require PR + green required checks, block
   force-push) is **live** via the public-repo ruleset (plans/DONE-13).
   Auto-merge is not enabled on the repo and admin-bypass is disallowed, so a
@@ -201,12 +199,16 @@ exact mess this rule prevents. So:
   .worktrees/<name> main`, `git -C <new worktree> apply patch`, then
   `git checkout -- <files>` in the original to revert them there.
 
-## main is guarded locally too (pre-commit hook)
+## The main checkout is guarded locally too (pre-commit hook)
 
 The GitHub ruleset blocks *pushes* to main, but nothing upstream stops a
-*local* commit made on main when the worktree/branch rule gets skipped. A
-tracked `scripts/hooks/pre-commit` catches that: it aborts any commit whose
-current branch is `main`. It's **self-installing** — the `prepare` npm script
+*local* commit made in the main checkout when the worktree rule gets skipped. A
+tracked `scripts/hooks/pre-commit` catches that: it aborts any commit **not**
+made from a linked `.worktrees/` worktree. It gates on the *working tree*, not
+the branch — a linked worktree's git-dir lives under `.git/worktrees/` (allowed)
+while the main checkout's is plain `.git` (refused) — which subsumes the old "no
+commits on the `main` branch" rule, since `main` only ever lives in the main
+checkout. It's **self-installing** — the `prepare` npm script
 (`scripts/setup-hooks.mts`) points `core.hooksPath` at `scripts/hooks` on
 every `npm install`, so the guard activates automatically in each clone and
 worktree (which already run their own `npm install`). No hand-wiring needed;
@@ -217,12 +219,12 @@ git config core.hooksPath scripts/hooks
 ```
 
 A missing hook is a no-op, so this is safe to set before the file exists.
-There is never a legitimate local commit on main (the only local touch is
-`git switch main && git pull` after a merge); the emergency override is
+There is never a legitimate local commit in the main checkout (the only local
+touch is `git switch main && git pull` after a merge); the emergency override is
 `ALLOW_MAIN_COMMIT=1 git commit …`. If a commit is refused with "Refusing to
-commit directly on 'main'", you skipped the branch step — branch first
-(`git switch -c chore/x` for docs, or a `.worktrees/` worktree for code) and
-retry.
+commit in the main working tree", you skipped the worktree step — start a
+`.worktrees/` worktree (`git worktree add -b <branch> .worktrees/<name> main`)
+and retry.
 
 ## Sandboxed shells: git push / gh need escalation
 
@@ -371,8 +373,8 @@ functions; the CLI process is the surface users touch.
 
 A periodic maintenance pass over the repo — run it on demand (Claude Code:
 `/housekeeping`). Each step is a **check** that may produce a small PR; batch
-related fixes, keep markdown-only cleanups on the docs fast path (see "Docs
-fast path" in "Git workflow & releases" above). A pass that finds nothing to do
+related fixes into a single worktree branch/PR (every repo-modifying task uses a
+worktree — see "Git workflow & releases" above). A pass that finds nothing to do
 is a valid outcome — report it. Anything needing a non-obvious decision →
 surface it, don't guess.
 

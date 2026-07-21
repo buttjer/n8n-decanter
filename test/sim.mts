@@ -106,6 +106,46 @@ try {
     assert.equal(report.ok, true, `network-none run diverged/failed: ${report.engineError ?? report.divergent.join(",")}`);
   });
 
+  await step("simulate loop: a single-iteration loop replays engine-true (tier 1)", async () => {
+    // Hook -> Make(1 item) -> Loop(splitInBatches) --loop--> PerItem --> back to Loop
+    //                                               --done--> Fetch(http, pinned)
+    const loopWf = { name: "Sim Loop WF", nodes: [
+      { id: "w2", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { httpMethod: "POST", path: "sim-loop", responseMode: "lastNode" } },
+      { id: "m2", name: "Make", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { jsCode: "return [{ json: { v: 1 } }];\n" } },
+      { id: "l2", name: "Loop", type: "n8n-nodes-base.splitInBatches", typeVersion: 3, position: [440, 0], parameters: { options: {} } },
+      { id: "p2", name: "PerItem", type: "n8n-nodes-base.code", typeVersion: 2, position: [660, 0], parameters: { jsCode: "return $input.all().map((i) => ({ json: { doubled: Number(i.json.v ?? 0) * 2 } }));\n" } },
+      { id: "h2", name: "Fetch", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [880, 0], parameters: { url: "http://localhost:5678/healthz", method: "GET" } },
+    ], connections: {
+      Hook: { main: [[{ node: "Make", type: "main", index: 0 }]] },
+      Make: { main: [[{ node: "Loop", type: "main", index: 0 }]] },
+      Loop: { main: [[{ node: "Fetch", type: "main", index: 0 }], [{ node: "PerItem", type: "main", index: 0 }]] }, // 0=done, 1=loop
+      PerItem: { main: [[{ node: "Loop", type: "main", index: 0 }]] },
+    }, settings: { executionOrder: "v1" } };
+    const created = await api("POST", "/api/v1/workflows", loopWf);
+    await api("POST", `/api/v1/workflows/${created.id}/activate`);
+    for (let i = 0; i < 15; i++) { const r = await fetch(`${HOST}/webhook/sim-loop`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) }); if (r.ok) break; await sleep(750); }
+    await sleep(1500);
+    const exec = (await api("GET", `/api/v1/executions?includeData=true&limit=1&workflowId=${created.id}`)).data[0];
+    // sanity: the driver really did run more than once (one batch → two runs)
+    const loopRuns = exec.data.resultData.runData.Loop;
+    assert.ok(Array.isArray(loopRuns) && loopRuns.length === 2, `expected Loop to run twice (one batch), got ${loopRuns?.length}`);
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), "decanter-simloop-"));
+    writeFileSync(path.join(dir, "workflow.json"), JSON.stringify({ ...loopWf, id: "wfl", versionId: exec.workflowVersionId ?? "v1" }));
+    writeFileSync(path.join(dir, ".decanter.json"), JSON.stringify({ workflowId: "wfl", nodes: {} }));
+    mkdirSync(path.join(dir, "executions"), { recursive: true });
+    writeFileSync(path.join(dir, "executions", `${exec.id}.json`), JSON.stringify(exec));
+
+    const report = await runSimulation(dir, String(exec.id), { version: IMAGE_TAG }, log as any);
+    assert.equal(report.engineOk, true, `engine error: ${report.engineError}`);
+    assert.ok(report.loops.includes("Loop"), `Loop should run for real as a loop driver, got ${JSON.stringify(report.loops)}`);
+    assert.ok(!report.pinned.includes("Loop"), "loop driver must not be pinned");
+    assert.deepEqual(report.pinned.sort(), ["Fetch", "Hook"]);
+    assert.equal(report.ok, true, `single-iteration loop diverged/failed: ${report.engineError ?? report.divergent.join(",")}`);
+    const perItem = report.diffs.find((d) => d.node === "PerItem");
+    assert.deepEqual(perItem?.actual, [{ doubled: 2 }], "PerItem must execute for real inside the loop and match the capture");
+  });
+
   await step("simulate viewer: leaves a browsable run in a kept-alive local n8n", async () => {
     const report = await runSimulation(TMP, "1", { version: IMAGE_TAG, viewer: true }, log as any);
     assert.equal(report.ok, true, `viewer run diverged/failed: ${report.engineError ?? report.divergent.join(",")}`);

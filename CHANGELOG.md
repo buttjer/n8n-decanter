@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **No-ref → picker.** A ref-taking verb given no workflow, on a terminal, opens
   the interactive picker to choose one and runs the verb on it. Piped/non-TTY
   runs keep the config-default / error behavior, so scripts and CI never block.
+- **`simulate` now replays single-iteration loops.** A workflow whose only
+  repeated node is a `splitInBatches` ("Loop Over Items") driver that ran a
+  single batch — it runs twice (one batch pass + the final "done" pass) while
+  every other node ran once — no longer hard-errors. The loop driver executes
+  for real to reproduce the loop, and each node's one captured run pins exactly.
+  Multi-batch loops (any node ran more than once) stay out of scope, since
+  first-run-only pinning can't feed later iterations.
 
 ### Removed
 

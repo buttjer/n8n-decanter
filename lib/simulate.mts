@@ -30,8 +30,8 @@ export const SIM_START_NODE = "__sim_start__";
  * network node and pinned — safety never depends on knowing a type. Additions
  * need justification (misclassifying a node as pure runs it for real).
  * Seed list signed off 2026-07-20 (Plan 7 task 2). Deliberately excluded though
- * side-effect-free: `splitInBatches` (loop driver), `wait` (time semantics),
- * `executeWorkflow` (crosses the workflow boundary).
+ * side-effect-free: `splitInBatches` (a loop driver — see `LOOP_DRIVER_TYPES`),
+ * `wait` (time semantics), `executeWorkflow` (crosses the workflow boundary).
  */
 export const PURE_NODE_TYPES: ReadonlySet<string> = new Set(
   ["code", "set", "if", "switch", "filter", "merge", "sort", "limit", "aggregate",
@@ -42,6 +42,23 @@ export const PURE_NODE_TYPES: ReadonlySet<string> = new Set(
 /** True for a node type that executes for real (on the pure allowlist). */
 export function isPureNode(node: WorkflowNode): boolean {
   return PURE_NODE_TYPES.has(node.type);
+}
+
+/**
+ * Loop-driver node types: side-effect-free control flow, but **stateful across
+ * runs** — they emit one run per batch plus a final "done" pass, so pinning them
+ * to a single captured run would break the loop. Kept off `PURE_NODE_TYPES` for
+ * that reason; instead they **execute for real** so a single-iteration loop
+ * replays faithfully (Plan 7 tier 1), and are never diffed (the driver's output
+ * isn't a Code-node regression signal). A *multi*-iteration loop stays out of
+ * scope — first-run-only pinning can't feed later iterations (see the guard in
+ * `buildSimulation`).
+ */
+export const LOOP_DRIVER_TYPES: ReadonlySet<string> = new Set(["n8n-nodes-base.splitInBatches"]);
+
+/** True for a loop-driver node (runs for real, but is neither pinned nor diffed). */
+export function isLoopDriver(node: WorkflowNode): boolean {
+  return LOOP_DRIVER_TYPES.has(node.type);
 }
 
 /** One item as it appears in captured/replayed run data (`.json` payload + link). */
@@ -78,6 +95,8 @@ export interface Simulation {
   pinned: string[];
   /** Node names that execute for real (pure allowlist). */
   pure: string[];
+  /** Loop-driver nodes (e.g. `splitInBatches`) that run for real but aren't diffed. */
+  loops: string[];
   /** Per-node captured items, for diffing the engine's output against (task 3). */
   captured: Map<string, RunItem[]>;
 }
@@ -194,8 +213,9 @@ function replacementNode(original: WorkflowNode, jsCode: string): WorkflowNode {
  * Pure nodes are kept (Code-node sources materialized from their files), every
  * network node and the trigger are replaced with captured-output Code nodes,
  * a synthetic Manual Trigger is prepended, and all credentials are stripped.
- * Throws on the plan's hard errors: unpinnable gaps, multi-run (loop) captures,
- * or a surviving off-allowlist executable node.
+ * Loop drivers (`splitInBatches`) run for real so a **single-iteration** loop
+ * replays faithfully. Throws on the plan's hard errors: unpinnable gaps,
+ * *multi*-iteration loops, or a surviving off-allowlist executable node.
  */
 export async function buildSimulation(dir: string, execId: string, log: Log): Promise<Simulation> {
   const wfFile = path.join(dir, "workflow.json");
@@ -207,10 +227,23 @@ export async function buildSimulation(dir: string, execId: string, log: Log): Pr
   warnStaleFixtures(dir, [exec], log);
   const fixtures = readFixtures(dir);
 
-  // Multi-run (loop) capture → out of scope for v1 (Non-goals).
-  const multiRun = Object.entries(runData).filter(([, runs]) => Array.isArray(runs) && runs.length > 1).map(([n]) => n);
-  if (multiRun.length > 0) {
-    throw new Error(`loop workflows are out of scope (v1): node(s) ran more than once in ${execId} — ${multiRun.join(", ")}`);
+  // Loop captures (Plan 7 "Loop workflows"). A single-iteration loop replays
+  // faithfully — only the loop driver ran more than once (twice: one batch pass
+  // + the final "done" pass) while every other node ran exactly once, so its
+  // first-run pins are exact and the driver runs for real. A *multi*-iteration
+  // loop stays out of scope for v1: the transform pins each node to its first
+  // run only, which would misfeed iterations 2..N. The multi-iteration signal is
+  // any non-driver node with >1 run, or a driver with >2 runs (≥2 batches).
+  const byName = new Map(wf.nodes.map((n) => [n.name, n]));
+  const multiIteration = Object.entries(runData)
+    .filter(([name, runs]) => {
+      if (!Array.isArray(runs) || runs.length <= 1) return false;
+      const node = byName.get(name);
+      return !(node && isLoopDriver(node)) || runs.length > 2;
+    })
+    .map(([n]) => n);
+  if (multiIteration.length > 0) {
+    throw new Error(`loop workflows are out of scope (v1): only single-iteration loops replay — node(s) ran across multiple iterations in ${execId}: ${multiIteration.join(", ")}`);
   }
 
   // Resolve each node's pinned items: fixture (committed) over capture (temp).
@@ -223,11 +256,19 @@ export async function buildSimulation(dir: string, execId: string, log: Log): Pr
   const captured = new Map<string, RunItem[]>();
   const pinned: string[] = [];
   const pure: string[] = [];
+  const loopDrivers: string[] = [];
   const gaps: string[] = [];
   const nodes: WorkflowNode[] = [];
 
   for (const node of wf.nodes) {
     const disabled = node.disabled === true;
+    if (isLoopDriver(node)) {
+      // Runs for real to reproduce the (single-iteration) loop; never pinned,
+      // never diffed. Guaranteed side-effect-free by LOOP_DRIVER_TYPES.
+      loopDrivers.push(node.name);
+      nodes.push(stripCredentials(structuredClone(node)));
+      continue;
+    }
     if (isPureNode(node)) {
       pure.push(node.name);
       const clone = stripCredentials(structuredClone(node));
@@ -283,8 +324,9 @@ export async function buildSimulation(dir: string, execId: string, log: Log): Pr
   // fires on a classification bug — belt-and-braces, asserted by tests too.
   assertDryRunSafe(simWorkflow);
 
-  log.info(`simulation: ${pure.length} node(s) execute for real, ${pinned.length} pinned from capture ${execId}`);
-  return { workflow: simWorkflow, pinned, pure, captured };
+  const loopNote = loopDrivers.length > 0 ? `, ${loopDrivers.length} loop driver(s) run for real (single-iteration)` : "";
+  log.info(`simulation: ${pure.length} node(s) execute for real, ${pinned.length} pinned from capture ${execId}${loopNote}`);
+  return { workflow: simWorkflow, pinned, pure, loops: loopDrivers, captured };
 }
 
 /** Remove a node's `credentials` block (mutates + returns it). */
@@ -300,7 +342,7 @@ export function assertDryRunSafe(wf: Workflow): void {
       throw new Error(`simulation refused: node "${node.name}" still carries credentials`);
     }
     if (node.name === SIM_START_NODE || node.disabled === true) continue;
-    if (!isPureNode(node)) {
+    if (!isPureNode(node) && !isLoopDriver(node)) {
       throw new Error(`simulation refused: node "${node.name}" (${node.type}) is not on the pure allowlist and was not pinned`);
     }
   }
@@ -325,6 +367,8 @@ export interface SimulationReport {
   pinned: string[];
   /** Pure nodes that executed for real. */
   pure: string[];
+  /** Loop-driver nodes that ran for real (single-iteration loops); not diffed. */
+  loops: string[];
   /** Per-pure-node diffs of replay vs capture. */
   diffs: NodeDiff[];
   /** Names of nodes whose replayed output diverged from the capture. */
@@ -381,7 +425,7 @@ export async function runSimulation(
   const divergent = diffs.filter((d) => !d.equal).map((d) => d.node);
   return {
     execId, version: opts.version, networkNone: opts.networkNone === true,
-    pinned: sim.pinned, pure: sim.pure, diffs, divergent,
+    pinned: sim.pinned, pure: sim.pure, loops: sim.loops, diffs, divergent,
     engineOk: run.ok, engineError: run.error, ok: run.ok && divergent.length === 0,
     url: viewer?.url, login: viewer?.login,
   };
