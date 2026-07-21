@@ -492,6 +492,14 @@ arrive before `question()` and hangs on EOF — see Implementation notes).
   node files don't collide ("cannot redeclare"); `.d.ts` files are exempt
   from `force`, so `n8n-globals.d.ts` stays ambient.
 - `n8n-globals.d.ts` covers `.ts` and JSDoc-`.js` files alike.
+- **`$('Node').item` is typed non-undefined** (like `$input.item`). It
+  resolves the paired item in "Run Once for Each Item" context; a missing
+  pairing *throws* at runtime rather than yielding `undefined`, so a
+  `| undefined` union only added false TS2532s on the common cross-node
+  access without modeling a real value. A single ambient `.d.ts` can't vary
+  by node mode anyway (and tsserver couldn't honor it), so the shim follows
+  its "loose where n8n is dynamic" convention. Callers who genuinely want an
+  index-checked lookup use `itemMatching(i)` / `first()` / `last()`.
 - `.js` node files start with `// @ts-check` + JSDoc types.
 - `npm run typecheck` → `tsc -p tsconfig.cli.json && node
   scripts/typecheck.mts`. The first half strict-checks the CLI's own `.mts`
