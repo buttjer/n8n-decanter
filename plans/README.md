@@ -162,6 +162,11 @@ items not yet claimed by one. Recommended order:
     compile, marker, bundling, or `.remote` flow — so it funnels through one new
     source-field abstraction in `lib/util.mts`. Offline `run` stays JS-only.
     Proposed 2026-07-21.
+29. [Picker: recency sort + force-retry on drift](OPEN-29-picker-recency-sort-and-force-retry.md) —
+    two interactive-picker UX wins: list pulled workflows **newest-synced first**
+    (recency read from `.decanter.json` mtime — no schema change), and offer a
+    special **retry-with-`--force`** confirm (default No) when a picker-run verb
+    fails the drift guard, instead of only printing the error. Proposed 2026-07-21.
 
 ## Conventions
 
