@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-07-21
+
+### Changed
+
+- **The generated `.claude/settings.local.json` pre-approves more safe verbs.**
+  `rename`, `list`, `executions` (incl. `executions clean`), `completion`, and
+  `help` — plus a bare `status` — now run without a permission prompt, matching
+  the "offline, safe" and "reads remote, no writes" tiers documented in the
+  sync-dir `AGENTS.md`. Mutating/destructive verbs (`push`, `pull`, `watch`,
+  `publish`, `unpublish`, `create`, `duplicate`, `simulate`, `delete`) still
+  prompt, and `delete --force` is now hard-denied alongside `push --force`.
+
 ## [0.4.3] - 2026-07-21
 
 ### Changed
