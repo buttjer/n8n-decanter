@@ -1,63 +1,59 @@
 ---
 title: mock
-description: Promote a captured execution into a committed, hand-fillable execution mock — the way to fill gaps for simulate.
+description: Create and validate committed execution mocks — named scenarios that fill simulate's gaps, edited locally, no LLM API.
 order: 15
 ---
 
 ```sh
-n8n-decanter mock <workflow> [--execution <id>]
+n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>] [--json]
+n8n-decanter mock check  <workflow> ["<slug>"] [--json]
 ```
 
-Promotes a captured execution into a **committed, editable execution mock** at
-`workflows/<folder>/execution-mocks/<id>.json`. It's a verbatim copy of the
-capture in the same format, so [simulate](/docs/cli/simulate/) reads it directly —
-and **prefers it** over the gitignored raw capture of the same id.
+The `mock` namespace manages **execution mocks** — committed, hand-editable
+*named scenarios* that fill [simulate](/docs/cli/simulate/)'s gaps. They live in
+`workflows/<folder>/mocks/<slug>.json`, in the same format as a real capture, so
+`simulate --mock <slug>` replays one directly. Everything here is **offline** —
+no engine, and **no LLM API or key**: you (or your IDE agent) author the data.
 
-Its job is to **fill gaps**. A *gap* is a network node reached during a
-[simulate](/docs/cli/simulate/) replay that has **no captured data** — a node
-added or reparametrized since the capture, so `simulate` can't pin it and
-hard-errors. `mock` writes a file you (or your IDE agent) complete by hand; the
-CLI **never calls a model and needs no API key**. Pinned data stays the source
-of truth — a filled gap is just a pin whose provenance is "authored", not
-"captured".
+A *gap* is a network node reached during a replay with **no captured data** — a
+node added or reparametrized since the capture. `simulate` hard-errors on a gap;
+a mock is how you supply the missing data as a reproducible, reviewable scenario.
 
-Without `--execution`, `mock` uses the **newest** local execution (a capture in
-`executions/`, or an existing mock).
+## `mock create`
 
-## The gap-fill loop
+Promotes a captured execution into a committed mock scenario:
 
 ```sh
-# 1. simulate hits a gap — a network node with no captured data
-n8n-decanter order-sync simulate --execution 4812
-# ✗ network node(s) reached with no captured or fixture data: Enrich Customer —
-#   create a committed, fillable mock with `n8n-decanter order-sync mock --execution 4812` …
-
-# 2. promote the capture to a committed mock, which flags what to fill
-n8n-decanter order-sync mock --execution 4812
-# ! fill runData for 1 node: Enrich Customer — see the "_decanterMock" block
-
-# 3. edit execution-mocks/4812.json (see below), then replay — the mock is preferred
-n8n-decanter order-sync simulate --execution 4812
+n8n-decanter order-sync mock create "happy-path" --execution 4812
+#   copies executions/4812.json -> mocks/happy-path.json, flags the gap nodes
 ```
 
-## What the mock file looks like
+- **`<slug>`** names the scenario (`happy-path`, `empty-cart`, `error-case`) and
+  becomes the filename (kebab-cased). **Optional** — omit it and the mock is
+  named after the execution id (`mocks/4812.json`). Keep a library of scenarios
+  per workflow.
+- **`--execution <id>`** is the seed capture; defaults to the newest one in
+  `executions/`.
+- **`--json`** prints `{ slug, file, gaps }` for tooling.
+- Copies **real captured data** (which can hold credentials/PII) — `mock create`
+  prints a review warning; check before committing. It **refuses to overwrite**
+  an existing mock, so it never clobbers data you've filled in.
 
-A full copy of the execution plus a `_decanterMock` block listing the nodes to
-fill, each with the node's type, parameters, and a sample of the items feeding
-it as context:
+The written file is a verbatim copy of the capture plus a `_decanterMock` block
+listing each gap node with its type, parameters, and an `inputSample`:
 
 ```jsonc
 {
   "id": 4812,
   "data": { "resultData": { "runData": {
-    "Trigger":  [ /* real captured runs, untouched */ ],
-    "Compute":  [ /* … */ ]
+    "Trigger": [ /* real captured runs, untouched */ ],
+    "Compute": [ /* … */ ]
     // add "Enrich Customer" here ↓
   } } },
   "_decanterMock": {
     "sourceExecution": "4812",
     "createdAt": "2026-07-21",
-    "guidance": "For each node in \"fill\", add data.resultData.runData[\"<node>\"] = [ { \"data\": { \"main\": [ [ { \"json\": { …output… } } ] ] } } ], using its context. Keep \"fill\" as-is — simulate validates it. Re-run: simulate --execution 4812.",
+    "guidance": "For each node in \"fill\", add data.resultData.runData[\"<node>\"] = [ { \"data\": { \"main\": [ [ { \"json\": { …output… } } ] ] } } ]. Keep \"fill\" as-is — mock check validates it. Then: simulate --mock happy-path.",
     "fill": [
       {
         "node": "Enrich Customer",
@@ -70,26 +66,35 @@ it as context:
 }
 ```
 
-You (or your agent) add the node's `runData` under
-`data.resultData.runData["Enrich Customer"]` using the `fill` entry as context —
-and **leave `fill` in place** (it records which nodes are mocked rather than
-captured, and is what `simulate` validates). On the next `simulate`, that node is
-pinned from the mock exactly like a captured node.
+You (or your agent) add each fill node's `runData` using its context, and
+**leave `fill` in place** (it records which nodes are mocked and is what
+`mock check` validates).
 
-## Validation
+## `mock check`
 
-n8n publishes no JSON Schema for execution data — the format lives only in the
-`n8n-workflow` TypeScript types (`IRunExecutionData` → `ITaskData` →
-`INodeExecutionData`). So when `simulate` loads a mock, it **structurally
-validates** the run data it's about to use and fails with an actionable,
-node-named error if a filled node is malformed — for example:
+Structurally validates a mock **offline** — the fast loop while filling, no
+Docker needed:
+
+```sh
+n8n-decanter order-sync mock check happy-path   # one scenario
+n8n-decanter order-sync mock check              # every mock in the folder
+```
+
+Exits `1` if any mock is malformed or has a `fill` node still empty, with a
+node-named error:
 
 ```txt
-mock execution-mocks/4812.json is invalid:
+mock mocks/happy-path.json is invalid:
   - Enrich Customer run 0 item 0: each item needs a "json" field
   - incomplete: add runData for Enrich Customer (still listed in _decanterMock.fill)
   expected per node: runData["<node>"] = [ { "data": { "main": [ [ { "json": { … } } ] ] } } ]
 ```
+
+n8n publishes **no JSON Schema** for execution data — the format lives only in
+the `n8n-workflow` TypeScript types (`IRunExecutionData` → `ITaskData` →
+`INodeExecutionData`). `mock check` is the decanter's own structural check of the
+exact shape it replays. `simulate --mock` runs the same check when it loads a
+mock, so a bad scenario never reaches the engine.
 
 The shape to match, per node:
 
@@ -105,28 +110,26 @@ The shape to match, per node:
 }
 ```
 
-Real captures aren't re-validated (they come straight from the API); the check
-targets your hand edits.
+## The full loop
+
+```sh
+n8n-decanter order-sync simulate --execution 4812   # ✗ gap: Enrich Customer has no data
+n8n-decanter order-sync mock create "happy-path" --execution 4812
+#   → fill mocks/happy-path.json's runData for the flagged nodes
+n8n-decanter order-sync mock check happy-path       # ✓ valid   (offline, fast)
+n8n-decanter order-sync simulate --mock happy-path  # replay the scenario
+```
 
 ## Committed and reproducible
 
-Unlike `executions/` (gitignored temp data), **`execution-mocks/` is tracked in
-git**, so a mocked replay is reproducible for teammates and CI. The mock copies
-**real captured data**, which can contain credentials or PII — `mock` prints a
-review warning; check the file before committing.
-
-`mock` **refuses to overwrite** an existing mock, so it never clobbers data
-you've filled in — delete the file to regenerate from the capture.
-
-## Options
-
-| Flag | Meaning |
-| --- | --- |
-| `--execution <id>` | The capture to promote (optional — defaults to the newest local execution) |
+Unlike `executions/` (gitignored temp data), **`mocks/` is tracked in git**, so a
+mocked replay is reproducible for teammates and CI. Mocks are chosen explicitly
+by slug (`simulate --mock <slug>`) — they're named scenarios, not a "latest"
+default.
 
 ## Not `--pin`
 
 [simulate --pin](/docs/cli/simulate/#simulate-pin) freezes the **real** captured
-outputs of *network* nodes into per-node `fixtures/` files. `mock` produces a
-whole-execution file you **edit** to fill gaps. Use `--pin` to make a clean
-capture reproducible; use `mock` when a node has no captured data to pin.
+outputs of *network* nodes into per-node `fixtures/` files. A mock is a whole
+scenario you **edit** to fill gaps. Use `--pin` to make a clean capture
+reproducible; use `mock` when a node has no captured data to pin.

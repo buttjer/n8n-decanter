@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runEngine, startViewer } from "./engine.mts";
-import { EXECUTION_MOCKS_DIR, EXECUTIONS_DIR, warnStaleFixtures } from "./executions.mts";
+import { EXECUTIONS_DIR, MOCKS_DIR, warnStaleFixtures } from "./executions.mts";
 import { buildNodeCode } from "./push.mts";
 import { readState } from "./state.mts";
 import type { Execution, Log, NodeParameters, Workflow, WorkflowNode } from "./types.mts";
@@ -75,7 +75,7 @@ export interface RunItem {
  * to a node by its `node` field (not the filename, which is lossy). Written by
  * `simulate --pin` (`source: "capture"`); read here like a capture, taking
  * precedence over `executions/` temp data. (Gaps — nodes with no captured data —
- * are filled instead via a committed `execution-mocks/<id>.json`, see `writeMock`.)
+ * are filled instead via a committed `mocks/<slug>.json` scenario, see `writeMock`.)
  */
 export interface Fixture {
   /** Where the items came from — a real capture or a hand-authored guess (aging, flagged). */
@@ -91,7 +91,7 @@ export interface Fixture {
 /**
  * Context recorded for one unpinnable network node (a *gap*): its type +
  * parameters and the captured items feeding it — enough for the local agent (or
- * a human) to author plausible output when filling an `execution-mocks/` file.
+ * a human) to author plausible output when filling a `mocks/<slug>.json` scenario.
  */
 export interface GapContext {
   node: string;
@@ -104,7 +104,7 @@ export interface GapContext {
 /**
  * Thrown by `buildSimulation` when one or more reachable network nodes have no
  * captured or fixture data. Carries the per-node `gaps` so the `mock` verb can
- * scaffold a fillable `execution-mocks/<id>.json`; the message leads the user to
+ * scaffold a fillable `mocks/<slug>.json` scenario; the message leads the user to
  * filling a mock (or hand-pinning a fixture).
  */
 export class SimulationGapError extends Error {
@@ -160,34 +160,41 @@ function firstRunItems(runs: NodeRun[] | undefined): RunItem[] | undefined {
   return Array.isArray(first) ? first : [];
 }
 
-/**
- * Locate the execution to replay for `execId`: a committed, hand-fillable
- * `execution-mocks/<id>.json` takes precedence over the gitignored temp capture
- * `executions/<id>.json`, so once you promote a capture to a mock (and fill its
- * gaps), the same `--execution <id>` replays the reproducible mock. `null` when
- * neither exists.
- */
-export function captureFile(dir: string, execId: string): string | null {
-  const mock = path.join(dir, EXECUTION_MOCKS_DIR, `${execId}.json`);
-  if (existsSync(mock)) return mock;
-  const raw = path.join(dir, EXECUTIONS_DIR, `${execId}.json`);
-  return existsSync(raw) ? raw : null;
+/** Where a replay source lives: a slug-named committed mock, or a raw temp capture. */
+export type SimSource = "capture" | "mock";
+
+/** Filename (without dir) for a source ref — mocks are kebab-slugged, captures are ids. */
+function sourceName(ref: string, source: SimSource): string {
+  return source === "mock" ? kebabCase(ref) : ref;
 }
 
-/** Read + validate the execution to replay (mock preferred over raw capture). */
-function readCapture(dir: string, execId: string): { exec: Execution; runData: RunData } {
-  const file = captureFile(dir, execId);
+/**
+ * Locate a replay source file: `mocks/<slug>.json` for a committed mock scenario
+ * (chosen explicitly by `simulate --mock <slug>`) or `executions/<id>.json` for a
+ * gitignored raw capture. `null` when it doesn't exist.
+ */
+export function sourceFile(dir: string, ref: string, source: SimSource): string | null {
+  const sub = source === "mock" ? MOCKS_DIR : EXECUTIONS_DIR;
+  const file = path.join(dir, sub, `${sourceName(ref, source)}.json`);
+  return existsSync(file) ? file : null;
+}
+
+/** Read + validate a replay source (a raw capture, or a committed mock scenario). */
+function readCapture(dir: string, ref: string, source: SimSource): { exec: Execution; runData: RunData } {
+  const file = sourceFile(dir, ref, source);
   if (!file) {
-    throw new Error(`execution ${execId} not found under ${EXECUTION_MOCKS_DIR}/ or ${EXECUTIONS_DIR}/ — fetch it (n8n-decanter <ref> executions) or create a mock (n8n-decanter <ref> mock)`);
+    throw new Error(source === "mock"
+      ? `mock "${ref}" not found under ${MOCKS_DIR}/ — create it first: n8n-decanter <ref> mock create ${ref}`
+      : `execution ${ref} not captured under ${EXECUTIONS_DIR}/ — fetch it first: n8n-decanter <ref> executions`);
   }
   let exec: Execution;
   try {
     exec = JSON.parse(readFileSync(file, "utf8")) as Execution;
   } catch (err) {
-    throw new Error(`corrupt capture ${file} (${(err as Error).message})`);
+    throw new Error(`corrupt ${source} ${file} (${(err as Error).message})`);
   }
-  validateMockRunData(exec, execId); // no-op for real captures; checks hand-filled mocks
-  return { exec, runData: runDataOf(exec, execId) };
+  validateMockRunData(exec, ref); // no-op for real captures; checks hand-filled mocks
+  return { exec, runData: runDataOf(exec, ref) };
 }
 
 /**
@@ -200,7 +207,7 @@ function readCapture(dir: string, execId: string): { exec: Execution; runData: R
  * this effectively checks the agent's/human's edits. Also flags mock nodes still
  * listed to fill but left without data. Exported for direct testing.
  */
-export function validateMockRunData(exec: Execution, execId: string): void {
+export function validateMockRunData(exec: Execution, slug: string): void {
   const meta = (exec as { _decanterMock?: { fill?: Array<{ node?: string }> } })._decanterMock;
   if (meta === undefined) return; // not a mock
   const runData = (exec as { data?: { resultData?: { runData?: unknown } } }).data?.resultData?.runData;
@@ -230,7 +237,7 @@ export function validateMockRunData(exec: Execution, execId: string): void {
     problems.push(`incomplete: add runData for ${unfilled.join(", ")} (still listed in _decanterMock.fill)`);
   }
   if (problems.length > 0) {
-    throw new Error(`mock ${EXECUTION_MOCKS_DIR}/${execId}.json is invalid:\n  - ${problems.join("\n  - ")}\n  expected per node: runData["<node>"] = [ { "data": { "main": [ [ { "json": { … } } ] ] } } ]`);
+    throw new Error(`mock ${MOCKS_DIR}/${kebabCase(slug)}.json is invalid:\n  - ${problems.join("\n  - ")}\n  expected per node: runData["<node>"] = [ { "data": { "main": [ [ { "json": { … } } ] ] } } ]`);
   }
 }
 
@@ -366,16 +373,17 @@ function replacementNode(original: WorkflowNode, jsCode: string): WorkflowNode {
  */
 export async function buildSimulation(
   dir: string,
-  execId: string,
+  ref: string,
   log: Log,
-  opts: { allowMultiBatch?: boolean } = {},
+  opts: { source?: SimSource; allowMultiBatch?: boolean } = {},
 ): Promise<Simulation> {
+  const source = opts.source ?? "capture";
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) throw new Error(`no workflow.json in ${dir} — pull the workflow first`);
   const wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
   if (readState(dir) === null) throw new Error(`no .decanter.json in ${dir} — pull the workflow first`);
 
-  const { exec, runData } = readCapture(dir, execId);
+  const { exec, runData } = readCapture(dir, ref, source);
   warnStaleFixtures(dir, [exec], log);
   const fixtures = readFixtures(dir);
 
@@ -397,7 +405,7 @@ export async function buildSimulation(
   // Tier-2 (viewer-only) turns that hard error into a best-effort single iteration.
   const bestEffortLoop = multiIteration.length > 0 && opts.allowMultiBatch === true;
   if (multiIteration.length > 0 && !bestEffortLoop) {
-    throw new Error(`loop workflows are out of scope (v1): only single-iteration loops replay — node(s) ran across multiple iterations in ${execId}: ${multiIteration.join(", ")}`);
+    throw new Error(`loop workflows are out of scope (v1): only single-iteration loops replay — node(s) ran across multiple iterations in ${ref}: ${multiIteration.join(", ")}`);
   }
   // "of N": batches the loop ran — max body-run count, or driver runs minus the "done" pass.
   const loopIterations = bestEffortLoop
@@ -452,7 +460,7 @@ export async function buildSimulation(
       nodes.push(replacementNode(node, emitCode(items)));
     } else if (!disabled && reachableInCapture(node.name, wf.connections, runData)) {
       // Reached in capture but no data → real gap. Collect context so the `mock`
-      // verb can scaffold a fillable execution-mocks/ entry for it.
+      // namespace can scaffold a fillable mocks/ scenario for it.
       gaps.push({ node: node.name, type: node.type, parameters: node.parameters, input: capturedInputFor(node.name, wf.connections, runData) });
       nodes.push(replacementNode(node, guardCode(node.name)));
     } else {
@@ -464,7 +472,9 @@ export async function buildSimulation(
   if (gaps.length > 0) {
     const names = gaps.map((g) => g.node).join(", ");
     throw new SimulationGapError(
-      `network node(s) reached with no captured or fixture data: ${names} — create a committed, fillable mock with \`n8n-decanter <workflow> mock --execution ${execId}\`, add their runData, and re-run (or hand-pin fixtures/<node>.json). The mock is edited locally — the CLI never calls a model.`,
+      source === "mock"
+        ? `mock "${ref}" still has network node(s) with no data: ${names} — add their runData under data.resultData.runData in ${MOCKS_DIR}/${sourceName(ref, "mock")}.json (see the _decanterMock block), then re-run. Validate offline with: n8n-decanter <workflow> mock check ${ref}.`
+        : `network node(s) reached with no captured data: ${names} — create a committed, fillable mock with \`n8n-decanter <workflow> mock create --execution ${ref}\`, add their runData, and replay with \`simulate --mock\`. The mock is edited locally — the CLI never calls a model.`,
       gaps,
     );
   }
@@ -498,7 +508,7 @@ export async function buildSimulation(
   const loopNote = loopDrivers.length > 0
     ? `, ${loopDrivers.length} loop driver(s) run for real (${bestEffortLoop ? `capped to iteration 1 of ${loopIterations}` : "single-iteration"})`
     : "";
-  log.info(`simulation: ${pure.length} node(s) execute for real, ${pinned.length} pinned from capture ${execId}${loopNote}`);
+  log.info(`simulation: ${pure.length} node(s) execute for real, ${pinned.length} pinned from ${source} ${ref}${loopNote}`);
   return { workflow: simWorkflow, pinned, pure, loops: loopDrivers, captured, bestEffortLoop, loopIterations };
 }
 
@@ -508,9 +518,9 @@ export async function buildSimulation(
  * `[]`. Any other failure (e.g. a multi-batch loop) propagates. Used by `mock`
  * to learn which nodes to flag for filling.
  */
-export async function detectGaps(dir: string, execId: string, log: Log): Promise<GapContext[]> {
+export async function detectGaps(dir: string, ref: string, log: Log, source: SimSource = "capture"): Promise<GapContext[]> {
   try {
-    await buildSimulation(dir, execId, log);
+    await buildSimulation(dir, ref, log, { source });
     return [];
   } catch (err) {
     if (err instanceof SimulationGapError) return err.gaps;
@@ -518,29 +528,30 @@ export async function detectGaps(dir: string, execId: string, log: Log): Promise
   }
 }
 
-/** Guidance + per-node context the `mock` verb records for gaps to be hand-filled. */
+/** Guidance + per-node context `mock create` records for gaps to be hand-filled. */
 interface MockMeta {
   sourceExecution: string;
   createdAt: string;
   guidance: string;
-  /** Nodes still needing `runData` — the fill list; empty once the mock is complete. */
+  /** Nodes still needing `runData` — the fill list; kept as-is (mock provenance + `mock check` target). */
   fill: Array<{ node: string; type: string; parameters: NodeParameters; inputSample: unknown[] }>;
 }
 
 /**
- * `mock` verb: promote the gitignored temp capture `executions/<id>.json` into a
- * committed, hand-editable `execution-mocks/<id>.json` (same execution format, so
- * `simulate` reads it verbatim and prefers it — see `captureFile`). Any *gap*
- * (network node reached with no captured data) is listed under a `_decanterMock`
- * block with its type/params/input as context; the local agent (or a human) adds
- * the node's `runData` there and re-runs. **No LLM is ever called** — this is
- * purely a file the CLI scaffolds and you fill. Refuses to clobber an existing
- * mock (your fills are safe). Returns the gap node names to fill.
+ * `mock create`: promote the gitignored temp capture `executions/<id>.json` into
+ * a committed, hand-editable **named scenario** `mocks/<slug>.json` (same
+ * execution format, so `simulate --mock <slug>` reads it verbatim). Slug defaults
+ * to the execution id. Any *gap* (network node reached with no captured data) is
+ * listed under a `_decanterMock` block with its type/params/input as context; the
+ * local agent (or a human) adds the node's `runData` there. **No LLM is ever
+ * called** — the CLI only scaffolds the file. Refuses to clobber an existing mock
+ * (your fills are safe). Returns the gap node names to fill.
  */
-export async function writeMock(dir: string, execId: string, log: Log): Promise<string[]> {
-  const mockFile = path.join(dir, EXECUTION_MOCKS_DIR, `${execId}.json`);
+export async function writeMock(dir: string, execId: string, slug: string, log: Log): Promise<{ slug: string; file: string; gaps: string[] }> {
+  const name = kebabCase(slug);
+  const mockFile = path.join(dir, MOCKS_DIR, `${name}.json`);
   if (existsSync(mockFile)) {
-    throw new Error(`mock already exists: ${path.relative(process.cwd(), mockFile)} — edit it directly, or delete it to regenerate from the capture`);
+    throw new Error(`mock "${name}" already exists: ${path.relative(process.cwd(), mockFile)} — edit it directly, or delete it to regenerate`);
   }
   const rawFile = path.join(dir, EXECUTIONS_DIR, `${execId}.json`);
   if (!existsSync(rawFile)) {
@@ -552,13 +563,13 @@ export async function writeMock(dir: string, execId: string, log: Log): Promise<
   } catch (err) {
     throw new Error(`corrupt capture ${rawFile} (${(err as Error).message})`);
   }
-  // Discover gaps from the raw capture (no mock exists yet, so this reads the capture).
-  const gaps = await detectGaps(dir, execId, log);
+  // Discover gaps from the raw capture (source=capture; the mock doesn't exist yet).
+  const gaps = await detectGaps(dir, execId, log, "capture");
   const meta: MockMeta = {
     sourceExecution: execId,
     createdAt: new Date().toISOString().slice(0, 10),
     guidance: gaps.length > 0
-      ? `Mock data — not a real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample as context. Keep the "fill" list as-is — it records which nodes are mocked and is what simulate validates. Then re-run: n8n-decanter <workflow> simulate --execution ${execId} (it validates the runData shape and pins these nodes).`
+      ? `Mock data — not a real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample as context. Keep the "fill" list as-is — it records which nodes are mocked and is what "mock check" validates. Validate offline: n8n-decanter <workflow> mock check ${name}. Then replay: n8n-decanter <workflow> simulate --mock ${name}.`
       : `Committed, reproducible copy of capture ${execId} — no gaps to fill.`,
     fill: gaps.map((g) => ({ node: g.node, type: g.type, parameters: g.parameters, inputSample: g.input.map((i) => i.json) })),
   };
@@ -567,13 +578,48 @@ export async function writeMock(dir: string, execId: string, log: Log): Promise<
 
   const rel = path.relative(process.cwd(), mockFile);
   if (gaps.length > 0) {
-    log.info(`mock ${rel} written from capture ${execId}`);
-    log.warn(`fill runData for ${gaps.length} node${gaps.length === 1 ? "" : "s"}: ${gaps.map((g) => g.node).join(", ")} — see the "_decanterMock" block, then: n8n-decanter <workflow> simulate --execution ${execId}`);
+    log.info(`mock "${name}" written from capture ${execId} -> ${rel}`);
+    log.warn(`fill runData for ${gaps.length} node${gaps.length === 1 ? "" : "s"}: ${gaps.map((g) => g.node).join(", ")} — see "_decanterMock", validate with \`mock check ${name}\`, then \`simulate --mock ${name}\``);
   } else {
-    log.ok(`mock ${rel} written from capture ${execId} — no gaps; a committed, reproducible replay`);
+    log.ok(`mock "${name}" written from capture ${execId} -> ${rel} — no gaps; replay with \`simulate --mock ${name}\``);
   }
   log.warn("mock copies real captured data — review for credentials/PII before committing");
-  return gaps.map((g) => g.node);
+  return { slug: name, file: mockFile, gaps: gaps.map((g) => g.node) };
+}
+
+/** The slugs of the committed mock scenarios in a workflow folder (sorted). */
+export function listMockSlugs(dir: string): string[] {
+  const mocksDir = path.join(dir, MOCKS_DIR);
+  if (!existsSync(mocksDir)) return [];
+  return readdirSync(mocksDir).filter((e) => e.endsWith(".json")).map((e) => e.slice(0, -5)).sort();
+}
+
+/**
+ * `mock check`: structurally validate one mock (or every mock in the folder,
+ * when `slug` is undefined) offline — the fast agent-loop check that doesn't need
+ * Docker. Parses the file and runs `validateMockRunData`; logs OK / the
+ * node-named error per mock. Returns the number of invalid mocks (0 = all good).
+ */
+export function checkMocks(dir: string, slug: string | undefined, log: Log): number {
+  const slugs = slug !== undefined ? [kebabCase(slug)] : listMockSlugs(dir);
+  if (slugs.length === 0) {
+    log.info(slug !== undefined ? `no mock "${slug}" under ${MOCKS_DIR}/` : `no mocks under ${MOCKS_DIR}/ — create one with: n8n-decanter <workflow> mock create`);
+    return 0;
+  }
+  let invalid = 0;
+  for (const s of slugs) {
+    const file = path.join(dir, MOCKS_DIR, `${s}.json`);
+    if (!existsSync(file)) { log.error(`mock "${s}": not found under ${MOCKS_DIR}/`); invalid++; continue; }
+    try {
+      const exec = JSON.parse(readFileSync(file, "utf8")) as Execution;
+      validateMockRunData(exec, s);
+      log.ok(`mock "${s}": valid`);
+    } catch (err) {
+      log.error((err as Error).message);
+      invalid++;
+    }
+  }
+  return invalid;
 }
 
 /** Remove a node's `credentials` block (mutates + returns it). */
@@ -657,15 +703,15 @@ export function diffItems(expected: RunItem[], actual: RunItem[]): boolean {
  */
 export async function runSimulation(
   dir: string,
-  execId: string,
-  opts: { version: string; networkNone?: boolean; viewer?: boolean },
+  ref: string,
+  opts: { version: string; source?: SimSource; networkNone?: boolean; viewer?: boolean },
   log: Log,
 ): Promise<SimulationReport> {
   // Viewer mode opts into tier-2: a multi-batch loop becomes a best-effort
   // "iteration 1 of N" instead of a hard error (headless/CI still hard-errors).
-  const sim = await buildSimulation(dir, execId, log, { allowMultiBatch: opts.viewer === true });
+  const sim = await buildSimulation(dir, ref, log, { source: opts.source, allowMultiBatch: opts.viewer === true });
   const base = {
-    execId, version: opts.version, networkNone: opts.networkNone === true,
+    execId: ref, version: opts.version, networkNone: opts.networkNone === true,
     pinned: sim.pinned, pure: sim.pure, loops: sim.loops,
   };
 
@@ -717,7 +763,7 @@ export function pinFixtures(dir: string, execId: string, log: Log): void {
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) throw new Error(`no workflow.json in ${dir} — pull the workflow first`);
   const wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
-  const { exec, runData } = readCapture(dir, execId);
+  const { exec, runData } = readCapture(dir, execId, "capture");
   const fixturesDir = path.join(dir, FIXTURES_DIR);
   mkdirSync(fixturesDir, { recursive: true });
   const date = new Date().toISOString().slice(0, 10);

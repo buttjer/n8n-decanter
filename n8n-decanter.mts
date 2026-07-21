@@ -6,7 +6,7 @@ import { loadConfig } from "./lib/config.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
-import { pinFixtures, runSimulation, writeMock, type SimulationReport } from "./lib/simulate.mts";
+import { checkMocks, listMockSlugs, pinFixtures, runSimulation, writeMock, type SimulationReport } from "./lib/simulate.mts";
 import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
@@ -69,10 +69,13 @@ ${b("Inspect & test")}
   ${b("check")} [workflow…] [--no-typecheck]      ${d("offline layout-compliance check")}
   ${b("executions")} [workflow…] [--status=…] [--limit=N]   ${d("fetch execution data (numeric arg = one by id)")}
   ${b("executions")} [workflow…] clean            ${d("delete fetched execution data (offline)")}
-  ${b("simulate")} <workflow> [--execution <execution-id>] [--pin <execution-id>] [--network-none] [--json]
+  ${b("simulate")} <workflow> [--execution <execution-id> | --mock <slug>] [--network-none] [--json]
   ${d("                                            replay through a real n8n engine (Docker); exits 1 on divergence")}
-  ${b("mock")} <workflow> [--execution <execution-id>]        ${d("promote a capture to a committed, gap-fillable execution mock (offline)")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
+
+${b("Mock")} ${d("(fill simulate gaps offline — no engine, no API)")}
+  ${b("mock create")} <workflow> ["<slug>"] [--execution <id>]   ${d("promote a capture to a committed, fillable mock scenario")}
+  ${b("mock check")} <workflow> ["<slug>"]                       ${d("structurally validate a mock (or all); exits 1 on invalid")}
 
 ${b("Node")}
   ${b("node create")} <workflow> "<Node name>" [--ts]        ${d("scaffold a disconnected Code node (offline)")}
@@ -92,8 +95,10 @@ next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "duplicate", "watch", "list", "executions", "simulate", "mock", "publish", "unpublish", "create", "delete", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["create", "rename", "run"]);
+/** Sub-verbs of the `mock` namespace; dispatched as internal `mock:<sub>` commands. */
+const MOCK_VERBS = new Set(["create", "check"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "mock", "publish", "unpublish", "delete"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "publish", "unpublish", "delete"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -130,7 +135,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version|mock)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -162,6 +167,14 @@ async function main() {
     }
     command = `node:${sub}`;
     rest = positional.slice(2);
+  } else if (command === "mock") {
+    const sub = positional[1];
+    if (sub === undefined || !MOCK_VERBS.has(sub)) {
+      console.log(usage());
+      throw new Error(`unknown mock command: ${sub ?? "(none)"} — try: n8n-decanter mock create|check`);
+    }
+    command = `mock:${sub}`;
+    rest = positional.slice(2);
   }
 
   // Bare invocation on a TTY in an inited project → interactive picker
@@ -188,7 +201,7 @@ async function main() {
   // Verb-first: slot 0 must be a known verb (a workflow named like a verb is now
   // just an argument, so the old "address it by id" caveat is gone). `node:<sub>`
   // is internal and already validated above.
-  if (!command.startsWith("node:") && !VERBS.has(command)) {
+  if (!command.startsWith("node:") && !command.startsWith("mock:") && !VERBS.has(command)) {
     console.log(usage());
     throw new Error(`unknown verb: ${command}`);
   }
@@ -218,8 +231,8 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push(...NODE_VERBS); // node sub-verbs (create/rename/run) after `node`
-    words.push("--force", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--json", "--network-none", "--n8n-version=", "--help");
+    words.push(...NODE_VERBS, ...MOCK_VERBS); // sub-verbs after `node` / `mock`
+    words.push("--force", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireCredentials: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -351,7 +364,8 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   // simulate reads local captures + drives a throwaway engine — it never calls
   // the n8n API, so no credentials are required. Workflow `rename` and the node
   // namespace's create/rename only touch local files.
-  const offline = command === "check" || command === "rename" || command === "node:create" || command === "node:rename" || command === "simulate" || command === "mock"
+  const offline = command === "check" || command === "rename" || command === "node:create" || command === "node:rename" || command === "simulate"
+    || command === "mock:create" || command === "mock:check"
     || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"));
   const config = loadConfig(process.cwd(), { requireCredentials: !offline });
@@ -384,9 +398,10 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   if (REF_VERBS.has(command)) {
     refs = [];
     for (const r of rest) refs.push(await resolveRef(r));
-  } else if ((command === "rename" || command === "node:create" || command === "node:rename" || command === "duplicate") && rest.length > 0) {
+  } else if ((command === "rename" || command === "node:create" || command === "node:rename" || command === "duplicate"
+      || command === "mock:create" || command === "mock:check") && rest.length > 0) {
     // ref-plus-literals verbs: only the first argument is a workflow ref;
-    // the rest are names (node names, a new workflow name) — not resolved.
+    // the rest are names (node names, a new workflow name, a mock slug) — not resolved.
     refs = [await resolveRef(rest[0]), ...rest.slice(1)];
   }
   // No-ref → picker (Plan 27): a pure ref verb with no workflow, on a terminal,
@@ -552,7 +567,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       break;
     }
     case "simulate": {
-      if (refs.length !== 1) throw new Error("simulate needs exactly one workflow ref: n8n-decanter <ref> simulate --execution <id>");
+      if (refs.length !== 1) throw new Error("simulate needs exactly one workflow ref: n8n-decanter <ref> simulate [--execution <id> | --mock <slug>]");
       const dir = findWorkflowDir(config.root, refs[0], log);
       if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
       const pinId = valueFlags.get("pin");
@@ -560,11 +575,16 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         pinFixtures(dir, pinId, log);
         break;
       }
-      // No --execution → default to the newest local capture (also how the
-      // picker, which can't supply an id, runs simulate).
-      const execId = valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
-      if (execId === undefined) throw new Error(`no execution to simulate: pass --execution <id> or fetch one first with \`n8n-decanter ${refs[0]} executions\``);
-      if (valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
+      // Replay source: an explicit committed mock scenario (--mock <slug>) or a
+      // raw capture (--execution <id>, defaulting to the newest). Mutually exclusive.
+      const mockSlug = valueFlags.get("mock");
+      if (mockSlug !== undefined && valueFlags.get("execution") !== undefined) {
+        throw new Error("pass either --mock <slug> or --execution <id>, not both");
+      }
+      const source = mockSlug !== undefined ? "mock" : "capture";
+      const ref = mockSlug ?? valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
+      if (ref === undefined) throw new Error(`no execution to simulate: pass --execution <id> (or --mock <slug>), or fetch one with \`n8n-decanter ${refs[0]} executions\``);
+      if (source === "capture" && valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution/--mock given; using the latest capture ${ref}`));
       if (!(await dockerAvailable())) {
         throw new Error("simulate needs a running Docker daemon (the engine backend) — start Docker and retry");
       }
@@ -575,22 +595,44 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       // Interactive terminals get a browsable run in a kept-alive local n8n;
       // scripts/CI/--json/--network-none stay fast and headless (no container left).
       const viewer = Boolean(process.stdout.isTTY) && !jsonFlag && !networkNoneFlag;
-      const report = await runSimulation(dir, execId, { version, networkNone: networkNoneFlag, viewer }, log);
+      const report = await runSimulation(dir, ref, { version, source, networkNone: networkNoneFlag, viewer }, log);
       if (jsonFlag) console.log(JSON.stringify(report, null, 2));
       else printSimulationReport(report, log);
       if (!report.ok) process.exitCode = 1;
       break;
     }
-    case "mock": {
-      if (refs.length !== 1) throw new Error("mock needs exactly one workflow ref: n8n-decanter mock <ref> --execution <id>");
+    case "mock:create": {
+      if (refs.length < 1) throw new Error('mock create needs a workflow ref: n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]');
       const dir = findWorkflowDir(config.root, refs[0], log);
       if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
-      // No --execution → newest local capture (mock is offline: reads a capture,
-      // writes a committed execution-mocks/ file; no engine, no API).
+      // No --execution → newest local capture (offline: reads a capture, writes a
+      // committed mocks/<slug>.json; no engine, no API). Slug (positional) defaults to id.
       const execId = valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
       if (execId === undefined) throw new Error(`no execution to mock: pass --execution <id> or fetch one first with \`n8n-decanter ${refs[0]} executions\``);
       if (valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
-      await writeMock(dir, execId, log);
+      const slug = refs[1] ?? execId;
+      const result = await writeMock(dir, execId, slug, log);
+      if (jsonFlag) console.log(JSON.stringify({ slug: result.slug, file: path.relative(process.cwd(), result.file), gaps: result.gaps }, null, 2));
+      break;
+    }
+    case "mock:check": {
+      if (refs.length < 1) throw new Error('mock check needs a workflow ref: n8n-decanter mock check <workflow> ["<slug>"]');
+      const dir = findWorkflowDir(config.root, refs[0], log);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      const slug = refs[1];
+      if (jsonFlag) {
+        const slugs = slug !== undefined ? [slug] : listMockSlugs(dir);
+        const results = slugs.map((s) => {
+          const silent: Log = { info() {}, ok() {}, warn() {}, error() {} };
+          const invalid = checkMocks(dir, s, silent);
+          return { slug: s, valid: invalid === 0 };
+        });
+        console.log(JSON.stringify(results, null, 2));
+        if (results.some((r) => !r.valid)) process.exitCode = 1;
+        break;
+      }
+      const invalid = checkMocks(dir, slug, log);
+      if (invalid > 0) process.exitCode = 1;
       break;
     }
     case "publish":

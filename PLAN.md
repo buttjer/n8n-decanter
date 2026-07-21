@@ -16,9 +16,9 @@ n8n-decanter/
   n8n-decanter.mts        # CLI entry (verb-first: `n8n-decanter <verb> …`):
                           #   init | pull | push | status | check | rename |
                           #   watch | create | duplicate | publish | unpublish |
-                          #   delete | list | executions | simulate | mock |
-                          #   completion + a `node` namespace: node create |
-                          #   node rename | node run
+                          #   delete | list | executions | simulate |
+                          #   completion + namespaces: node (create|rename|run),
+                          #   mock (create|check)
   lib/                    # implementation: add, api, compile, config, diff,
                           #   executions, git, init, lifecycle, picker, prompt,
                           #   proxy, pull, push, rename, run, state, status,
@@ -102,8 +102,8 @@ workflows/
         <execId>.json           #   self-gitignored, never synced back
       fixtures/                 # optional: committed pins (simulate --pin, plans/7)
         <node>.json             #   one network node's captured output, provenance-stamped
-      execution-mocks/          # optional: committed, hand-fillable execution mocks
-        <execId>.json           #   (mock verb, plans/7) — capture + gap fills; tracked
+      mocks/                    # optional: committed, hand-fillable mock scenarios
+        <slug>.json             #   (mock create/check, plans/7) — capture + gap fills; tracked
 ```
 
 - Workflow **id** lives in `workflow.json` (and `.decanter.json`) → the folder
@@ -318,7 +318,7 @@ Errors (block push / exit 1):
   `.js`/`.ts` files no placeholder references (`.d.ts` and `*.remote.js`
   exempt; only the folder root and `code/` are scanned — other subdirs are
   reserved for artifacts like `executions/` (live since plans/3 C),
-  `fixtures/` and `execution-mocks/` (plans/7)),
+  `fixtures/` and `mocks/` (plans/7)),
   and dangling literal `$('…')` references in node source files *and* in
   expression parameters. The `$('…')` scan is a deliberate regex heuristic
   (shared `findNodeRefs`/`renameNodeRefs` in `lib/util.mts`): literal

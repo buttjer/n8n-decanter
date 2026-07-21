@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Priority** | P3 (spike may promote the rest; **unblocked** 2026-07-19 — Plan 3 C shipped as the `executions` verb) |
-| **Status** | **In progress** — spike + tasks 2–5 done 2026-07-20/21 (Docker backend): the `simulate` verb ships and replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`; **task 8 tier-1 single-iteration loops** shipped 2026-07-21. **Task 6 gap handling** shipped 2026-07-21 — but **without an LLM API**: instead of `--guess-gaps` calling a model, the `mock` verb promotes a capture into a committed, hand-fillable `execution-mocks/<id>.json` that the **local IDE agent** (or a human) completes, structurally validated on load (see the revised design decision). **Tier-2 multi-batch loop viewer mode** shipped 2026-07-21. Remaining: only the **npx engine backend**, split to [Plan 26](OPEN-26-npx-engine-backend.md). |
-| **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (gaps filled by hand-authored `execution-mocks/`, no LLM API), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
+| **Status** | **In progress** — spike + tasks 2–5 done 2026-07-20/21 (Docker backend): the `simulate` verb ships and replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`; **task 8 tier-1 single-iteration loops** shipped 2026-07-21. **Task 6 gap handling** shipped 2026-07-21 — but **without an LLM API**: instead of `--guess-gaps` calling a model, the `mock` namespace (`mock create` / `mock check`) promotes a capture into a committed, hand-fillable **named scenario** `mocks/<slug>.json` that the **local IDE agent** (or a human) completes, structurally validated offline by `mock check` (and on `simulate --mock` load). **Tier-2 multi-batch loop viewer mode** shipped 2026-07-21. Remaining: only the **npx engine backend**, split to [Plan 26](OPEN-26-npx-engine-backend.md). |
+| **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (gaps filled by hand-authored `mocks/` scenarios, no LLM API), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
 | **Model** | **Opus** — the highest-reasoning plan in the backlog: the route-B transform, the `n8n execute` subprocess orchestration, and above all the *safety-critical* default-deny node classification (a misclassified node runs for real) reward the strongest model. Once the spike (task 1) and transform are designed, the CLI/test wiring can drop to Sonnet. |
 
 ## Why
@@ -327,18 +327,21 @@ once, so its first-run pins are already exact. Two tiers:
    built on `test/harness.mts`, Plan 22 task 1's step filter applies here
    for free.
 6. **Gap handling — the trust ladder for unpinnable nodes.** ✅ **Done
-   2026-07-21** — shipped as the `mock` verb + committed `execution-mocks/`
-   (see "Design decision — gap handling"). A *gap* is a network node reached in
-   the replay with no pinned data (a node added/reparametrized since the
-   capture; untaken branches are exempt). `simulate` hard-errors, leading the
-   user to `n8n-decanter <workflow> mock --execution <id>`, which promotes the
-   gitignored capture into a **committed, hand-fillable `execution-mocks/<id>.json`**
-   (verbatim capture + a `_decanterMock` block listing each gap node with its
+   2026-07-21** — shipped as the `mock` namespace (`mock create` / `mock check`)
+   + committed `mocks/` scenarios. A *gap* is a network node reached in the
+   replay with no pinned data (a node added/reparametrized since the capture;
+   untaken branches are exempt). `simulate` hard-errors, leading the user to
+   `n8n-decanter <workflow> mock create ["<slug>"] [--execution <id>]`, which
+   promotes the gitignored capture into a **committed, hand-fillable named
+   scenario `mocks/<slug>.json`** (slug defaults to the execution id; verbatim
+   capture + a `_decanterMock` block listing each gap node with its
    type/params/`inputSample`). The **local IDE agent** (or a human) adds the
-   node's `runData`; `simulate` prefers the mock over the raw capture and
-   **structurally validates** it on load (no official n8n JSON Schema exists — we
-   check the exact shape we replay). Covered by unit + e2e; docs + CHANGELOG
-   updated.
+   node's `runData`; replay with `simulate --mock <slug>`. **`mock check
+   <slug>`** structurally validates a mock **offline** (no Docker — the fast fill
+   loop); `simulate --mock` runs the same check on load (no official n8n JSON
+   Schema exists — we check the exact shape we replay). Naming: slug-named
+   scenarios (optional, default id); `simulate` selects a mock explicitly with
+   `--mock` (not auto-preferred). Covered by unit + e2e; docs + CHANGELOG updated.
 
    **Superseded (2026-07-21, user): the original three-rung LLM ladder.** The
    first sketch had a `--guess-gaps` rung that called an LLM (an API key,

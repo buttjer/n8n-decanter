@@ -6,6 +6,7 @@ order: 14
 
 ```sh
 n8n-decanter simulate <workflow> --execution <id> [--network-none] [--json]
+n8n-decanter simulate <workflow> --mock <slug>       # replay a committed mock scenario
 n8n-decanter simulate <workflow> --pin <id>          # save a capture as committed fixtures
 ```
 
@@ -51,6 +52,7 @@ runs, so they run for real (never pinned) to reproduce the loop — see
 | Flag | Meaning |
 | --- | --- |
 | `--execution <id>` | The captured execution to replay (optional — defaults to the newest capture in `executions/`) |
+| `--mock <slug>` | Replay a committed [mock scenario](/docs/cli/mock/) `mocks/<slug>.json` instead of a raw capture (mutually exclusive with `--execution`) |
 | `--pin <id>` | Instead of running, copy the capture's network-node outputs into committed `fixtures/` (offline) |
 | `--network-none` | Run the engine container with `--network none` — an enforced outbound cutoff on top of the structural guarantee |
 | `--json` | Emit the full report as JSON (for tooling) instead of the human summary |
@@ -125,13 +127,14 @@ generated/untrusted node code, `simulate` is the safer executor.)
 A **gap** is a network node reached in the replay with **no captured or pinned
 data** — a node added or reparametrized since the capture. `simulate` hard-errors
 on a gap rather than run half-real. To fill it, promote the capture to a
-committed, editable [execution mock](/docs/cli/mock/) and add the node's data by
-hand (or with your IDE agent — the CLI never calls a model):
+committed, editable [execution mock](/docs/cli/mock/) scenario and add the node's
+data by hand (or with your IDE agent — the CLI never calls a model):
 
 ```sh
-n8n-decanter <workflow> mock --execution <id>   # writes execution-mocks/<id>.json, flags the gaps
-# fill the flagged nodes' runData, then:
-n8n-decanter <workflow> simulate --execution <id>   # the mock is preferred over the raw capture
+n8n-decanter <workflow> mock create "<slug>" --execution <id>   # writes mocks/<slug>.json, flags the gaps
+# fill the flagged nodes' runData, then validate offline:
+n8n-decanter <workflow> mock check <slug>
+n8n-decanter <workflow> simulate --mock <slug>                  # replay the scenario
 ```
 
 ## Scope
