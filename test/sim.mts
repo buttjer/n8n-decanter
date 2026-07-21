@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { DEFAULT_N8N_VERSION, dockerAvailable } from "../lib/engine.mts";
+import { DEFAULT_N8N_VERSION, dockerAvailable, VIEWER_CONTAINER, VIEWER_LOGIN } from "../lib/engine.mts";
 import { pinFixtures, runSimulation } from "../lib/simulate.mts";
 import { createStepRunner } from "./harness.mts";
 
@@ -37,7 +37,7 @@ async function api(method: string, p: string, body?: unknown): Promise<any> {
   if (!res.ok) throw new Error(`${method} ${p} -> ${res.status}: ${t.slice(0, 300)}`);
   return t ? JSON.parse(t) : undefined;
 }
-const teardown = async () => { if (process.env.SIM_KEEP !== "1") await docker("rm", "-f", CONTAINER).catch(() => {}); };
+const teardown = async () => { if (process.env.SIM_KEEP !== "1") { await docker("rm", "-f", CONTAINER).catch(() => {}); await docker("rm", "-f", VIEWER_CONTAINER).catch(() => {}); } };
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-simtest-"));
 const { step, passedCount, hasFailed } = createStepRunner({ onFail: () => { console.error(`work dir kept: ${TMP}`); } });
 
@@ -104,6 +104,28 @@ try {
     writeFileSync(path.join(TMP, "code", "compute.js"), "const n = Number($input.first().json.body.n ?? 0);\nreturn [{ json: { doubled: n * 2 } }];\n");
     const report = await runSimulation(TMP, "1", { version: IMAGE_TAG, networkNone: true }, log as any);
     assert.equal(report.ok, true, `network-none run diverged/failed: ${report.engineError ?? report.divergent.join(",")}`);
+  });
+
+  await step("simulate viewer: leaves a browsable run in a kept-alive local n8n", async () => {
+    const report = await runSimulation(TMP, "1", { version: IMAGE_TAG, viewer: true }, log as any);
+    assert.equal(report.ok, true, `viewer run diverged/failed: ${report.engineError ?? report.divergent.join(",")}`);
+    assert.ok(report.url && /\/workflow\/.+\/executions\/\d+$/.test(report.url), `expected a UI execution URL, got ${report.url}`);
+    assert.ok(report.login?.email, "expected viewer login creds");
+    // the execution the URL points at must actually exist (a SPA route always
+    // 200s, so check the API): log in and confirm the saved run is there.
+    const origin = new URL(report.url!).origin;
+    const authCookie = (r: Response) => r.headers.getSetCookie().join("; ").match(/n8n-auth=[^;]+/)?.[0];
+    let cookie: string | undefined;
+    for (let i = 0; i < 8 && !cookie; i++) {
+      const l = await fetch(`${origin}/rest/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ emailOrLdapLoginId: VIEWER_LOGIN.email, password: VIEWER_LOGIN.password }) });
+      cookie = authCookie(l); if (!cookie) await sleep(1000);
+    }
+    assert.ok(cookie, "could not log into the viewer instance");
+    const list = await fetch(`${origin}/rest/executions`, { headers: { cookie: cookie! } }).then((r) => r.json());
+    const results = list?.data?.results ?? list?.data ?? [];
+    assert.ok(Array.isArray(results) && results.length >= 1, `viewer should hold the saved run, got ${JSON.stringify(list).slice(0, 200)}`);
+    assert.equal(results[0].status, "success", "the browsable run should be a successful execution");
+    assert.ok(report.url!.endsWith(`/executions/${results[0].id}`), `URL execId should match the saved run (${results[0].id})`);
   });
 
   await step("simulate --pin: writes committed fixtures from the capture", async () => {

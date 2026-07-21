@@ -13,7 +13,7 @@
 // `return`s the captured items — plus a synthetic manual-trigger entry point.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { runEngine } from "./engine.mts";
+import { runEngine, startViewer } from "./engine.mts";
 import { EXECUTIONS_DIR, warnStaleFixtures } from "./executions.mts";
 import { buildNodeCode } from "./push.mts";
 import { readState } from "./state.mts";
@@ -334,6 +334,10 @@ export interface SimulationReport {
   engineError?: string;
   /** Overall pass: engine ran clean AND nothing diverged. */
   ok: boolean;
+  /** Viewer mode: URL of the saved run in the kept-alive local n8n UI. */
+  url?: string;
+  /** Viewer mode: local login for that throwaway instance (n8n requires auth). */
+  login?: { email: string; password: string };
 }
 
 /**
@@ -355,11 +359,18 @@ export function diffItems(expected: RunItem[], actual: RunItem[]): boolean {
 export async function runSimulation(
   dir: string,
   execId: string,
-  opts: { version: string; networkNone?: boolean },
+  opts: { version: string; networkNone?: boolean; viewer?: boolean },
   log: Log,
 ): Promise<SimulationReport> {
   const sim = await buildSimulation(dir, execId, log);
+  // The diff always comes from a fast, throwaway headless run. Viewer mode
+  // additionally launches a kept-alive local n8n so the run is browsable in the
+  // webapp (interactive only; not with --network-none, which has no port).
   const run = await runEngine(sim.workflow, { version: opts.version, networkNone: opts.networkNone }, log);
+  const viewer = opts.viewer ? await startViewer(sim.workflow, { version: opts.version }, log).catch((err: Error) => {
+    log.warn(`could not start the browsable viewer (${err.message}); the simulation result above still stands`);
+    return undefined;
+  }) : undefined;
   const diffs: NodeDiff[] = [];
   for (const node of sim.pure) {
     const expected = sim.captured.get(node);
@@ -372,6 +383,7 @@ export async function runSimulation(
     execId, version: opts.version, networkNone: opts.networkNone === true,
     pinned: sim.pinned, pure: sim.pure, diffs, divergent,
     engineOk: run.ok, engineError: run.error, ok: run.ok && divergent.length === 0,
+    url: viewer?.url, login: viewer?.login,
   };
 }
 

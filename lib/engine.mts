@@ -70,6 +70,16 @@ function isolationEnv(): string[] {
   ];
 }
 
+/** Normalize an n8n `runData` object (from CLI JSON or the API) into a per-node item map. */
+function runDataToMap(rd: Record<string, unknown>): Map<string, RunItem[]> {
+  const map = new Map<string, RunItem[]>();
+  for (const [node, runs] of Object.entries(rd)) {
+    const main = (runs as Array<{ data?: { main?: Array<Array<RunItem> | null> } }>)?.[0]?.data?.main;
+    map.set(node, Array.isArray(main) && Array.isArray(main[0]) ? main[0] : []);
+  }
+  return map;
+}
+
 /** Parse the `--rawOutput` result JSON that follows our marker, into a runData map. */
 function parseRunData(stdout: string): EngineRun {
   const after = stdout.includes(EXEC_MARKER) ? stdout.slice(stdout.indexOf(EXEC_MARKER) + EXEC_MARKER.length) : stdout;
@@ -85,15 +95,8 @@ function parseRunData(stdout: string): EngineRun {
   } catch (err) {
     return { runData: new Map(), ok: false, error: `unparsable engine result JSON (${(err as Error).message})` };
   }
-  const rd = parsed.data?.resultData?.runData ?? {};
-  const map = new Map<string, RunItem[]>();
-  for (const [node, runs] of Object.entries(rd)) {
-    const main = (runs as Array<{ data?: { main?: Array<Array<RunItem> | null> } }>)?.[0]?.data?.main;
-    const items = Array.isArray(main) && Array.isArray(main[0]) ? main[0] : [];
-    map.set(node, items);
-  }
   const error = parsed.data?.resultData?.error?.message;
-  return { runData: map, ok: error === undefined, error };
+  return { runData: runDataToMap(parsed.data?.resultData?.runData ?? {}), ok: error === undefined, error };
 }
 
 /**
@@ -129,4 +132,90 @@ export async function runEngine(workflow: Workflow, opts: EngineOptions, log: Lo
     rmSync(tmp, { recursive: true, force: true });
     await docker(["rm", "-f", container], { timeoutMs: 15_000 }).catch(() => {});
   }
+}
+
+/** Stable name of the kept-alive viewer container (one at a time; replaced per run). */
+export const VIEWER_CONTAINER = "decanter-sim-viewer";
+/** Fixed local owner for the throwaway viewer — printed so you can log in to browse. */
+export const VIEWER_LOGIN = { email: "simulate@decanter.local", password: "Decanter-Sim-0000", firstName: "Decanter", lastName: "Simulate" };
+
+export interface Viewer {
+  /** URL of the saved execution in the (kept-alive) local n8n UI. */
+  url: string;
+  /** Local login for the throwaway viewer instance (n8n requires auth). */
+  login: { email: string; password: string };
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Launch a *kept-alive* local n8n that has the simulation run saved and
+ * browsable: import + `n8n execute` (persists the run) + `n8n start` (serves
+ * it). Returns the execution's UI URL and a local login (n8n requires auth; we
+ * seed a fixed throwaway owner). The container is left running (bound to
+ * 127.0.0.1 only, throwaway data, no credentials) and replaced on the next
+ * viewer run. The diff comes from the separate headless run, so nothing is read
+ * back here. Incompatible with `--network none` (a published port needs a
+ * network). Throwaway DB ⇒ the run is always execution id 1.
+ */
+export async function startViewer(workflow: Workflow, opts: EngineOptions, log: Log): Promise<Viewer> {
+  const image = `n8nio/n8n:${opts.version}`;
+  // A *stable* file the long-lived viewer bind-mounts: `docker run -d` is
+  // detached and the container reads it at startup, so it must outlive this call
+  // (unlike the headless run, which isn't detached). Reap the previous viewer
+  // before overwriting it, so nothing is holding the old mount.
+  const simFile = path.join(os.tmpdir(), "decanter-sim-viewer.json");
+  await docker(["rm", "-f", VIEWER_CONTAINER], { timeoutMs: 15_000 }).catch(() => {});
+  // `n8n execute` only persists the run (needed for it to be browsable) when the
+  // workflow opts in — force the save settings on the viewer copy.
+  const viewerWf = {
+    ...workflow, id: SIM_WORKFLOW_ID, active: false,
+    settings: { ...workflow.settings, saveDataSuccessExecution: "all", saveDataErrorExecution: "all", saveManualExecutions: true },
+  };
+  writeFileSync(simFile, JSON.stringify(viewerWf));
+  log.info(`engine: ${image} — starting a local viewer (kept alive so you can open the run)`);
+  // Minimal env: enough to save the run and serve it over http. The strict
+  // task-runner isolation (empty module allowlist, etc.) belongs to the headless
+  // dry run — the viewer's safety is structural (no credentials survive the
+  // transform), and it needs a network for the browser anyway.
+  await docker([
+    "run", "-d", "--name", VIEWER_CONTAINER, "-p", "127.0.0.1::5678",
+    "-e", "N8N_SECURE_COOKIE=false", "-e", "N8N_DIAGNOSTICS_ENABLED=false", "-e", "N8N_PERSONALIZATION_ENABLED=false",
+    "-e", "EXECUTIONS_DATA_SAVE_ON_SUCCESS=all", "-e", "EXECUTIONS_DATA_SAVE_ON_ERROR=all", "-e", "EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true",
+    "-v", `${simFile}:/tmp/sim.json:ro`, "--entrypoint", "sh", image,
+    "-c", `n8n import:workflow --input=/tmp/sim.json && n8n execute --id=${SIM_WORKFLOW_ID}; n8n start`,
+  ], { timeoutMs: 60_000 });
+
+  const host = `http://${(await docker(["port", VIEWER_CONTAINER, "5678"])).stdout.trim().split("\n")[0]}`;
+  // wait for REST to serve real JSON (readiness, not just /healthz liveness)
+  let ready = false;
+  for (let i = 0; i < 90 && !ready; i++) {
+    ready = await fetch(`${host}/rest/settings`).then((r) => r.ok && (r.headers.get("content-type") ?? "").includes("json")).catch(() => false);
+    if (!ready) await sleep(2000);
+  }
+  if (!ready) throw new Error(`viewer n8n never became ready at ${host}`);
+
+  // Seed a fixed local owner so the browser lands on a login (not the setup
+  // wizard), and so we can read the saved run back to confirm it's browsable.
+  const authCookie = (r: Response) => r.headers.getSetCookie().join("; ").match(/n8n-auth=[^;]+/)?.[0];
+  await fetch(`${host}/rest/owner/setup`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(VIEWER_LOGIN) }).catch(() => undefined);
+  let cookie: string | undefined;
+  for (let i = 0; i < 5 && !cookie; i++) {
+    const l = await fetch(`${host}/rest/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ emailOrLdapLoginId: VIEWER_LOGIN.email, password: VIEWER_LOGIN.password }) }).catch(() => undefined);
+    cookie = l && authCookie(l); if (!cookie) await sleep(1000);
+  }
+
+  // Poll until the saved run is queryable (it lands a beat after the server
+  // finishes initializing) and use its real id for the URL.
+  let execId = "1";
+  for (let i = 0; i < 20 && cookie; i++) {
+    const list = await fetch(`${host}/rest/executions`, { headers: { cookie } }).then((r) => r.json()).catch(() => undefined);
+    const first = (list?.data?.results ?? list?.data ?? [])[0];
+    if (first?.id) { execId = String(first.id); break; }
+    await sleep(1000);
+  }
+  return {
+    url: `${host}/workflow/${SIM_WORKFLOW_ID}/executions/${execId}`,
+    login: { email: VIEWER_LOGIN.email, password: VIEWER_LOGIN.password },
+  };
 }

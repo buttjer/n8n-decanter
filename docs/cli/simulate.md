@@ -76,6 +76,26 @@ Absent that, `simulate` defaults to the project's pinned version and hints you
 to set one. The consumed surface (`import:workflow`, `execute`, the run-data
 JSON) is stable across the n8n 2.x line.
 
+## Open the run in the n8n webapp
+
+Run `simulate` in an **interactive terminal** and it prints a URL to the run in
+a **kept-alive local n8n**, so you can inspect it node-by-node in the real
+execution view:
+
+```txt
+open the run in n8n:  http://127.0.0.1:53737/workflow/decantersim0000/executions/1
+  local login: simulate@decanter.local / Decanter-Sim-0000  ·  throwaway instance, replaced on the next simulate
+```
+
+- The viewer is a **throwaway** local n8n (bound to `127.0.0.1` only, no
+  credentials, replaced on the next `simulate`). n8n requires a login, so it
+  seeds a fixed local owner and prints it — log in once and the browser session
+  sticks. Stop it any time with `docker rm -f decanter-sim-viewer`.
+- **No flag, no extra step.** It only appears in an interactive terminal —
+  piped runs, `--json`, and `--network-none` stay headless and print no URL, so
+  scripts and CI are unaffected (and leave no container behind).
+- The diff/exit-code is unchanged; the viewer is purely for eyeballing the run.
+
 ## `simulate --pin`
 
 Captures under `executions/` are gitignored temp data. `--pin <id>` copies each

@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`simulate` in the interactive picker.** The verb menu for a pulled workflow
   now offers `simulate` alongside status/pull/push/watch/check/executions; it
   runs against the workflow's newest capture.
+- **Open a simulation run in the n8n webapp.** In an interactive terminal,
+  `simulate` prints a **URL** to the run in a kept-alive local n8n (plus the
+  throwaway instance's login) — pure nodes' real output and the pinned nodes,
+  node-by-node in the actual execution inspector. No flag, no extra step; a
+  fresh viewer replaces the previous one each run (`docker rm -f
+  decanter-sim-viewer` to stop it). Scripts, `--json`, and `--network-none`
+  runs stay headless and print no URL, so CI is unaffected.
 
 ### Changed
 

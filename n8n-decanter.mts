@@ -294,6 +294,10 @@ function printSimulationReport(r: SimulationReport, log: Log): void {
   }
   if (r.ok) log.ok(`simulation matches the capture (${r.diffs.length} node${r.diffs.length === 1 ? "" : "s"} checked)`);
   else log.error(`simulation diverged: ${r.divergent.length > 0 ? r.divergent.join(", ") : "engine error"}`);
+  if (r.url && r.login) {
+    log.info(`\nopen the run in n8n:  ${style.bold(r.url)}`);
+    log.info(style.dim(`  local login: ${r.login.email} / ${r.login.password}  ·  throwaway instance, replaced on the next simulate (docker rm -f decanter-sim-viewer to stop)`));
+  }
 }
 
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
@@ -494,7 +498,10 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (valueFlags.get("n8n-version") === undefined && config.n8nVersion === undefined) {
         log.info(style.dim(`using default engine version ${version}; pin "n8nVersion" in decanter.config.json to match your instance`));
       }
-      const report = await runSimulation(dir, execId, { version, networkNone: networkNoneFlag }, log);
+      // Interactive terminals get a browsable run in a kept-alive local n8n;
+      // scripts/CI/--json/--network-none stay fast and headless (no container left).
+      const viewer = Boolean(process.stdout.isTTY) && !jsonFlag && !networkNoneFlag;
+      const report = await runSimulation(dir, execId, { version, networkNone: networkNoneFlag, viewer }, log);
       if (jsonFlag) console.log(JSON.stringify(report, null, 2));
       else printSimulationReport(report, log);
       if (!report.ok) process.exitCode = 1;
