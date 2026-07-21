@@ -7,33 +7,13 @@ import { href } from "../lib/url";
 const features = [
   {
     icon: "⎇",
-    title: "Real version control",
-    text: "Meaningful diffs, PRs, blame; every push and pull is auto-committed.",
+    title: "Version control with guardrails",
+    text: "Meaningful diffs, PRs, and blame — every push and pull auto-committed. A compliance guard, typecheck gate, and drift guard block broken pushes and keep you from clobbering remote edits.",
   },
   {
     icon: "{ }",
     title: "TypeScript or typed JS",
-    text: "Write nodes in TS (compiled on push); n8n globals ($input, $('…'), …) are typed in both.",
-  },
-  {
-    icon: "❖",
-    title: "Agent-native",
-    text: "init scaffolds Claude Code / Cursor / Codex configs and verification hooks; offline check and run give agents a credential-free feedback loop.",
-  },
-  {
-    icon: "⊘",
-    title: "Guardrails",
-    text: "A compliance guard and typecheck gate block broken pushes; a drift guard keeps you from clobbering remote edits.",
-  },
-  {
-    icon: "☰",
-    title: "Real execution data on tap",
-    text: "executions fetches recent run JSON into a gitignored temp dir, so agents see actual payload shapes (and build accurate run fixtures) instead of guessing; executions clean removes it when done.",
-  },
-  {
-    icon: "↯",
-    title: "Live editing",
-    text: "watch pushes on save and auto-reloads the n8n editor tab via a local proxy.",
+    text: "Write nodes in TS (compiled on push) or JSDoc-typed JS — n8n globals ($input, $('…'), DateTime, …) are typed in both, so you get real editor autocomplete and inline errors. A typecheck gate blocks broken code from ever reaching your instance.",
   },
   {
     icon: "⧉",
@@ -41,14 +21,19 @@ const features = [
     text: ".ts nodes import helpers and types from shared/ and opted-in npm packages; push bundles them into self-contained nodes that run anywhere, n8n Cloud included.",
   },
   {
+    icon: "❖",
+    title: "Agent-native & real executions",
+    text: "init scaffolds Claude Code / Cursor / Codex configs and verification hooks; offline check and run give agents a credential-free feedback loop, and executions pulls real run JSON so agents see actual payload shapes instead of guessing.",
+  },
+  {
+    icon: "↯",
+    title: "Live editing & simulation",
+    text: "watch pushes on save and auto-reloads the n8n editor tab via a local proxy; simulate replays a whole workflow through a real n8n engine — pure nodes run for real, network nodes pinned from a capture — diffing each node to catch regressions.",
+  },
+  {
     icon: "⌘",
     title: "Bring your own agent",
     text: "decanter never calls an LLM itself — your coding agent and your subscription do 100% of the work, no API key or model config, ever.",
-  },
-  {
-    icon: "⬡",
-    title: "Built for n8n 2.x",
-    text: "The draft/publish model is a first-class citizen (push tells you whether code went live or stayed a draft), and every API-touching behavior is verified against a real n8n 2.x instance by an automated integration suite.",
   },
 ];
 
@@ -135,16 +120,44 @@ const compareRows = [
       <h2 class="text-center text-3xl sm:text-5xl">How it compares</h2>
       <p class="mx-auto mt-3 max-w-2xl text-center text-sm text-zinc-600 dark:text-zinc-400">
         n8n-decanter is <strong class="font-medium">Code-node-first</strong> — the loop of writing,
-        typing, testing, and shipping the code inside your workflows. Against the native editor and
-        <a href="https://github.com/EtienneLescot/n8n-as-code" class="text-accent-600 hover:underline dark:text-accent-400">n8n-as-code</a>:
+        typing, testing, and shipping the code inside your workflows. Against the native editor
+        and <a href="https://github.com/EtienneLescot/n8n-as-code" class="text-accent-600 hover:underline dark:text-accent-400">n8n-as-code</a>:
       </p>
+      <div class="mx-auto mt-8 grid max-w-4xl items-stretch gap-4 sm:grid-cols-2">
+        <div class="rounded-xl border border-zinc-200 bg-zinc-50/60 p-6 dark:border-zinc-800 dark:bg-zinc-900/40">
+          <h3 class="text-lg">
+            Choose <a href="https://github.com/EtienneLescot/n8n-as-code" class="text-accent-600 hover:underline dark:text-accent-400">n8n-as-code</a> if you…
+          </h3>
+          <p class="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+            Need an enterprise-ready automation framework — where AI agents assemble complete
+            workflows, multi-environment Dev&nbsp;→&nbsp;Prod pipelines automatically handle
+            credential governance, and full TypeScript GitOps ensures strict auditability across
+            your team.
+          </p>
+        </div>
+        <div class="rounded-xl border-2 border-accent-500/60 bg-accent-50/70 p-6 ring-1 ring-accent-500/20 dark:border-accent-400/50 dark:bg-accent-950/30 dark:ring-accent-400/20">
+          <h3 class="text-lg">
+            Choose <span class="font-semibold text-accent-700 dark:text-accent-300">n8n-decanter</span> if you…
+          </h3>
+          <p class="mt-3 text-sm text-zinc-700 dark:text-zinc-300">
+            Focus on developer experience inside the Code node — enabling typed TypeScript, shared
+            utility libraries, and live hot-reloading DX directly between VS Code and your n8n
+            canvas (even on Cloud).
+          </p>
+        </div>
+      </div>
       <div class="mt-8 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
         <table class="w-full min-w-[760px] border-collapse text-left text-sm">
           <thead>
             <tr class="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900">
               {
                 compareHead.map((h, i) => (
-                  <th class:list={["px-4 py-3 font-medium", i === 3 && "text-accent-700 dark:text-accent-400"]}>
+                  <th
+                    class:list={[
+                      "px-4 py-3 font-medium",
+                      i === 3 && "border-x border-t border-accent-500/40 bg-accent-500/10 text-base font-semibold text-accent-700 dark:text-accent-300",
+                    ]}
+                  >
                     {h}
                   </th>
                 ))
@@ -153,14 +166,15 @@ const compareRows = [
           </thead>
           <tbody>
             {
-              compareRows.map((row) => (
+              compareRows.map((row, ri) => (
                 <tr class="border-b border-zinc-100 last:border-0 dark:border-zinc-800/60">
                   {row.map((cell, i) => (
                     <td
                       class:list={[
                         "px-4 py-3 align-top",
                         i === 0 ? "font-medium" : "text-zinc-600 dark:text-zinc-400",
-                        i === 3 && "bg-accent-50/60 text-zinc-700 dark:bg-accent-950/20 dark:text-zinc-300",
+                        i === 3 && "border-x border-accent-500/40 bg-accent-50 font-medium text-zinc-800 dark:bg-accent-950/40 dark:text-zinc-100",
+                        i === 3 && ri === compareRows.length - 1 && "border-b",
                       ]}
                     >
                       {cell}
