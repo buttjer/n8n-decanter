@@ -21,16 +21,32 @@ read whichever applies. Don't ask permission for something the allowlist
 already grants, and don't re-run a variant just to dodge a prompt when the
 plain command is allowed.
 
-## Docs (`/docs`) are part of every user-facing PR
+## Docs are part of every user-facing PR — keep ALL surfaces in sync
 
-The user docs live in `/docs` (plain Markdown, rendered by the site in
-`website/`). **Updating them is a PR acceptance criterion**, same bar as the
-changelog: a change to any CLI command/flag, sync behavior, the data model,
-guards, or config must revise the matching `/docs` page(s) in the same PR (new
-verb → new page + [overview](docs/cli/overview.md) command surface). Internal
-refactors and test-only changes need no docs edit. Keep it plain Markdown — no
-bespoke MDX components — so the corpus stays generator-agnostic. Full rule and
-rationale: `CLAUDE.md` → "Documentation site".
+The command surface is described in **three independent places that must not
+drift**. A user-facing change (any CLI command/flag, sync behavior, data model,
+guard, or config) updates **every one in the same PR** — not just the one you
+happened to think of:
+
+1. **`README.md`** — the `## Commands` block **and** the feature-bullet list up
+   top. A new verb needs a command line; a notable capability needs a feature
+   bullet. *(This is the one most easily forgotten — it's not generated from the
+   others.)*
+2. **`/docs`** (plain Markdown, rendered by the site in `website/`) — the
+   matching `docs/cli/*` page(s) **and** the [overview](docs/cli/overview.md)
+   command surface. New verb → new page.
+3. **`CHANGELOG.md`** — an `[Unreleased]` entry in the right category.
+
+Same bar throughout: user-facing → update all three; internal refactors and
+test-only changes → none. Keep docs plain Markdown (no bespoke MDX components)
+so the corpus stays generator-agnostic. Full rule and rationale: `CLAUDE.md` →
+"Documentation site".
+
+**Before opening a user-facing PR, grep the verb name across `README.md`,
+`docs/`, and `CHANGELOG.md`** — every surface that lists sibling verbs should
+list yours too. (The `simulate` verb shipped in `/docs` + changelog but not the
+README because the old rule named only `/docs`; this checklist exists so that
+can't recur.)
 
 ## Backlog: distinctive features get their own group
 
