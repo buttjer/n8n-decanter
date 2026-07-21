@@ -188,12 +188,15 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    sync / data-model / guard / config change that landed without its docs +
    changelog entry gets one now (rules: `CLAUDE.md`). PLAN.md must not have
    drifted from the code.
-3. **Release check** — a non-empty `[Unreleased]` means user-facing work is
-   sitting unreleased: cut the release per `CLAUDE.md` (roll the section, bump
-   `package.json`, tag `vX.Y.Z`, GitHub Release). Confirm the latest git tag ==
-   `package.json` version and main is fully released. **`npm publish` is the
-   maintainer's step — agents stop at the pushed tag + GitHub Release and never
-   run it.**
+3. **Release check** — releases are decoupled from feature PRs (`CLAUDE.md`), so
+   a non-empty `[Unreleased]` is normal: it accumulates until the maintainer
+   decides to cut a release, and is **not** by itself a signal to release. Do
+   **not** cut a release here — that's a deliberate, maintainer-requested
+   `chore/release-x.y.z` PR. This check only verifies consistency: the latest
+   git tag == `package.json` version, and that tag's `[x.y.z]` changelog section
+   matches what's released. If those line up, surface the size/age of the
+   pending `[Unreleased]` as an FYI and move on. **`npm publish` is the
+   maintainer's step — agents never run it.**
 4. **Worktree & branch prune** — remove `.worktrees/*` whose branch is merged
    or gone (`git worktree remove`), delete merged local + remote branches, and
    clean stale `.git/config` `branch.<name>` sections left by sandboxed deletes
