@@ -34,6 +34,11 @@ editable in your IDE or by your agent, and pushed back through the n8n API.
   a gitignored temp dir, so agents see actual payload shapes (and build
   accurate `run` fixtures) instead of guessing; `executions clean` removes
   it when done.
+- **Engine-true simulation** — `simulate` replays a whole workflow through a
+  real n8n engine using a captured execution as the mock: pure nodes run for
+  real, network nodes pinned, credentials stripped. It diffs each node against
+  the capture (exits 1 on divergence — a CI-gateable regression check) and, in
+  a terminal, prints a URL to open the run in the n8n webapp.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
 - **Shared code and small libraries** — `.ts` nodes import helpers/types
@@ -141,6 +146,15 @@ n8n-decanter [ref...] executions [--status=success|error|waiting] [--limit=N]
                                     #   (gitignored temp files; a numeric arg
                                     #   fetches that one execution by id)
 n8n-decanter [ref...] executions clean   # delete fetched execution data (offline)
+n8n-decanter <ref> simulate [--execution <id>] [--network-none] [--json]
+                                    # replay the whole workflow through a real
+                                    #   n8n engine (Docker): pure nodes run for
+                                    #   real, network nodes pinned from a capture,
+                                    #   credentials stripped; diffs each node vs
+                                    #   the capture, exits 1 on divergence. In a
+                                    #   terminal, prints a URL to open the run in
+                                    #   n8n. Defaults to the newest capture.
+n8n-decanter <ref> simulate --pin <id>   # save a capture's outputs as fixtures/
 n8n-decanter list [--remote]        # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones)
 n8n-decanter completion zsh|bash    # print a shell completion script

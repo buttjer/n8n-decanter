@@ -43,6 +43,12 @@ under `/docs` in the *same* PR — add a page for a new verb, revise the
 changelog: user-facing → docs; internal refactor/test-only → none. Docs stay
 usage-level; PLAN.md remains the internal design source of truth. Keep it plain
 Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
+**`README.md` counts too** — its `## Commands` block and feature-bullet list
+independently enumerate the command surface, so a new/changed verb updates the
+README in the same PR alongside `/docs`. Before a user-facing PR, grep the verb
+name across `README.md`, `docs/`, and `CHANGELOG.md`; every surface listing
+sibling verbs should list yours. Full checklist: root `AGENTS.md` → "Docs are
+part of every user-facing PR".
 
 ## Git workflow & releases
 

@@ -24,6 +24,11 @@ edited Code nodes.
 Needs a captured execution ([executions](/docs/cli/executions/)) and a running
 **Docker** daemon (the engine backend).
 
+Without `--execution`, `simulate` uses the **newest capture** in the workflow's
+`executions/` dir — so `n8n-decanter <ref> simulate` just works after an
+`executions` fetch, and the [interactive picker](/docs/cli/overview/) can offer
+`simulate` in its verb menu (it runs against the latest capture).
+
 ## How it works
 
 1. **Transform** a copy of the workflow: materialize `//@file:` Code sources,
@@ -42,7 +47,7 @@ Safety never depends on recognizing a node type.
 
 | Flag | Meaning |
 | --- | --- |
-| `--execution <id>` | The captured execution to replay (fetch it first with `executions`) |
+| `--execution <id>` | The captured execution to replay (optional — defaults to the newest capture in `executions/`) |
 | `--pin <id>` | Instead of running, copy the capture's network-node outputs into committed `fixtures/` (offline) |
 | `--network-none` | Run the engine container with `--network none` — an enforced outbound cutoff on top of the structural guarantee |
 | `--json` | Emit the full report as JSON (for tooling) instead of the human summary |
@@ -70,6 +75,26 @@ one run) to match your n8n:
 Absent that, `simulate` defaults to the project's pinned version and hints you
 to set one. The consumed surface (`import:workflow`, `execute`, the run-data
 JSON) is stable across the n8n 2.x line.
+
+## Open the run in the n8n webapp
+
+Run `simulate` in an **interactive terminal** and it prints a URL to the run in
+a **kept-alive local n8n**, so you can inspect it node-by-node in the real
+execution view:
+
+```txt
+open the run in n8n:  http://127.0.0.1:53737/workflow/decantersim0000/executions/1
+  local login: simulate@decanter.local / Decanter-Sim-0000  ·  throwaway instance, replaced on the next simulate
+```
+
+- The viewer is a **throwaway** local n8n (bound to `127.0.0.1` only, no
+  credentials, replaced on the next `simulate`). n8n requires a login, so it
+  seeds a fixed local owner and prints it — log in once and the browser session
+  sticks. Stop it any time with `docker rm -f decanter-sim-viewer`.
+- **No flag, no extra step.** It only appears in an interactive terminal —
+  piped runs, `--json`, and `--network-none` stay headless and print no URL, so
+  scripts and CI are unaffected (and leave no container behind).
+- The diff/exit-code is unchanged; the viewer is purely for eyeballing the run.
 
 ## `simulate --pin`
 

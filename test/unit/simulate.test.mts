@@ -14,6 +14,7 @@ import {
   PURE_NODE_TYPES,
   SIM_START_NODE,
 } from "../../lib/simulate.mts";
+import { latestCaptureId } from "../../lib/executions.mts";
 import type { Log, Workflow, WorkflowNode } from "../../lib/types.mts";
 
 const warnings: string[] = [];
@@ -192,6 +193,19 @@ describe("buildSimulation — untaken / disabled exemptions", () => {
     assert.equal(disabled.type, "n8n-nodes-base.code"); // neutralized
     assert.match(String(disabled.parameters.jsCode), /reached unexpectedly/);
     assert.doesNotThrow(() => assertDryRunSafe(sim.workflow));
+  });
+});
+
+describe("latestCaptureId", () => {
+  it("returns the highest numeric capture id (newest), ignoring non-numeric files", () => {
+    const dir = scaffold({
+      "executions/3.json": "{}", "executions/17.json": "{}", "executions/9.json": "{}",
+      "executions/notes.json": "{}", "executions/.gitignore": "*",
+    });
+    assert.equal(latestCaptureId(dir), "17");
+  });
+  it("returns null when there are no captures", () => {
+    assert.equal(latestCaptureId(scaffold({ "workflow.json": "{}" })), null);
   });
 });
 

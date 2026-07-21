@@ -35,7 +35,7 @@ on a terminal opens a picker instead of printing usage: type to filter,
 `↑`/`↓` to move. Each row leads with a status glyph — `●` for a pulled
 workflow (green), `○` for a not-yet-pulled remote one (yellow) — so the state
 reads by shape, not color alone, and the ids line up in an aligned column.
-`Enter` on a pulled workflow offers status/pull/push/watch/check/executions;
+`Enter` on a pulled workflow offers status/pull/push/watch/check/executions/simulate;
 `Enter` on an unpulled one pulls it directly. It stays in the workflow's verb
 menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
 output and dirs without a `decanter.config.json` keep printing usage — scripts

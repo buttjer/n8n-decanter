@@ -4,7 +4,7 @@ import { addCodeNode } from "./lib/add.mts";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig } from "./lib/config.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
-import { cleanExecutions, fetchExecutionById, fetchExecutions } from "./lib/executions.mts";
+import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
 import { pinFixtures, runSimulation, type SimulationReport } from "./lib/simulate.mts";
 import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
@@ -294,6 +294,10 @@ function printSimulationReport(r: SimulationReport, log: Log): void {
   }
   if (r.ok) log.ok(`simulation matches the capture (${r.diffs.length} node${r.diffs.length === 1 ? "" : "s"} checked)`);
   else log.error(`simulation diverged: ${r.divergent.length > 0 ? r.divergent.join(", ") : "engine error"}`);
+  if (r.url && r.login) {
+    log.info(`\nopen the run in n8n:  ${style.bold(r.url)}`);
+    log.info(style.dim(`  local login: ${r.login.email} / ${r.login.password}  ·  throwaway instance, replaced on the next simulate (docker rm -f decanter-sim-viewer to stop)`));
+  }
 }
 
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
@@ -482,8 +486,11 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         pinFixtures(dir, pinId, log);
         break;
       }
-      const execId = valueFlags.get("execution");
-      if (execId === undefined) throw new Error("simulate needs --execution <id> (or --pin <id>): fetch one first with `executions`");
+      // No --execution → default to the newest local capture (also how the
+      // picker, which can't supply an id, runs simulate).
+      const execId = valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
+      if (execId === undefined) throw new Error(`no execution to simulate: pass --execution <id> or fetch one first with \`n8n-decanter ${refs[0]} executions\``);
+      if (valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
       if (!(await dockerAvailable())) {
         throw new Error("simulate needs a running Docker daemon (the engine backend) — start Docker and retry");
       }
@@ -491,7 +498,10 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (valueFlags.get("n8n-version") === undefined && config.n8nVersion === undefined) {
         log.info(style.dim(`using default engine version ${version}; pin "n8nVersion" in decanter.config.json to match your instance`));
       }
-      const report = await runSimulation(dir, execId, { version, networkNone: networkNoneFlag }, log);
+      // Interactive terminals get a browsable run in a kept-alive local n8n;
+      // scripts/CI/--json/--network-none stay fast and headless (no container left).
+      const viewer = Boolean(process.stdout.isTTY) && !jsonFlag && !networkNoneFlag;
+      const report = await runSimulation(dir, execId, { version, networkNone: networkNoneFlag, viewer }, log);
       if (jsonFlag) console.log(JSON.stringify(report, null, 2));
       else printSimulationReport(report, log);
       if (!report.ok) process.exitCode = 1;

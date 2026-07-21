@@ -250,9 +250,11 @@ slower per run; output scraped from `n8n execute`'s result JSON.
    passing. **Deferred:** the npx backend (task 4's dependency-free default;
    Docker shipped first as validated). Original spec:
    `n8n-decanter simulate <ref> --execution <execId>` in
-   `n8n-decanter.mts` (register in `VERBS` + `REF_VERBS`; the picker's verb
-   menu stays unchanged — simulate needs an execution argument the menu can't
-   supply): transform to a temp file, run the engine per the chosen route,
+   `n8n-decanter.mts` (register in `VERBS` + `REF_VERBS`). **Picker: added
+   2026-07-21** — the original "menu can't supply an execution id" objection was
+   resolved by defaulting `--execution` to the newest local capture, so the
+   picker offers `simulate` and runs it against the latest capture. Transform to
+   a temp file, run the engine per the chosen route,
    print per-node item counts, and diff each Code node's simulated output
    against the captured execution's output for that node. Divergence →
    nonzero exit (this is the regression check); a `--json` report for tooling.
@@ -366,6 +368,19 @@ slower per run; output scraped from `n8n execute`'s result JSON.
 - **CHANGELOG:** `simulate` verb (incl. `--pin`, later `--fill-gaps`),
   `test:sim`, and the `n8nVersion` config field are user-facing — Added
   entries under `[Unreleased]` when they land.
+- **Browsable viewer (added 2026-07-21, user request).** In an interactive
+  terminal `simulate` also prints a URL to the run in a *kept-alive* local n8n
+  (`lib/engine.mts` `startViewer`): reap+run a named container that does `import
+  + n8n execute` (persists the run) then `n8n start` (serves it), seed a fixed
+  throwaway owner, and print `…/workflow/<id>/executions/1` + login. The diff
+  still comes from the headless run; the viewer is display-only. TTY-gated
+  (off for pipes/`--json`/`--network-none`, so CI is unaffected and leaves no
+  container). Gotcha found & fixed: the detached container bind-mounts the sim
+  file, so it must **outlive `docker run -d`** (a stable temp path, not a
+  per-call `mkdtemp` deleted immediately). n8n `execute` only persists when the
+  workflow opts in (`saveDataSuccessExecution: "all"`), so the viewer forces
+  those settings. "Public/shared execution link" isn't possible — n8n OSS has
+  no execution-sharing feature.
 - **PLAN.md sign-off list (raise with the user before landing, per
   `CLAUDE.md`):** the `simulate` verb, the `n8nVersion` config field, the
   committed `workflows/<Name>/fixtures/` artifact (the guard already

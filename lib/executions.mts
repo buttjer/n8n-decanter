@@ -1,10 +1,28 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { findWorkflowDir, listWorkflowDirs } from "./state.mts";
 import type { Execution, Log, Workflow } from "./types.mts";
 
 export const EXECUTIONS_DIR = "executions";
+
+/**
+ * The newest captured execution id in a workflow folder's `executions/` dir, or
+ * null when none are captured. n8n execution ids are incrementing integers, so
+ * "newest" is the highest numeric filename; non-numeric files are ignored. Lets
+ * `simulate` (and the picker, which can't supply an id) default to the latest
+ * capture.
+ */
+export function latestCaptureId(dir: string): string | null {
+  const outDir = path.join(dir, EXECUTIONS_DIR);
+  if (!existsSync(outDir)) return null;
+  let best: number | null = null;
+  for (const entry of readdirSync(outDir)) {
+    const m = entry.match(/^(\d+)\.json$/);
+    if (m && (best === null || Number(m[1]) > best)) best = Number(m[1]);
+  }
+  return best === null ? null : String(best);
+}
 
 /**
  * Warn when fetched executions ran a *published* version that differs from the
