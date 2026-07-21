@@ -58,6 +58,32 @@ group**, kept separate from the priority buckets and the parity/hardening
 work. This keeps the tool's differentiators visible and tracked as a distinct
 class. (Backlog mechanics otherwise per `CLAUDE.md`.)
 
+## One worktree per task — never reuse a dirty one
+
+Every repo-modifying task runs in its **own** `.worktrees/<name>` worktree
+branched off `main` (`git worktree add -b feat/x .worktrees/feat-x main`) — the
+core rule is in `CLAUDE.md`; read-only work needs no worktree.
+
+**The trap that keeps biting: being *launched inside* an existing worktree does
+NOT make it the right place for your task.** A worktree already carries a branch
+and, often, unrelated uncommitted work (that's why it exists). Dumping a new,
+distinct task's edits on top mixes two unrelated changes into one branch — the
+exact mess this rule prevents. So:
+
+- **A distinct task gets a fresh worktree.** Before editing, check the worktree
+  you're in: if its branch/uncommitted changes are unrelated to your task
+  (`git status`, `git log --oneline main..HEAD`), **stop and `git worktree add`
+  a new one off `main`** — do not add your edits to the dirty worktree.
+- **Create a new worktree when the user tells you to**, and default to one for
+  any new distinct task. When unsure whether the current worktree is "yours,"
+  the safe answer is a fresh worktree — never silently reuse someone else's.
+- Only keep working in the current worktree when the task genuinely *continues*
+  the work already staged there.
+- **Already made edits in the wrong worktree?** Move only those files out
+  cleanly: `git diff -- <files> > patch`, `git worktree add -b <branch>
+  .worktrees/<name> main`, `git -C <new worktree> apply patch`, then
+  `git checkout -- <files>` in the original to revert them there.
+
 ## main is guarded locally too (pre-commit hook)
 
 The GitHub ruleset blocks *pushes* to main, but nothing upstream stops a
