@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.3] - 2026-07-21
+## [0.4.5] - 2026-07-21
 
 ### Added
 
@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   defaults to the **newest capture** in the workflow's `executions/` dir, so
   `n8n-decanter <ref> simulate` works right after an `executions` fetch (and
   lets the picker offer it). Pass `--execution <id>` to pick a specific one.
+
+## [0.4.3] - 2026-07-21
+
+### Changed
+
+- **`$('Node').item` in the type shim (`n8n-globals.d.ts`) is no longer typed
+  `| undefined`.** Accessing `$('Node').item.json` no longer raises a spurious
+  "Object is possibly 'undefined'" (TS2532) — the value is non-undefined, like
+  `$input.item`, since a missing paired item throws at runtime rather than
+  yielding `undefined`. Use `itemMatching(i)`, `first()`, or `last()` when you
+  want an index-checked lookup instead.
 
 ## [0.4.2] - 2026-07-20
 

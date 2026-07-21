@@ -32,7 +32,12 @@ interface N8nNodeRef {
   all(branchIndex?: number, runIndex?: number): N8nItem[];
   first(branchIndex?: number, runIndex?: number): N8nItem;
   last(branchIndex?: number, runIndex?: number): N8nItem;
-  item: N8nItem | undefined;
+  /**
+   * The item on this node paired to the current item ("Run Once for Each
+   * Item" context). Non-undefined: a missing pairing throws at runtime, it
+   * doesn't yield `undefined`. Mirrors `$input.item`.
+   */
+  item: N8nItem;
   itemMatching(itemIndex: number): N8nItem;
   params: Record<string, any>;
   context: Record<string, any>;
