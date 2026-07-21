@@ -73,7 +73,7 @@ later.
 
 - [x] CI green on the PR; squash-merged (internal-only: no version bump, no
   CHANGELOG entries — repo infra/docs). Merged as #9, 2026-07-19.
-- [ ] After merge: `gh api repos/buttjer/n8n-decanter/languages` returns only
+- [x] After merge: `gh api repos/buttjer/n8n-decanter/languages` returns only
   TypeScript. **Still pending hours after merge** — the API serves the exact
   pre-fix numbers (JS 21,651 B = 7.24%) despite four later pushes; GitHub's
   stats cache hasn't recomputed. The `.gitattributes` fix itself is verified
@@ -81,12 +81,23 @@ later.
   `-linguist-detectable` is the documented stats-exclusion attribute).
   **Re-check at the Plan 13 public flip**; if still stale then, touch the
   `template/*.example` blobs in a PR or contact GitHub support.
+  **Resolved (housekeeping 2026-07-21):** cache has since recomputed —
+  the `template/*.example` blobs no longer count (only ~8.5 KB of tracked
+  `.js`/`.mjs` remain, all legitimate `website/` config/scripts). The literal
+  "only TypeScript" target is now **superseded**: the docs website (merged
+  later) legitimately adds Astro/HTML/CSS and there are Shell scripts, so the
+  repo is intentionally multi-language with TypeScript dominant (~88%). The
+  original concern — template blobs polluting stats as JS — is fully fixed.
 - [x] Branches page shows only `main`, the open dependabot branch, and
   legitimately-open PR branches (`feat/docs-website`, PR #10) — after the
   close-out cleanup in task 4's correction.
-- [ ] SECURITY.md renders on the Security tab once private vulnerability
+- [x] SECURITY.md renders on the Security tab once private vulnerability
   reporting is enabled — **blocked on the repo being public** (Plan 13
   settings step); nothing verifiable while private.
+  **Resolved (housekeeping 2026-07-21):** repo is public, `SECURITY.md` is
+  present, and `gh api repos/buttjer/n8n-decanter/private-vulnerability-reporting`
+  returns `{"enabled": true}` — so the Security tab surfaces the policy and
+  the private-reporting intake.
 
 ## Notes
 
