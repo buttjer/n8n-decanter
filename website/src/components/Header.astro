@@ -36,7 +36,7 @@ LOGO_ROWS.forEach((row, r) => {
     });
   });
 });
-const logoSvg = `<svg viewBox="0 0 ${width} 6" height="24" width="${(width / 6) * 24}" shape-rendering="crispEdges" role="img" aria-label="n8n-decanter" style="display:block"><g fill="var(--color-accent-500)">${accentRects.join("")}</g><g fill="currentColor">${fgRects.join("")}</g></svg>`;
+const logoSvg = `<svg viewBox="0 0 ${width} 6" class="h-3 w-auto sm:h-5" shape-rendering="crispEdges" role="img" aria-label="n8n-decanter" style="display:block"><g fill="var(--color-accent-500)">${accentRects.join("")}</g><g fill="currentColor">${fgRects.join("")}</g></svg>`;
 ---
 
 <header

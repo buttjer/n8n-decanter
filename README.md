@@ -209,6 +209,16 @@ how that focus stacks up against the native editor and against
 [n8n-as-code](https://github.com/EtienneLescot/n8n-as-code) — a broader,
 whole-workflow authoring toolkit.
 
+> **Choose [n8n-as-code](https://github.com/EtienneLescot/n8n-as-code) if you…**
+> need an enterprise-ready automation framework — where AI agents assemble
+> complete workflows, multi-environment Dev → Prod pipelines automatically handle
+> credential governance, and full TypeScript GitOps ensures strict auditability
+> across your team.
+>
+> **Choose n8n-decanter if you…** focus on developer experience inside the Code
+> node — enabling typed TypeScript, shared utility libraries, and live
+> hot-reloading DX directly between VS Code and your n8n canvas (even on Cloud).
+
 | Capability | Native n8n (browser) | n8n-as-code | n8n-decanter |
 |---|---|---|---|
 | **TypeScript for Code nodes** | ❌ JavaScript or Python only | ❌ TS is at workflow level, not node logic | ✅ Code nodes as `.ts`, compiled on push, typed n8n globals |
