@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P3 (spike may promote the rest; **unblocked** 2026-07-19 — Plan 3 C shipped as the `executions` verb) |
-| **Status** | **In progress** — spike + tasks 2–5 done 2026-07-20/21 (Docker backend): the `simulate` verb ships and replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`. Remaining: **task 6 gap handling** (guide-to-pin default + viewer-pin + `--guess-gaps` LLM last resort — see the trust ladder) and the **npx engine backend**, now split to [Plan 26](OPEN-26-npx-engine-backend.md). |
+| **Status** | **In progress** — spike + tasks 2–5 done 2026-07-20/21 (Docker backend): the `simulate` verb ships and replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`; **task 8 tier-1 single-iteration loops** shipped 2026-07-21. Remaining: **task 6 gap handling** (guide-to-pin default + viewer-pin + `--guess-gaps` LLM last resort — see the trust ladder), **tier-2 multi-batch loop viewer mode**, and the **npx engine backend**, now split to [Plan 26](OPEN-26-npx-engine-backend.md). |
 | **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (LLM-guessed fixtures fill the gaps), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
 | **Model** | **Opus** — the highest-reasoning plan in the backlog: the route-B transform, the `n8n execute` subprocess orchestration, and above all the *safety-critical* default-deny node classification (a misclassified node runs for real) reward the strongest model. Once the spike (task 1) and transform are designed, the CLI/test wiring can drop to Sonnet. |
 
@@ -139,6 +139,36 @@ slower per run; output scraped from `n8n execute`'s result JSON.
   result JSON) so interface drift across 2.x is caught by infrastructure that
   now exists.
 
+## Design decision — loop handling (2026-07-21, user)
+
+**The whole simulate pipeline is first-run-only** — both pinning
+(`firstRunItems` → `runs[0]`) and the diff read a node's *first* run. That's
+why loops were blanket-refused at first: showing iteration 1 and calling it a
+pass would be a false green. But "any node ran > 1" over-refuses — a loop that
+ran a **single batch** has only the `splitInBatches` driver double-running
+(one batch pass + the final "done" pass) while every body node ran exactly
+once, so its first-run pins are already exact. Two tiers:
+
+- **Tier 1 — single-iteration loops (SHIPPED 2026-07-21, task 8).** Recognize
+  loop drivers (`LOOP_DRIVER_TYPES` = `splitInBatches`; side-effect-free but
+  stateful across runs, so never pinned — pinning to `runs[0]` would break the
+  loop). They **run for real** to reproduce the loop and are **never diffed**
+  (a driver's output isn't a Code-node regression signal). The guard now fires
+  only on a *genuine multi-iteration* signal: any **non-driver** node with > 1
+  run, or a driver with **> 2** runs (≥ 2 batches). This is fully faithful —
+  the replay is engine-true and stays a real gate. Unblocked the user's real
+  "Cron: eBay Sync" capture (only `Loop Over Items1` double-ran).
+- **Tier 2 — best-effort single iteration of a *multi*-batch loop (DEFERRED).**
+  For a genuine multi-batch loop, show **iteration 1 only** in the viewer: cap
+  the loop driver's input to the first batch so it iterates once, pin bodies to
+  `runs[0]`, render it in the webapp — but **never gate on it** (report
+  "iteration 1 of N shown — not a pass/fail check", never exit 0 as verified).
+  Value is eyeballing-only; the diff stays unreliable for N > 1 because pinning
+  is single-valued. Fiddly (which node feeds the driver? truncate to
+  `batchSize`?) and easy to mislead if unlabeled — hence deferred to its own
+  task, not shipped with tier 1. Doing per-iteration pinning *properly* (pin
+  `runs[i]` per iteration) is a larger project and stays out of scope.
+
 ## Tasks
 
 1. **Spike (timeboxed; de-risks route B).** Hand-capture one execution
@@ -224,9 +254,11 @@ slower per run; output scraped from `n8n execute`'s result JSON.
      `n8n-nodes-base.` `code`, `set`, `if`, `switch`, `filter`, `merge`,
      `sort`, `limit`, `aggregate`, `splitOut`, `removeDuplicates`,
      `renameKeys`, `dateTime`, `noOp`. Deliberately excluded despite being
-     side-effect-free: `splitInBatches` (loop driver — loops are out of
-     scope v1), `wait` (time semantics), `executeWorkflow` (crosses the
-     workflow boundary).
+     side-effect-free: `splitInBatches` (a **loop driver** — off the pure
+     allowlist because it's stateful across runs; handled separately, runs for
+     real for single-iteration loops — see "Design decision — loop handling"),
+     `wait` (time semantics), `executeWorkflow` (crosses the workflow
+     boundary).
    - Loader: fixture precedence is `workflows/<Name>/fixtures/<Node>.json`
      (committed, provenance-stamped — tasks 3/6) over
      `executions/<execId>.json` (gitignored temp). Validate the `runData`
@@ -236,8 +268,9 @@ slower per run; output scraped from `n8n execute`'s result JSON.
      fixture is a **hard error** listing the nodes (and pointing at
      how to pin — hand-authored fixture / viewer-pin / `--guess-gaps`, task 6);
      disabled nodes and untaken branches are exempt.
-     Any surviving node with **more than one run** in the capture is a hard
-     error too ("loop workflows are out of scope", Non-goals). Warn when the
+     A genuine **multi-iteration** loop hard-errors — a *non-driver* node with
+     more than one run, or a loop driver with more than two (see "Design
+     decision — loop handling"; single-iteration loops replay). Warn when the
      capture's `workflowVersionId` differs from the local draft's `versionId`
      (stale capture — published vs draft; reuse `warnStaleFixtures` from
      `lib/executions.mts`, shipped by Plan 20 task 3).
@@ -322,6 +355,18 @@ slower per run; output scraped from `n8n execute`'s result JSON.
       matching the `"source": "llm-guess"` stamp (renaming a released flag is
       breaking, so it's decided up front). Shape the prompt/client plumbing for
       reuse by the backlog's "LLM semantic validation" item.
+7. **Docs + CHANGELOG.** Any user-facing surface (flags, scope, config) gets a
+   docs page/section + `[Unreleased]` entry in the same change (per repo rules).
+8. **Loop handling — tier 1: single-iteration loops.** ✅ **Done 2026-07-21** —
+   `LOOP_DRIVER_TYPES` (`splitInBatches`) run for real and are never
+   pinned/diffed; the guard now fires only on a genuine multi-iteration signal
+   (a non-driver ran > 1, or a driver ran > 2). Covered both offline
+   (unit: one-batch classification + multi-batch still rejected) **and
+   engine-level** (`test:sim`: a real one-batch loop captured from n8n and
+   replayed through Docker end-to-end — driver runs for real, the in-loop Code
+   node executes and matches the capture); docs + CHANGELOG updated. See
+   "Design decision — loop handling". *Follow-up:* **tier 2** (best-effort
+   viewer-only "iteration 1 of N" for multi-batch loops) remains open.
 
 ## Acceptance / verification
 
@@ -351,9 +396,11 @@ slower per run; output scraped from `n8n execute`'s result JSON.
   outputs (no live HTTP mocking layer, no credential faking).
 - Live trigger semantics (webhook payload capture timing, schedules) — the
   trigger is always a pinned replay of the captured trigger output.
-- **Loop workflows (v1):** any surviving node with more than one run in the
-  capture hard-errors — multi-run replay semantics (which run pins? loop
-  drivers) are their own project; revisit after v1.
+- **Multi-batch loops (v1):** single-iteration loops now replay (tier 1,
+  shipped — see "Design decision — loop handling"), but a loop that ran **more
+  than one batch** still hard-errors. Per-iteration pinning (`runs[i]` per
+  iteration) and the best-effort viewer-only "iteration 1 of N" mode (tier 2)
+  are deferred; revisit after v1.
 - Treating captured executions as ground truth — they're convenience fixtures
   that age (LLM guesses doubly so, and they're marked as such); the diff tells
   you "changed vs the capture", not "wrong".

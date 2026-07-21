@@ -150,7 +150,7 @@ describe("buildSimulation — hard errors", () => {
     await assert.rejects(buildSimulation(dir, "1", log), /no captured output for network node\(s\): Fetch2/);
   });
 
-  it("hard-errors on a multi-run (loop) capture", async () => {
+  it("hard-errors on a multi-iteration loop (a non-driver node ran more than once)", async () => {
     const runData = {
       Webhook: run([item({})]), Compute: [{ data: { main: [[item({})]] } }, { data: { main: [[item({})]] } }],
       Tag: run([item({})]), Fetch: run([item({ status: "ok" })]),
@@ -172,6 +172,65 @@ describe("buildSimulation — hard errors", () => {
     });
     await buildSimulation(dir, "1", log);
     assert.ok(warnings.some((w) => /published version OTHER/.test(w)), warnings.join("|"));
+  });
+});
+
+describe("buildSimulation — single-iteration loops (tier 1)", () => {
+  // Webhook(trigger) -> Loop(splitInBatches): output0=done -> Done(set),
+  //                                           output1=loop -> Work(code) -> back to Loop.
+  function loopWorkflow(): Workflow {
+    return {
+      id: "wf2", name: "Loop WF", versionId: "v1",
+      nodes: [
+        { id: "w", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { path: "hook" } },
+        { id: "l", name: "Loop", type: "n8n-nodes-base.splitInBatches", typeVersion: 3, position: [200, 0], parameters: { options: {} } },
+        { id: "k", name: "Work", type: "n8n-nodes-base.code", typeVersion: 2, position: [400, 0], parameters: { jsCode: "return items;\n" } },
+        { id: "d", name: "Done", type: "n8n-nodes-base.set", typeVersion: 3.4, position: [400, 200], parameters: {} },
+      ] as WorkflowNode[],
+      connections: {
+        Webhook: { main: [[{ node: "Loop", type: "main", index: 0 }]] },
+        Loop: { main: [
+          [{ node: "Done", type: "main", index: 0 }], // output 0 = done
+          [{ node: "Work", type: "main", index: 0 }], // output 1 = loop
+        ] },
+        Work: { main: [[{ node: "Loop", type: "main", index: 0 }]] },
+      },
+      settings: { executionOrder: "v1" },
+    };
+  }
+  const scaffoldLoop = (runData: Record<string, unknown>) => scaffold({
+    "workflow.json": JSON.stringify(loopWorkflow()),
+    ".decanter.json": JSON.stringify({ workflowId: "wf2", nodes: {} }),
+    "executions/1.json": JSON.stringify({ id: 1, status: "success", workflowId: "wf2", workflowVersionId: "v1", data: { resultData: { runData } } }),
+  });
+
+  it("allows a one-batch loop: the driver runs for real, isn't pinned or diffed", async () => {
+    const runData = {
+      Webhook: run([item({ n: 1 })]),
+      // splitInBatches ran twice: one batch pass (loop output), one final done pass
+      Loop: [{ data: { main: [[], [item({ n: 1 })]] } }, { data: { main: [[item({ n: 1 })], []] } }],
+      Work: run([item({ n: 1 })]),
+      Done: run([item({ done: true })]),
+    };
+    const sim = await buildSimulation(scaffoldLoop(runData), "1", log);
+    assert.deepEqual(sim.loops, ["Loop"]);
+    assert.ok(!sim.pinned.includes("Loop"), "loop driver must not be pinned");
+    assert.ok(!sim.pure.includes("Loop"), "loop driver isn't a diffed pure node");
+    assert.deepEqual(sim.pure.sort(), ["Done", "Work"]);
+    assert.deepEqual(sim.pinned, ["Webhook"]);
+    // driver kept as its real type (runs for real), not replaced by a Code stub
+    assert.equal(nodeNamed(sim.workflow, "Loop").type, "n8n-nodes-base.splitInBatches");
+    assert.doesNotThrow(() => assertDryRunSafe(sim.workflow));
+  });
+
+  it("still rejects a multi-batch loop (driver ran 3× and the body ran twice)", async () => {
+    const runData = {
+      Webhook: run([item({})]),
+      Loop: [{ data: { main: [[], [item({})]] } }, { data: { main: [[], [item({})]] } }, { data: { main: [[item({})], []] } }],
+      Work: [{ data: { main: [[item({})]] } }, { data: { main: [[item({})]] } }],
+      Done: run([item({})]),
+    };
+    await assert.rejects(buildSimulation(scaffoldLoop(runData), "1", log), /only single-iteration loops replay/);
   });
 });
 
