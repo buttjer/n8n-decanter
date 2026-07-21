@@ -3,7 +3,12 @@
 **Priority:** P2 (high-value UX + consistency; a **breaking** grammar change
 plus a small additive data-model field — a real design pass, one coordinated
 release)
-**Status:** Not started
+**Status:** Done (2026-07-21) — all tasks shipped: verb-first parser + `node`
+namespace, no-ref → picker (incl. the executions hook), kebab/sticky folders,
+`.decanter.json.name`, single-form `rename`, `list --json`, grouped usage,
+completion, and the full docs sweep. Verified green across unit/e2e/proxy/
+interactive + the Docker smoke matrix (2.30.7 / 2.31.0 / 2.31.4). The Non-goals
+below remain deferred by design.
 **Theme:** Make the CLI read the way people expect. **Verb comes first**
 (`n8n-decanter <verb> <workflow…>`), node operations move under a **`node`
 subcommand namespace** (`node create` / `node rename` / `node run`), a

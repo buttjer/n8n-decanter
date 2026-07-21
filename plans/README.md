@@ -147,7 +147,7 @@ items not yet claimed by one. Recommended order:
     Docker (the accessibility default Plan 7 intended). The headless diff run
     is npx's home; the browsable viewer stays Docker-preferred. Split from
     Plan 7 2026-07-21.
-27. [Verb-first CLI grammar, node namespace, kebab folders](OPEN-27-verb-first-cli-grammar.md) —
+27. [Verb-first CLI grammar, node namespace, kebab folders](DONE-27-verb-first-cli-grammar.md) —
     a breaking grammar pass: the verb comes first (`n8n-decanter <verb>
     <workflow>`), node ops move under a `node` subcommand namespace
     (`node create`/`node rename`/`node run`), a ref-taking verb with no ref
