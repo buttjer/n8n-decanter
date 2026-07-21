@@ -44,8 +44,9 @@ covers the contract.
 
 Workflow refs match by id, name, or unique name prefix — case-insensitively,
 and ambiguity errors instead of prompting. Use more of the name, or the id.
-A workflow literally named like a verb (`push`, `status`, …) must be
-addressed by id.
+Since the verb comes first (`n8n-decanter <verb> <workflow>`), a workflow
+literally named like a verb needs no special handling — `n8n-decanter status push`
+runs `status` on the workflow named `push`.
 
 ## The live-reload proxy loses my n8n login
 

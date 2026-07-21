@@ -79,6 +79,13 @@ export interface NodeState {
 /** .decanter.json — one per workflow folder. */
 export interface DecanterState {
   workflowId: string;
+  /**
+   * Cached display name, refreshed from `wf.name` on every pull (Plan 27). The
+   * picker / `list` / ref-resolution read it, so the folder can be a stable
+   * kebab slug that never follows a remote rename. Absent on states written
+   * before Plan 27 — callers fall back to workflow.json, then the folder name.
+   */
+  name?: string;
   nodes: Record<string, NodeState>;
   /** Code-stripped, key-sorted structure hash at last pull. */
   lastPulledWorkflowHash?: string;

@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { createStepRunner } from "./harness.mts";
+import { kebabCase } from "../lib/util.mts";
 
 const execFile = promisify(execFileCb);
 const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -176,7 +177,11 @@ async function cli(...args: string[]) {
   assert.ok(!out.includes("\x1b"), `ANSI escape leaked into piped output of "${args.join(" ")}": ${JSON.stringify(out.slice(0, 300))}`);
   return { out, code };
 }
-const wfDir = (name: string) => path.join(ROOT, name);
+// Folders are kebab-case now (Plan 27); wfDir mirrors the CLI's own slugging so
+// call sites can keep naming workflows by their human name. wf123 is pulled
+// first as "Order Sync", so its folder is a sticky `order-sync` for its whole
+// life (dir1) even as the workflow is renamed remotely.
+const wfDir = (name: string) => path.join(ROOT, kebabCase(name));
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
 const state = (dir: string) => JSON.parse(read(dir, ".decanter.json"));
 const remoteNode = (id: string, nid: string) => db.get(id).nodes.find((n: any) => n.id === nid);
@@ -439,7 +444,7 @@ await step("status: reports pending local edit, then in sync", async () => {
   assert.match(r.out, /structure: in sync/);
 });
 
-await step("remote workflow + node rename: folder and file follow", async () => {
+await step("remote workflow rename: folder is sticky, name cached; node rename still renames the file", async () => {
   const wf = db.get("wf123");
   wf.name = "Order Sync v2";
   wf.nodes.find((n: any) => n.id === "n2").name = "Transform: EU/US";
@@ -447,19 +452,22 @@ await step("remote workflow + node rename: folder and file follow", async () => 
   wf.connections.Webhook.main[0][0].node = "Transform: EU/US";
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  const dir2 = wfDir("Order Sync v2");
-  assert.ok(existsSync(dir2), "folder renamed");
-  assert.ok(!existsSync(dir1), "old folder gone");
-  assert.ok(existsSync(path.join(dir2, "code", "transform-eu-us.js")), "file renamed with kebab-case name");
-  assert.ok(!existsSync(path.join(dir2, "code", "transform.js")));
-  assert.equal(state(dir2).nodes.n2.file, "code/transform-eu-us.js");
-  assert.match(read(dir2, "workflow.json"), /"\/\/@file:code\/transform-eu-us\.js"/);
+  // Plan 27: the folder does NOT follow a remote rename — it stays the sticky
+  // `order-sync` slug (dir1); the display name is cached in .decanter.json.
+  assert.ok(existsSync(dir1), "sticky folder kept");
+  assert.ok(!existsSync(wfDir("Order Sync v2")), "no renamed folder created");
+  assert.equal(state(dir1).name, "Order Sync v2", ".decanter.json caches the current display name");
+  // node rename still renames the file (that machinery is unchanged)
+  assert.ok(existsSync(path.join(dir1, "code", "transform-eu-us.js")), "file renamed with kebab-case name");
+  assert.ok(!existsSync(path.join(dir1, "code", "transform.js")));
+  assert.equal(state(dir1).nodes.n2.file, "code/transform-eu-us.js");
+  assert.match(read(dir1, "workflow.json"), /"\/\/@file:code\/transform-eu-us\.js"/);
 });
 
 await step("watch path: pushSingleNode round-trip", async () => {
   const { pushSingleNode } = await import(pathToFileURL(path.join(PROJECT, "lib/push.mts")).href);
   const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "return $input.all(); // watched\n");
   const api = new N8nApi({ host: env.N8N_HOST, apiKey: "test-key" });
   const log = { info: () => {}, ok: () => {}, warn: () => {}, error: () => {} };
@@ -477,7 +485,7 @@ await step("watch: debounce coalesces, queued save re-pushes, close() stops", as
   // in-process (like the pushSingleNode step): the WatchHandle exists for this
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
   const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const js = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(dir2, "code", "transform-eu-us.js");
   const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
@@ -534,7 +542,7 @@ await step("watch: structural conflict — [l]ocal force-pushes workflow.json ov
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
   const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   await cli("pull"); // fresh, known baseline
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJsonPath = path.join(dir2, "workflow.json");
   const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
   const config = {
@@ -574,7 +582,7 @@ await step("watch: structural conflict — [r]emote pulls over workflow.json, pr
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
   const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   await cli("pull");
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJsonPath = path.join(dir2, "workflow.json");
   const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
   const config = {
@@ -612,7 +620,7 @@ await step("watch: structural conflict — Enter skips for now and re-prompts on
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
   const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   await cli("pull");
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJsonPath = path.join(dir2, "workflow.json");
   const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
   const config = {
@@ -652,7 +660,7 @@ await step("watch: structural conflict — [m]erge writes workflow.remote.json, 
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
   const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   await cli("pull");
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJsonPath = path.join(dir2, "workflow.json");
   const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
   const config = {
@@ -703,7 +711,7 @@ await step("watch<->proxy: single-node push broadcasts a 'pushed' SSE event thro
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
   const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   await cli("pull"); // fresh baseline
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const js = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(js);
   const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
@@ -758,7 +766,7 @@ await step("check: clean tree passes, typecheck skipped without tsconfig", async
 });
 
 await step("guard: inline code in workflow.json blocks push", async () => {
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJson = read(dir2, "workflow.json");
   writeFileSync(path.join(dir2, "workflow.json"), wfJson.replace('"//@file:code/transform-eu-us.js"', '"return 1;"'));
   let r = await cli("push");
@@ -772,7 +780,7 @@ await step("guard: inline code in workflow.json blocks push", async () => {
 });
 
 await step("guard: @ts-n8n marker inside a .js file blocks push", async () => {
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const file = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(dir2, "code", "transform-eu-us.js");
   writeFileSync(file, original + "// @ts-n8n sha256:" + "0".repeat(64) + "\n");
@@ -783,7 +791,7 @@ await step("guard: @ts-n8n marker inside a .js file blocks push", async () => {
 });
 
 await step("guard: .remote.js leftovers warn but don't block", async () => {
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const leftover = path.join(dir2, "code", "transform-eu-us.remote.js");
   writeFileSync(leftover, "// leftover from a conflict\n");
   const r = await cli("push");
@@ -799,7 +807,7 @@ await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", 
     include: ["n8n-globals.d.ts", "workflows/**/*.ts", "workflows/**/*.js"],
     exclude: ["**/*.remote.js"],
   }, null, 2));
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const file = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(dir2, "code", "transform-eu-us.js");
   writeFileSync(file, '// @ts-check\nconst bad = "x" * 2;\nreturn [{ json: { bad } }];\n');
@@ -834,7 +842,7 @@ await step("check <id>: scopes layout checks and typecheck to that workflow", as
   assert.ok(!r.out.includes("Broken Neighbor"), "unrelated workflow leaked into scoped output: " + r.out);
   assert.ok(!r.out.includes("bad.js"), "unrelated diagnostics leaked into scoped output: " + r.out);
   // a type error in the scoped workflow itself must still surface
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const file = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(dir2, "code", "transform-eu-us.js");
   writeFileSync(file, '// @ts-check\nconst broken = "x" * 2;\nreturn [{ json: { broken } }];\n');
@@ -846,7 +854,7 @@ await step("check <id>: scopes layout checks and typecheck to that workflow", as
 });
 
 await step("commit-on-push: warns outside a repo, commits scoped inside one", async () => {
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: true, commitOnPull: true }, null, 2));
   // outside a git repo: push succeeds and warns
   writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "return $input.all(); // v-git-1\n");
@@ -865,7 +873,7 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   assert.match(r.out, /committed: decanter: pushed "Order Sync v2" \(wf123\)/);
   const { stdout: committed } = await execFile("git", ["-C", TMP, "show", "--name-only", "--format="], { encoding: "utf8" });
   for (const file of committed.trim().split("\n")) {
-    assert.match(file, /^workflows\/Order Sync v2\//, `commit must only contain the workflow folder, found: ${file}`);
+    assert.match(file, /^workflows\/order-sync\//, `commit must only contain the workflow folder, found: ${file}`);
   }
   const { stdout: status } = await execFile("git", ["-C", TMP, "status", "--porcelain", "--", "unrelated.txt"], { encoding: "utf8" });
   assert.match(status, /^\?\? unrelated\.txt/m, "unrelated file must stay uncommitted and unstaged");
@@ -874,12 +882,14 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   assert.equal(r.code, 0, r.out);
   const { stdout: count } = await execFile("git", ["-C", TMP, "rev-list", "--count", "HEAD"], { encoding: "utf8" });
   assert.equal(count.trim(), "1", "no empty follow-up commit");
-  // pull commits too (commitOnPull); a rename must also commit the old-path deletions
+  // pull commits too (commitOnPull); a remote rename refreshes the cached name +
+  // workflow.json but the folder stays put (sticky, Plan 27).
   db.get("wf123").name = "Order Sync v3";
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /committed: decanter: pulled "Order Sync v3" \(wf123\)/);
-  assert.ok(existsSync(wfDir("Order Sync v3")) && !existsSync(wfDir("Order Sync v2")), "folder renamed");
+  assert.ok(existsSync(dir1) && !existsSync(wfDir("Order Sync v3")), "folder stays put on remote rename");
+  assert.equal(state(dir1).name, "Order Sync v3", "cached display name follows the rename");
   let { stdout: dirty } = await execFile("git", ["-C", TMP, "status", "--porcelain", "--", "workflows"], { encoding: "utf8" });
   assert.equal(dirty.trim(), "", "rename pull must leave no uncommitted changes under workflows/");
   // rename back so later steps keep their folder; must stay clean too
@@ -890,32 +900,45 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   assert.equal(dirty.trim(), "", "rename-back pull must leave a clean tree");
 });
 
-await step("id-first argument order: `<id> <verb>` == `<verb> <id>`", async () => {
-  let r = await cli("wf123", "status");
+await step("verb-first grammar: verb is positional[0]; verb-last errors; a workflow named like a verb resolves", async () => {
+  let r = await cli("status", "wf123");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /structure: in sync/);
-  // flags may sit anywhere among the arguments too
-  r = await cli("--no-typecheck", "wf123", "check");
+  // flags may sit anywhere among the arguments
+  r = await cli("check", "--no-typecheck", "wf123");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Order Sync v2: OK/);
-  // no verb anywhere still reports an unknown command
-  r = await cli("wf123");
+  // verb-last is no longer accepted — slot 0 must be a known verb
+  r = await cli("wf123", "status");
   assert.equal(r.code, 1);
-  assert.match(r.out, /unknown command: wf123/);
+  assert.match(r.out, /unknown verb: wf123/);
+  // a workflow literally named like a verb is just an argument now (no id-only caveat)
+  db.set("wfPush", { ...structuredClone(db.get("wf123")), id: "wfPush", name: "push" });
+  try {
+    r = await cli("pull", "push"); // resolves the remote workflow named "push"
+    assert.equal(r.code, 0, r.out);
+    assert.ok(existsSync(wfDir("push")), "pulled the workflow named push: " + r.out);
+    r = await cli("status", "push"); // status on the workflow named push, not the verb
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /structure: in sync/);
+  } finally {
+    rmSync(wfDir("push"), { recursive: true, force: true });
+    db.delete("wfPush");
+  }
 });
 
 await step("name refs: exact name and case-insensitive prefix resolve; unknown name lists candidates", async () => {
-  let r = await cli("Order Sync v2", "status");
+  let r = await cli("status", "Order Sync v2");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /structure: in sync/);
-  r = await cli("order sy", "check", "--no-typecheck"); // unique case-insensitive prefix
+  r = await cli("check", "order sy", "--no-typecheck"); // unique case-insensitive prefix
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Order Sync v2: OK/);
-  r = await cli("Order Sync v2", "push", "--no-typecheck"); // name push ≡ id push
+  r = await cli("push", "Order Sync v2", "--no-typecheck"); // name push ≡ id push
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /pushed "Order Sync v2" \(wf123\)/);
   // name-shaped ref with no match must error with the candidate list — no prompt
-  r = await cli("No Such Flow", "status");
+  r = await cli("status", "No Such Flow");
   assert.equal(r.code, 1);
   assert.match(r.out, /no workflow matches "No Such Flow"/);
   assert.match(r.out, /"Order Sync v2"/);
@@ -946,7 +969,7 @@ await step("resolveRef: pull resolves an unpulled remote workflow by name; a sha
     assert.ok(existsSync(wfDir("Zeta Flow Two")), r.out);
 
     // now that both are pulled locally, a shared name prefix is ambiguous — no prompt, just an error
-    r = await cli("Zeta Flow", "status");
+    r = await cli("status", "Zeta Flow");
     assert.equal(r.code, 1);
     assert.match(r.out, /ambiguous workflow "Zeta Flow"/);
     assert.match(r.out, /"Zeta Flow One" \(wfZ1\)/);
@@ -959,16 +982,25 @@ await step("resolveRef: pull resolves an unpulled remote workflow by name; a sha
   }
 });
 
-await step("list: name, id, and folder per pulled workflow; --remote adds unpulled ones", async () => {
+await step("list: name, id, and folder per pulled workflow; --remote adds unpulled ones; --json", async () => {
   let r = await cli("list");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /Order Sync v2  wf123  workflows[/\\]Order Sync v2/);
+  // display name is the cached "Order Sync v2"; folder is the sticky order-sync slug
+  assert.match(r.out, /Order Sync v2  wf123  workflows[/\\]order-sync/);
   db.set("wf777", { ...structuredClone(db.get("wf123")), id: "wf777", name: "Unpulled Flow" });
   try {
     r = await cli("list", "--remote");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /Unpulled Flow  wf777  \(not pulled\)/);
     assert.match(r.out, /Order Sync v2  wf123/);
+    // --json: pulled rows carry a dir; remote-only rows are dir:null
+    r = await cli("list", "--remote", "--json");
+    assert.equal(r.code, 0, r.out);
+    const rows = JSON.parse(r.out) as Array<{ name: string; id: string; dir: string | null }>;
+    const pulled = rows.find((x) => x.id === "wf123");
+    assert.ok(pulled && pulled.name === "Order Sync v2" && /order-sync/.test(pulled.dir ?? ""), "pulled row: " + r.out);
+    const unpulled = rows.find((x) => x.id === "wf777");
+    assert.ok(unpulled && unpulled.dir === null, "remote-only row has dir:null: " + r.out);
   } finally {
     db.delete("wf777");
   }
@@ -993,10 +1025,13 @@ await step("completion: prints shell scripts; __complete emits verbs, flags, nam
   r = await cli("__complete");
   assert.equal(r.code, 0, r.out);
   const words = r.out.trim().split("\n");
-  for (const w of ["pull", "push", "watch", "list", "--force", "wf123", "Order Sync v2"]) {
+  for (const w of ["pull", "push", "watch", "list", "node", "create", "rename", "run", "--force", "wf123", "Order Sync v2"]) {
     assert.ok(words.includes(w), `__complete must emit "${w}": ${r.out}`);
   }
   assert.ok(!words.includes("__complete"), "__complete must not advertise itself");
+  // moved/removed surfaces must not linger in completion (Plan 27)
+  assert.ok(!words.includes("--workflow"), "--workflow was removed");
+  assert.ok(!words.includes("add"), "add moved to `node create`");
 });
 
 await step("api timeout: a hung instance aborts with a clear error", async () => {
@@ -1038,7 +1073,7 @@ await step("run: executes a .ts node against a fixture (all-items)", async () =>
   writeFileSync(path.join(rd, "Gen.ts"),
     "interface Row { id: number }\nconst rows: Row[] = $input.all().map((i) => ({ id: Number(i.json.id) }));\nreturn rows.map((r) => ({ json: r }));\n");
   writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ input: [{ json: { id: 5 } }, { json: { id: 9 } }] }));
-  const r = await cli("run", path.join("runtest", "Gen.ts"), path.join("runtest", "fx.json"));
+  const r = await cli("node", "run",path.join("runtest", "Gen.ts"), path.join("runtest", "fx.json"));
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /runOnceForAllItems/);
   assert.match(r.out, /returned 2 items/);
@@ -1054,7 +1089,7 @@ await step("run: each-item mode (from workflow.json) loops per input item", asyn
   }));
   writeFileSync(path.join(rd, "Dbl.js"), "return { json: { n: $json.n * 2, i: $itemIndex } };\n");
   writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ input: [{ json: { n: 2 } }, { json: { n: 5 } }] }));
-  const r = await cli("run", path.join("runtest2", "Dbl.js"), path.join("runtest2", "fx.json"));
+  const r = await cli("node", "run",path.join("runtest2", "Dbl.js"), path.join("runtest2", "fx.json"));
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /runOnceForEachItem/);
   assert.deepEqual(runOutput(r.out), [{ json: { n: 4, i: 0 } }, { json: { n: 10, i: 1 } }]);
@@ -1062,7 +1097,7 @@ await step("run: each-item mode (from workflow.json) loops per input item", asyn
 
 await step("run: resolves workflow.json from the parent of code/", async () => {
   writeFileSync(path.join(TMP, "fx-run.json"), JSON.stringify({ input: [{ json: { a: 1 } }, { json: { a: 2 } }] }));
-  const r = await cli("run", path.join("workflows", "Order Sync v2", "code", "transform-eu-us.js"), "fx-run.json");
+  const r = await cli("node", "run",path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-run.json");
   assert.equal(r.code, 0, r.out);
   assert.ok(!r.out.includes("no workflow.json placeholder"), "must find the node via the parent workflow.json: " + r.out);
   assert.match(r.out, /returned 2 items/);
@@ -1078,12 +1113,12 @@ await step("run: $getWorkflowStaticData seeds from workflow.json, fixture overri
   }));
   writeFileSync(path.join(rd, "SD.js"),
     "const g = $getWorkflowStaticData('global');\nconst n = $getWorkflowStaticData('node');\nreturn [{ json: { counter: g.counter, seen: n.seen } }];\n");
-  let r = await cli("run", path.join("runtest-static", "SD.js"));
+  let r = await cli("node", "run",path.join("runtest-static", "SD.js"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { counter: 41, seen: ["a"] } }]);
   // fixture overrides per slice; the untouched slice keeps the workflow seed
   writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ staticData: { global: { counter: 99 } } }));
-  r = await cli("run", path.join("runtest-static", "SD.js"), path.join("runtest-static", "fx.json"));
+  r = await cli("node", "run",path.join("runtest-static", "SD.js"), path.join("runtest-static", "fx.json"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { counter: 99, seen: ["a"] } }]);
   // a bare file without workflow.json gets empty objects, not a ReferenceError
@@ -1091,12 +1126,12 @@ await step("run: $getWorkflowStaticData seeds from workflow.json, fixture overri
   mkdirSync(bare, { recursive: true });
   writeFileSync(path.join(bare, "bare.js"),
     "return [{ json: { empty: Object.keys($getWorkflowStaticData('global')).length === 0 } }];\n");
-  r = await cli("run", path.join("runtest-bare", "bare.js"));
+  r = await cli("node", "run",path.join("runtest-bare", "bare.js"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { empty: true } }]);
   // invalid scope errors clearly
   writeFileSync(path.join(bare, "badscope.js"), "return $getWorkflowStaticData('nope');\n");
-  r = await cli("run", path.join("runtest-bare", "badscope.js"));
+  r = await cli("node", "run",path.join("runtest-bare", "badscope.js"));
   assert.equal(r.code, 1);
   assert.match(r.out, /type must be "global" or "node"/);
 });
@@ -1105,7 +1140,7 @@ await step("run: missing $() fixture data errors clearly", async () => {
   const rd = path.join(TMP, "runtest3");
   mkdirSync(rd, { recursive: true });
   writeFileSync(path.join(rd, "Ref.js"), "return $('Up').all();\n");
-  const r = await cli("run", path.join("runtest3", "Ref.js"));
+  const r = await cli("node", "run",path.join("runtest3", "Ref.js"));
   assert.equal(r.code, 1);
   assert.match(r.out, /node "Up" has no fixture data/);
 });
@@ -1115,22 +1150,22 @@ await step("run: $env is empty by default, inherits process.env only with --allo
   mkdirSync(rd, { recursive: true });
   writeFileSync(path.join(rd, "Env.js"), "return [{ json: { key: $env.N8N_API_KEY ?? null } }];\n");
   // default: $env is empty — host secrets (N8N_API_KEY lives in the CLI env) never leak
-  let r = await cli("run", path.join("runtest-env", "Env.js"));
+  let r = await cli("node", "run",path.join("runtest-env", "Env.js"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { key: null } }]);
   // --allow-env opts back into the full process env
-  r = await cli("run", path.join("runtest-env", "Env.js"), "--allow-env");
+  r = await cli("node", "run",path.join("runtest-env", "Env.js"), "--allow-env");
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { key: "test-key" } }]);
   // a fixture env wins regardless of the flag
   writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ env: { N8N_API_KEY: "from-fixture" } }));
-  r = await cli("run", path.join("runtest-env", "Env.js"), path.join("runtest-env", "fx.json"));
+  r = await cli("node", "run",path.join("runtest-env", "Env.js"), path.join("runtest-env", "fx.json"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { key: "from-fixture" } }]);
 });
 
 await step("guard: dangling connection blocks check and push", async () => {
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJson = read(dir2, "workflow.json");
   const wf = JSON.parse(wfJson);
   wf.connections.Ghost = { main: [[{ node: "Nowhere", type: "main", index: 0 }]] };
@@ -1146,7 +1181,7 @@ await step("guard: dangling connection blocks check and push", async () => {
 });
 
 await step("guard: duplicate node names/ids block check", async () => {
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJson = read(dir2, "workflow.json");
   const wf = JSON.parse(wfJson);
   const set = wf.nodes.find((n: any) => n.id === "n4");
@@ -1161,7 +1196,7 @@ await step("guard: duplicate node names/ids block check", async () => {
 });
 
 await step("guard: orphan code files error; reserved subdirs and .d.ts ignored", async () => {
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   writeFileSync(path.join(dir2, "code", "orphan.js"), "return [];\n");
   writeFileSync(path.join(dir2, "stray.ts"), "export {};\n");
   // future artifact dirs (plans 3/7: executions/, fixtures/) must not trip the guard
@@ -1183,7 +1218,7 @@ await step("guard: orphan code files error; reserved subdirs and .d.ts ignored",
 });
 
 await step("guard: dangling $('…') in code and parameters blocks check", async () => {
-  const dir2 = wfDir("Order Sync v2");
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const codeFile = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(dir2, "code", "transform-eu-us.js");
   writeFileSync(codeFile, "const gone = $('Deleted Node').all();\nconst dyn = $(someVar);\nreturn $input.all();\n");
@@ -1200,8 +1235,8 @@ await step("guard: dangling $('…') in code and parameters blocks check", async
   writeFileSync(path.join(dir2, "workflow.json"), wfJson);
 });
 
-await step("rename: node update spans connections, $('…') refs, params, file, state", async () => {
-  const dir2 = wfDir("Order Sync v2");
+await step("node rename: update spans connections, $('…') refs, params, file, state", async () => {
+  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   // wire up everything that must follow the rename: a connection into the
   // node, a $('…') ref in another node's code, an expression parameter, and
   // a stale .remote.js sibling
@@ -1212,7 +1247,7 @@ await step("rename: node update spans connections, $('…') refs, params, file, 
   writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "const feed = $('Amazon Feed').all();\nreturn feed;\n");
   writeFileSync(path.join(dir2, "code", "amazon-feed.remote.js"), "// stale remote copy\n");
 
-  const r = await cli("rename", "wf123", "Amazon Feed", "Amazon Export");
+  const r = await cli("node", "rename", "wf123", "Amazon Feed", "Amazon Export");
   assert.equal(r.code, 0, r.out);
   const wf = JSON.parse(read(dir2, "workflow.json"));
   assert.ok(wf.nodes.some((n: any) => n.name === "Amazon Export"), "node renamed");
@@ -1230,7 +1265,7 @@ await step("rename: node update spans connections, $('…') refs, params, file, 
   assert.equal(rCheck.code, 0, rCheck.out);
   // the rewritten code still runs, with fixture data keyed by the NEW name
   writeFileSync(path.join(TMP, "fx-rename.json"), JSON.stringify({ nodes: { "Amazon Export": [{ json: { sku: "a-1" } }] } }));
-  const rRun = await cli("run", path.join("workflows", "Order Sync v2", "code", "transform-eu-us.js"), "fx-rename.json");
+  const rRun = await cli("node", "run",path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-rename.json");
   assert.equal(rRun.code, 0, rRun.out);
   assert.match(rRun.out, /returned 1 item/);
   // push propagates name + connections to the remote
@@ -1240,35 +1275,36 @@ await step("rename: node update spans connections, $('…') refs, params, file, 
   assert.equal(db.get("wf123").connections["Transform: EU/US"].main[0][0].node, "Amazon Export");
 });
 
-await step("rename: guards refuse unknown, colliding, and same names", async () => {
-  let r = await cli("rename", "wf123", "Nope", "X");
+await step("node rename: guards refuse unknown, colliding, and same names", async () => {
+  let r = await cli("node", "rename", "wf123", "Nope", "X");
   assert.equal(r.code, 1);
   assert.match(r.out, /no node named "Nope"/);
-  r = await cli("rename", "wf123", "Webhook", "Amazon Export");
+  r = await cli("node", "rename", "wf123", "Webhook", "Amazon Export");
   assert.equal(r.code, 1);
   assert.match(r.out, /already exists/);
-  r = await cli("rename", "wf123", "Webhook", "Webhook");
+  r = await cli("node", "rename", "wf123", "Webhook", "Webhook");
   assert.equal(r.code, 1);
   assert.match(r.out, /already named/);
-  r = await cli("rename", "wf123", "Webhook");
+  r = await cli("node", "rename", "wf123", "Webhook");
   assert.equal(r.code, 1);
   assert.match(r.out, /old and new node name/);
 });
 
-await step("rename --workflow: local name change, folder follows on pull", async () => {
-  const r = await cli("rename", "wf123", "--workflow", "Order Sync Final");
+await step("rename: workflow display name changes locally; folder stays put; push propagates; pull keeps the folder", async () => {
+  const r = await cli("rename", "wf123", "Order Sync Final");
   assert.equal(r.code, 0, r.out);
-  assert.equal(JSON.parse(read(wfDir("Order Sync v2"), "workflow.json")).name, "Order Sync Final");
+  assert.equal(JSON.parse(read(dir1, "workflow.json")).name, "Order Sync Final");
+  assert.equal(state(dir1).name, "Order Sync Final", "cached name updated by rename");
   let r2 = await cli("push");
   assert.equal(r2.code, 0, r2.out);
   assert.equal(db.get("wf123").name, "Order Sync Final");
   r2 = await cli("pull");
   assert.equal(r2.code, 0, r2.out);
-  assert.ok(existsSync(wfDir("Order Sync Final")), "folder renamed on pull");
-  assert.ok(!existsSync(wfDir("Order Sync v2")), "old folder gone");
+  assert.ok(existsSync(dir1), "folder unchanged by rename");
+  assert.ok(!existsSync(wfDir("Order Sync Final")), "no renamed folder appears");
 });
 
-const dirF = wfDir("Order Sync Final");
+const dirF = dir1; // wf123's sticky folder; display name is now "Order Sync Final"
 
 await step("ts conflict: local .ts and remote both changed → CONFLICT + .remote.js", async () => {
   const tsFile = path.join(dirF, "code", "amazon-export.ts");
@@ -1327,7 +1363,7 @@ await step("bundle: shared/ value import inlines on push, drifts on shared edit,
   // run executes the importing node offline: (2*10+1) + (1*5+1) = 27
   writeFileSync(path.join(TMP, "fx-bundle.json"),
     JSON.stringify({ input: [{ json: { qty: 2, price: 10 } }, { json: { qty: 1, price: 5 } }] }));
-  r = await cli("run", path.join("workflows", "Order Sync Final", "code", "amazon-export.ts"), "fx-bundle.json");
+  r = await cli("node", "run",path.join("workflows", "order-sync", "code", "amazon-export.ts"), "fx-bundle.json");
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { total: 27 } }]);
   // restore the import-free node for the steps that follow
@@ -1446,10 +1482,10 @@ await step("pull: kebab-name collision gets the -<id8> suffix", async () => {
   assert.match(read(dirF, "workflow.json"), /"\/\/@file:code\/report-n6collid\.js"/);
 });
 
-await step("rename: kebab collision falls back to -<id8>; .remote.js content untouched", async () => {
+await step("node rename: kebab collision falls back to -<id8>; .remote.js content untouched", async () => {
   // "Transform EU US" kebabs to the same base as "Transform: EU/US" (n2's file)
   writeFileSync(path.join(dirF, "code", "report.remote.js"), "const x = $('Report');\n");
-  const r = await cli("rename", "wf123", "Report", "Transform EU US");
+  const r = await cli("node", "rename", "wf123", "Report", "Transform EU US");
   assert.equal(r.code, 0, r.out);
   assert.ok(existsSync(path.join(dirF, "code", "transform-eu-us-n5.js")), "collision suffix used");
   assert.ok(!existsSync(path.join(dirF, "code", "report.js")), "old file gone");
@@ -1480,18 +1516,27 @@ await step("node deleted remotely: status warns, pull drops state, file kept", a
   unlinkSync(path.join(dirF, "code", "report-n6collid.js"));
 });
 
-await step("pull: workflow rename to an occupied folder name warns, keeps the folder", async () => {
-  mkdirSync(wfDir("Occupied"), { recursive: true });
-  writeFileSync(path.join(wfDir("Occupied"), "note.txt"), "not a workflow\n");
-  db.get("wf123").name = "Occupied";
-  let r = await cli("pull");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /workflow renamed to "Occupied" but .* already exists — keeping/);
-  assert.ok(existsSync(dirF), "old folder kept");
-  db.get("wf123").name = "Order Sync Final";
-  r = await cli("pull");
-  assert.equal(r.code, 0, r.out);
-  rmSync(wfDir("Occupied"), { recursive: true, force: true });
+await step("pull: two new workflows kebabbing to the same slug get <slug> and <slug>-<id8> + warn (Plan 27)", async () => {
+  db.set("wfC1", { ...structuredClone(db.get("wf123")), id: "wfC1", name: "Sync Report" });
+  db.set("wfC2", { ...structuredClone(db.get("wf123")), id: "wfC2", name: "Sync: Report!" }); // also kebabs to sync-report
+  try {
+    let r = await cli("pull", "wfC1");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(existsSync(path.join(ROOT, "sync-report")), "first claims the plain slug");
+    r = await cli("pull", "wfC2");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /already taken — using "sync-report-wfC2\//, "collision warned: " + r.out);
+    assert.ok(existsSync(path.join(ROOT, "sync-report-wfC2")), "second gets the -<id8> suffix");
+    // both still resolve as refs
+    r = await cli("status", "wfC2");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /structure: in sync/);
+  } finally {
+    rmSync(path.join(ROOT, "sync-report"), { recursive: true, force: true });
+    rmSync(path.join(ROOT, "sync-report-wfC2"), { recursive: true, force: true });
+    db.delete("wfC1");
+    db.delete("wfC2");
+  }
 });
 
 await step("corrupt .decanter.json: scoped guard error, other workflows unaffected", async () => {
@@ -1502,7 +1547,8 @@ await step("corrupt .decanter.json: scoped guard error, other workflows unaffect
   // check: a scoped error for the broken folder; the healthy workflow still passes
   let r = await cli("check", "--no-typecheck");
   assert.equal(r.code, 1, "check must fail on the corrupt state file: " + r.out);
-  assert.match(r.out, /Corrupted: corrupt \.decanter\.json \(/);
+  // corrupt state → check falls back to the folder basename for the label
+  assert.match(r.out, /corrupted: corrupt \.decanter\.json \(/);
   assert.match(r.out, /Order Sync Final: OK/);
   // status/pull/push of the healthy workflow keep working
   r = await cli("status");
@@ -1598,7 +1644,7 @@ await step("create: blank workflow born unpublished on the server, then pulled i
   assert.ok(existsSync(path.join(dir, ".decanter.json")), "pulled: state file exists");
   assert.ok(existsSync(path.join(dir, "workflow.json")), "pulled: workflow.json exists");
   assert.equal(state(dir).workflowId, created.id, "state points at the new id");
-  assert.match(r.out, /wrote Fresh Flow[/\\]workflow\.json/);
+  assert.match(r.out, /wrote fresh-flow[/\\]workflow\.json/);
   // create needs exactly one name
   r = await cli("create");
   assert.equal(r.code, 1);
@@ -1607,28 +1653,28 @@ await step("create: blank workflow born unpublished on the server, then pulled i
 
 await step("publish/unpublish: toggle live state; already-in-state is a no-op note", async () => {
   const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
-  let r = await cli(id, "publish");
+  let r = await cli("publish", id);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /published "Fresh Flow" \([^)]+\) — code is live now/);
   assert.equal(db.get(id).active, true);
   assert.equal(db.get(id).activeVersionId, db.get(id).versionId, "activeVersionId set to the draft on publish");
   // publish again → no-op note, still published
-  r = await cli(id, "publish");
+  r = await cli("publish", id);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /is already published/);
   assert.equal(db.get(id).active, true);
   // unpublish → back to draft-only
-  r = await cli(id, "unpublish");
+  r = await cli("unpublish", id);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /unpublished "Fresh Flow" \([^)]+\) — draft only/);
   assert.equal(db.get(id).active, false);
   assert.equal(db.get(id).activeVersionId, null);
   // unpublish again → no-op note
-  r = await cli(id, "unpublish");
+  r = await cli("unpublish", id);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /is already unpublished/);
   // resolves by name too, leaving it published for the status step
-  r = await cli("Fresh Flow", "publish");
+  r = await cli("publish", "Fresh Flow");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /published "Fresh Flow"/);
 });
@@ -1638,11 +1684,11 @@ await step("status: version-aware — a live version older than the draft prints
   const prevVersion = created.versionId;
   created.versionId = "draft-ahead"; // simulate a UI draft edit the live version now lags
   try {
-    let r = await cli(created.id, "status");
+    let r = await cli("status", created.id);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /published — live version is older than the draft \(push or "publish" to go live\)/);
     // an in-sync published workflow stays plain (wf123: activeVersionId == versionId)
-    r = await cli("wf123", "status");
+    r = await cli("status", "wf123");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /\]  published/);
     assert.ok(!r.out.includes("older than the draft"), "in-sync published stays plain: " + r.out);
@@ -1674,17 +1720,17 @@ await step("delete: refuses without --force non-interactively; --force deletes, 
   const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
   const dir = wfDir("Fresh Flow");
   // non-interactive without --force → refuse, remote intact
-  let r = await cli(id, "delete");
+  let r = await cli("delete", id);
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /refusing to delete "Fresh Flow" \([^)]+\) without confirmation — re-run with --force/);
   assert.ok(db.has(id), "workflow not deleted without consent");
-  // no ref → error, never falls back to config.workflows
+  // no ref (non-TTY) → error, never falls back to config.workflows or the picker
   r = await cli("delete");
   assert.equal(r.code, 1);
   assert.match(r.out, /delete needs a workflow ref/);
   assert.ok(db.has("wf123"), "config workflow untouched by a ref-less delete");
   // --force deletes even a published workflow; the local folder is left as the git record
-  r = await cli(id, "delete", "--force");
+  r = await cli("delete", id, "--force");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /deleted "Fresh Flow" \([^)]+\) from the server/);
   assert.match(r.out, /left untouched/);
@@ -1692,7 +1738,7 @@ await step("delete: refuses without --force non-interactively; --force deletes, 
   assert.ok(existsSync(path.join(dir, ".decanter.json")), "local folder kept as the git-tracked record");
 });
 
-await step("add: scaffold a disconnected Code node offline; check + push send it", async () => {
+await step("node create: scaffold a disconnected Code node offline; check + push send it", async () => {
   // self-contained: a fresh workflow so the authoring steps don't perturb others
   let r = await cli("create", "Authoring Demo");
   assert.equal(r.code, 0, r.out);
@@ -1700,7 +1746,7 @@ await step("add: scaffold a disconnected Code node offline; check + push send it
   const dir = wfDir("Authoring Demo");
   const before = JSON.parse(read(dir, "workflow.json")).nodes.length;
 
-  r = await cli(id, "add", "Parse Order");
+  r = await cli("node", "create", id, "Parse Order");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /added Code node "Parse Order" \([0-9a-f-]{36}\) -> code[/\\]parse-order\.js — disconnected/);
   const wf = JSON.parse(read(dir, "workflow.json"));
@@ -1714,32 +1760,32 @@ await step("add: scaffold a disconnected Code node offline; check + push send it
   assert.equal(state(dir).nodes[node.id].file, "code/parse-order.js", "registered in state");
   assert.ok(!wf.connections["Parse Order"], "lands disconnected");
 
-  r = await cli(id, "check");
+  r = await cli("check", id);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Authoring Demo: OK/);
 
   // colliding kebab name → -<id8> suffix (a distinct node name that kebabs the same)
-  r = await cli(id, "add", "Parse-Order");
+  r = await cli("node", "create", id, "Parse-Order");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /-> code[/\\]parse-order-[0-9a-f]{8}\.js/);
 
   // --ts scaffolds a .ts source
-  r = await cli(id, "add", "Typed Step", "--ts");
+  r = await cli("node", "create", id, "Typed Step", "--ts");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /-> code[/\\]typed-step\.ts/);
   assert.ok(existsSync(path.join(dir, "code", "typed-step.ts")));
 
   // duplicate node name refused
-  r = await cli(id, "add", "Parse Order");
+  r = await cli("node", "create", id, "Parse Order");
   assert.equal(r.code, 1);
   assert.match(r.out, /a node named "Parse Order" already exists/);
   // no node name → usage error
-  r = await cli(id, "add");
+  r = await cli("node", "create", id);
   assert.equal(r.code, 1);
-  assert.match(r.out, /add needs exactly one node name/);
+  assert.match(r.out, /node create needs exactly one node name/);
 
   // push sends the three scaffolded code nodes
-  r = await cli(id, "push");
+  r = await cli("push", id);
   assert.equal(r.code, 0, r.out);
   assert.equal(db.get(id).nodes.filter((n: any) => n.type === "n8n-nodes-base.code").length, 3, "three code nodes pushed");
 });
@@ -1748,7 +1794,7 @@ await step("duplicate: clones a workflow into a new remote one via POST, landed 
   const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
   const sourceNodeCount = db.get(id).nodes.length;
 
-  let r = await cli(id, "duplicate", "Authoring Clone");
+  let r = await cli("duplicate", id, "Authoring Clone");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /duplicated "Authoring Demo" -> "Authoring Clone" \(wf-new-[^)]+\) on the server — unpublished draft/);
   const clone = [...db.values()].find((w) => w.name === "Authoring Clone");
@@ -1767,7 +1813,7 @@ await step("duplicate: clones a workflow into a new remote one via POST, landed 
   assert.ok(existsSync(path.join(wfDir("Authoring Demo"), ".decanter.json")), "source folder intact");
 
   // no name → "<name> (copy)"
-  r = await cli(id, "duplicate");
+  r = await cli("duplicate", id);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /-> "Authoring Demo \(copy\)"/);
   assert.ok([...db.values()].find((w) => w.name === "Authoring Demo (copy)"), "default copy-named clone");

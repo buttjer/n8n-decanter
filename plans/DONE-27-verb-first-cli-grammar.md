@@ -3,7 +3,12 @@
 **Priority:** P2 (high-value UX + consistency; a **breaking** grammar change
 plus a small additive data-model field — a real design pass, one coordinated
 release)
-**Status:** Not started
+**Status:** Done (2026-07-21) — all tasks shipped: verb-first parser + `node`
+namespace, no-ref → picker (incl. the executions hook), kebab/sticky folders,
+`.decanter.json.name`, single-form `rename`, `list --json`, grouped usage,
+completion, and the full docs sweep. Verified green across unit/e2e/proxy/
+interactive + the Docker smoke matrix (2.30.7 / 2.31.0 / 2.31.4). The Non-goals
+below remain deferred by design.
 **Theme:** Make the CLI read the way people expect. **Verb comes first**
 (`n8n-decanter <verb> <workflow…>`), node operations move under a **`node`
 subcommand namespace** (`node create` / `node rename` / `node run`), a
@@ -116,8 +121,9 @@ the same surface:
   - Bare `n8n-decanter` (picker) and `help` are noted above the groups, not in
     one. (`check` is offline but groups by *intent* under Inspect & test.)
 - **No-ref → picker, TTY only.** For the pure ref verbs (pull, push, status,
-  check, watch, publish, unpublish, delete, executions, simulate) with no
-  workflow argument: on a TTY with a loaded config, open the picker to select
+  check, watch, publish, unpublish, delete, simulate) — **and `executions`,
+  whose no-ref hook is separate** (it's not in `REF_VERBS`; see task 2) — with
+  no workflow argument: on a TTY with a loaded config, open the picker to select
   **one** workflow, then run the verb on it (the verb is known, so the picker's
   verb menu is skipped). Non-TTY keeps the config-default / error path exactly
   as today. Multi-select for the `[workflow…]` batch verbs is a **follow-up**,
@@ -155,7 +161,11 @@ the same surface:
    picker, take the chosen id as the single ref; otherwise fall through to
    today's `config.workflows` default / error. Add a single-select mode to
    `runPicker` (Enter on a pulled workflow resolves straight to `{ id }`, no
-   verb menu). Piped/non-TTY path unchanged.
+   verb menu). Piped/non-TTY path unchanged. **`executions` is not in
+   `REF_VERBS`** — it also accepts a numeric `<execution-id>` and `clean`, so it
+   resolves refs in its own `case`; give it the same no-ref picker hook
+   explicitly (the picker still picks a *workflow*, leaving the exec-id / `clean`
+   branches untouched).
 3. **`.decanter.json` display name.** [lib/types.mts](../lib/types.mts)
    `DecanterState`: add `name?: string`. [lib/pull.mts](../lib/pull.mts): write
    `state.name = wf.name` every pull. [lib/state.mts](../lib/state.mts)
@@ -191,8 +201,10 @@ the same surface:
    CLAUDE.md checklist. Update [PLAN.md](../PLAN.md) (grammar, folder naming,
    `.decanter.json` shape).
 9. **Completion.** [n8n-decanter.mts](../n8n-decanter.mts) `__complete`: add
-   `node` + its sub-verbs to the candidate set; confirm the scripts still make
-   sense with verb-first (verbs in slot 0, workflow names/ids after).
+   `node` + its sub-verbs to the candidate set **and drop `--workflow`** (removed
+   in task 5) from the completion flag list
+   ([n8n-decanter.mts:208](../n8n-decanter.mts#L208)); confirm the scripts still
+   make sense with verb-first (verbs in slot 0, workflow names/ids after).
 10. **Test rewrites.** e2e ([test/e2e.mts](../test/e2e.mts)), proxy,
     interactive, and unit suites invoke verb-last and `add`/`run`/`rename …` in
     many places — sweep them to verb-first + `node` namespace. Add unit coverage

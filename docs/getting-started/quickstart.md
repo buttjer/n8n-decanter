@@ -43,7 +43,7 @@ folder; outside a git repo it just warns).
 ## 4. Edit and push
 
 Edit the node files in your IDE (or let your agent do it), verify offline
-with [check](/docs/cli/check/) and [run](/docs/cli/run/), then:
+with [check](/docs/cli/check/) and [node run](/docs/cli/node-run/), then:
 
 ```sh
 n8n-decanter push

@@ -71,8 +71,8 @@ export interface RunItem {
 /**
  * A committed, provenance-stamped fixture — `fixtures/<sanitized>.json`. Keyed
  * to a node by its `node` field (not the filename, which is lossy). Written by
- * `simulate --pin` / `--fill-gaps` (task 3/6); read here like a capture, taking
- * precedence over `executions/` temp data.
+ * `simulate --pin` (and, once shipped, `--guess-gaps`; Plan 7 tasks 3/6); read
+ * here like a capture, taking precedence over `executions/` temp data.
  */
 export interface Fixture {
   /** Where the items came from — a real capture or an LLM guess (aging, flagged). */
@@ -298,7 +298,7 @@ export async function buildSimulation(dir: string, execId: string, log: Log): Pr
   }
 
   if (gaps.length > 0) {
-    throw new Error(`no captured output for network node(s): ${gaps.join(", ")} — re-capture an execution that exercises them, pin a fixture, or (task 6) run with --fill-gaps`);
+    throw new Error(`no captured output for network node(s): ${gaps.join(", ")} — pin a fixture (fixtures/<node>.json) or re-capture an execution that exercises them`);
   }
 
   // Prepend a synthetic Manual Trigger wired to every entry node (no input edge),

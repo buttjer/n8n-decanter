@@ -5,7 +5,7 @@ order: 4
 ---
 
 ```sh
-n8n-decanter [ref...] push [--force] [--no-typecheck]
+n8n-decanter push [workflow…] [--force] [--no-typecheck]
 ```
 
 Compiles and uploads each workflow through the n8n API. `.js` node files are

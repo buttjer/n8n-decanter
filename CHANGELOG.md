@@ -7,8 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: verb-first grammar.** The verb now comes first —
+  `n8n-decanter <verb> [workflow…]`. Verb-last (`n8n-decanter wf123 push`) is no
+  longer accepted and errors with *unknown verb*. Because everything after the
+  verb is an argument, a workflow named like a verb needs no special handling:
+  `n8n-decanter status push` runs `status` on the workflow named `push`. Flags
+  may still appear in any position.
+- **Breaking: node operations moved under a `node` namespace.** `add` →
+  `node create <workflow> "<Node name>"`, the two-name node rename →
+  `node rename <workflow> "<old node>" "<new node>"`, and `run <node-file>` →
+  `node run <node-file>`.
+- New workflow folders are **kebab-case** (`Order Sync` → `workflows/order-sync/`)
+  instead of keeping spaces and capitals. **Existing folders are left untouched**
+  and still resolve as refs — no migration, no churn.
+- A workflow folder **no longer follows a remote rename**. The folder is a stable
+  local slug; the always-current display name lives in `.decanter.json` (see
+  Added). Renaming a workflow (locally or on the server) never moves your folder.
+
 ### Added
 
+- `.decanter.json` now caches the workflow's display **`name`** (refreshed on
+  every pull), so the picker, `list`, and ref-resolution show the real name even
+  though the folder is a kebab slug — and keep working if `workflow.json` is
+  missing or corrupt.
+- **`list --json`** emits `[{ name, id, dir }]` for tooling (remote-only
+  workflows under `--remote` have `dir: null`).
+- **No-ref → picker.** A ref-taking verb given no workflow, on a terminal, opens
+  the interactive picker to choose one and runs the verb on it. Piped/non-TTY
+  runs keep the config-default / error behavior, so scripts and CI never block.
 - **`simulate` now replays single-iteration loops.** A workflow whose only
   repeated node is a `splitInBatches` ("Loop Over Items") driver that ran a
   single batch — it runs twice (one batch pass + the final "done" pass) while
@@ -16,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for real to reproduce the loop, and each node's one captured run pins exactly.
   Multi-batch loops (any node ran more than once) stay out of scope, since
   first-run-only pinning can't feed later iterations.
+
+### Removed
+
+- **Breaking: `rename --workflow` flag.** Workflow rename is now the single
+  top-level form `rename <workflow> "<new name>"`; node rename lives under
+  `node rename`.
 
 ## [0.4.5] - 2026-07-21
 

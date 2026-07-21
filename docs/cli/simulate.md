@@ -1,16 +1,16 @@
 ---
 title: simulate
 description: Replay a whole workflow through a real n8n engine offline — pure nodes run for real, network nodes pinned from a capture.
-order: 15
+order: 14
 ---
 
 ```sh
-n8n-decanter <ref> simulate --execution <id> [--network-none] [--json]
-n8n-decanter <ref> simulate --pin <id>          # save a capture as committed fixtures
+n8n-decanter simulate <workflow> --execution <id> [--network-none] [--json]
+n8n-decanter simulate <workflow> --pin <id>          # save a capture as committed fixtures
 ```
 
 Replays a workflow through a **real n8n engine** using a captured execution as
-the mock — the confidence layer that [run](/docs/cli/run/) (single node) and
+the mock — the confidence layer that [node run](/docs/cli/node-run/) (single node) and
 [status](/docs/cli/status/) (sync only) don't cover. Side-effect-free nodes
 (Set, IF, Switch, Merge, Code, …) **execute for real** through the actual
 engine; every network/side-effectful node is **pinned** to the output it
@@ -25,7 +25,7 @@ Needs a captured execution ([executions](/docs/cli/executions/)) and a running
 **Docker** daemon (the engine backend).
 
 Without `--execution`, `simulate` uses the **newest capture** in the workflow's
-`executions/` dir — so `n8n-decanter <ref> simulate` just works after an
+`executions/` dir — so `n8n-decanter simulate <workflow>` just works after an
 `executions` fetch, and the [interactive picker](/docs/cli/overview/) can offer
 `simulate` in its verb menu (it runs against the latest capture).
 
@@ -102,7 +102,7 @@ open the run in n8n:  http://127.0.0.1:53737/workflow/decantersim0000/executions
 ## `simulate --pin`
 
 Captures under `executions/` are gitignored temp data. `--pin <id>` copies each
-network node's captured output into `workflows/<Name>/fixtures/<node>.json`,
+network node's captured output into `workflows/<folder>/fixtures/<node>.json`,
 provenance-stamped (source, execution id, workflow version, date) so replays
 become **reproducible and committable**. Fixtures take precedence over captures
 on the next run.
@@ -113,7 +113,7 @@ that warning on every pin.
 
 ## Not a replacement for `run`
 
-[run](/docs/cli/run/) is the sub-second inner loop — one node, in-process, zero
+[node run](/docs/cli/node-run/) is the sub-second inner loop — one node, in-process, zero
 install. `simulate` is the slow outer check — the whole graph, a real engine,
 needs a capture. Two verbs, two layers. (One inversion worth knowing: `run`
 executes node code in the CLI process with full host privileges, while

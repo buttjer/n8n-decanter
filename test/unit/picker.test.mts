@@ -96,6 +96,11 @@ describe("workflow stage", () => {
     assert.deepEqual(step, { done: true, result: { verb: "pull", id: "ccc333", name: "Backup" } });
   });
 
+  it("single-select mode: enter on a pulled workflow resolves straight to the fixed verb (Plan 27)", () => {
+    const step = reduceKey(state({ selectVerb: "push" }), { name: "return" });
+    assert.deepEqual(step, { done: true, result: { verb: "push", id: "aaa111", name: "Billing Sync" } });
+  });
+
   it("enter selects within the filtered list, not the full one", () => {
     const step = reduceKey(state({ query: "backup" }), { name: "return" });
     assert.deepEqual(step, { done: true, result: { verb: "pull", id: "ccc333", name: "Backup" } });

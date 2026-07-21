@@ -47,4 +47,4 @@ CLI actually uses:
 - `workflow:activate`, `workflow:deactivate` — [publish / unpublish](/docs/cli/publish/)
 - `execution:read`, `execution:list` — the [executions](/docs/cli/executions/) verb
 
-`check`, `run`, `rename`, `add`, and plain `list` need no credentials at all.
+`check`, `node run`, `rename`, `node create`, and plain `list` need no credentials at all.

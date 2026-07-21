@@ -287,13 +287,19 @@ mock server.
   `scripts/typecheck.mts` and the sync-dir upward search).
 - `n8n-decanter.mts` — thin CLI dispatcher; one module per concern in `lib/`;
   shared data-model types in `lib/types.mts`.
+- Grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`; node
+  ops live under a `node` namespace (`node create` / `node rename` / `node run`).
+  A ref verb with no workflow opens the picker on a TTY.
 - Data model (the part that spans files):
-  - `workflows/<Name>/workflow.json` — full workflow, each Code node's
+  - `workflows/<slug>/workflow.json` — full workflow, each Code node's
     `jsCode` replaced by a `//@file:code/<node>.js` placeholder; node sources
-    live kebab-case-named in the folder's `code/` subdir.
-  - `workflows/<Name>/.decanter.json` — state: node-id → file-path map
-    (`code/` prefix included) plus sync hashes. `lastPushedHash` means "hash
-    of the *remote* code at last sync (push **or** pull)", not only push.
+    live kebab-case-named in the folder's `code/` subdir. The folder is the
+    **kebab slug** of the name for new pulls and is **sticky** thereafter (never
+    follows a remote rename; Plan 27).
+  - `workflows/<slug>/.decanter.json` — state: node-id → file-path map
+    (`code/` prefix included), sync hashes, and the cached display **`name`**
+    (Plan 27 — read by the picker/`list`/ref-resolution). `lastPushedHash` means
+    "hash of the *remote* code at last sync (push **or** pull)", not only push.
     `lastPulledWorkflowHash` is the code-stripped, key-sorted structure hash.
   - `.js` node files are lossless (byte-identical round-trip). `.ts` files
     are one-way: push compiles via esbuild (`bundle: false`) and appends a

@@ -66,6 +66,18 @@ await step("filter narrows the list, arrows move, enter opens the verb menu, ent
   assert.deepEqual(await result, { verb: "pull", id: "bbb222", name: "Mail Digest" });
 });
 
+await step("single-select mode (no-ref → picker): enter resolves straight to the fixed verb, no verb menu", async () => {
+  const io = makeIo();
+  // selectVerb is how `dispatch` runs a no-ref ref verb: pick one workflow, run
+  // that verb on it — the verb menu is skipped entirely.
+  const result = runPicker(ENTRIES, undefined, { selectVerb: "push", input: io.input, output: io.output });
+  await tick();
+  await sendKey(io, "mail"); // narrow to "Mail Digest"
+  assert.match(io.text(), /Mail Digest/);
+  await sendKey(io, "\r"); // enter resolves immediately with the fixed verb
+  assert.deepEqual(await result, { verb: "push", id: "bbb222", name: "Mail Digest" });
+});
+
 await step("enter on an unpulled workflow pulls directly, skipping the verb menu", async () => {
   const io = makeIo();
   const result = runPicker(ENTRIES, undefined, { input: io.input, output: io.output });

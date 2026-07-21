@@ -8,13 +8,28 @@ Each synced workflow is one folder under the configured root:
 
 ```
 workflows/
-  Order Sync/
+  order-sync/            # kebab-case slug of the workflow name (a stable local pick)
     workflow.json        # full workflow; code replaced by placeholders
     .decanter.json       # sync state — commit it, never edit it
     code/
       parse-order.js     # one file per Code node, kebab-case-named
       amazon-feed.ts
 ```
+
+## Folder names
+
+A **new** workflow's folder is the **kebab-case slug** of its name
+(`"Order Sync"` → `order-sync/`). If that slug is already taken by a different
+workflow, it falls back to `<slug>-<id8>` (the same collision suffix node files
+use) and warns.
+
+Folders are a **stable local pick**: an existing folder is *never* renamed — not
+when the workflow is renamed remotely, not by [rename](/docs/cli/rename/). The
+always-current display name lives in `.decanter.json` (`name`) instead, so the
+picker, [list](/docs/cli/list/), and ref-resolution stay accurate while your
+working directory and git history never churn. Any folder name still resolves as
+a ref, so a hand-rename works too. (Folders synced before this change keep their
+original names and keep working.)
 
 ## `workflow.json`
 
@@ -31,7 +46,7 @@ entire value is a placeholder pointing at the node's source file:
 `workflow.json` never contains code; edit the referenced file instead.
 Structure, parameters, and connections are editable — connections are keyed
 by **node name**, which is why renames need care
-([rename](/docs/cli/rename/) handles all the places atomically).
+([node rename](/docs/cli/node-rename/) handles all the places atomically).
 
 Only structure round-trips through push — `name`, `nodes`, `connections`,
 `settings`, `staticData`. Pull also brings down `active`, `tags`, `pinData`,
@@ -54,9 +69,11 @@ versions (files at the folder root) migrate automatically on the next pull.
 
 ## `.decanter.json`
 
-Per-folder machine state: the node-id → file map plus the sync hashes used by
-the [drift guard](/docs/concepts/push-gates/). Commit it; never edit it by
-hand or "fix" a hash.
+Per-folder machine state: the node-id → file map, the sync hashes used by the
+[drift guard](/docs/concepts/push-gates/), and the cached workflow **`name`**
+(the display name, refreshed on every pull — it's why a kebab folder still reads
+as the workflow, and why `list`/the picker keep working even if `workflow.json`
+is missing or corrupt). Commit it; never edit it by hand or "fix" a hash.
 
 ## `.decanter-template.json` (sync-dir root)
 

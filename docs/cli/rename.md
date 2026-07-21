@@ -1,25 +1,22 @@
 ---
 title: rename
-description: Rename a node (or the workflow) everywhere, atomically and offline.
-order: 7
+description: Rename a workflow (offline); the folder is a stable local slug and stays put.
+order: 12
 ---
 
 ```sh
-n8n-decanter <ref> rename "<old node>" "<new node>"
-n8n-decanter <ref> rename --workflow "<new name>"
+n8n-decanter rename <workflow> "<new name>"
 ```
 
-Renaming a node by hand means touching four places at once: the node's
-`name`, every reference in `connections`, every `$('…')` reference in code,
-and the source file name with its `//@file:` placeholder. `rename` rewrites
-all of them atomically, refuses colliding names, and re-validates the folder
-afterwards.
+Changes the workflow's display name in `workflow.json` and caches it in
+`.decanter.json` (`name`). It works **offline**; the next
+[push](/docs/cli/push/) propagates the rename to n8n.
 
-It works **offline**; the next [push](/docs/cli/push/) propagates the rename
-to n8n.
+The **folder is left untouched** — folder names are a stable local slug (see
+[sync layout](/docs/concepts/sync-layout/)), not a mirror of the workflow name,
+so a rename never moves your working directory or churns git history. The id
+inside `.decanter.json` is authoritative; the cached `name` is what the picker,
+[list](/docs/cli/list/), and ref-resolution display.
 
-## Renaming the workflow
-
-`rename --workflow "<new name>"` changes the workflow's name; the folder
-rename follows on the next pull (folder names are cosmetic — the id inside
-`workflow.json` is authoritative).
+To rename a **node** (not the workflow), use
+[node rename](/docs/cli/node-rename/).

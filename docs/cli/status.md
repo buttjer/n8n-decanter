@@ -5,7 +5,7 @@ order: 5
 ---
 
 ```sh
-n8n-decanter [ref...] status [--diff]
+n8n-decanter status [workflow…] [--diff]
 ```
 
 Reports, per workflow, whether local edits are pending a push, the remote

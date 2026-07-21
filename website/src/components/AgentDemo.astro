@@ -39,9 +39,9 @@
       ['<div><span class="who you">▌ You</span></div><div>Add 19% VAT to the order totals, then verify it before shipping.</div>', 1400],
       ['<div class="blk"><span class="who bot">▌ Agent</span></div><div class="dim">Editing the Code node, then testing it offline.</div>', 1200],
       ['<div class="blk"><span class="tool">⏺ Edit</span> code/calc-totals.ts</div><div class="add">+   const vat = round(subtotal * 0.19);</div><div class="add">+   return [{ json: { subtotal, vat, total: subtotal + vat } }];</div>', 1500],
-      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter calc-totals run fixture.json</div><div class="ok">✓ 1 item · subtotal 100.00 · vat 19.00 · total 119.00</div>', 1600],
-      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter "Order Sync" check</div><div class="ok">✓ compliance + typecheck passed</div>', 1500],
-      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter "Order Sync" push</div><div class="ok">✓ pushed — code is live now</div>', 1600],
+      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter node run code/calc-totals.ts fixture.json</div><div class="ok">✓ 1 item · subtotal 100.00 · vat 19.00 · total 119.00</div>', 1600],
+      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter check "Order Sync"</div><div class="ok">✓ compliance + typecheck passed</div>', 1500],
+      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter push "Order Sync"</div><div class="ok">✓ pushed — code is live now</div>', 1600],
       ['<div class="blk"><span class="who bot">▌ Agent</span></div><div>Done — VAT added, tested offline against a real payload, and pushed live.</div>', 2600],
     ];
 
