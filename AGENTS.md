@@ -44,6 +44,32 @@ read whichever applies. Don't ask permission for something the allowlist
 already grants, and don't re-run a variant just to dodge a prompt when the
 plain command is allowed.
 
+## Invoke commands so a human can approve *and* read them
+
+A compound command auto-approves **only if every segment matches an allow rule** —
+one unmatched straggler (a leading `cd`, an unlisted `gh` subcommand) gates the
+*whole* batch behind a prompt, and elaborate batches also bury their answer in
+noise. Write commands that clear on sight and read cleanly:
+
+- **Don't lead with `cd <dir>`.** It's the most common auto-approval
+  gate-trigger, and it's avoidable — use per-command directory flags instead:
+  `git -C <dir> …`, `gh -R buttjer/n8n-decanter …` (gh otherwise infers the repo
+  from cwd), `npm --prefix <dir> …`, or plain absolute paths. They run "as if in
+  `<dir>`" without changing cwd.
+- **Don't bundle *unrelated* diagnostics into one `&&`/`;` mega-line.** One
+  un-allowlisted segment prompts for the entire batch. Split independent checks
+  into **separate calls** (they run in parallel — no speed cost) so an un-allowed
+  command prompts *alone* instead of dragging the safe reads down with it.
+- **Keep** legitimate dependent chains (`a && b` where `b` needs `a`) and pipes
+  (`… | jq`, `… | tail`) — the goal is not "never chain," it's "don't let a
+  leading `cd` or an unrelated straggler gate a batch of safe reads."
+- **Write output a human can read, not just run.** Drop decorative
+  `echo "=== … ==="` banners; ask **one question per command** — don't run two
+  approaches to the same check (e.g. a `git merge-tree | grep | awk` conflict-hunt
+  *and* a `git merge --no-commit` dry-run). Reach for a plain built-in
+  (`gh pr checks`, `git status --short`, a single `--json`+`--jq`) before a
+  `grep | awk | sort | head` pipeline.
+
 ## Changelog
 
 Maintain CHANGELOG.md (Keep a Changelog format) in the same change as the
