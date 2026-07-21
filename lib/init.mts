@@ -256,10 +256,10 @@ export async function init(targetDir: string | undefined, { force = false }: { f
 
   const gitignoreFile = path.join(dir, ".gitignore");
   if (!existsSync(gitignoreFile)) {
-    // executions/ holds fetched run data (may contain credentials/PII);
-    // belt-and-braces with the self-ignoring executions/.gitignore the
-    // `executions` verb writes into pre-existing sync dirs
-    writeFileSync(gitignoreFile, "node_modules/\n.env\nworkflows/*/executions/\n");
+    // executions/ and data-tables/ hold fetched data (may contain
+    // credentials/PII); belt-and-braces with the self-ignoring .gitignore each
+    // fetch verb writes into pre-existing sync dirs
+    writeFileSync(gitignoreFile, "node_modules/\n.env\nworkflows/*/executions/\ndata-tables/\n");
     log.info("wrote .gitignore");
   } else if (!readFileSync(gitignoreFile, "utf8").split("\n").some((l) => l.trim() === ".env")) {
     log.warn(".gitignore exists but does not ignore .env — add it, the file holds your API key");

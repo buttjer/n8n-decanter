@@ -69,6 +69,7 @@ process.on("SIGINT", () => void teardown().then(() => process.exit(130)));
 
 let HOST = "";
 let KEY = "";
+let COOKIE = ""; // owner session cookie — kept so a step can mint a scoped-down key
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-smoke-"));
 const ROOT = path.join(TMP, "workflows");
 
@@ -202,12 +203,15 @@ try {
       if (!cookie) await sleep(2000);
     }
     assert.ok(cookie, `no n8n-auth cookie from setup or login ${versionNote}:\n  ${attempts.join("\n  ")}`);
+    COOKIE = cookie;
     const keyRes = await fetch(`${HOST}/rest/api-keys`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({
+        // dataTable:* write scopes are for the data-tables step to *seed* a
+        // table + rows; the CLI itself only ever reads (list/read/columns/rows).
         label: "decanter-smoke",
-        scopes: ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:list", "workflow:activate", "workflow:deactivate", "execution:read", "execution:list", "tag:create", "tag:read", "workflowTags:update", "workflowTags:list"],
+        scopes: ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:list", "workflow:activate", "workflow:deactivate", "execution:read", "execution:list", "tag:create", "tag:read", "workflowTags:update", "workflowTags:list", "dataTable:create", "dataTable:list", "dataTable:read", "dataTableColumn:create", "dataTableColumn:read", "dataTableRow:create", "dataTableRow:read"],
         expiresAt: null,
       }),
     });
@@ -811,6 +815,81 @@ try {
     const r = await cli("executions", wfId, "clean");
     assert.equal(r.code, 0, r.out);
     assert.ok(!existsSync(path.join(wfDir, "executions")), "clean removed the executions dir: " + r.out);
+  });
+
+  await step("data-tables: read verb round-trips schema + rows; filter/sort narrow server-side; no-scope key 403s (Plan 25)", async () => {
+    // Endpoints, field shapes, and the exact read scope names are the version-
+    // fragile part this step pins against the real instance (memory:
+    // plan25-datatables-api-facts). Seed a table + rows via the public API
+    // (write scopes on the smoke key), then read it back only through the CLI.
+    //
+    // Feature-detect first: the data-tables public API is newer than the oldest
+    // n8n the matrix boots. On a version without it the endpoint 404s — soft-skip
+    // so the floor version stays green (verified present on 2.31.4).
+    const probe = await fetch(`${HOST}/api/v1/data-tables`, { headers: { "X-N8N-API-KEY": KEY, accept: "application/json" } });
+    if (probe.status === 404) {
+      console.log(`  data-tables API not present on ${IMAGE} (404) — skipping (needs a newer n8n)`);
+      return;
+    }
+    assert.ok(probe.ok, `data-tables API probe failed on ${IMAGE}: ${probe.status} ${(await probe.text()).slice(0, 200)}`);
+    const table = await api("POST", "/api/v1/data-tables", {
+      name: "Smoke DT",
+      columns: [{ name: "status", type: "string" }, { name: "total", type: "number" }],
+    });
+    const tableId = table.id;
+    assert.ok(tableId, "created data table has an id");
+    // id is an alphanumeric token like a workflow id, not a number
+    assert.match(String(tableId), /^[A-Za-z0-9]{8,}$/, "data-table id is an opaque token: " + tableId);
+    const inserted = await api("POST", `/api/v1/data-tables/${tableId}/rows`, {
+      data: [{ status: "active", total: 10 }, { status: "closed", total: 20 }, { status: "active", total: 30 }],
+    });
+    assert.ok(inserted.success !== false, "row seed did not fail: " + JSON.stringify(inserted));
+
+    const dtRoot = path.join(TMP, "data-tables");
+    rmSync(dtRoot, { recursive: true, force: true });
+    let r = await cli("data-tables", "Smoke DT");
+    assert.equal(r.code, 0, r.out);
+    // one folder for the table; self-ignored so it can't reach git
+    const slugDir = readdirSync(dtRoot).map((d) => path.join(dtRoot, d)).find((p) => existsSync(path.join(p, "rows.json")));
+    assert.ok(slugDir, "a table folder with rows.json was written: " + r.out);
+    assert.equal(read(dtRoot, ".gitignore"), "*\n");
+    const cols = JSON.parse(read(slugDir!, "columns.json"));
+    assert.deepEqual(cols.map((c: any) => c.name).sort(), ["status", "total"], "columns round-trip");
+    let rows = JSON.parse(read(slugDir!, "rows.json"));
+    assert.equal(rows.length, 3, "all rows fetched: " + JSON.stringify(rows));
+    const meta = JSON.parse(read(slugDir!, "meta.json"));
+    assert.equal(meta.rowCount, 3);
+    assert.equal(meta.name, "Smoke DT");
+
+    // --filter narrows rows SERVER-SIDE (the API applies it, not the CLI)
+    rmSync(dtRoot, { recursive: true, force: true });
+    r = await cli("data-tables", "Smoke DT", "--filter", '{"type":"and","filters":[{"columnName":"status","condition":"eq","value":"active"}]}');
+    assert.equal(r.code, 0, r.out);
+    rows = JSON.parse(read(readdirSync(dtRoot).map((d) => path.join(dtRoot, d)).find((p) => existsSync(path.join(p, "rows.json")))!, "rows.json"));
+    assert.equal(rows.length, 2, "filter kept only the 2 active rows: " + JSON.stringify(rows));
+    assert.ok(rows.every((x: any) => x.status === "active"), "filtered rows are all active");
+
+    // --sort proves the colon-bearing sortBy value is URL-encoded correctly
+    rmSync(dtRoot, { recursive: true, force: true });
+    r = await cli("data-tables", "Smoke DT", "--sort", "total:desc");
+    assert.equal(r.code, 0, r.out);
+    rows = JSON.parse(read(readdirSync(dtRoot).map((d) => path.join(dtRoot, d)).find((p) => existsSync(path.join(p, "rows.json")))!, "rows.json"));
+    assert.deepEqual(rows.map((x: any) => x.total), [30, 20, 10], "sort total:desc ordered rows server-side: " + r.out);
+
+    // a key WITHOUT the data-table read scopes is refused by n8n (403)
+    const noScopeKeyRes = await fetch(`${HOST}/rest/api-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: COOKIE },
+      body: JSON.stringify({ label: "decanter-smoke-noscope", scopes: ["workflow:read", "workflow:list"], expiresAt: null }),
+    });
+    const noScopeKey = JSON.parse(await noScopeKeyRes.text()).data.rawApiKey;
+    const forbidden = await fetch(`${HOST}/api/v1/data-tables`, { headers: { "X-N8N-API-KEY": noScopeKey, accept: "application/json" } });
+    assert.equal(forbidden.status, 403, "a key lacking dataTable:* read scopes must 403");
+
+    // clean removes the whole dir (offline)
+    r = await cli("data-tables", "clean");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(dtRoot), "clean removed the data-tables dir: " + r.out);
   });
 } finally {
   await teardown();

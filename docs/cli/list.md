@@ -1,7 +1,7 @@
 ---
 title: list
 description: List pulled workflows — name, id, folder — and optionally remote ones.
-order: 15
+order: 16
 ---
 
 ```sh

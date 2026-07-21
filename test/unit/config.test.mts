@@ -79,8 +79,19 @@ describe("loadConfig", () => {
     assert.equal(cfg.commitOnPull, true);
     assert.equal(cfg.browserReload, "off");
     assert.equal(cfg.proxyPort, 5679);
+    assert.equal(cfg.dataTables, true);
     assert.equal(cfg.host, "http://localhost:5678");
     assert.equal(cfg.apiKey, "k");
+  });
+
+  it("dataTables defaults on and only false switches it off", () => {
+    const on = configDir({}, "N8N_HOST=http://localhost:5678\nN8N_API_KEY=k\n");
+    assert.equal(loadConfig(on).dataTables, true);
+    const off = configDir({ dataTables: false }, "N8N_HOST=http://localhost:5678\nN8N_API_KEY=k\n");
+    assert.equal(loadConfig(off).dataTables, false);
+    // any non-false value keeps it on (parsed as `!== false`)
+    const explicitOn = configDir({ dataTables: true }, "N8N_HOST=http://localhost:5678\nN8N_API_KEY=k\n");
+    assert.equal(loadConfig(explicitOn).dataTables, true);
   });
 
   it("honors explicit settings and strips trailing slashes off the host", () => {

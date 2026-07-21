@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`data-tables` verb** — a read-only fetch of n8n **data-table** schemas and
+  rows (the built-in project-scoped tables, n8n ≥ 2.x) into a top-level,
+  gitignored `data-tables/<table>/{meta,columns,rows}.json` dir, for developing
+  and debugging against real table contents offline. `--filter '<json>'`,
+  `--search`, and `--sort` pull only a slice of a large table server-side (the
+  applied filter is recorded in each table's `meta.json`); `--limit`/`--all`
+  control page size and exhaustion. It never writes a data table.
+  `data-tables clean` removes the dir (offline). Gated by the new **`dataTables`**
+  config key (default `true`); when off, the fetch refuses and the recommended
+  key needn't carry the data-table read scopes (`dataTable:list`,
+  `dataTable:read`, `dataTableColumn:read`, `dataTableRow:read`).
 - `.decanter.json` now caches the workflow's display **`name`** (refreshed on
   every pull), so the picker, `list`, and ref-resolution show the real name even
   though the folder is a kebab slug — and keep working if `workflow.json` is

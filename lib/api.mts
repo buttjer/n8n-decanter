@@ -1,4 +1,4 @@
-import type { Execution, Workflow, WorkflowPut } from "./types.mts";
+import type { DataTable, DataTableColumn, DataTableRow, Execution, Workflow, WorkflowPut } from "./types.mts";
 
 export class N8nApi {
   #host: string;
@@ -51,6 +51,55 @@ export class N8nApi {
 
   async getExecution(id: string): Promise<Execution> {
     return this.#request("GET", `/api/v1/executions/${encodeURIComponent(id)}?includeData=true`) as Promise<Execution>;
+  }
+
+  /**
+   * All data tables (n8n ≥ 2.x built-in project tables), cursor-paginated like
+   * `listWorkflows`. Read-only by design — the data-table API is never written
+   * through (see lib/datatables.mts). On pre-2.x instances the endpoint 404s;
+   * the caller surfaces that as a friendly hint.
+   */
+  async listDataTables(): Promise<DataTable[]> {
+    const all: DataTable[] = [];
+    let cursor: string | undefined;
+    do {
+      const query = new URLSearchParams({ limit: "100", ...(cursor !== undefined && { cursor }) });
+      const page = (await this.#request("GET", `/api/v1/data-tables?${query}`)) as { data: DataTable[]; nextCursor?: string | null };
+      all.push(...page.data);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor !== undefined);
+    return all;
+  }
+
+  /**
+   * A data table's columns (its schema). Tolerates both a bare array and a
+   * `{ data: [...] }` envelope so a shape difference between n8n versions
+   * doesn't break the fetch. Read-only.
+   */
+  async getDataTableColumns(id: string): Promise<DataTableColumn[]> {
+    const res = (await this.#request("GET", `/api/v1/data-tables/${encodeURIComponent(id)}/columns`)) as DataTableColumn[] | { data: DataTableColumn[] };
+    return Array.isArray(res) ? res : res.data;
+  }
+
+  /**
+   * One page of a data table's rows. The server-side `filter` (a JSON string of
+   * conditions), `search` (free text over string columns), and `sortBy`
+   * (`col:asc|desc`) narrow the result so callers pull only the rows they need
+   * from a potentially huge table; `limit` (default 100, API cap 250) + `cursor`
+   * paginate. Returns the page plus `nextCursor`. Read-only.
+   */
+  async getDataTableRows(
+    id: string,
+    { limit = 100, cursor, filter, search, sortBy }: { limit?: number; cursor?: string; filter?: string; search?: string; sortBy?: string } = {},
+  ): Promise<{ data: DataTableRow[]; nextCursor?: string | null }> {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      ...(cursor !== undefined && { cursor }),
+      ...(filter !== undefined && { filter }),
+      ...(search !== undefined && { search }),
+      ...(sortBy !== undefined && { sortBy }),
+    });
+    return (await this.#request("GET", `/api/v1/data-tables/${encodeURIComponent(id)}/rows?${query}`)) as { data: DataTableRow[]; nextCursor?: string | null };
   }
 
   async updateWorkflow(id: string, body: WorkflowPut): Promise<Workflow | undefined> {

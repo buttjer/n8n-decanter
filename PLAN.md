@@ -16,14 +16,16 @@ n8n-decanter/
   n8n-decanter.mts        # CLI entry (verb-first: `n8n-decanter <verb> …`):
                           #   init | pull | push | status | check | rename |
                           #   watch | create | duplicate | publish | unpublish |
-                          #   delete | list | executions | simulate | completion
-                          #   + a `node` namespace: node create | node rename |
-                          #   node run
-  lib/                    # implementation: add, api, compile, config, diff,
-                          #   executions, git, init, lifecycle, picker, prompt,
-                          #   proxy, pull, push, rename, run, state, status,
+                          #   delete | list | executions | data-tables |
+                          #   simulate | completion + a `node` namespace:
+                          #   node create | node rename | node run
+  lib/                    # implementation: add, api, compile, config, datatables,
+                          #   diff, executions, git, init, lifecycle, picker,
+                          #   prompt, proxy, pull, push, rename, run, state, status,
                           #   style, template, util, validate, watch (one .mts each)
                           #   + types.mts (shared data-model shapes)
+  data-tables/            # optional: fetched data-table schema + rows (plans/25)
+                          #   — top-level, self-gitignored, read-only, never synced
   scripts/typecheck.mts   # tsc wrapper — see Type checking
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
@@ -158,6 +160,8 @@ Ids only — names, folders, node lists are all derived on pull. Optional keys:
 `commitOnPush`/`commitOnPull` (default `true`, see Push/Pull),
 `requestTimeoutMs` (default `30000` — per-request timeout on all n8n API
 calls, plans/10; init's credential probe is fixed at 10 s),
+`dataTables` (default `true` — gates the read-only `data-tables` fetch, plans/25;
+`false` refuses it and the recommended key needn't carry the read scopes),
 `bundleDependencies` (default `[]` — npm packages `.ts` nodes may import;
 bundled into the compiled node on push, plans/14; read at compile time by an
 upward config search so `run` stays config-optional), and — for watch's
@@ -395,6 +399,54 @@ and warns when they differ — the captured data may not match the code you're
 editing. A warning, not an error; the data is still useful.
 `run --from-execution` (auto-building a fixture from a captured execution)
 was deliberately deferred to the backlog — agents read the JSON directly.
+
+## Data tables (`n8n-decanter data-tables [table…]`, plans/25)
+
+Added 2026-07-21. The data-table analogue of `executions`: a **read-only** fetch
+of n8n data-table schema + rows (the built-in project-scoped tables, n8n ≥ 2.x)
+into local, gitignored files, for developing/debugging a workflow against real
+table contents offline. **The CLI never writes a data table** — only GET is ever
+issued against the data-table endpoints (create/update/delete tables, columns,
+and rows are all out of scope, and their write scopes stay off the recommended
+key).
+
+Placement is **instance/project-level, not per-workflow.** Data tables aren't
+owned by one workflow (they're project-scoped), so — unlike `executions/`, which
+nests under each `workflows/<slug>/` — fetched tables land in a **single
+top-level `data-tables/` dir** next to `decanter.config.json` (`configDir`),
+self-ignored (`data-tables/.gitignore` = `*`; tables can hold PII, same
+reasoning as `executions/`) and never synced back. Layout:
+`data-tables/<slug>/{meta,columns,rows}.json`, where `<slug>` is the kebab of the
+table name with the id appended (names aren't guaranteed unique). `meta.json`
+records id/name/projectId, the applied `filter`/`search`/`sortBy`/`limit`, and
+the row count, so a filtered `rows.json` is self-describing (never mistaken for
+the whole table).
+
+Rows can be large, so the verb pulls a **filtered slice** by pushing the query
+to the server: `--filter` (a JSON string of conditions, 1:1 with the API param),
+`--search` (free text), `--sort` (`col:asc|desc`), `--limit` (rows/page, default
+100, cap 250), and `--all` (follow `cursor` to exhaust a filtered result).
+Default is a single capped page.
+
+Config-gated by **`dataTables`** (boolean, default `true`): `false` refuses the
+fetch with a clear message and the recommended key needn't carry the read scopes.
+The gate is on the fetch only — `data-tables clean` (offline delete of the local
+dir) stays available regardless.
+
+Live-verified against `n8nio/n8n:2.31.4` (2026-07-21, recorded in the
+plan25-datatables-api-facts memory): the read scopes are **`dataTable:list`,
+`dataTable:read`, `dataTableColumn:read`, `dataTableRow:read`** (the current
+n8n names them `dataTable:*`, not the older internal `dataStore:*`); a key
+lacking them 403s. Endpoints: `GET /api/v1/data-tables` (`{data,nextCursor}`,
+cursor-paginated; the list inlines columns), `/{id}/columns` (a bare array), and
+`/{id}/rows` (`{data,nextCursor}`, server-side `filter`/`search`/`sortBy`/`limit`
++ `cursor`). The table `id` is a 16-char alphanumeric token like a workflow id
+(the row `id` inside a table is numeric). Pre-2.x instances 404 — the verb
+surfaces a friendly "need n8n ≥ 2.x" hint; a full-access key still works.
+
+Wiring live data-table reads *into* the `run` emulator / `simulate` engine (so
+Data Table nodes execute offline) is a separate, larger effort (plans/25
+non-goals, relates to plans/7) — this verb is fetch-to-disk only.
 
 ## Watch mode (`n8n-decanter watch <workflow>`)
 

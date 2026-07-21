@@ -22,7 +22,10 @@ export interface PickerKey {
   sequence?: string;
 }
 
-/** Verb menu for a pulled workflow, in display order. */
+// Verb menu for a *pulled workflow*, in display order. `data-tables` is
+// deliberately absent (deviation from how `executions` was added, Plan 25):
+// data tables are project-scoped, not owned by a workflow, so they have no
+// place in a per-workflow menu.
 export const PICKER_VERBS = ["status", "pull", "push", "watch", "check", "executions", "simulate"] as const;
 
 export interface PickerState {
