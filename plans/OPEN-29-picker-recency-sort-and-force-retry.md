@@ -1,14 +1,17 @@
-# Plan 29 — Picker: recency sort + force-retry on drift
+# Plan 29 — Picker polish + brand-orange CLI logo
 
-**Priority:** P2 (two small, well-scoped picker UX wins; touches the picker,
-`state.mts`, one typed error, tests, docs — no data-model change)
+**Priority:** P2 (three small, well-scoped CLI polish wins; touches the picker,
+`state.mts`, `style.mts`/`init.mts`, one typed error, tests, docs — no
+data-model change)
 **Status:** Not started
-**Theme:** Two independent interactive-picker improvements: (1) list pulled
-workflows **newest-synced first**, and (2) when a picker-run verb fails with a
-**forceable** (drift) error, offer a special **retry-with-`--force`** confirm
-(default **No**) instead of only printing the error.
-**Model:** Sonnet (well-specified; the one design-sensitive spot is the
-`ForceableError` type + the TTY confirm test).
+**Theme:** Three CLI improvements: (1) the interactive picker lists pulled
+workflows **newest-synced first**; (2) a picker-run verb that fails on a
+**forceable** (drift) error offers a special **retry-with-`--force`** confirm
+(default **No**) instead of only printing the error; and (3) the CLI banner logo
+renders the **website's brand orange**, not ANSI red.
+**Model:** Sonnet (well-specified; the design-sensitive spots are the
+`ForceableError` type, the TTY confirm test, and the truecolor/fallback logo
+color).
 
 ## Why
 
@@ -19,9 +22,13 @@ on the drift guard, the loop only logs the error and drops back to the menu, so
 the user has to leave the picker and re-run `push --force` by hand — even though
 the CLI already tells them `--force` would fix it.
 
-Both are picker-only ergonomics. Neither is a decanter differentiator (they mirror
-ordinary CLI polish), so this stays in the normal backlog — **not** the
-distinctive-features group.
+And the terminal banner colors the "n8n" mark ANSI **red**
+([init.mts:56](../lib/init.mts#L56)) while the **website** colors the exact same
+block wordmark **orange** (`--color-accent-500`, [Header.astro:8](../website/src/components/Header.astro#L8)) —
+so the CLI and the site disagree on the brand color.
+
+All three are ordinary CLI polish, not decanter differentiators, so this stays in
+the normal backlog — **not** the distinctive-features group.
 
 ---
 
@@ -125,6 +132,52 @@ brittle; use a **typed error** instead:
 
 ---
 
+## Feature 3 — Brand-orange CLI logo (match the website)
+
+### The mismatch
+
+The banner wordmark is shared by design — the website renders the CLI's
+block-minifont ([Header.astro comment](../website/src/components/Header.astro#L4-L8)).
+But the two color it differently:
+
+- CLI: `style.red(row.slice(0, 6))` — ANSI **red** ([init.mts:56](../lib/init.mts#L56)).
+- Website: the `n8n` glyphs fill `var(--color-accent-500)` = **`oklch(0.7 0.15 60)`**
+  ([theme.css:16](../website/src/styles/theme.css#L16)), an **orange** ≈
+  `rgb(225, 132, 40)` / **`#E18428`**.
+
+`style.red` (and every other `styleText` named color) has no orange, so matching
+the site needs a **24-bit truecolor** SGR — `styleText` can't emit that.
+
+### Implementation
+
+1. **[lib/style.mts](../lib/style.mts)** — add `brand(text)` to `Style`. It emits
+   the website orange as a truecolor escape `\x1b[38;2;225;132;40m…\x1b[39m`, but
+   **only** with the same gating `styleText` applies today: skip color when the
+   stream isn't a TTY or `NO_COLOR` is set, and honor `FORCE_COLOR`. Reuse the
+   stream's own capability check (`stream.hasColors(2**24)` / `getColorDepth()`,
+   which `styleText` uses internally) so gating stays identical.
+   **Graceful degradation:** truecolor terminal → exact `#E18428`; 256-color
+   (`hasColors(256)`) → nearest xterm-256 orange (`\x1b[38;5;208m`); ≤16-color →
+   fall back to today's `style.red`, so legacy terminals don't regress.
+2. **[lib/init.mts:56](../lib/init.mts#L56)** — swap `style.red(...)` for
+   `style.brand(...)` in the logo loop. **Leave the other reds alone** — the diff
+   `-` lines ([status.mts:85](../lib/status.mts#L85)) and the error prefix
+   ([n8n-decanter.mts:41](../n8n-decanter.mts#L41)) are semantic red, not brand.
+3. **Single source of truth for the value** — define the RGB (and the derivation
+   from `oklch(0.7 0.15 60)` / `--color-accent-500`) once, in a commented constant
+   in `style.mts`, so a future accent re-tune has an obvious spot to update on both
+   sides.
+
+### Scope / notes
+
+- Cosmetic/branding only — no command-surface change, so **no `docs/cli` edit**.
+  A CHANGELOG **Changed** line ("CLI logo now uses the brand orange, matching the
+  website") is enough.
+- The exact orange is derived from the site's accent-500; if the terminal can't do
+  truecolor it degrades but stays warm (256-color orange, then red).
+
+---
+
 ## Tasks
 
 1. `lib/state.mts` — `WorkflowRef.syncedAt` + `statSync` in `listWorkflowRefs`.
@@ -135,7 +188,9 @@ brittle; use a **typed error** instead:
    (`lib/push.mts`).
 5. `n8n-decanter.mts` `pickerLoop` — forceable-error branch: special y/N confirm
    (default No) → re-dispatch with `force: true`.
-6. **Tests**
+6. `lib/style.mts` — `brand()` (truecolor `#E18428`, 256/16-color fallbacks,
+   `styleText`-parity gating) + commented RGB constant; `lib/init.mts:56` uses it.
+7. **Tests**
    - Unit ([test/unit](../test/unit/)): `sortByRecency` ordering (newest-first,
      no-`syncedAt` last, name tie-break); `ForceableError` is thrown by
      `assertNoDrift` when `!force` and detected by an `instanceof` check.
@@ -146,15 +201,18 @@ brittle; use a **typed error** instead:
      `PUT /__remote`, open picker → `push` fails drift → answer `y` → assert the
      force push overwrites remote; a second run answering **Enter** → no force,
      back to menu.
-7. **Docs (all surfaces, per AGENTS.md)**
+   - `brand()`: `FORCE_COLOR` → emits the truecolor SGR; `NO_COLOR` / non-TTY →
+     plain text; assert the banner logo uses `brand`, not `red`.
+8. **Docs (all surfaces, per AGENTS.md)**
    - `README.md` — feature bullet for the two picker behaviors (recency order +
-     force-retry).
+     force-retry). *(Logo color is cosmetic — no README/docs surface change.)*
    - `docs/cli/overview.md` — the *Interactive picker* section
      ([:57](../docs/cli/overview.md#L57)): note newest-synced-first ordering and
      the drift force-retry confirm.
    - `CHANGELOG.md` `[Unreleased]` — **Changed** (picker orders pulled workflows
-     newest-synced first) + **Added** (picker offers a force-retry confirm on a
-     drift failure).
+     newest-synced first; CLI logo now uses the brand orange, matching the
+     website) + **Added** (picker offers a force-retry confirm on a drift
+     failure).
    - `PLAN.md` — record the picker force-retry flow and the recency-ordering
      **decision** (mtime as the signal, and *why not* a stored timestamp).
 
@@ -164,6 +222,9 @@ brittle; use a **typed error** instead:
   workflow at the top (interactive test).
 - From the picker, a `push` that drifts prompts `[y/N]`; `y` overwrites remote,
   Enter returns to the menu; a **compliance** failure never prompts.
+- The banner's "n8n" mark renders orange on a truecolor terminal (matching the
+  website), degrades to a 256-color orange / red on lesser terminals, and stays
+  plain under `NO_COLOR` / when piped.
 - `npm test` + `npm run typecheck` green.
 
 ## Notes
