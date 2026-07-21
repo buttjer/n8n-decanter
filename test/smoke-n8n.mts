@@ -230,7 +230,7 @@ try {
   await step("pull: real workflow lands in the decanter layout", async () => {
     const r = await cli("pull");
     assert.equal(r.code, 0, r.out);
-    wfDir = path.join(ROOT, "Smoke WF");
+    wfDir = path.join(ROOT, "smoke-wf");
     assert.ok(existsSync(path.join(wfDir, "code", "compute.js")), "code/compute.js extracted");
     assert.match(read(wfDir, "workflow.json"), /"\/\/@file:code\/compute\.js"/);
     assert.match(read(wfDir, "code", "compute.js"), /doubled: n \* 2/);
@@ -321,11 +321,11 @@ try {
     });
     const cfg = JSON.parse(read(TMP, "decanter.config.json"));
     writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ ...cfg, workflows: [wfId, second.id] }, null, 2));
-    let r = await cli(second.id, "pull");
+    let r = await cli("pull", second.id);
     assert.equal(r.code, 0, r.out);
-    const draftDir = path.join(ROOT, "Smoke Draft");
+    const draftDir = path.join(ROOT, "smoke-draft");
     writeFileSync(path.join(draftDir, "code", "compute.js"), "return [{ json: { draft: true } }];\n");
-    r = await cli(second.id, "push");
+    r = await cli("push", second.id);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /unpublished: draft only/, "inactive workflow must stay a draft: " + r.out);
     const remote = await api("GET", `/api/v1/workflows/${second.id}`);
@@ -347,45 +347,45 @@ try {
     // local edit too -> conflict
     writeFileSync(path.join(wfDir, "code", "compute.ts"),
       read(wfDir, "code", "compute.ts").replace("mode: 'each'", "mode: 'forced'"));
-    let r = await cli(wfId, "push");
+    let r = await cli("push", wfId);
     assert.equal(r.code, 1, "push must abort on real remote drift: " + r.out);
     assert.match(r.out, /pull first|--force/, r.out);
-    r = await cli(wfId, "push", "--force");
+    r = await cli("push", wfId, "--force");
     assert.equal(r.code, 0, "--force must override the drift guard: " + r.out);
-    r = await cli(wfId, "pull");
+    r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
-    r = await cli(wfId, "status");
+    r = await cli("status", wfId);
     assert.equal(r.code, 0, "in sync after force push + pull: " + r.out);
     const out = await webhook({ n: 2 });
     assert.deepEqual(out, [{ doubled: 4, mode: "forced" }], JSON.stringify(out));
   });
 
   await step("rename with a unicode name propagates and keeps executing", async () => {
-    let r = await cli("rename", wfId, "Compute", "Ümläut Nödé");
+    let r = await cli("node", "rename", wfId, "Compute", "Ümläut Nödé");
     assert.equal(r.code, 0, r.out);
     const renamed = JSON.parse(read(TMP, "decanter.config.json")); // config untouched by rename
     assert.ok(renamed.workflows.includes(wfId));
     const files = read(wfDir, "workflow.json");
     assert.match(files, /"Ümläut Nödé"/);
-    r = await cli(wfId, "push");
+    r = await cli("push", wfId);
     assert.equal(r.code, 0, r.out);
     const remote = await api("GET", `/api/v1/workflows/${wfId}`);
     assert.equal(remote.nodes.find((n: any) => n.id === "c1").name, "Ümläut Nödé", "real n8n accepted the rename");
     assert.ok(remote.connections["Ümläut Nödé"], "rewritten connections accepted");
     const out = await webhook({ n: 3 });
     assert.deepEqual(out, [{ doubled: 6, mode: "forced" }], "workflow still executes after rename: " + JSON.stringify(out));
-    r = await cli(wfId, "pull");
+    r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
-    r = await cli(wfId, "status");
+    r = await cli("status", wfId);
     assert.equal(r.code, 0, "in sync after rename round-trip: " + r.out);
   });
 
   await step("tags survive an untouched pull→push round-trip", async () => {
     const tag = await api("POST", "/api/v1/tags", { name: "smoke-tag" });
     await api("PUT", `/api/v1/workflows/${wfId}/tags`, [{ id: tag.id }]);
-    let r = await cli(wfId, "pull");
+    let r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
-    r = await cli(wfId, "push");
+    r = await cli("push", wfId);
     assert.equal(r.code, 0, r.out);
     const tags = await api("GET", `/api/v1/workflows/${wfId}/tags`);
     assert.ok(Array.isArray(tags) && tags.some((t: any) => t.name === "smoke-tag"), `tags survived: ${JSON.stringify(tags)}`);
@@ -407,9 +407,9 @@ try {
     let got = await api("GET", `/api/v1/workflows/${wfId}`);
     assert.deepEqual(got.pinData, seed, `public API persists seeded pinData: ${JSON.stringify(got.pinData)}`);
     // decanter's PUT never sends pinData — the server must keep its stored copy
-    let r = await cli(wfId, "pull");
+    let r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
-    r = await cli(wfId, "push");
+    r = await cli("push", wfId);
     assert.equal(r.code, 0, r.out);
     got = await api("GET", `/api/v1/workflows/${wfId}`);
     assert.deepEqual(got.pinData, seed, `pinData survives the round-trip: ${JSON.stringify(got.pinData)}`);
@@ -477,9 +477,9 @@ try {
       await handle.close();
     }
     // resolve like the prompt's [r] would, out-of-band: pull re-baselines
-    let r = await cli(wfId, "pull");
+    let r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
-    r = await cli(wfId, "status");
+    r = await cli("status", wfId);
     assert.equal(r.code, 0, "in sync after conflict resolution: " + r.out);
   });
 
@@ -527,7 +527,7 @@ try {
     assert.equal(r.code, 0, r.out);
     const lifeId = r.out.match(/created "Smoke Lifecycle" \(([^)]+)\)/)?.[1];
     assert.ok(lifeId, "create printed the new id: " + r.out);
-    const lifeDir = path.join(ROOT, "Smoke Lifecycle");
+    const lifeDir = path.join(ROOT, "smoke-lifecycle");
     assert.ok(existsSync(path.join(lifeDir, ".decanter.json")), "create pulled the folder");
     let remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.active, false, "born unpublished");
@@ -538,24 +538,24 @@ try {
     wf.nodes = [{ id: "lh1", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { httpMethod: "POST", path: "smoke-life-hook" } }];
     wf.connections = {};
     writeFileSync(path.join(lifeDir, "workflow.json"), JSON.stringify(wf, null, 2));
-    r = await cli(lifeId, "push");
+    r = await cli("push", lifeId);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /unpublished: draft only/, "push to an unpublished workflow stays draft: " + r.out);
 
     // publish → live; activeVersionId now matches the draft
-    r = await cli(lifeId, "publish");
+    r = await cli("publish", lifeId);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /published "Smoke Lifecycle" \([^)]+\) — code is live now/);
     remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.active, true, "publish took it live");
     assert.equal(remote.activeVersionId, remote.versionId, "publish set activeVersionId to the draft");
     // publish again → no-op-with-a-note
-    r = await cli(lifeId, "publish");
+    r = await cli("publish", lifeId);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /is already published/);
 
     // unpublish → draft only
-    r = await cli(lifeId, "unpublish");
+    r = await cli("unpublish", lifeId);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /unpublished "Smoke Lifecycle" \([^)]+\) — draft only/);
     remote = await api("GET", `/api/v1/workflows/${lifeId}`);
@@ -566,7 +566,7 @@ try {
     assert.equal(r.code, 1);
     assert.match(r.out, /delete needs a workflow ref/);
     // delete --force → hard delete even after publish/unpublish; local folder kept
-    r = await cli(lifeId, "delete", "--force");
+    r = await cli("delete", lifeId, "--force");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /deleted "Smoke Lifecycle" \([^)]+\) from the server/);
     const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
@@ -595,12 +595,12 @@ try {
       settings: { executionOrder: "v1" },
     });
     authId = created.id;
-    authDir = path.join(ROOT, "Smoke Authoring");
-    let r = await cli(authId, "pull");
+    authDir = path.join(ROOT, "smoke-authoring");
+    let r = await cli("pull", authId);
     assert.equal(r.code, 0, r.out);
 
     // add scaffolds a disconnected Code node with the default runnable body
-    r = await cli(authId, "add", "Enrich");
+    r = await cli("node", "create", authId, "Enrich");
     assert.equal(r.code, 0, r.out);
     assert.ok(existsSync(path.join(authDir, "code", "enrich.js")), "add wrote the source file");
 
@@ -611,11 +611,11 @@ try {
       Enrich: { main: [[{ node: "Respond", type: "main", index: 0 }]] },
     };
     writeFileSync(path.join(authDir, "workflow.json"), JSON.stringify(wf, null, 2));
-    r = await cli(authId, "check");
+    r = await cli("check", authId);
     assert.equal(r.code, 0, "wired scaffold must stay compliant: " + r.out);
-    r = await cli(authId, "push");
+    r = await cli("push", authId);
     assert.equal(r.code, 0, r.out);
-    r = await cli(authId, "publish"); // make the webhook live
+    r = await cli("publish", authId); // make the webhook live
     assert.equal(r.code, 0, r.out);
 
     // trigger it: the DEFAULT scaffold body (item.json.myNewField = 1) must run
@@ -629,7 +629,7 @@ try {
     const source = await api("GET", `/api/v1/workflows/${authId}`);
     assert.equal(source.active, true, "source is published from the add step's publish");
 
-    let r = await cli(authId, "duplicate", "Smoke Authoring Copy");
+    let r = await cli("duplicate", authId, "Smoke Authoring Copy");
     assert.equal(r.code, 0, r.out);
     cloneId = r.out.match(/duplicated "Smoke Authoring" -> "Smoke Authoring Copy" \(([^)]+)\)/)?.[1] ?? "";
     assert.ok(cloneId, "duplicate printed the new id: " + r.out);
@@ -639,7 +639,7 @@ try {
     assert.equal(clone.active, false, "clone born unpublished even though the source is published");
     assert.equal(clone.nodes.length, source.nodes.length, "clone carries the source's nodes");
     assert.deepEqual(clone.connections, source.connections, "clone preserves the connections");
-    const cloneDir = path.join(ROOT, "Smoke Authoring Copy");
+    const cloneDir = path.join(ROOT, "smoke-authoring-copy");
     assert.ok(existsSync(path.join(cloneDir, ".decanter.json")), "clone pulled into a folder");
     // the .js Code node round-trips byte-clean into the clone
     assert.equal(read(cloneDir, "code", "enrich.js"), read(authDir, "code", "enrich.js"), "clone's enrich.js is byte-identical");
@@ -647,7 +647,7 @@ try {
     // independence: edit + push the clone; the source's remote code is untouched
     const before = (await api("GET", `/api/v1/workflows/${authId}`)).nodes.find((n: any) => n.name === "Enrich").parameters.jsCode;
     writeFileSync(path.join(cloneDir, "code", "enrich.js"), "return [{ json: { cloneOnly: true } }];\n");
-    r = await cli(cloneId, "push");
+    r = await cli("push", cloneId);
     assert.equal(r.code, 0, r.out);
     const after = (await api("GET", `/api/v1/workflows/${authId}`)).nodes.find((n: any) => n.name === "Enrich").parameters.jsCode;
     assert.equal(after, before, "editing the clone must not change the source workflow");
@@ -664,7 +664,7 @@ try {
     const page = await api("GET", `/api/v1/executions?includeData=true&limit=1&workflowId=${wfId}`);
     const ran: string = page.data[0]?.workflowVersionId;
     assert.equal(typeof ran, "string", "an execution with a recorded version exists");
-    let r = await cli(wfId, "pull");
+    let r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
     const wfJson = path.join(wfDir, "workflow.json");
     const setDraft = (v: string): void => {
@@ -713,7 +713,7 @@ try {
   };
 
   await step("executions pull: the CLI writes real run JSON into a self-ignoring dir", async () => {
-    const r = await cli(wfId, "executions", "--limit", "5");
+    const r = await cli("executions", wfId, "--limit", "5");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /execution/, r.out);
     const files = execFiles(wfDir);
@@ -733,7 +733,7 @@ try {
   await step("executions by id: a numeric ref self-routes to its workflow folder", async () => {
     const page = await api("GET", `/api/v1/executions?limit=1&workflowId=${wfId}`);
     const id = String(page.data[0].id);
-    let r = await cli(wfId, "executions", "clean"); // pin the single fetched file
+    let r = await cli("executions", wfId, "clean"); // pin the single fetched file
     assert.equal(r.code, 0, r.out);
     r = await cli("executions", id); // no workflow ref — the id decides the folder
     assert.equal(r.code, 0, r.out);
@@ -744,7 +744,7 @@ try {
 
   await step("error executions: a throwing run is captured; --status filters success from error", async () => {
     // fresh baseline — the stale-fixture step left workflow.json's versionId edited
-    let r = await cli(wfId, "pull");
+    let r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
     // a Code node that fails on demand: `{ fail: true }` throws before Respond
     writeFileSync(computeSrc(), [
@@ -754,7 +754,7 @@ try {
       "return { json: { doubled: double(Number(body.n ?? 0)), mode: 'forced' } };",
       "",
     ].join("\n"));
-    r = await cli(wfId, "push"); // active workflow → goes live
+    r = await cli("push", wfId); // active workflow → goes live
     assert.equal(r.code, 0, r.out);
     // one success (the polling helper also confirms webhook re-registration)…
     const ok = await webhook({ n: 9 });
@@ -770,9 +770,9 @@ try {
     }
     assert.ok(errId, "an error execution was recorded for the throwing run");
     // --status=error captures only failures, thrown message intact
-    r = await cli(wfId, "executions", "clean");
+    r = await cli("executions", wfId, "clean");
     assert.equal(r.code, 0, r.out);
-    r = await cli(wfId, "executions", "--status", "error", "--limit", "5");
+    r = await cli("executions", wfId, "--status", "error", "--limit", "5");
     assert.equal(r.code, 0, r.out);
     let files = execFiles(wfDir);
     assert.ok(files.length > 0, "an error execution file landed: " + r.out);
@@ -780,9 +780,9 @@ try {
     const message = JSON.parse(read(wfDir, "executions", `${errId}.json`)).data?.resultData?.error?.message ?? "";
     assert.match(message, /intentional smoke failure/, `thrown message survives into captured JSON: ${message}`);
     // --status=success is the complement: never the failure we just captured
-    r = await cli(wfId, "executions", "clean");
+    r = await cli("executions", wfId, "clean");
     assert.equal(r.code, 0, r.out);
-    r = await cli(wfId, "executions", "--status", "success", "--limit", "5");
+    r = await cli("executions", wfId, "--status", "success", "--limit", "5");
     assert.equal(r.code, 0, r.out);
     files = execFiles(wfDir);
     assert.ok(files.length > 0 && !files.includes(`${errId}.json`), "success filter excludes the error run: " + files.join(","));
@@ -800,7 +800,7 @@ try {
     const n = Number(input[0].json.body.n ?? 0);
     const fixture = path.join(TMP, "captured.fixture.json");
     writeFileSync(fixture, JSON.stringify({ input }, null, 2));
-    const r = await cli("run", computeSrc(), fixture);
+    const r = await cli("node", "run", computeSrc(), fixture);
     assert.equal(r.code, 0, r.out);
     assert.equal(recordedOut[0].json.doubled, n * 2, "sanity: recorded live output is 2×input");
     assert.match(r.out, new RegExp(`"doubled":\\s*${n * 2}\\b`), `offline run reproduces the live output: ${r.out}`);
@@ -808,7 +808,7 @@ try {
 
   await step("executions clean: fetched data is removed (offline)", async () => {
     assert.ok(existsSync(path.join(wfDir, "executions")), "executions dir present before clean");
-    const r = await cli(wfId, "executions", "clean");
+    const r = await cli("executions", wfId, "clean");
     assert.equal(r.code, 0, r.out);
     assert.ok(!existsSync(path.join(wfDir, "executions")), "clean removed the executions dir: " + r.out);
   });
