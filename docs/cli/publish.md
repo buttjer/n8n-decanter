@@ -1,12 +1,12 @@
 ---
 title: publish / unpublish
 description: Take a draft live, or return a published workflow to draft-only.
-order: 12
+order: 8
 ---
 
 ```sh
-n8n-decanter [ref...] publish     # take the draft(s) live
-n8n-decanter [ref...] unpublish   # return to draft-only
+n8n-decanter publish [workflow…]     # take the draft(s) live
+n8n-decanter unpublish [workflow…]   # return to draft-only
 ```
 
 n8n 2.x splits each workflow into a **draft** and a **published** version. In

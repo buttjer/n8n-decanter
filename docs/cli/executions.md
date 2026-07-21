@@ -1,19 +1,21 @@
 ---
 title: executions
 description: Fetch recent execution run data as JSON, for building accurate run fixtures.
-order: 14
+order: 13
 ---
 
 ```sh
-n8n-decanter [ref...] executions [--status=success|error|waiting] [--limit=N]
-n8n-decanter <execId>  executions          # fetch one execution by id
-n8n-decanter [ref...]  executions clean     # delete fetched data (offline)
+n8n-decanter executions [workflow…] [--status=success|error|waiting] [--limit=N]
+n8n-decanter executions <execution-id>         # fetch one execution by id
+n8n-decanter executions [workflow…] clean      # delete fetched data (offline)
 ```
 
 Fetches recent execution data — the full run JSON, newest first — for each
-workflow into `workflows/<Name>/executions/<execId>.json`. Read-only against
-the API. The point is to see the **real items each node produced** and copy
-those shapes into [run](/docs/cli/run/) fixtures, instead of guessing.
+workflow into `workflows/<folder>/executions/<execution-id>.json`. Read-only
+against the API. The point is to see the **real items each node produced** and
+copy those shapes into [node run](/docs/cli/node-run/) fixtures, instead of
+guessing. A purely numeric argument is treated as an `<execution-id>`;
+everything else is a `<workflow>`.
 
 ## Options
 
@@ -33,7 +35,7 @@ Each node's output items are at:
 data.resultData.runData["<Node>"][0].data.main[0][]
 ```
 
-That array is exactly the `items` a [run](/docs/cli/run/) fixture feeds a node
+That array is exactly the `items` a [node run](/docs/cli/node-run/) fixture feeds a node
 — copy a real shape in and your offline run matches production.
 
 ## Never commit run data

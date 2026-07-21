@@ -37,6 +37,12 @@ export interface PickerState {
   loadingRemote: boolean;
   /** Dim one-liner, e.g. "remote list unavailable (…)". */
   notice?: string;
+  /**
+   * Single-select mode (Plan 27, no-ref → picker): the verb is already known,
+   * so Enter on a pulled workflow resolves straight to it — the verb menu is
+   * skipped entirely.
+   */
+  selectVerb?: string;
 }
 
 export type PickerResult = { verb: string; id: string; name: string } | "quit" | "interrupted";
@@ -52,9 +58,9 @@ export interface PickerResume {
 export function initialState(
   entries: PickerEntry[],
   loadingRemote: boolean,
-  opts: { resume?: PickerResume; notice?: string } = {},
+  opts: { resume?: PickerResume; notice?: string; selectVerb?: string } = {},
 ): PickerState {
-  const base: PickerState = { stage: "workflow", entries, query: "", cursor: 0, verbCursor: 0, loadingRemote, notice: opts.notice };
+  const base: PickerState = { stage: "workflow", entries, query: "", cursor: 0, verbCursor: 0, loadingRemote, notice: opts.notice, selectVerb: opts.selectVerb };
   const entry = opts.resume ? entries.find((e) => e.id === opts.resume!.id) : undefined;
   if (!entry) return base;
   // resumed workflow still unpulled (its pull failed): back on the list, cursor on it
@@ -107,6 +113,8 @@ function reduceWorkflowKey(state: PickerState, key: PickerKey): PickerStep {
       const entry = filtered[state.cursor];
       if (!entry) return { done: false, state };
       if (!entry.pulled) return { done: true, result: { verb: "pull", id: entry.id, name: entry.name } };
+      // single-select: the verb is fixed, so a pulled pick resolves at once
+      if (state.selectVerb) return { done: true, result: { verb: state.selectVerb, id: entry.id, name: entry.name } };
       return { done: false, state: { ...state, stage: "verb", selected: entry, verbCursor: 0 } };
     }
     case "backspace":
@@ -219,7 +227,7 @@ export type PickerOutputStream = Pick<NodeJS.WritableStream, "write">;
 export async function runPicker(
   local: PickerEntry[],
   remote: Promise<Array<{ id: string; name: string }>> | undefined,
-  opts: { resume?: PickerResume; notice?: string; input?: PickerInputStream; output?: PickerOutputStream } = {},
+  opts: { resume?: PickerResume; notice?: string; selectVerb?: string; input?: PickerInputStream; output?: PickerOutputStream } = {},
 ): Promise<PickerResult> {
   const input: PickerInputStream = opts.input ?? process.stdin;
   const output: PickerOutputStream = opts.output ?? process.stdout;

@@ -5,10 +5,10 @@ order: 3
 ---
 
 ```sh
-n8n-decanter [ref...] pull
+n8n-decanter pull [workflow…]
 ```
 
-Pulls each workflow into `workflows/<Name>/`: the full `workflow.json` with
+Pulls each workflow into `workflows/<folder>/`: the full `workflow.json` with
 each Code node's `jsCode` replaced by a `//@file:` placeholder, plus one
 source file per node under `code/` — see
 [Sync layout](/docs/concepts/sync-layout/). Without refs, all workflows from

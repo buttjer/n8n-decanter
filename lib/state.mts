@@ -85,7 +85,7 @@ export function listWorkflowDirs(root: string): string[] {
 export interface WorkflowRef {
   id: string;
   dir: string;
-  /** Display name: workflow.json's `name`, falling back to the folder name. */
+  /** Display name: `.decanter.json.name`, then workflow.json's `name`, then the folder name. */
   name: string;
   /** Every name the ref answers to (workflow name + folder basename), deduped. */
   names: string[];
@@ -108,11 +108,15 @@ export function listWorkflowRefs(root: string, log?: Log): WorkflowRef[] {
     }
     if (!state) continue;
     const folderName = path.basename(dir);
-    let wfName: string | undefined;
-    try {
-      wfName = (JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as { name?: string }).name;
-    } catch {
-      // no or unparsable workflow.json — the folder name still addresses it
+    // Prefer the cached display name (Plan 27), then workflow.json, then the
+    // folder — so a missing/corrupt workflow.json still resolves by name.
+    let wfName = state.name;
+    if (wfName === undefined) {
+      try {
+        wfName = (JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as { name?: string }).name;
+      } catch {
+        // no or unparsable workflow.json — the folder name still addresses it
+      }
     }
     const names = [...new Set([wfName, folderName].filter((n): n is string => typeof n === "string" && n !== ""))];
     refs.push({ id: state.workflowId, dir, name: wfName ?? folderName, names });

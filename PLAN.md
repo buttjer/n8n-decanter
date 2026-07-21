@@ -13,10 +13,12 @@ n8n-decanter/
   .env                    # N8N_HOST, N8N_API_KEY (gitignored; written by init)
   .env.example
   decanter.config.json
-  n8n-decanter.mts        # CLI entry: init | pull | push | status | check |
-                          #   rename | add | watch | create | duplicate |
-                          #   publish | unpublish | delete | run | list |
-                          #   executions | completion
+  n8n-decanter.mts        # CLI entry (verb-first: `n8n-decanter <verb> …`):
+                          #   init | pull | push | status | check | rename |
+                          #   watch | create | duplicate | publish | unpublish |
+                          #   delete | list | executions | simulate | completion
+                          #   + a `node` namespace: node create | node rename |
+                          #   node run
   lib/                    # implementation: add, api, compile, config, diff,
                           #   executions, git, init, lifecycle, picker, prompt,
                           #   proxy, pull, push, rename, run, state, status,
@@ -89,7 +91,7 @@ n8n-decanter/
 ```
 workflows/
   <n8n folder path>/            # only if the API exposes it, see Open questions
-    <Workflow Name>/
+    <workflow-slug>/            # kebab-case slug of the name (a stable local pick)
       workflow.json             # full workflow, jsCode replaced by "//@file:code/<node-name>.js"
       code/
         <node-name>.js          # JSDoc-typed Code node (lossless)
@@ -100,12 +102,18 @@ workflows/
         <execId>.json           #   self-gitignored, never synced back
 ```
 
-- Workflow **id** lives in `workflow.json` itself → folder name is cosmetic.
-  Pull matches folders by id and renames the folder when the workflow was renamed.
+- Workflow **id** lives in `workflow.json` (and `.decanter.json`) → the folder
+  name is a free local pick. Pull matches folders by id. A **new** folder is the
+  **kebab-case slug** of the workflow name (`Order Sync` → `order-sync/`; a slug
+  collision with a different workflow falls back to `<slug>-<id8>` + a warn); an
+  **existing** folder is left as-is — folders are sticky and never follow a
+  remote rename (Plan 27). The always-current display name is cached in
+  `.decanter.json.name` (read by the picker / `list` / ref-resolution). Folders
+  synced before Plan 27 keep their old (spaces/caps) names and still resolve.
 - Node files live in the folder's `code/` subdir and are named after the node
-  name in **kebab-case** (`Parse Order` → `code/parse-order.js`; workflow folder
-  names stay human-readable). Node **id** (stable in the workflow JSON) is the
-  real key; `.decanter.json` maps node-id → file path (with the `code/` prefix),
+  name in **kebab-case** (`Parse Order` → `code/parse-order.js`). Node **id**
+  (stable in the workflow JSON) is the real key; `.decanter.json` maps node-id →
+  file path (with the `code/` prefix),
   so node renames rename the file instead of orphaning it — the same rename
   machinery migrates pre-`code/` flat layouts on the next pull.
 - `workflow.json` is pretty-printed with stable key order → clean diffs.
@@ -117,12 +125,19 @@ workflows/
 ```json
 {
   "workflowId": "0cXNQKKzmO0pXiCq",
+  "name": "Order Sync",
   "nodes": {
     "<node-id>": { "file": "code/amazon-feed.ts", "lastPushedHash": "sha256:…" }
   },
   "lastPulledWorkflowHash": "sha256:…"
 }
 ```
+
+`name` is the cached display name, refreshed from `wf.name` on every pull
+(Plan 27) — it lets the folder stay a stable kebab slug while the picker /
+`list` / ref-resolution show the real name, and hardens them against a
+missing/corrupt `workflow.json`. Absent on states written before Plan 27
+(callers fall back to `workflow.json`, then the folder name).
 
 `lastPushedHash` = hash of the compiled JS (marker excluded) at last push — the
 "base" for drift detection. `lastPulledWorkflowHash` = hash of the sanitized,
@@ -151,16 +166,24 @@ and `proxyPort` (default `5679`).
 
 ## Workflow refs & CLI output (plans/11)
 
-Every `[id…]` argument in the flows below is really a **ref**: an id, a
-workflow/folder name, or a unique name prefix. Resolution is tiered — exact id
-→ exact name (case-insensitive; folder basename *and* `workflow.json` `name`
-both count, since `.decanter.json` stores no name) → unique prefix — and
-never prompts: several matches in a tier error with the candidate list. An
-**id-shaped ref that matches nothing passes through unresolved** so
-`pull`/`status` of a fresh remote id keep working; `pull` additionally
-resolves unknown names against `GET /api/v1/workflows` (cursor-paginated,
-matched client-side). A workflow literally named like a verb loses to verb
-detection — use the id. Config entries stay ids only.
+The grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`. The
+command is `positional[0]`; everything after it is an argument, so a workflow
+literally named like a verb needs no special rule (`status push` runs `status`
+on the workflow named `push`), and verb-last (`wf123 push`) errors with
+*unknown verb*. Node operations live under a **`node` namespace** (`node create`
+/ `node rename` / `node run`); the parser special-cases `positional[0] ===
+"node"` and takes the real verb from `positional[1]`. Flags may sit anywhere.
+
+Every `[workflow…]` argument is really a **ref**: an id, a workflow/folder
+name, or a unique name prefix. Resolution is tiered — exact id → exact name
+(case-insensitive; the cached `.decanter.json.name`, `workflow.json` `name`,
+*and* the folder basename all count) → unique prefix — and never prompts:
+several matches in a tier error with the candidate list. An **id-shaped ref
+that matches nothing passes through unresolved** so `pull`/`status` of a fresh
+remote id keep working; `pull` additionally resolves unknown names against
+`GET /api/v1/workflows` (cursor-paginated, matched client-side). A ref verb
+given no workflow opens the picker on a TTY, else falls back to the config /
+errors. Config entries stay ids only.
 
 Discovery surfaces, primary first: the **interactive picker** — bare
 `n8n-decanter` (no verb, no refs, no flags) on a TTY (stdin *and* stdout) in
@@ -221,8 +244,10 @@ errors; the default is the one-line message.
 For each configured workflow:
 
 1. `GET /api/v1/workflows/:id` (header `X-N8N-API-KEY`).
-2. Locate the local folder by id (scan `.decanter.json`s under root). Rename/move the
-   folder if name (or n8n folder, if available) changed. Create if new.
+2. Locate the local folder by id (scan `.decanter.json`s under root). An
+   existing folder is kept as-is (sticky, Plan 27); a new one is created as the
+   kebab-case slug of the name (`<slug>-<id8>` + warn on collision). Cache the
+   display name in `.decanter.json.name`.
 3. For each Code node (`n8n-nodes-base.code`), matched by node id:
    - **Marker present** → TS-managed:
      - `hash(remote jsCode minus marker) == hash(compile(local .ts))` → in sync, skip.
@@ -314,9 +339,10 @@ an edit. Watch validates only its own node file on code saves — structural
 saves run the full compliance guard via push — and never typechecks (fast
 inner loop).
 
-## Rename (`n8n-decanter rename <id> "<old>" "<new>"`)
+## Rename (`n8n-decanter node rename <workflow> "<old>" "<new>"`)
 
-Added 2026-07-18 (plans/2). Renames a node atomically everywhere the old name
+Added 2026-07-18 (plans/2; moved under the `node` namespace in Plan 27). Renames
+a node atomically everywhere the old name
 is load-bearing, replacing the manual 4-step dance: `node.name`, connection
 keys and `{ node: … }` targets, literal `$('…')` references in every node
 source file and expression parameter (via the same shared regex as the
@@ -328,17 +354,17 @@ colliding, empty, and unchanged names; re-runs the compliance guard
 afterwards and fails loudly (files stay written; git is the safety net).
 Offline by design — `push` propagates.
 
-`rename <id> --workflow "<new name>"` sets `wf.name` only: the folder is
-cosmetic and follows on the next pull (same rename machinery as remote
-renames).
+`rename <workflow> "<new name>"` (top-level, Plan 27) sets `wf.name` and the
+cached `.decanter.json.name`; the folder is a stable local slug and is **left
+untouched** (it no longer follows the workflow name). `push` propagates.
 
-## Execution datasets (`n8n-decanter [ref…] executions`, plans/3 C)
+## Execution datasets (`n8n-decanter executions [workflow…]`, plans/3 C)
 
 Added 2026-07-19. Fetches recent executions with full run data
 (`GET /api/v1/executions?includeData=true`, filtered by `workflowId`;
 `--status=success|error|waiting` and `--limit=N` — default 5, API page cap
 250 — pass through to the API) into
-`workflows/<Name>/executions/<execId>.json`, verbatim and pretty-printed. A
+`workflows/<folder>/executions/<execId>.json`, verbatim and pretty-printed. A
 purely numeric argument is an execution id (`GET /executions/{id}`), routed
 to its workflow's folder via the response's `workflowId`. Read-only against
 the API by design — nothing under `executions/` is ever synced back.
@@ -370,7 +396,7 @@ editing. A warning, not an error; the data is still useful.
 `run --from-execution` (auto-building a fixture from a captured execution)
 was deliberately deferred to the backlog — agents read the JSON directly.
 
-## Watch mode (`n8n-decanter <id> watch`)
+## Watch mode (`n8n-decanter watch <workflow>`)
 
 Fast inner loop while developing a workflow: resolve its folder by id and
 watch both the `code/` dir and `workflow.json`. Takes exactly one workflow
@@ -768,7 +794,7 @@ conflict surfacing, structural drift abort, status, renames, single-node push.
       (`active:false`, `activeVersionId:null`). Shares `api.createWorkflow`
       with plans/21's `duplicate`. This does **not** invert the born-in-n8n
       rule — the server assigns the id and owns the birth; the CLI triggers it.
-    - `delete <ref>` calls `DELETE /api/v1/workflows/:id`, which **hard-deletes
+    - `delete <workflow>` calls `DELETE /api/v1/workflows/:id`, which **hard-deletes
       even a published workflow** (verified: no refusal, no archive — GET after
       → 404). So the CLI's `y/N` confirmation (`--force` to skip; required
       non-interactively) is the *only* guard. The local folder is never

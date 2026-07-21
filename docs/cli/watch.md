@@ -1,11 +1,11 @@
 ---
 title: watch
 description: Push a workflow's files on save, with optional browser live-reload.
-order: 9
+order: 7
 ---
 
 ```sh
-n8n-decanter [ref] watch [--force]
+n8n-decanter watch [workflow] [--force]
 ```
 
 Watches one workflow's `code/` files **and** its `workflow.json` and pushes

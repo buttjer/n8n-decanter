@@ -154,7 +154,7 @@ describe("duplicateWorkflow", () => {
     assert.equal(body()!.nodes[0].parameters.jsCode, "return $input.all();\n");
     assert.match(lines.join("\n"), /duplicated "Source" -> "My Clone" \(clone1\) on the server — unpublished draft/);
     // pulled into its own folder
-    assert.equal(JSON.parse(readFileSync(path.join(tmp!, "My Clone", ".decanter.json"), "utf8")).workflowId, "clone1");
+    assert.equal(JSON.parse(readFileSync(path.join(tmp!, "my-clone", ".decanter.json"), "utf8")).workflowId, "clone1");
     // source folder untouched
     assert.equal(JSON.parse(readFileSync(path.join(tmp!, "Source", "workflow.json"), "utf8")).name, "Source");
   });

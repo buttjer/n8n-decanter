@@ -70,6 +70,26 @@ describe("listWorkflowRefs", () => {
     ]);
     assert.equal(warnings.length, 1, "corrupt folder warns once");
   });
+
+  it("prefers the cached .decanter.json name over workflow.json and the folder (Plan 27)", () => {
+    const root = path.join(TMP, "namerefs");
+    // folder is a kebab slug; state caches the display name; workflow.json lags
+    const dir = workflowDir("namerefs/order-sync", JSON.stringify({ workflowId: "wfN", name: "Order Sync v2", nodes: {} }));
+    writeFileSync(path.join(dir, "workflow.json"), JSON.stringify({ name: "Order Sync (stale)" }));
+    const [ref] = listWorkflowRefs(root);
+    assert.equal(ref.name, "Order Sync v2", "display name comes from state.name");
+    // resolvable by cached name and by folder slug, not by the stale workflow.json name
+    assert.deepEqual(ref.names, ["Order Sync v2", "order-sync"]);
+    assert.equal(matchWorkflowRef(listWorkflowRefs(root), "order-sync")?.id, "wfN");
+    assert.equal(matchWorkflowRef(listWorkflowRefs(root), "Order Sync v2")?.id, "wfN");
+  });
+
+  it("falls back to workflow.json then the folder when state.name is absent", () => {
+    const root = path.join(TMP, "namefallback");
+    const dir = workflowDir("namefallback/some-slug", JSON.stringify({ workflowId: "wfF", nodes: {} }));
+    writeFileSync(path.join(dir, "workflow.json"), JSON.stringify({ name: "From Workflow Json" }));
+    assert.equal(listWorkflowRefs(root)[0].name, "From Workflow Json");
+  });
 });
 
 describe("matchWorkflowRef", () => {

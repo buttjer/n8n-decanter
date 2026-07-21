@@ -1,11 +1,11 @@
 ---
 title: duplicate
 description: Clone a workflow into a new remote one, then pull the copy.
-order: 11
+order: 10
 ---
 
 ```sh
-n8n-decanter <ref> duplicate ["<new name>"]
+n8n-decanter duplicate <workflow> ["<new name>"]
 ```
 
 Clones an already-pulled workflow into a **brand-new workflow on the server**,

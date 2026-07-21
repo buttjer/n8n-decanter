@@ -4,29 +4,53 @@ description: Command surface, workflow refs, flag placement, exit codes, and out
 order: 1
 ---
 
+**The verb comes first:** `n8n-decanter <verb> [workflow…] [flags]`. Everything
+after the verb is an argument, so a workflow named like a verb is just a normal
+argument (no special rule). Flags may still sit anywhere.
+
 ```sh
 n8n-decanter                        # interactive picker (terminal, inited project)
-n8n-decanter init [dir]             # interactive bootstrap
-n8n-decanter [ref...] pull          # remote -> workflows/<Name>/
-n8n-decanter [ref...] push [--force] [--no-typecheck]
-n8n-decanter [ref...] status [--diff]
-n8n-decanter [ref...] check [--no-typecheck]
-n8n-decanter <ref> rename "<old node>" "<new node>"
-n8n-decanter <ref> rename --workflow "<new name>"
-n8n-decanter <ref> add "<Node name>" [--ts]           # scaffold a Code node (offline)
-n8n-decanter [ref] watch [--force]
-n8n-decanter create "<name>"                          # blank workflow, then pull
-n8n-decanter <ref> duplicate ["<new name>"]           # clone a workflow, then pull
-n8n-decanter [ref...] publish                         # take the draft(s) live
-n8n-decanter [ref...] unpublish                       # back to draft-only
-n8n-decanter <ref> delete [--force]                   # delete from the server
-n8n-decanter [ref...] executions [--status=…] [--limit=N]
-n8n-decanter [ref...] executions clean
-n8n-decanter <ref> simulate --execution <id> [--network-none] [--json]   # engine-true replay
-n8n-decanter list [--remote]
+
+# Setup
+n8n-decanter init [dir] [--force]   # interactive bootstrap
 n8n-decanter completion zsh|bash
-n8n-decanter <node-file> run [fixture.json] [--allow-env]
+
+# Sync
+n8n-decanter pull [workflow…]       # remote -> workflows/<kebab>/
+n8n-decanter push [workflow…] [--force] [--no-typecheck]
+n8n-decanter watch [workflow]
+n8n-decanter publish [workflow…]    # take the draft(s) live
+n8n-decanter unpublish [workflow…]  # back to draft-only
+
+# Workflow lifecycle
+n8n-decanter create "<name>"                     # blank workflow, then pull
+n8n-decanter duplicate <workflow> ["<name>"]     # clone a workflow, then pull
+n8n-decanter delete <workflow> [--force]         # delete from the server
+n8n-decanter rename <workflow> "<new name>"      # rename the workflow (offline)
+
+# Inspect & test
+n8n-decanter status [workflow…] [--diff]
+n8n-decanter check [workflow…] [--no-typecheck]
+n8n-decanter executions [workflow…] [--status=…] [--limit=N]
+n8n-decanter executions [workflow…] clean
+n8n-decanter simulate <workflow> [--execution <execution-id>] [--pin <execution-id>] [--network-none] [--json]
+n8n-decanter list [--remote] [--json]
+
+# Node
+n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node (offline)
+n8n-decanter node rename <workflow> "<old node>" "<new node>"   # rename a node everywhere (offline)
+n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node locally (offline)
 ```
+
+## Placeholder vocabulary
+
+| Token | Means |
+| --- | --- |
+| `<workflow>` / `[workflow…]` | a workflow: **id · name · unique name-prefix · folder name** |
+| `<node>` | a node **name** (`node create`, `node rename`) |
+| `<node-file>` | a path to a node source file (`node run`) |
+| `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
+| `<name>` | a new literal name (`create`, `duplicate`, `rename`) |
 
 ## Interactive picker
 
@@ -41,25 +65,30 @@ menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
 output and dirs without a `decanter.config.json` keep printing usage — scripts
 and LLM harnesses never see the picker.
 
+**No-ref → picker.** A ref-taking verb given *no* workflow, on a terminal, opens
+the picker to choose one and then runs that verb on it (the verb menu is
+skipped). Piped/non-TTY runs keep the config-default / error path unchanged, so
+scripts and LLM harnesses never block.
+
 ## Workflow refs
 
-A workflow `ref` is its **id, its workflow/folder name, or a unique name
-prefix** — `n8n-decanter "Order Sync" push` and `n8n-decanter order push`
+A `<workflow>` is its **id, its workflow/folder name, or a unique name
+prefix** — `n8n-decanter push "Order Sync"` and `n8n-decanter push order`
 both work. Matching is case-insensitive and never prompts: an ambiguous or
 unknown name errors with the candidate list. `pull` resolves not-yet-pulled
-names against the server's workflow list; a workflow literally named like a
-verb must be addressed by id. Without refs, all workflows from the config are
-processed.
+names against the server's workflow list. Without a workflow argument, all
+workflows from the config are processed (or the picker opens, on a terminal).
 
-The verb may sit anywhere among the arguments (`push wf123` is the same as
-`wf123 push`) — the first token matching a known verb is the command; flags
-may appear in any position too.
+**Verb-first grammar.** The verb is the first argument; everything after it is
+an argument. `n8n-decanter status push` runs `status` on the workflow named
+`push` — no "address it by id" caveat. Verb-last (`n8n-decanter wf123 push`)
+errors with *unknown verb*. Flags may still appear in any position.
 
 ## Offline vs. online
 
 | Verbs | Network |
 | --- | --- |
-| `check`, `run`, `rename`, `add`, `list`, `simulate`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n API) |
+| `check`, `rename`, `node create`, `node rename`, `node run`, `list`, `simulate`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n API) |
 | `status`, `executions` | Read the remote, never write |
 | `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish`, `delete` | Read/write the live instance |
 

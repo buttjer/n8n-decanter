@@ -5,7 +5,7 @@ order: 6
 ---
 
 ```sh
-n8n-decanter [ref...] check [--no-typecheck]
+n8n-decanter check [workflow…] [--no-typecheck]
 ```
 
 Fully offline (no credentials, no network): runs the **compliance guard**

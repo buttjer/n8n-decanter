@@ -1,11 +1,11 @@
 ---
 title: delete
 description: Delete a workflow from the server, deliberately — the local folder is kept.
-order: 13
+order: 11
 ---
 
 ```sh
-n8n-decanter <ref> delete [--force]
+n8n-decanter delete <workflow> [--force]
 ```
 
 Deletes a workflow from the n8n server. This is a **hard delete** — n8n removes

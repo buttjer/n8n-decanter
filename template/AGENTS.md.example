@@ -19,10 +19,11 @@ per Code node. The
   `// @ts-n8n sha256:` marker.** These are machine-owned; touching them corrupts
   sync state and the CLI blocks it at `push`.
 - **Structural edits have verbs — use them instead of hand-editing JSON:**
-  `add` a Code node, `rename` a node/workflow, `create`/`duplicate` a workflow.
-  Each does the fiddly multi-file edit atomically and re-validates the folder.
+  `node create` a Code node, `node rename` a node, `rename` a workflow,
+  `create`/`duplicate` a workflow. Each does the fiddly multi-file edit
+  atomically and re-validates the folder.
 - **`push` is a deploy to the live instance — only when the user asks.** Edit,
-  then verify offline with `n8n-decanter check` and `n8n-decanter run`.
+  then verify offline with `n8n-decanter check` and `n8n-decanter node run`.
 
 The rest of this document is the full contract behind those four points.
 
@@ -50,15 +51,15 @@ runtime. It is **wrong** about how code is stored here. The deviations:
    diff: port the change into the `.ts`, delete the `.remote.js`, then the user
    pushes. Never edit `.remote.js` itself; never push while one exists.
 6. **Renames have no UI magic here.** The n8n editor auto-updates references on
-   rename; editing files does not. Use `n8n-decanter <ref> rename` — it rewrites
-   every reference atomically. See "Renaming a node" below.
+   rename; editing files does not. Use `n8n-decanter node rename <workflow>` — it
+   rewrites every reference atomically. See "Renaming a node" below.
 7. **New workflows are born on the server, not from a repo folder.** There is no
    id-less folder that becomes a workflow on push. Use `n8n-decanter create
    "<name>"` — it posts a blank draft to n8n and pulls it back (the server
-   assigns the id) — `n8n-decanter <ref> duplicate` to clone an existing
+   assigns the id) — `n8n-decanter duplicate <workflow>` to clone an existing
    workflow into a new one, or create it in the n8n UI and `pull`. Then add its
    id to `decanter.config.json`. A created workflow is **unpublished**; `publish`
-   takes it live, `unpublish` returns it to draft-only, and `<ref> delete`
+   takes it live, `unpublish` returns it to draft-only, and `delete <workflow>`
    removes one from the server (the local folder is kept).
 
 > **Enforcement.** Rules 1, 3, 4, 5 are *hard invariants* — violating them corrupts
@@ -89,7 +90,7 @@ A node object:
 
 ```json
 {
-  "id": "a1b2c3d4-…",            // UUID v4 — `n8n-decanter <ref> add` mints it; NEVER change an existing id
+  "id": "a1b2c3d4-…",            // UUID v4 — `n8n-decanter node create <workflow>` mints it; NEVER change an existing id
   "name": "Amazon Feed",          // unique per workflow — connections + $('…') reference it
   "type": "n8n-nodes-base.code",
   "typeVersion": 2,
@@ -126,7 +127,7 @@ Use the verb — it rewrites every reference atomically, offline, and re-validat
 the folder:
 
 ```sh
-n8n-decanter <ref> rename "<Old Name>" "<New Name>"
+n8n-decanter node rename <workflow> "<Old Name>" "<New Name>"
 ```
 
 It touches all four places a rename must hit at once — the same four you'd have
@@ -138,19 +139,20 @@ to keep in sync **by hand** (and atomically) if you ever edit the raw JSON:
 4. The source file name and its `//@file:` placeholder (kebab-case convention,
    file stays in `code/`).
 
-Renaming a **workflow**: `n8n-decanter <ref> rename --workflow "<New Name>"`.
-The folder rename follows on the next pull — folder names are cosmetic; the id
-inside `workflow.json` is authoritative.
+Renaming a **workflow**: `n8n-decanter rename <workflow> "<New Name>"`. The
+folder is a stable local slug and is left untouched; the id inside
+`workflow.json` is authoritative, and the display name is cached in
+`.decanter.json`.
 
 ### Adding a Code node
 
-1. `n8n-decanter <ref> add "<Node name>" [--ts]` scaffolds it in one step: it
-   mints the node `id`, writes the `code/` source (`.js`, or `.ts` with
+1. `n8n-decanter node create <workflow> "<Node name>" [--ts]` scaffolds it in one
+   step: it mints the node `id`, writes the `code/` source (`.js`, or `.ts` with
    `--ts`), adds the `//@file:` placeholder, records it in `.decanter.json`,
    and re-checks the folder. The node lands **disconnected**.
 2. Wire it up — add its connections in `workflow.json` (and any `$('…')`
    references from other nodes), then edit the source in `code/`.
-3. Verify: `n8n-decanter run <file> [fixture.json]` to execute it, then
+3. Verify: `n8n-decanter node run <file> [fixture.json]` to execute it, then
    `n8n-decanter check` (typecheck + layout).
 
 ## Writing Code node code
@@ -258,7 +260,7 @@ Two offline tools, always available (no credentials, no network, no live n8n):
   typecheck (the same wrapper that maps top-level-`return` node bodies back to
   real line numbers). Run it after editing any code file or `n8n-globals.d.ts`;
   treat a failure as a blocker. `npm run typecheck` is an alias for it.
-- **`n8n-decanter run <file> [fixture.json]`** — actually executes a node's body
+- **`n8n-decanter node run <file> [fixture.json]`** — actually executes a node's body
   against a faked n8n context (`$input`, `$json`, `$('Node')`, `DateTime`, …) and
   prints the items it returns. Prefer this over hand-rolling a throwaway test
   script.
@@ -289,20 +291,20 @@ Two offline tools, always available (no credentials, no network, no live n8n):
 ## Real execution data (`executions/` — temporary, gitignored)
 
 When you need to see what data actually flows through a workflow — to write an
-accurate `run` fixture, or to debug a node against real payloads — fetch recent
-executions from the instance instead of guessing shapes:
+accurate `node run` fixture, or to debug a node against real payloads — fetch
+recent executions from the instance instead of guessing shapes:
 
 ```sh
-n8n-decanter "<workflow>" executions                    # 5 most recent, full run data
-n8n-decanter "<workflow>" executions --status=error --limit=3
+n8n-decanter executions "<workflow>"                    # 5 most recent, full run data
+n8n-decanter executions "<workflow>" --status=error --limit=3
 n8n-decanter executions 4711                            # one execution by its id
 ```
 
-Each execution lands as `workflows/<Name>/executions/<execId>.json`. The items
+Each execution lands as `workflows/<folder>/executions/<execId>.json`. The items
 a node produced are under
 `data.resultData.runData["<Node Name>"][0].data.main[0][]` — each entry's
 `.json` is one item, exactly what `$('<Node Name>')` (and the downstream node's
-`$input`) sees at runtime. Copy real item shapes from here into `run` fixtures.
+`$input`) sees at runtime. Copy real item shapes from here into `node run` fixtures.
 
 Rules:
 
@@ -320,16 +322,16 @@ Rules:
 ## Commands — who runs what
 
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
-  `n8n-decanter run <file> [fixture]`, `n8n-decanter <ref> add "<Node name>"`,
-  `n8n-decanter <ref> rename …`, `n8n-decanter executions clean`. These never
-  touch the network.
+  `n8n-decanter node run <file> [fixture]`, `n8n-decanter node create <workflow> "<Node name>"`,
+  `n8n-decanter node rename <workflow> …`, `n8n-decanter rename <workflow> …`,
+  `n8n-decanter executions clean`. These never touch the network.
 - **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line
-  diffs; exits 1 on conflict/remote drift) and `n8n-decanter <ref> executions`
+  diffs; exits 1 on conflict/remote drift) and `n8n-decanter executions <workflow>`
   (fetches execution data, read-only) — safe to run, but they do contact the
   instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
   pull` / `push` / `watch` read/write the real instance and `push` deploys;
-  `create "<name>"` adds a new workflow and `<ref> duplicate` clones an existing
+  `create "<name>"` adds a new workflow and `duplicate <workflow>` clones an existing
   one into a new (unpublished) remote workflow, and `publish` / `unpublish`
   change what is live (`publish` takes the draft live immediately, `unpublish`
   returns it to draft-only). Otherwise finish edits, verify with `check` +

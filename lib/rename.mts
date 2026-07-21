@@ -139,7 +139,11 @@ export function renameNode(root: string, id: string, oldName: string, newName: s
   }
 }
 
-/** Rename the workflow itself. The folder is cosmetic and follows on the next pull. */
+/**
+ * Rename the workflow itself. The folder is a stable local pick and is left
+ * untouched (Plan 27); the always-current display name is `.decanter.json.name`,
+ * updated here alongside workflow.json for immediate local consistency.
+ */
 export function renameWorkflow(root: string, id: string, newName: string, log: Log): void {
   newName = newName.trim();
   if (!newName) throw new Error("new workflow name must not be empty");
@@ -148,5 +152,10 @@ export function renameWorkflow(root: string, id: string, newName: string, log: L
   const oldName = wf.name;
   wf.name = newName;
   writeFileSync(path.join(dir, "workflow.json"), stableWorkflowJson(wf));
-  log.info(`renamed workflow "${oldName}" -> "${newName}" — push to propagate; the folder follows on the next pull`);
+  const state = readState(dir);
+  if (state) {
+    state.name = newName;
+    writeState(dir, state);
+  }
+  log.info(`renamed workflow "${oldName}" -> "${newName}" — push to propagate`);
 }

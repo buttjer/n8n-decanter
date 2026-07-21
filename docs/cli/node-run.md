@@ -1,11 +1,11 @@
 ---
-title: run
+title: node run
 description: Execute a Code node offline against a faked n8n context, with optional fixtures.
-order: 17
+order: 18
 ---
 
 ```sh
-n8n-decanter <node-file> run [fixture.json] [--allow-env]
+n8n-decanter node run <node-file> [fixture.json] [--allow-env]
 ```
 
 Actually executes a node's body against a faked n8n context (`$input`,

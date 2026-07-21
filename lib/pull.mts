@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
@@ -10,7 +10,6 @@ import {
   FILE_PLACEHOLDER_PREFIX,
   isJsCodeNode,
   kebabCase,
-  sanitizeFilename,
   sha256,
   splitMarker,
   stableWorkflowJson,
@@ -23,26 +22,26 @@ function writeIfChanged(file: string, content: string): boolean {
   return true;
 }
 
-/** Locate/create the workflow folder, renaming it if the workflow was renamed. */
-function ensureWorkflowDir(root: string, wf: Workflow, log: Log): { dir: string; previousDir?: string } {
-  const wanted = sanitizeFilename(wf.name);
+/**
+ * Locate/create the workflow folder (Plan 27). Folders are a stable local pick:
+ * an **existing** folder for this id is kept as-is (never renamed to follow a
+ * remote workflow rename — the display name lives in `.decanter.json.name`). A
+ * **new** folder gets a kebab-case slug; if that slug is already taken by a
+ * different workflow, fall back to `<slug>-<id8>` (the node-file collision
+ * strategy) and warn.
+ */
+function ensureWorkflowDir(root: string, wf: Workflow, log: Log): { dir: string } {
   const existing = findWorkflowDir(root, wf.id, log);
-  if (!existing) {
-    const dir = path.join(root, wanted);
-    mkdirSync(dir, { recursive: true });
-    return { dir };
+  if (existing) return { dir: existing };
+  const wanted = kebabCase(wf.name);
+  let slug = wanted;
+  if (existsSync(path.join(root, slug))) {
+    slug = `${wanted}-${wf.id.slice(0, 8)}`;
+    log.warn(`folder "${wanted}/" already taken — using "${slug}/" for "${wf.name}" (${wf.id})`);
   }
-  if (path.basename(existing) !== wanted) {
-    const target = path.join(path.dirname(existing), wanted);
-    if (existsSync(target)) {
-      log.warn(`workflow renamed to "${wf.name}" but ${target} already exists — keeping ${existing}`);
-      return { dir: existing };
-    }
-    renameSync(existing, target);
-    log.info(`renamed folder ${path.basename(existing)}/ -> ${wanted}/`);
-    return { dir: target, previousDir: existing };
-  }
-  return { dir: existing };
+  const dir = path.join(root, slug);
+  mkdirSync(dir, { recursive: true });
+  return { dir };
 }
 
 /**
@@ -64,9 +63,10 @@ function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: Workf
 
 export async function pullWorkflow(api: N8nApi, root: string, id: string, { commitOnPull = false }: { commitOnPull?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
   const wf = await api.getWorkflow(id);
-  const { dir, previousDir } = ensureWorkflowDir(root, wf, log);
+  const { dir } = ensureWorkflowDir(root, wf, log);
   const state: DecanterState = readState(dir) ?? { workflowId: wf.id, nodes: {} };
   state.workflowId = wf.id;
+  state.name = wf.name; // cached display name (Plan 27) — folder stays a stable slug
   state.nodes ??= {};
   const usedNames = new Set<string>();
   const placeholders = new Map<string, string>(); // node id -> file name
@@ -156,8 +156,7 @@ export async function pullWorkflow(api: N8nApi, root: string, id: string, { comm
   state.lastPulledWorkflowHash = workflowStructureHash(wf);
   writeState(dir, state);
   if (commitOnPull) {
-    const extras = previousDir ? [path.relative(dir, previousDir)] : [];
-    await commitWorkflowDir(dir, `decanter: pulled "${wf.name}" (${id})`, log, extras);
+    await commitWorkflowDir(dir, `decanter: pulled "${wf.name}" (${id})`, log);
   }
   return { dir, name: wf.name };
 }
