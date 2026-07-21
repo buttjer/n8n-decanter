@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-07-21
+
 ### Changed
 
 - **`$('Node').item` in the type shim (`n8n-globals.d.ts`) is no longer typed
