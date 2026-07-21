@@ -36,7 +36,12 @@
       "Bash(git branch *)",
       "Bash(git push *)",
       "Bash(gh pr create:*)",
-      "Bash(docker version *)"
+      "Bash(docker version *)",
+      "Bash(cd:*)",
+      "Bash(git config --get-regexp:*)",
+      "Bash(gh api repos/buttjer/n8n-decanter/*)",
+      "Bash(gh run watch:*)",
+      "Bash(docker info:*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
