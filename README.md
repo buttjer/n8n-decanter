@@ -201,10 +201,6 @@ must never land in git); executions reflect the *published* workflow version
 (n8n 2.x), so treat them as convenience data, not ground truth, and remove
 them with `executions clean` when done.
 
-<!--
-"How it compares" is temporarily hidden pending the n8n-as-code maintainer's
-sign-off on the comparison scorings (asked 2026-07-20). Uncomment to restore.
-
 ## How it compares
 
 n8n-decanter is **Code-node-first**: it optimizes the loop of writing, typing,
@@ -235,7 +231,6 @@ n8n-as-code shines for whole-workflow authoring/generation and multi-environment
 ops; the native editor stays the live visual canvas everything syncs back to. And
 decanter makes no LLM calls of its own — you drive it with the coding agent you
 already run, so Claude Code on a Claude subscription needs no extra API tokens.
--->
 
 ## Caveats
 
