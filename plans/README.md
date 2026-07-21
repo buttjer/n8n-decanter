@@ -154,6 +154,13 @@ items not yet claimed by one. Recommended order:
     opens the picker on a terminal, new workflow folders are kebab-case with the
     display name cached in `.decanter.json`, and the help/docs get one
     placeholder vocabulary + terse grouped descriptions. Proposed 2026-07-21.
+28. [Python Code nodes](OPEN-28-python-code-nodes.md) — extract n8n **Python**
+    Code nodes (`language: "python"`, source in `pythonCode`) into `code/<node>.py`
+    files with full round-trip parity (pull/push/status/watch/check +
+    `add --python`), mirroring the JS/TS flow. Python is verbatim like `.js` — no
+    compile, marker, bundling, or `.remote` flow — so it funnels through one new
+    source-field abstraction in `lib/util.mts`. Offline `run` stays JS-only.
+    Proposed 2026-07-21.
 
 ## Conventions
 
