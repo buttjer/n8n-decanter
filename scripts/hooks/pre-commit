@@ -1,25 +1,35 @@
 #!/bin/sh
-# Refuse commits made directly on the protected branch.
+# Refuse commits made in the MAIN working tree.
 #
-# main is protected: every change lands via PR from a short-lived branch
-# (feat/fix/docs/chore) and is squash-merged on GitHub. There is never a
-# legitimate LOCAL commit on main — the only local touch is
-# `git switch main && git pull` after a merge. Agents (and humans) skipping
-# the worktree/branch rule get caught here instead of on the push.
+# Every repo-modifying task runs in its own linked worktree under .worktrees/
+# (docs and Markdown included — there is no fast path). The main checkout is
+# shared: a concurrent session or the IDE's git integration can flip its HEAD
+# and branch out from under you mid-edit, and committing there lands work on
+# whatever branch the main checkout happens to be on — including `main` itself.
+#
+# A commit run from a linked worktree has its git-dir under .git/worktrees/;
+# the main checkout's git-dir is plain .git. That is the signal we gate on, and
+# it subsumes the old "no commits on the main branch" rule — `main` only ever
+# lives in the main checkout, so blocking the main checkout blocks it too.
 #
 # Escape hatch for the rare emergency: ALLOW_MAIN_COMMIT=1 git commit …
 # Enable this hook once per clone/worktree parent:
 #   git config core.hooksPath scripts/hooks
 
-protected="main"
-
-branch=$(git symbolic-ref --short -q HEAD)
-
-if [ "$branch" = "$protected" ] && [ "$ALLOW_MAIN_COMMIT" != "1" ]; then
-	echo "✋ Refusing to commit directly on '$protected'." >&2
-	echo "   main is PR-only — branch first:" >&2
-	echo "     git switch -c chore/my-change   (docs fast path), or" >&2
-	echo "     git worktree add -b feat/x .worktrees/feat-x main   (code)" >&2
-	echo "   Override (emergencies only): ALLOW_MAIN_COMMIT=1 git commit …" >&2
-	exit 1
+if [ "$ALLOW_MAIN_COMMIT" = "1" ]; then
+	exit 0
 fi
+
+case "$(git rev-parse --absolute-git-dir)" in
+	*/worktrees/*)
+		# Linked worktree (.git/worktrees/<name>) — allowed.
+		;;
+	*)
+		echo "✋ Refusing to commit in the main working tree." >&2
+		echo "   Every task runs in its own worktree — create one first:" >&2
+		echo "     git worktree add -b feat/x .worktrees/feat-x main" >&2
+		echo "   then commit from inside .worktrees/feat-x." >&2
+		echo "   Override (emergencies only): ALLOW_MAIN_COMMIT=1 git commit …" >&2
+		exit 1
+		;;
+esac
