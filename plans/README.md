@@ -32,10 +32,12 @@ items not yet claimed by one. Recommended order:
    step).
 7. [Engine-true simulation suite](OPEN-7-engine-true-simulation-suite.md) —
    replay a whole workflow through the real n8n engine offline: network nodes
-   pinned from captured executions (LLM guesses fill gaps), pure nodes run for
-   real, enforced no-side-effects. Unblocked since Plan 3's `executions` verb
-   shipped (2026-07-19); next step is the timeboxed engine spike. Refreshed
-   2026-07-20.
+   pinned from captured executions, pure nodes run for real, enforced
+   no-side-effects. **The `simulate` verb shipped 2026-07-20/21** (Docker
+   backend) with a per-node diff, `--pin`, a picker entry, and a browsable
+   viewer that opens the run in the n8n webapp. Remaining: gap handling (the
+   guide-to-pin / viewer-pin / `--guess-gaps` trust ladder) and the npx backend
+   (split to Plan 26).
 8. [Folder hierarchy in sync layout](BLOCKED-8-folder-hierarchy-in-sync-layout.md) —
    local dirs above a workflow folder become its n8n folder path, pushed
    one-way via the folders public API (the API can write placement but not
@@ -131,6 +133,20 @@ items not yet claimed by one. Recommended order:
     `renderLines` tests. Presentation only — the state machine is untouched
     (`executions` in the verb menu already shipped in v0.3.0). Proposed
     2026-07-20.
+24. [Shared-code imports in `.js` nodes](OPEN-24-shared-code-in-js-nodes.md) —
+    let a `.js` node `import` from `shared/` (and opted-in npm packages) the
+    way `.ts` nodes already can (Plan 14), bundled into the pushed node.
+    Changes the `.js` sync contract, so a real design pass. Proposed 2026-07-21.
+25. [Read data tables (dev/debug)](OPEN-25-data-tables-read.md) — a read-only
+    `data-tables` verb that pulls n8n data-table schemas + rows into local
+    gitignored files so you can develop/debug against real table contents;
+    config-gated, with the read scopes added to the recommended key. Proposed
+    2026-07-21.
+26. [npx engine backend for `simulate`](OPEN-26-npx-engine-backend.md) — a
+    dependency-free `npx n8n@<ver>` engine backend so `simulate` runs without
+    Docker (the accessibility default Plan 7 intended). The headless diff run
+    is npx's home; the browsable viewer stays Docker-preferred. Split from
+    Plan 7 2026-07-21.
 
 ## Conventions
 

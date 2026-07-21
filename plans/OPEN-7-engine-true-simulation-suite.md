@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P3 (spike may promote the rest; **unblocked** 2026-07-19 — Plan 3 C shipped as the `executions` verb) |
-| **Status** | **In progress** — spike + tasks 2, 3, 5 done and task 4 (Docker isolation) done 2026-07-20: the `simulate` verb ships and replays engine-true against real n8n. Remaining: task 6 (`--fill-gaps`, severable) and the npx engine backend (task 4's dependency-free default — Docker backend shipped first as the validated path). |
+| **Status** | **In progress** — spike + tasks 2–5 done 2026-07-20/21 (Docker backend): the `simulate` verb ships and replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`. Remaining: **task 6 gap handling** (guide-to-pin default + viewer-pin + `--guess-gaps` LLM last resort — see the trust ladder) and the **npx engine backend**, now split to [Plan 26](OPEN-26-npx-engine-backend.md). |
 | **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (LLM-guessed fixtures fill the gaps), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
 | **Model** | **Opus** — the highest-reasoning plan in the backlog: the route-B transform, the `n8n execute` subprocess orchestration, and above all the *safety-critical* default-deny node classification (a misclassified node runs for real) reward the strongest model. Once the spike (task 1) and transform are designed, the CLI/test wiring can drop to Sonnet. |
 
@@ -79,16 +79,20 @@ safety layer). The Code node runs via internal-mode task runners (loopback
 broker, works under `--network none`) or in-process with
 `N8N_RUNNERS_ENABLED=false`.
 
-The engine backend is pluggable; Docker is optional:
+The engine backend is pluggable:
 
-- **Default: `npx n8n@<ver>`** with `N8N_USER_FOLDER` in a scratch dir —
-  throwaway SQLite/config, per-run version pinning, keeps n8n out of the
-  decanter's own dependency tree. The no-side-effects guarantee here is
-  structural (no I/O-capable node survives the transform) plus sandbox
-  config (empty task-runner stdlib allowlist, telemetry/version fetches
-  disabled via env) — not a physical network cutoff.
-- **Opt-in hard isolation: Docker `--network none`** (CI) — adds the
-  enforced network cutoff on top.
+- **Shipped: Docker** (`n8nio/n8n:<ver>`) — a throwaway `--rm` container runs
+  `import:workflow` + `execute`; `--network none` adds an enforced outbound
+  cutoff on top of the structural guarantee (no I/O-capable node survives the
+  transform). This is the only backend built (v1) and the one that's validated.
+- **Deferred → [Plan 26](OPEN-26-npx-engine-backend.md): `npx n8n@<ver>`** with
+  `N8N_USER_FOLDER` in a scratch dir — the *dependency-free default* the plan
+  originally wanted (no Docker; runs on the Node the CLI already needs). Split
+  into its own plan because it needs its own validation (native sqlite install,
+  first-boot migrations) and a lifecycle story for the browsable viewer (a
+  kept-alive `npx n8n start` is a host daemon, not a named container — see
+  Plan 26). The headless diff run is npx's natural home; the viewer likely
+  stays Docker-preferred.
 
 Why B: engine-true by construction on *any* n8n version (run the matching
 one); no fragile internal APIs. Accepted costs: heavy engine install either
@@ -230,7 +234,8 @@ slower per run; output scraped from `n8n execute`'s result JSON.
      change format across n8n versions; the recorded shape in Plan 3 C is the
      reference). A network node with no captured run data and no stored
      fixture is a **hard error** listing the nodes (and pointing at
-     `--fill-gaps`, task 6); disabled nodes and untaken branches are exempt.
+     how to pin — hand-authored fixture / viewer-pin / `--guess-gaps`, task 6);
+     disabled nodes and untaken branches are exempt.
      Any surviving node with **more than one run** in the capture is a hard
      error too ("loop workflows are out of scope", Non-goals). Warn when the
      capture's `workflowVersionId` differs from the local draft's `versionId`
@@ -270,11 +275,13 @@ slower per run; output scraped from `n8n execute`'s result JSON.
      making replays reproducible and committable. Warn on pin: execution
      data can hold credentials/PII (the reason `executions/` is gitignored)
      — review before committing.
-4. **Isolation.** npx backend: scrubbed env (no `N8N_*` credentials/env leak
-   in), `N8N_DIAGNOSTICS_ENABLED=false` + version-notification/template
-   fetches off, empty task-runner stdlib allowlist. Docker backend adds the
-   enforced `--network none` cutoff. Engine version per the version-policy
-   section (`n8nVersion` config, smoke-pin default).
+4. **Isolation.** ✅ **Docker done 2026-07-20** — scrubbed env (no `N8N_*`
+   credential/env leak in; `N8N_DIAGNOSTICS_ENABLED=false`,
+   version-notification/template fetches off, empty task-runner stdlib
+   allowlist) plus the enforced `--network none` cutoff; engine version per the
+   version-policy section (`n8nVersion` config, smoke-pin default). The **npx
+   backend's** own isolation (structural + sandbox config, no physical cutoff)
+   moves to [Plan 26](OPEN-26-npx-engine-backend.md).
 5. **Tests.** The transform and fixture loader/validation are offline — cover
    them in `test/e2e.mts` (mock server grows nothing new beyond Plan 3 C's
    executions handler). The actual engine run needs a real n8n (npx download
@@ -283,21 +290,38 @@ slower per run; output scraped from `n8n execute`'s result JSON.
    of the smoke suite) that skips cleanly when no engine is available. If
    built on `test/harness.mts`, Plan 22 task 1's step filter applies here
    for free.
-6. **LLM gap filling (`--fill-gaps`) — severable; v1 ships without it** (the
-   hard error on gaps is the safe baseline, and this is the CLI's first LLM
-   dependency). For pinned nodes with no captured output (untaken branch,
-   node added or reparametrized since the capture), ask an LLM for an
-   educated guess: prompt from the node's type + parameters plus adjacent
-   captured items as few-shot examples. Write the result to
-   `workflows/<Name>/fixtures/<Node>.json` with provenance
-   (`"source": "llm-guess"`, model, date, node-params hash) — reviewable and
-   hand-editable, and loaded like any capture thereafter. Generation is the
-   only online step; simulate runs stay offline and deterministic. Warn when
-   a fixture's params hash no longer matches the node (stale guess). Needs an
-   API key (env, e.g. `ANTHROPIC_API_KEY`); absent key, `simulate` still
-   works with captures/fixtures and hard-errors on gaps. Shape the
-   prompt/client plumbing for reuse by the backlog's "LLM semantic
-   validation" item.
+6. **Gap handling — the trust ladder for unpinnable nodes** (decided
+   2026-07-21, user). A *gap* is a network node reached in the replay with no
+   pinned data (untaken branch, or a node added/reparametrized since the
+   capture). Data supplied for a gap is a **mock pin — mechanically identical
+   to a captured pin, differing only in provenance** — so the whole job is to
+   *prefer real data and surface provenance*, never to quietly rest on invented
+   data. Three rungs, best first:
+   1. **Guide-you-to-pin (default; no LLM; cheap, ship first).** A gap stays a
+      hard error, but the message **leads with how to pin**: it names the nodes
+      and points at hand-authoring `fixtures/<Node>.json` and the viewer-pin
+      flow below. *Tidy owed regardless:* the current gap error leaks an
+      internal `(task 6)` reference and points at a `--fill-gaps` flag that
+      doesn't exist yet — drop both, lead with pinning.
+   2. **Pin-from-viewer (preferred non-LLM filler).** In the browsable viewer
+      (see Notes), pin the missing node's data in the n8n editor — native
+      `pinData` **is** honored in the server's manual executions, unlike CLI
+      `execute` — run it, and capture that output back into
+      `fixtures/<Node>.json`. Real, human-verified, deterministic; no API key.
+   3. **`--guess-gaps` (LLM, last resort) — severable; v1 ships without it**
+      (the CLI's first LLM dependency). Ask an LLM for an educated guess from
+      the node's type + parameters plus adjacent captured items as few-shot
+      examples; write it to `fixtures/<Node>.json` with provenance
+      (`"source": "llm-guess"`, model, date, node-params hash) — reviewable,
+      hand-editable, loaded like any capture, and **warned when the params hash
+      drifts** (stale guess). Generation is the only online step; simulate runs
+      stay offline/deterministic. Needs an API key (env, e.g.
+      `ANTHROPIC_API_KEY`); absent it, `simulate` still works with
+      captures/fixtures and hard-errors on gaps. **Named `--guess-gaps`, not
+      `--fill-gaps`** — the flag must signal the data is an LLM *guess*,
+      matching the `"source": "llm-guess"` stamp (renaming a released flag is
+      breaking, so it's decided up front). Shape the prompt/client plumbing for
+      reuse by the backlog's "LLM semantic validation" item.
 
 ## Acceptance / verification
 
@@ -317,8 +341,9 @@ slower per run; output scraped from `n8n execute`'s result JSON.
   node or a `credentials` block (asserted in `test/e2e.mts`).
 - `npm test` stays green without Docker or npx downloads; `test:sim` passes
   where an engine is available and skips cleanly where not.
-- With task 6 landed: `--fill-gaps` writes the guessed fixture with
-  provenance, then uses it like a capture.
+- With task 6 landed: a gap leads the user to pin (fixture / viewer-pin), and
+  `--guess-gaps` writes an LLM-guessed fixture with provenance, then uses it
+  like a capture.
 
 ## Non-goals
 
@@ -365,7 +390,7 @@ slower per run; output scraped from `n8n execute`'s result JSON.
 - **Ordering:** independent now — the spike can start anytime. Soft ties:
   Plan 20 task 3 (shared staleness helper), Plan 22 task 6 (canary lands
   with the matrix).
-- **CHANGELOG:** `simulate` verb (incl. `--pin`, later `--fill-gaps`),
+- **CHANGELOG:** `simulate` verb (incl. `--pin`, later `--guess-gaps`),
   `test:sim`, and the `n8nVersion` config field are user-facing — Added
   entries under `[Unreleased]` when they land.
 - **Browsable viewer (added 2026-07-21, user request).** In an interactive
