@@ -42,8 +42,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single batch — it runs twice (one batch pass + the final "done" pass) while
   every other node ran once — no longer hard-errors. The loop driver executes
   for real to reproduce the loop, and each node's one captured run pins exactly.
-  Multi-batch loops (any node ran more than once) stay out of scope, since
-  first-run-only pinning can't feed later iterations.
+- **New `mock` verb — fill `simulate` gaps with a committed execution mock.** A
+  *gap* (a network node reached in the replay with no captured data) used to be
+  a dead end. `n8n-decanter <workflow> mock [--execution <id>]` promotes a
+  gitignored capture into a tracked, hand-editable
+  `workflows/<folder>/execution-mocks/<id>.json` and flags which nodes to fill.
+  You (or your IDE agent) add the nodes' `runData` — **no API key, the CLI never
+  calls a model** — and `simulate` prefers the mock over the raw capture on the
+  next run. Committed, so mocked replays are reproducible for teammates and CI;
+  `mock` prints a PII-review warning and refuses to overwrite an existing mock.
+  When `simulate` loads a mock it **structurally validates** the run data and
+  fails with a node-named error if a filled node is malformed or left empty
+  (n8n publishes no execution-data schema, so the decanter checks the exact
+  shape it replays).
+- **`simulate` previews multi-batch loops in the viewer.** In an interactive
+  terminal, a genuine multi-batch loop (previously a hard error) now caps the
+  loop to its first batch and opens that single iteration in the browsable
+  viewer, clearly labeled *"iteration 1 of N — not a pass/fail check."* Headless
+  / `--json` / `--network-none` runs (scripts, CI) still hard-error, so an exit
+  code is never mistaken for a verified pass.
 
 ### Removed
 

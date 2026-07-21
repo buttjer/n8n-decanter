@@ -44,7 +44,7 @@ not on it — anything credentialed, HTTP, DB, messaging, or unknown — is pinn
 Safety never depends on recognizing a node type. Loop drivers
 (`splitInBatches`) are a special case: side-effect-free but stateful across
 runs, so they run for real (never pinned) to reproduce the loop — see
-[Scope](#scope-v1).
+[Scope](#scope).
 
 ## Options
 
@@ -120,16 +120,34 @@ executes node code in the CLI process with full host privileges, while
 `simulate` runs it inside n8n's sandbox with the network cut — for
 generated/untrusted node code, `simulate` is the safer executor.)
 
-## Scope (v1)
+## Filling gaps
 
-- **Single-iteration loops replay; multi-batch loops don't.** A loop that ran a
-  single batch — the `splitInBatches` ("Loop Over Items") driver ran twice (one
-  batch pass + the final "done" pass) while every other node ran exactly once —
+A **gap** is a network node reached in the replay with **no captured or pinned
+data** — a node added or reparametrized since the capture. `simulate` hard-errors
+on a gap rather than run half-real. To fill it, promote the capture to a
+committed, editable [execution mock](/docs/cli/mock/) and add the node's data by
+hand (or with your IDE agent — the CLI never calls a model):
+
+```sh
+n8n-decanter <workflow> mock --execution <id>   # writes execution-mocks/<id>.json, flags the gaps
+# fill the flagged nodes' runData, then:
+n8n-decanter <workflow> simulate --execution <id>   # the mock is preferred over the raw capture
+```
+
+## Scope
+
+- **Single-iteration loops replay and are gated.** A loop that ran a single
+  batch — the `splitInBatches` ("Loop Over Items") driver ran twice (one batch
+  pass + the final "done" pass) while every other node ran exactly once —
   replays faithfully: the driver **executes for real** and each node's one
-  captured run pins exactly. A loop that ran **more than one batch** (any node
-  ran more than once) is still a hard error, because first-run-only pinning
-  can't feed iterations 2..N.
-- A network node with no captured output and no fixture fails up front with the
-  list of unpinnable nodes (unless it's disabled or on an untaken branch).
+  captured run pins exactly. This is a real pass/fail check.
+- **Multi-batch loops get a viewer-only preview (not a check).** A loop that ran
+  **more than one batch** can't be gated — first-run-only pinning can't feed
+  iterations 2..N. In an **interactive terminal**, `simulate` caps the loop to
+  its first batch, replays that single iteration, and opens it in the
+  [browsable viewer](#open-the-run-in-the-n8n-webapp), clearly labeled
+  *"iteration 1 of N — not a pass/fail check"*. Headless / `--json` /
+  `--network-none` runs (scripts, CI) still hard-error, so nothing can misread
+  the exit code as verified.
 - The trigger is always a pinned replay of the captured trigger output — no
   live webhook/schedule semantics.

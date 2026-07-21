@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Priority** | P3 (spike may promote the rest; **unblocked** 2026-07-19 — Plan 3 C shipped as the `executions` verb) |
-| **Status** | **In progress** — spike + tasks 2–5 done 2026-07-20/21 (Docker backend): the `simulate` verb ships and replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`; **task 8 tier-1 single-iteration loops** shipped 2026-07-21. Remaining: **task 6 gap handling** (guide-to-pin default + viewer-pin + `--guess-gaps` LLM last resort — see the trust ladder), **tier-2 multi-batch loop viewer mode**, and the **npx engine backend**, now split to [Plan 26](OPEN-26-npx-engine-backend.md). |
-| **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (LLM-guessed fixtures fill the gaps), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
+| **Status** | **In progress** — spike + tasks 2–5 done 2026-07-20/21 (Docker backend): the `simulate` verb ships and replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`; **task 8 tier-1 single-iteration loops** shipped 2026-07-21. **Task 6 gap handling** shipped 2026-07-21 — but **without an LLM API**: instead of `--guess-gaps` calling a model, the `mock` verb promotes a capture into a committed, hand-fillable `execution-mocks/<id>.json` that the **local IDE agent** (or a human) completes, structurally validated on load (see the revised design decision). **Tier-2 multi-batch loop viewer mode** shipped 2026-07-21. Remaining: only the **npx engine backend**, split to [Plan 26](OPEN-26-npx-engine-backend.md). |
+| **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (gaps filled by hand-authored `execution-mocks/`, no LLM API), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
 | **Model** | **Opus** — the highest-reasoning plan in the backlog: the route-B transform, the `n8n execute` subprocess orchestration, and above all the *safety-critical* default-deny node classification (a misclassified node runs for real) reward the strongest model. Once the spike (task 1) and transform are designed, the CLI/test wiring can drop to Sonnet. |
 
 ## Why
@@ -158,16 +158,19 @@ once, so its first-run pins are already exact. Two tiers:
   run, or a driver with **> 2** runs (≥ 2 batches). This is fully faithful —
   the replay is engine-true and stays a real gate. Unblocked the user's real
   "Cron: eBay Sync" capture (only `Loop Over Items1` double-ran).
-- **Tier 2 — best-effort single iteration of a *multi*-batch loop (DEFERRED).**
-  For a genuine multi-batch loop, show **iteration 1 only** in the viewer: cap
-  the loop driver's input to the first batch so it iterates once, pin bodies to
-  `runs[0]`, render it in the webapp — but **never gate on it** (report
-  "iteration 1 of N shown — not a pass/fail check", never exit 0 as verified).
-  Value is eyeballing-only; the diff stays unreliable for N > 1 because pinning
-  is single-valued. Fiddly (which node feeds the driver? truncate to
-  `batchSize`?) and easy to mislead if unlabeled — hence deferred to its own
-  task, not shipped with tier 1. Doing per-iteration pinning *properly* (pin
-  `runs[i]` per iteration) is a larger project and stays out of scope.
+- **Tier 2 — best-effort single iteration of a *multi*-batch loop (SHIPPED
+  2026-07-21).** For a genuine multi-batch loop, show **iteration 1 only** in the
+  viewer: `buildSimulation({ allowMultiBatch })` (set only in viewer mode) splices
+  a synthetic `limit` node (maxItems = the driver's `batchSize`, default 1) onto
+  every incoming `main` edge of each loop driver, so it drains one batch and emits
+  "done"; bodies stay pinned to `runs[0]`. The headless diff run is **skipped
+  entirely** (`bestEffortLoop`): the report carries no diffs and the printer says
+  *"iteration 1 of N — not a pass/fail check"*. **Never gated**: tier-2 is reached
+  only in viewer mode (TTY, not `--json`/`--network-none`), so headless/CI still
+  hard-errors and no exit 0 can be read as verified. The "which node feeds the
+  driver?" question resolved to *cap all main-input edges* (the loop-back too —
+  harmless, the driver's queue is set on first entry). Per-iteration pinning (pin
+  `runs[i]` per iteration) remains out of scope.
 
 ## Tasks
 
@@ -323,38 +326,30 @@ once, so its first-run pins are already exact. Two tiers:
    of the smoke suite) that skips cleanly when no engine is available. If
    built on `test/harness.mts`, Plan 22 task 1's step filter applies here
    for free.
-6. **Gap handling — the trust ladder for unpinnable nodes** (decided
-   2026-07-21, user). A *gap* is a network node reached in the replay with no
-   pinned data (untaken branch, or a node added/reparametrized since the
-   capture). Data supplied for a gap is a **mock pin — mechanically identical
-   to a captured pin, differing only in provenance** — so the whole job is to
-   *prefer real data and surface provenance*, never to quietly rest on invented
-   data. Three rungs, best first:
-   1. **Guide-you-to-pin (default; no LLM; cheap, ship first).** A gap stays a
-      hard error, but the message **leads with how to pin**: it names the nodes
-      and points at hand-authoring `fixtures/<Node>.json` and the viewer-pin
-      flow below. *Tidy owed regardless:* the current gap error leaks an
-      internal `(task 6)` reference and points at a `--fill-gaps` flag that
-      doesn't exist yet — drop both, lead with pinning.
-   2. **Pin-from-viewer (preferred non-LLM filler).** In the browsable viewer
-      (see Notes), pin the missing node's data in the n8n editor — native
-      `pinData` **is** honored in the server's manual executions, unlike CLI
-      `execute` — run it, and capture that output back into
-      `fixtures/<Node>.json`. Real, human-verified, deterministic; no API key.
-   3. **`--guess-gaps` (LLM, last resort) — severable; v1 ships without it**
-      (the CLI's first LLM dependency). Ask an LLM for an educated guess from
-      the node's type + parameters plus adjacent captured items as few-shot
-      examples; write it to `fixtures/<Node>.json` with provenance
-      (`"source": "llm-guess"`, model, date, node-params hash) — reviewable,
-      hand-editable, loaded like any capture, and **warned when the params hash
-      drifts** (stale guess). Generation is the only online step; simulate runs
-      stay offline/deterministic. Needs an API key (env, e.g.
-      `ANTHROPIC_API_KEY`); absent it, `simulate` still works with
-      captures/fixtures and hard-errors on gaps. **Named `--guess-gaps`, not
-      `--fill-gaps`** — the flag must signal the data is an LLM *guess*,
-      matching the `"source": "llm-guess"` stamp (renaming a released flag is
-      breaking, so it's decided up front). Shape the prompt/client plumbing for
-      reuse by the backlog's "LLM semantic validation" item.
+6. **Gap handling — the trust ladder for unpinnable nodes.** ✅ **Done
+   2026-07-21** — shipped as the `mock` verb + committed `execution-mocks/`
+   (see "Design decision — gap handling"). A *gap* is a network node reached in
+   the replay with no pinned data (a node added/reparametrized since the
+   capture; untaken branches are exempt). `simulate` hard-errors, leading the
+   user to `n8n-decanter <workflow> mock --execution <id>`, which promotes the
+   gitignored capture into a **committed, hand-fillable `execution-mocks/<id>.json`**
+   (verbatim capture + a `_decanterMock` block listing each gap node with its
+   type/params/`inputSample`). The **local IDE agent** (or a human) adds the
+   node's `runData`; `simulate` prefers the mock over the raw capture and
+   **structurally validates** it on load (no official n8n JSON Schema exists — we
+   check the exact shape we replay). Covered by unit + e2e; docs + CHANGELOG
+   updated.
+
+   **Superseded (2026-07-21, user): the original three-rung LLM ladder.** The
+   first sketch had a `--guess-gaps` rung that called an LLM (an API key,
+   `ANTHROPIC_API_KEY`) to write `fixtures/<Node>.json`. That was **rejected** on
+   a core project principle: **the CLI must not depend on an LLM API key or its
+   own model — the dev's IDE agent is the model.** So gap-filling became an
+   *offline interface the local agent fills*, not an API integration: the `mock`
+   file is the request+home for the data, `source: "llm-guess"` provenance is
+   kept for hand/agent-authored data, and the `--guess-gaps` flag was dropped
+   entirely (never shipped). The viewer-pin path (native `pinData` in the
+   browsable viewer) remains a valid future non-LLM filler.
 7. **Docs + CHANGELOG.** Any user-facing surface (flags, scope, config) gets a
    docs page/section + `[Unreleased]` entry in the same change (per repo rules).
 8. **Loop handling — tier 1: single-iteration loops.** ✅ **Done 2026-07-21** —
@@ -366,7 +361,9 @@ once, so its first-run pins are already exact. Two tiers:
    replayed through Docker end-to-end — driver runs for real, the in-loop Code
    node executes and matches the capture); docs + CHANGELOG updated. See
    "Design decision — loop handling". *Follow-up:* **tier 2** (best-effort
-   viewer-only "iteration 1 of N" for multi-batch loops) remains open.
+   viewer-only "iteration 1 of N" for multi-batch loops) ✅ **shipped 2026-07-21**
+   — synthetic `limit` cap on the driver's input, diff skipped, viewer-only,
+   never gated (see "Design decision — loop handling").
 
 ## Acceptance / verification
 

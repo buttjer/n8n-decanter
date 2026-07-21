@@ -6,7 +6,7 @@ import { loadConfig } from "./lib/config.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
-import { pinFixtures, runSimulation, type SimulationReport } from "./lib/simulate.mts";
+import { pinFixtures, runSimulation, writeMock, type SimulationReport } from "./lib/simulate.mts";
 import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
@@ -71,6 +71,7 @@ ${b("Inspect & test")}
   ${b("executions")} [workflow…] clean            ${d("delete fetched execution data (offline)")}
   ${b("simulate")} <workflow> [--execution <execution-id>] [--pin <execution-id>] [--network-none] [--json]
   ${d("                                            replay through a real n8n engine (Docker); exits 1 on divergence")}
+  ${b("mock")} <workflow> [--execution <execution-id>]        ${d("promote a capture to a committed, gap-fillable execution mock (offline)")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
 
 ${b("Node")}
@@ -88,11 +89,11 @@ next to it or the environment (N8N_HOST, N8N_API_KEY).`;
 
 // Verb-first grammar (Plan 27): the command is positional[0]. `add`/`run` and
 // the node-rename overload moved under the `node` namespace (node create/rename/run).
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "duplicate", "watch", "list", "executions", "simulate", "publish", "unpublish", "create", "delete", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "duplicate", "watch", "list", "executions", "simulate", "mock", "publish", "unpublish", "create", "delete", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["create", "rename", "run"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "publish", "unpublish", "delete"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "mock", "publish", "unpublish", "delete"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -314,6 +315,18 @@ async function pickOneWorkflow(config: DecanterConfig, verb: string, log: Log): 
 
 /** Human-readable `simulate` report: per-node diff lines + a pass/fail summary. */
 function printSimulationReport(r: SimulationReport, log: Log): void {
+  // Tier-2 (viewer-only): a best-effort iteration 1 of a multi-batch loop. There
+  // is no diff and it is NOT a pass/fail check — say so plainly, show the viewer.
+  if (r.bestEffortLoop) {
+    log.warn(`multi-batch loop: showing iteration 1 of ${r.loopIterations ?? "N"} only — a browsable preview, NOT a pass/fail check (multi-batch loops can't be gated; pinning is single-valued)`);
+    if (r.url && r.login) {
+      log.info(`\nopen the run in n8n:  ${style.bold(r.url)}`);
+      log.info(style.dim(`  local login: ${r.login.email} / ${r.login.password}  ·  throwaway instance, replaced on the next simulate (docker rm -f decanter-sim-viewer to stop)`));
+    } else {
+      log.warn("the browsable viewer did not start — nothing to show for this multi-batch loop preview");
+    }
+    return;
+  }
   log.info(`replayed execution ${r.execId} on n8n ${r.version}${r.networkNone ? " (network: none)" : ""} — ${r.pure.length} node(s) real, ${r.pinned.length} pinned${r.loops.length > 0 ? `, ${r.loops.length} loop driver(s) run (single-iteration)` : ""}`);
   if (!r.engineOk) log.error(`engine run failed: ${r.engineError ?? "unknown error"}`);
   for (const d of r.diffs) {
@@ -338,7 +351,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   // simulate reads local captures + drives a throwaway engine — it never calls
   // the n8n API, so no credentials are required. Workflow `rename` and the node
   // namespace's create/rename only touch local files.
-  const offline = command === "check" || command === "rename" || command === "node:create" || command === "node:rename" || command === "simulate"
+  const offline = command === "check" || command === "rename" || command === "node:create" || command === "node:rename" || command === "simulate" || command === "mock"
     || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"));
   const config = loadConfig(process.cwd(), { requireCredentials: !offline });
@@ -566,6 +579,18 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (jsonFlag) console.log(JSON.stringify(report, null, 2));
       else printSimulationReport(report, log);
       if (!report.ok) process.exitCode = 1;
+      break;
+    }
+    case "mock": {
+      if (refs.length !== 1) throw new Error("mock needs exactly one workflow ref: n8n-decanter mock <ref> --execution <id>");
+      const dir = findWorkflowDir(config.root, refs[0], log);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      // No --execution → newest local capture (mock is offline: reads a capture,
+      // writes a committed execution-mocks/ file; no engine, no API).
+      const execId = valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
+      if (execId === undefined) throw new Error(`no execution to mock: pass --execution <id> or fetch one first with \`n8n-decanter ${refs[0]} executions\``);
+      if (valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
+      await writeMock(dir, execId, log);
       break;
     }
     case "publish":

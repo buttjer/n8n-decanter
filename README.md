@@ -38,7 +38,10 @@ editable in your IDE or by your agent, and pushed back through the n8n API.
   real n8n engine using a captured execution as the mock: pure nodes run for
   real, network nodes pinned, credentials stripped. It diffs each node against
   the capture (exits 1 on divergence — a CI-gateable regression check) and, in
-  a terminal, prints a URL to open the run in the n8n webapp.
+  a terminal, prints a URL to open the run in the n8n webapp. Nodes with no
+  captured data (gaps) are filled by hand — or by your IDE agent — in a
+  committed [execution mock](docs/cli/mock.md), no API key or model call; the
+  CLI stays fully offline.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
 - **Shared code and small libraries** — `.ts` nodes import helpers/types
@@ -158,6 +161,11 @@ n8n-decanter simulate <workflow> [--execution <execution-id>] [--network-none] [
                                     #   terminal, prints a URL to open the run in
                                     #   n8n. Defaults to the newest capture.
 n8n-decanter simulate <workflow> --pin <execution-id>   # save a capture's outputs as fixtures/
+n8n-decanter mock <workflow> [--execution <execution-id>]
+                                    # promote a capture into a committed,
+                                    #   hand-fillable execution-mocks/<id>.json —
+                                    #   fill nodes with no captured data (gaps),
+                                    #   then simulate prefers the mock (offline)
 n8n-decanter list [--remote] [--json]   # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones; --json for tooling)
 

@@ -34,6 +34,7 @@ n8n-decanter check [workflow…] [--no-typecheck]
 n8n-decanter executions [workflow…] [--status=…] [--limit=N]
 n8n-decanter executions [workflow…] clean
 n8n-decanter simulate <workflow> [--execution <execution-id>] [--pin <execution-id>] [--network-none] [--json]
+n8n-decanter mock <workflow> [--execution <execution-id>]   # committed, gap-fillable execution mock (offline)
 n8n-decanter list [--remote] [--json]
 
 # Node

@@ -1,7 +1,7 @@
 ---
 title: completion
 description: Shell tab completion for verbs, flags, and workflow names.
-order: 19
+order: 20
 ---
 
 ```sh

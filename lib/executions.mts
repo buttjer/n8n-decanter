@@ -5,21 +5,31 @@ import { findWorkflowDir, listWorkflowDirs } from "./state.mts";
 import type { Execution, Log, Workflow } from "./types.mts";
 
 export const EXECUTIONS_DIR = "executions";
+/**
+ * Committed, hand-editable execution mocks (Plan 7 task 6) — a capture promoted
+ * by the `mock` verb, with any gap nodes flagged for filling. Tracked in git
+ * (unlike gitignored `executions/`), so mocked replays are reproducible for
+ * teammates and CI. `simulate` prefers a mock over the raw capture of the same id.
+ */
+export const EXECUTION_MOCKS_DIR = "execution-mocks";
 
 /**
- * The newest captured execution id in a workflow folder's `executions/` dir, or
- * null when none are captured. n8n execution ids are incrementing integers, so
- * "newest" is the highest numeric filename; non-numeric files are ignored. Lets
- * `simulate` (and the picker, which can't supply an id) default to the latest
- * capture.
+ * The newest execution id available to replay in a workflow folder — the highest
+ * numeric `<id>.json` across the committed `execution-mocks/` dir and the
+ * gitignored `executions/` dir, or null when none exist. n8n execution ids are
+ * incrementing integers, so "newest" is the highest numeric filename; non-numeric
+ * files are ignored. Lets `simulate`/`mock` (and the picker, which can't supply an
+ * id) default to the latest — including a mock on a fresh checkout with no captures.
  */
 export function latestCaptureId(dir: string): string | null {
-  const outDir = path.join(dir, EXECUTIONS_DIR);
-  if (!existsSync(outDir)) return null;
   let best: number | null = null;
-  for (const entry of readdirSync(outDir)) {
-    const m = entry.match(/^(\d+)\.json$/);
-    if (m && (best === null || Number(m[1]) > best)) best = Number(m[1]);
+  for (const sub of [EXECUTION_MOCKS_DIR, EXECUTIONS_DIR]) {
+    const outDir = path.join(dir, sub);
+    if (!existsSync(outDir)) continue;
+    for (const entry of readdirSync(outDir)) {
+      const m = entry.match(/^(\d+)\.json$/);
+      if (m && (best === null || Number(m[1]) > best)) best = Number(m[1]);
+    }
   }
   return best === null ? null : String(best);
 }
