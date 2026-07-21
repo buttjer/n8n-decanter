@@ -58,8 +58,10 @@ Markdown (no bespoke MDX components) so the corpus stays generator-agnostic.
   patch). After merge, tag the squash commit `vX.Y.Z` on main, push the tag,
   and create the GitHub Release from it with that version's changelog
   section as the notes (`gh release create vX.Y.Z --verify-tag --notes-file
-  <section>`). The package is on npm (plans/DONE-13) — `npm publish` joins
-  this step too now. Internal-only PRs (no `[Unreleased]` entries per the
+  <section>`). The package is on npm (plans/DONE-13), but **`npm publish` is
+  the maintainer's step — Claude never runs it.** Claude's release work ends
+  at the pushed tag + GitHub Release; the maintainer publishes to npm.
+  Internal-only PRs (no `[Unreleased]` entries per the
   Changelog rules) merge without a version bump — so user-facing work never
   sits unreleased on main.
 - CI (typecheck + `npm test`) must be green before merge, now enforced
