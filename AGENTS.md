@@ -149,7 +149,9 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
 3. **Release check** — a non-empty `[Unreleased]` means user-facing work is
    sitting unreleased: cut the release per `CLAUDE.md` (roll the section, bump
    `package.json`, tag `vX.Y.Z`, GitHub Release). Confirm the latest git tag ==
-   `package.json` version and main is fully released.
+   `package.json` version and main is fully released. **`npm publish` is the
+   maintainer's step — agents stop at the pushed tag + GitHub Release and never
+   run it.**
 4. **Worktree & branch prune** — remove `.worktrees/*` whose branch is merged
    or gone (`git worktree remove`), delete merged local + remote branches, and
    clean stale `.git/config` `branch.<name>` sections left by sandboxed deletes
