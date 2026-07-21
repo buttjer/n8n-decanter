@@ -282,7 +282,7 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
 
 /** Human-readable `simulate` report: per-node diff lines + a pass/fail summary. */
 function printSimulationReport(r: SimulationReport, log: Log): void {
-  log.info(`replayed execution ${r.execId} on n8n ${r.version}${r.networkNone ? " (network: none)" : ""} — ${r.pure.length} node(s) real, ${r.pinned.length} pinned`);
+  log.info(`replayed execution ${r.execId} on n8n ${r.version}${r.networkNone ? " (network: none)" : ""} — ${r.pure.length} node(s) real, ${r.pinned.length} pinned${r.loops.length > 0 ? `, ${r.loops.length} loop driver(s) run (single-iteration)` : ""}`);
   if (!r.engineOk) log.error(`engine run failed: ${r.engineError ?? "unknown error"}`);
   for (const d of r.diffs) {
     if (d.equal) log.ok(`${d.node}: matches capture`);

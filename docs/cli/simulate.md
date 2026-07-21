@@ -41,7 +41,10 @@ Without `--execution`, `simulate` uses the **newest capture** in the workflow's
 
 Only nodes on a curated, **default-deny** allowlist run for real; any node type
 not on it — anything credentialed, HTTP, DB, messaging, or unknown — is pinned.
-Safety never depends on recognizing a node type.
+Safety never depends on recognizing a node type. Loop drivers
+(`splitInBatches`) are a special case: side-effect-free but stateful across
+runs, so they run for real (never pinned) to reproduce the loop — see
+[Scope](#scope-v1).
 
 ## Options
 
@@ -119,8 +122,13 @@ generated/untrusted node code, `simulate` is the safer executor.)
 
 ## Scope (v1)
 
-- **Loop workflows are out of scope** — a capture where any node ran more than
-  once is a hard error.
+- **Single-iteration loops replay; multi-batch loops don't.** A loop that ran a
+  single batch — the `splitInBatches` ("Loop Over Items") driver ran twice (one
+  batch pass + the final "done" pass) while every other node ran exactly once —
+  replays faithfully: the driver **executes for real** and each node's one
+  captured run pins exactly. A loop that ran **more than one batch** (any node
+  ran more than once) is still a hard error, because first-run-only pinning
+  can't feed iterations 2..N.
 - A network node with no captured output and no fixture fails up front with the
   list of unpinnable nodes (unless it's disabled or on an untaken branch).
 - The trigger is always a pinned replay of the captured trigger output — no
