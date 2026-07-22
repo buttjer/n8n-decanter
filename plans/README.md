@@ -194,17 +194,22 @@ items not yet claimed by one. Recommended order:
     OAuth-first auth with refresh tokens all confirmed — the API can be dropped for
     the code path. Breaking; awaiting go/no-go. Proposed 2026-07-22.
 33. [Post-MCP-pivot wave](BLOCKED-33-post-mcp-pivot-wave.md) — everything queued
-    *behind* Plan 32 (hard gate: starts only after it is fully executed): a
-    review gate verifying the execution (validate-gate carryover, no inline
-    source in git-tracked JSON, `node create`/`node rename` re-design,
-    credentials), the maintainer's standing Task 4 decisions
-    (`delete`→`archive`, `create`/`duplicate` via MCP + `validate_workflow`,
-    API key optional), and the follow-up wave: the instance-side `test` verb
-    (pinned-data run + client-side diff, prompt-driven, draft restore via
-    `restore_workflow_version`), the guard-proxy stack (localhost MCP proxy as
-    sole token holder + slim config-drift hooks + proxy-first template
-    override), a `simulate` keep/drop decision, and the AGENTS.md MCP-facts
-    update. Proposed 2026-07-22.
+    *behind* Plan 32, now grounded in its execution (PR #97, reviewed
+    2026-07-22 by a 16-agent audit+verify pass; gate: #97 merged). The old
+    review gate is answered — push guards, pull/snapshot invariant, node-verb
+    re-design, and API-optional all verified satisfied; MCP smoke tests real
+    (28 steps on the pinned container). Remaining: ratify PR #97's documented
+    divergences from the standing triage decisions (`delete` stayed a REST
+    hard delete, `duplicate` stayed the lossless REST clone, `create` skips
+    `validate_workflow`), fix verified defects (HIGH: single-use refresh-token
+    race; client robustness; push/pull semantics polish; snapshot loopholes in
+    `mocks/` + Python nodes), close named test debts (OAuth consent flow, 429
+    backoff, concurrent refresh), then the follow-up wave: the instance-side
+    `test` verb (pinned-data run + client-side diff, prompt-driven, draft
+    restore via `restore_workflow_version`), the guard-proxy stack (localhost
+    MCP proxy as sole token holder + slim config-drift hooks + proxy-first
+    template override), a `simulate` keep/drop decision, and the AGENTS.md
+    MCP-facts update. Proposed 2026-07-22.
 
 ## Conventions
 
