@@ -244,7 +244,7 @@ friendly hint, and note that a full-access key still works.
 - **Run/simulate integration** — making the `run` emulator or `simulate` engine
   serve live data-table reads to Data Table nodes offline. Larger; a candidate
   follow-up that would build on this verb's API client. Relates to
-  [Plan 7](OPEN-7-engine-true-simulation-suite.md).
+  [Plan 7](DONE-7-engine-true-simulation-suite.md).
 - Syncing data tables as a git-tracked, round-trippable artifact (this is the
   n8n-as-code concept's boundary — data tables are runtime data, not workflow
   source).
