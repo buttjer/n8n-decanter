@@ -49,6 +49,8 @@ export interface TestReport {
   /** True when local code differs from the draft that was tested (non-TTY note). */
   localDiffersFromTested: boolean;
   restored?: boolean;
+  /** True when a loop driver ran — the diff covers only each node's first iteration. */
+  firstIterationOnly?: boolean;
   ok: boolean;
 }
 
@@ -188,6 +190,15 @@ export async function runTest(
   const snapshot = snapshotOf(remote);
   const differs = await localDiffersFromDraft(dir, remote, log);
 
+  // 1b) build the pins NOW, before any push — a pin gap must abort BEFORE we
+  // mutate the draft (a jsCode push changes no node's name/type/disabled, so
+  // the pin set is identical after a push; computing it here is authoritative
+  // and keeps the "abort before anything runs" guarantee on the TTY path too).
+  const { pinData, pinned } = buildTestPins(remote, runData, ref, source);
+  // a multi-batch loop runs fully on the real engine, but the client-side
+  // diff below only compares each node's FIRST run — flag that honestly
+  const hasLoop = remote.nodes.some((n) => n.disabled !== true && isLoopDriver(n));
+
   // 2) what to test — a TTY choice, a non-TTY statement
   let pushed = false;
   const pushedHashes = new Map<string, string>();
@@ -205,6 +216,10 @@ export async function runTest(
     if (pushLocal) {
       const snapFile = path.join(dir, SNAPSHOT_FILE);
       mkdirSync(path.dirname(snapFile), { recursive: true });
+      // the executions/ dir may not exist yet (e.g. a --mock run never fetched
+      // one) — self-ignore it so the snapshot's inline jsCode can't be
+      // git-committed by the push auto-commit below (same `*` the fetch writes)
+      writeFileSync(path.join(dir, EXECUTIONS_DIR, ".gitignore"), "*\n");
       writeFileSync(snapFile, JSON.stringify(snapshot, null, 2) + "\n"); // crash-safe: survives until the keep/restore decision
       await pushWorkflow(mcp, config.root, id, { commitOnPush: config.commitOnPush }, log);
       pushed = true;
@@ -215,8 +230,7 @@ export async function runTest(
     }
   }
 
-  // 3) pin + run + diff — the draft tip, whatever it now is
-  const { pinData, pinned } = buildTestPins(remote, runData, ref, source);
+  // 3) run + diff — the draft tip, whatever it now is (pins fixed in 1b)
   log.info(`testing ${pushed ? "your local code (pushed to the draft)" : draftWording(remote)} on the instance — ${pinned.length} node(s) pinned from ${source} ${ref}`);
   const result = await mcp.callTool<{ executionId: string | null; status: string; error?: string }>("test_workflow", {
     workflowId: id,
@@ -268,6 +282,7 @@ export async function runTest(
     tested: pushed ? "local (pushed to the draft)" : "draft as-is",
     localDiffersFromTested: differs && !pushed,
     restored,
+    firstIterationOnly: hasLoop,
     ok: result.status === "success" && divergent.length === 0,
   };
 }
@@ -288,6 +303,9 @@ export function printTestReport(r: TestReport, log: Log): void {
     }
     if (r.ok) log.ok(`instance test matches the capture (${r.diffs.length} node${r.diffs.length === 1 ? "" : "s"} checked)`);
     else log.error(`instance test diverged: ${r.divergent.join(", ")}`);
+  }
+  if (r.firstIterationOnly) {
+    log.warn(`this workflow has a loop (splitInBatches) — the run executed all iterations on the instance, but the diff above compares only each node's FIRST run; later iterations are not checked`);
   }
   if (r.localDiffersFromTested) {
     log.warn(`local code differs from the draft — this tested the draft, NOT your local code; run \`n8n-decanter push\` first to test local changes`);

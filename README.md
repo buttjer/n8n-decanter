@@ -124,7 +124,8 @@ ids to `decanter.config.json`:
   one.
 - **Public API key (optional)** — `N8N_API_KEY`, only needed for the verbs MCP
   cannot serve: `executions` and `data-tables`. Scope it to `execution:read`,
-  `execution:list`, `workflow:read`, and the `dataTable:*` read scopes.
+  `execution:list`, `workflow:list` (init's connection check), and the
+  `dataTable:*` read scopes.
 
 After every successful push **and pull**, the workflow's folder is
 git-committed automatically (scoped to that folder; outside a git repo it

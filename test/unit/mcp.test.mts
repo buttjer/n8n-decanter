@@ -299,29 +299,63 @@ const denyGrant = (res: http.ServerResponse): void =>
   void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
 
 describe("refresh-token race (Plan 33 HIGH fix)", () => {
-  it("two parallel callTool()s share ONE redemption of the single-use refresh token", async () => {
+  it("two callTool()s racing a refresh AFTER the shared handshake share ONE redemption (pins #refreshInFlight)", async () => {
+    // The trap the old version fell into: both callers serialize through the
+    // shared #ensureInitialized() handshake, so a refresh triggered while
+    // handshaking happens once, serially — the test then passes even with the
+    // mutex removed. To exercise the IN-PROCESS mutex specifically, the two
+    // tools/call requests must both need a fresh token while genuinely in
+    // flight together. This bespoke server accepts the stale cached token for
+    // `initialize` (so the handshake completes without a refresh) but 401s it
+    // for `tools/call`, accepting only the refreshed one — so both concurrent
+    // tools/call hit forceRefresh at the same instant. Without the mutex, both
+    // #refresh run to the token fetch with the same r1 and the second
+    // double-spends it (invalid_grant) → tokenCalls reaches 2.
     let tokenCalls = 0;
-    const srv = await mcpServer({
-      token: "fresh-access",
-      tool: () => ({ content: [{ type: "text", text: '{"ok":true}' }] }),
-      onRequest: oauthEndpoints((params, res) => {
-        tokenCalls++;
-        if (params.get("refresh_token") !== "r1" || tokenCalls > 1) return denyGrant(res); // single-use: a second r1 redeem is a bug
-        grant(res, "fresh-access", "r2");
-      }),
+    const server = http.createServer((req, res) => {
+      if (req.url === "/.well-known/oauth-authorization-server") {
+        return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+          authorization_endpoint: "http://x/mcp-oauth/authorize", token_endpoint: "http://x/mcp-oauth/token", registration_endpoint: "http://x/mcp-oauth/register",
+        }));
+      }
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        if (req.url === "/mcp-oauth/token") {
+          tokenCalls++;
+          const params = new URLSearchParams(body);
+          if (params.get("refresh_token") !== "r1" || tokenCalls > 1) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
+          return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: "refreshed", token_type: "Bearer", expires_in: 3600, refresh_token: "r2" }));
+        }
+        const msg = JSON.parse(body);
+        if (msg.method === "initialize") {
+          // handshake succeeds with WHATEVER token — no refresh triggered here
+          return void res.writeHead(200, { "content-type": "application/json", "mcp-session-id": "s1" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+        }
+        if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+        // tools/call: only the refreshed token is accepted — the stale cached one 401s
+        if (req.headers.authorization !== "Bearer refreshed") return void res.writeHead(401).end("stale");
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: '{"ok":true}' }] } }));
+      });
     });
-    const dir = path.join(TMP, "race-parallel");
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const host = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    const dir = path.join(TMP, "race-post-handshake");
     mkdirSync(dir, { recursive: true });
     try {
-      writeAuthFile(dir, { host: srv.host, clientId: "c1", refreshToken: "r1" }); // no cached access token → both calls need a refresh
-      const mcp = new McpClient({ host: srv.host, auth: resolveMcpAuth(dir, srv.host)! });
+      // cached token valid by timestamp → the handshake reuses it (no refresh)
+      writeAuthFile(dir, {
+        host, clientId: "c1", refreshToken: "r1",
+        accessToken: "stale-but-timestamp-valid", accessTokenExpiresAt: new Date(Date.now() + 3_000_000).toISOString(),
+      });
+      const mcp = new McpClient({ host, auth: resolveMcpAuth(dir, host)! });
       const [a, b] = await Promise.all([mcp.callTool<{ ok: boolean }>("one", {}), mcp.callTool<{ ok: boolean }>("two", {})]);
       assert.equal(a.ok, true);
       assert.equal(b.ok, true);
-      assert.equal(tokenCalls, 1, "concurrent callers must join the same in-flight refresh");
+      assert.equal(tokenCalls, 1, "concurrent post-handshake refreshers must join ONE redemption");
       assert.equal(readAuthFile(dir)!.refreshToken, "r2", "rotation persisted");
     } finally {
-      await srv.close();
+      await new Promise<void>((r) => server.close(() => r()));
     }
   });
 

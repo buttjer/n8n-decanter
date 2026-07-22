@@ -494,11 +494,15 @@ states in prose. `lib/mcpserve.mts`:
   `McpClient.bearerToken()` — inheriting the refresh-race coordination; one
   forced refresh on an upstream 401.
 - **Requests are parsed, responses pipe through untouched** (SSE included).
-  The single block rule: `tools/call` → `update_workflow` whose arguments
-  contain a `jsCode` key at any depth → answered in-band with an
-  instructive `isError` tool result ("edit the file + push"). Op types are
-  deliberately NOT enumerated — the op vocabulary churns; the key is the
-  contract. Unparseable bodies **fail closed** (403), bodies over 10 MB get
+  The block rule: `tools/call` → `update_workflow` that writes Code-node
+  source → answered in-band with an instructive `isError` tool result
+  ("edit the file + push"). Both write routes n8n's `update_workflow` op
+  vocabulary exposes are covered: a `jsCode` **key** at any depth
+  (`updateNodeParameters`/`addNode`), and a `setNodeParameter` whose
+  JSON-Pointer `path` targets `jsCode` (code in a scalar `value`, no key —
+  the bypass the branch review caught). The rest of the op vocabulary is
+  deliberately NOT enumerated; only these two source-writing routes are
+  intercepted. Unparseable bodies **fail closed** (403), bodies over 10 MB get
   413 (drain-then-respond — destroying the socket would RST before the
   client reads the answer), non-secret requests 401 without touching n8n.
 - Binds `127.0.0.1` only; default port 5680 (`--port`, `0` = ephemeral).
@@ -530,8 +534,11 @@ verb uses a dedicated client with a ≥320 s timeout):
   live-workflow vs current-draft); unpublished skips the prompt and pushes.
   After a pushed test: keep, or restore via `restore_workflow_version`
   (n8n ≥ 2.29) with a write-back fallback gated on the draft still matching
-  our push; the pre-push snapshot persists crash-safe in the gitignored
-  `executions/.test-snapshot.json`; state re-baselines after restore so
+  our push; the pre-push snapshot persists crash-safe in
+  `executions/.test-snapshot.json` (the test verb writes the `executions/*`
+  self-ignore first, so the snapshot's inline jsCode can never be committed
+  by the push auto-commit even in a repo without the root-level ignore);
+  state re-baselines after restore so
   local edits read "pending push", not conflict. **Non-TTY never mutates**
   and prints "tested the draft, not your local code" when local differs —
   no choice flags, choices are verb composition.

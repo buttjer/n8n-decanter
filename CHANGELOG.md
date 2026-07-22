@@ -29,8 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoint speaking n8n's MCP protocol: decanter holds the credentials (the
   agent gets a per-session secret instead), every read and structure
   operation forwards untouched (SSE included), and exactly one thing is
-  blocked — `update_workflow` calls carrying a `jsCode` key, which get an
-  instructive "edit the file + push" tool error. Fail-closed on unparseable
+  blocked — `update_workflow` calls that write Code-node source, via either
+  a `jsCode` key or a `setNodeParameter` op whose path targets `jsCode`,
+  which get an instructive "edit the file + push" tool error. Fail-closed on unparseable
   bodies, 127.0.0.1-only, body-size cap; the running endpoint + secret land
   in a gitignored `.decanter-proxy.json`. The template gains a
   `mcp-route-check.mjs` session hook that nudges agents whose MCP config

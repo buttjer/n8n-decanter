@@ -454,25 +454,31 @@ export class McpClient {
   /**
    * Redeem the (single-use, rotating) refresh token, coordinating with other
    * decanter processes sharing the auth file (watch + a manual push):
-   * adopt a newer on-disk state before redeeming, and treat `invalid_grant`
-   * as a possibly-lost race — re-read once and retry with the winner's token
-   * — before surfacing the re-init guidance.
+   *
+   * - **Fast path:** another process already minted a *valid cached access
+   *   token* on disk — reuse it, no redemption at all.
+   * - Otherwise redeem OUR in-memory refresh token. We deliberately do NOT
+   *   proactively adopt a *differing* on-disk refresh token here: after a
+   *   failed persist (warned, non-fatal) our in-memory token is the newer,
+   *   valid one and the on-disk token is the stale pre-rotation string —
+   *   adopting it would redeem a spent token and strand a session that would
+   *   otherwise keep working.
+   * - Only an **`invalid_grant`** tells us our token is genuinely spent (a
+   *   lost cross-process race): re-read once and, if disk now holds a newer
+   *   token, retry with the winner's — else surface the re-init guidance.
    */
   async #refresh(): Promise<string> {
     const { data, file } = this.#auth as Extract<McpAuth, { kind: "oauth" }>;
     const onDisk = this.#reReadAuth(file);
-    if (onDisk !== null) {
-      if (this.#cacheValid(onDisk) && onDisk.accessToken !== data.accessToken) {
-        Object.assign(data, onDisk); // another process already refreshed — reuse its token
-        return onDisk.accessToken!;
-      }
-      if (onDisk.refreshToken !== data.refreshToken) Object.assign(data, onDisk); // adopt the newer rotation
+    if (onDisk !== null && this.#cacheValid(onDisk) && onDisk.accessToken !== data.accessToken) {
+      Object.assign(data, onDisk); // another process already refreshed — reuse its token
+      return onDisk.accessToken!;
     }
     try {
       return await this.#redeemAndPersist(data, file);
     } catch (err) {
       if (!(err instanceof TokenRefreshError) || err.reason !== "invalid_grant") throw err;
-      // possibly a lost race: the winner rotated and persisted a new token
+      // our token was spent: a lost race means the winner rotated + persisted
       const latest = this.#reReadAuth(file);
       if (latest === null || latest.refreshToken === data.refreshToken) throw err; // no newer state — genuinely dead
       Object.assign(data, latest);

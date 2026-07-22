@@ -13,11 +13,15 @@ MCP protocol and forwards everything to your instance's `/mcp-server/http` —
 with decanter as the **sole credential holder** and one rule enforced
 technically:
 
-- **Blocked:** `update_workflow` calls whose arguments contain a `jsCode`
-  key anywhere. The caller gets an instructive tool error pointing at the
-  file + [push](/docs/cli/push/) flow instead — Code-node source lives in
-  this repo, not in ad-hoc MCP writes. Operation types are deliberately not
-  enumerated (the op surface churns); the `jsCode` key is the contract.
+- **Blocked:** `update_workflow` calls that write Code-node source. That
+  covers both routes n8n exposes: a `jsCode` **key** anywhere in the
+  arguments (`updateNodeParameters`, `addNode`), and a `setNodeParameter`
+  whose JSON-Pointer `path` targets `jsCode` (where the code rides a scalar
+  `value` and no `jsCode` key appears). The caller gets an instructive tool
+  error pointing at the file + [push](/docs/cli/push/) flow instead — Code-node
+  source lives in this repo, not in ad-hoc MCP writes. The full op vocabulary
+  is deliberately not enumerated; only the two source-writing routes are
+  intercepted.
 - **Everything else passes through untouched**, including SSE responses:
   reads, structure edits, wiring, publishing, the n8n build/lifecycle tools.
 

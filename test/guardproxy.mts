@@ -125,6 +125,22 @@ await step("no op-type enumeration: a jsCode key nested anywhere blocks; other t
   assert.equal(guardMessage({ method: "initialize" }), null);
 });
 
+await step("the setNodeParameter bypass is closed: jsCode via a path+value op is blocked, and reaches n8n never", async () => {
+  const before = seen.length;
+  // n8n's verified update_workflow op: setNodeParameter carries "jsCode" only
+  // in the JSON-Pointer path, the code in a scalar value — no jsCode KEY
+  const r = await post(rpc({ params: { name: "update_workflow", arguments: { workflowId: "wf1", operations: [{ type: "setNodeParameter", nodeName: "Transform", path: "/jsCode", value: "exfiltrate()" }] } } }));
+  assert.equal(r.status, 200);
+  assert.equal(JSON.parse(r.text).result?.isError, true, "setNodeParameter jsCode write blocked: " + r.text);
+  assert.equal(seen.length, before, "the disguised write never reached n8n");
+  // the deeper pointer form (/parameters/jsCode) is blocked too
+  const r2 = await post(rpc({ params: { name: "update_workflow", arguments: { workflowId: "wf1", operations: [{ type: "setNodeParameter", nodeName: "Transform", path: "/parameters/jsCode", value: "x" }] } } }));
+  assert.equal(JSON.parse(r2.text).result?.isError, true);
+  // a setNodeParameter to a NON-code field still passes (structure op)
+  const r3 = await post(rpc({ params: { name: "update_workflow", arguments: { workflowId: "wf1", operations: [{ type: "setNodeParameter", nodeName: "Transform", path: "/mode", value: "runOnceForEachItem" }] } } }));
+  assert.match(r3.text, /"echo":"update_workflow"/, "non-jsCode setNodeParameter passes: " + r3.text);
+});
+
 await step("fail closed: an unparseable body is refused, never forwarded", async () => {
   const before = seen.length;
   const r = await post("{not json");

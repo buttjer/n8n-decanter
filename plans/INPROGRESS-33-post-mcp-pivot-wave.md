@@ -365,6 +365,35 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 
 ## Notes
 
+- **Execution review (2026-07-22):** after Tasks 1–7 landed, a 91-agent
+  adversarial workflow reviewed the branch diff across 7 dimensions
+  (lifecycle, refresh-race, guard-proxy, test-verb, push/pull, docs-drift,
+  test-quality), each finding re-verified by a 3-lens skeptic panel
+  (correctness / n8n-contract / materiality; majority-refute killed it). 9
+  findings survived and were all fixed:
+  - **HIGH — guard-proxy `jsCode` bypass:** n8n's `setNodeParameter` op
+    writes `jsCode` via a JSON-Pointer `path` + scalar `value`, with no
+    `jsCode` key — the original key-only guard forwarded it. `writesJsCode`
+    now covers both routes; regression-tested (guardproxy suite + real
+    container).
+  - **HIGH — `test` gap-check ran after the TTY push:** a pin gap could
+    mutate the draft then abort past keep/restore. Pins are now built
+    **before** any push (finding-2), unit-tested.
+  - **HIGH — `test` snapshot committable:** the pre-test snapshot (inline
+    jsCode) could be git-committed when `executions/` lacked its self-ignore
+    (`--mock` path). The verb now writes `executions/*` before the snapshot.
+  - **MED — the concurrent-refresh test didn't pin the mutex** (passed with
+    it removed): rewritten to force the race at `tools/call` after the shared
+    handshake; mutation-verified (fails without the mutex).
+  - **LOW — `#refresh` adopted a stale on-disk token** after a failed persist:
+    now redeems the in-memory token first, adopting disk only on
+    `invalid_grant`.
+  - **LOW — scope-list drift:** README + configuration.md recommended
+    `workflow:read` (unused post-branch) and omitted `workflow:list` (init's
+    probe) — fixed to match `template/.env.example`.
+  - **LOW — `test` loop-diff honesty:** a `splitInBatches` workflow now warns
+    that the diff covers first-iteration only.
+  - Plus new `test/unit/testrun.test.mts` closing the test-verb coverage gap.
 - **Review method (2026-07-22):** 16-agent workflow over the PR #97 diff —
   8 auditors (push gates, pull/snapshot, node verbs, credentials, triage
   conformance, process/docs, `lib/mcp.mts` deep review, test sufficiency),

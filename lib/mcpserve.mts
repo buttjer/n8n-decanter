@@ -52,16 +52,39 @@ export function containsJsCodeKey(value: unknown): boolean {
 }
 
 /**
+ * True when any `update_workflow` operation writes Code-node source. Two
+ * routes, both covered (verified against n8n 2.30.7's update_workflow op
+ * vocabulary): a `jsCode` **key** anywhere in the args (`updateNodeParameters`
+ * with a `parameters.jsCode`, `addNode` with `node.parameters.jsCode`, or a
+ * `setNodeParameter` whose `value` is an object carrying `jsCode`), AND a
+ * `setNodeParameter` whose JSON-Pointer `path` targets `jsCode` with the code
+ * in a scalar `value` — where "jsCode" appears only as a path string, not a
+ * key. The op vocabulary is still not enumerated (only these two write
+ * routes matter); the check is deliberately conservative — a path merely
+ * mentioning jsCode is blocked.
+ */
+export function writesJsCode(args: unknown): boolean {
+  if (containsJsCodeKey(args)) return true;
+  const ops = (args as { operations?: unknown })?.operations;
+  if (!Array.isArray(ops)) return false;
+  return ops.some((op) => {
+    if (op === null || typeof op !== "object") return false;
+    const { type, path } = op as { type?: unknown; path?: unknown };
+    return type === "setNodeParameter" && typeof path === "string" && /jscode/i.test(path);
+  });
+}
+
+/**
  * The per-message guard: `null` = forward; otherwise the JSON-RPC response
  * body answering the blocked call. Only `tools/call` → `update_workflow`
- * with a `jsCode` key anywhere in its arguments is blocked — everything
- * else (reads, structure ops, other tools, handshakes) passes.
+ * that writes Code-node source (`jsCode`) is blocked — everything else
+ * (reads, structure ops, other tools, handshakes) passes.
  */
 export function guardMessage(msg: Record<string, unknown>): Record<string, unknown> | null {
   if (msg.method !== "tools/call") return null;
   const params = msg.params as { name?: unknown; arguments?: unknown } | undefined;
   if (params?.name !== "update_workflow") return null;
-  if (!containsJsCodeKey(params.arguments)) return null;
+  if (!writesJsCode(params.arguments)) return null;
   const result = { content: [{ type: "text", text: JSON.stringify({ error: JSCODE_BLOCK_TEXT }) }], isError: true };
   return { jsonrpc: "2.0", id: (msg as { id?: unknown }).id ?? null, result };
 }
