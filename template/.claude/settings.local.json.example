@@ -1,12 +1,18 @@
 {
   "permissions": {
     "allow": [
+      "mcp__n8n-docs",
       "Edit(workflows/**)",
       "Edit(shared/**)",
       "Bash(n8n-decanter check)",
       "Bash(n8n-decanter check:*)",
       "Bash(n8n-decanter node:*)",
-      "Bash(n8n-decanter rename:*)",
+      "Bash(n8n-decanter pull)",
+      "Bash(n8n-decanter pull:*)",
+      "Bash(n8n-decanter simulate)",
+      "Bash(n8n-decanter simulate:*)",
+      "Bash(n8n-decanter mock)",
+      "Bash(n8n-decanter mock:*)",
       "Bash(n8n-decanter status)",
       "Bash(n8n-decanter status:*)",
       "Bash(n8n-decanter list)",
@@ -28,11 +34,7 @@
       "Bash(n8n-decanter push --force)",
       "Bash(n8n-decanter push --force:*)",
       "Bash(node n8n-decanter.mts push --force)",
-      "Bash(node n8n-decanter.mts push --force:*)",
-      "Bash(n8n-decanter archive --force)",
-      "Bash(n8n-decanter archive --force:*)",
-      "Bash(node n8n-decanter.mts archive --force)",
-      "Bash(node n8n-decanter.mts archive --force:*)"
+      "Bash(node n8n-decanter.mts push --force:*)"
     ]
   },
   "hooks": {

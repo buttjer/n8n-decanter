@@ -2,6 +2,18 @@
   "$schema": "https://opencode.ai/config.json",
 
   "//": "opencode reads AGENTS.md natively, so no `instructions` entry is needed for it.",
+  "//_mcp": "n8n-instance is the decanter stdio guard (`mcp connect`): full n8n MCP access with decanter's credentials, Code-node (jsCode) writes blocked toward the file + push flow. n8n-docs is n8n's official read-only docs MCP.",
+
+  "mcp": {
+    "n8n-instance": {
+      "type": "local",
+      "command": ["n8n-decanter", "mcp", "connect"]
+    },
+    "n8n-docs": {
+      "type": "remote",
+      "url": "https://docs.n8n.io/~gitbook/mcp"
+    }
+  },
   "//_enforcement": "opencode permissions are path/pattern based — they can protect whole files but can't inspect content. So the two file-level invariants (never touch .decanter.json or *.remote.js) are enforced here; the content-level ones (jsCode placeholder integrity, the sha256 marker) are enforced by the n8n-decanter CLI at push, which is the wall for every agent.",
 
   "permission": {

@@ -26,17 +26,17 @@ n8n-decanter/
   .decanter-auth.json     # MCP OAuth credentials (gitignored; minted by init)
   decanter.config.json
   n8n-decanter.mts        # CLI entry (verb-first: `n8n-decanter <verb> …`):
-                          #   init | pull | push | status | check | rename |
-                          #   watch | create | publish | unpublish |
-                          #   archive | list | executions | data-tables |
-                          #   simulate | completion + namespaces:
-                          #   node (create|rename|run), mock (create|check),
-                          #   mcp (serve)
-  lib/                    # implementation: add, api, compile, config, datatables,
-                          #   diff, executions, git, init, lifecycle, mcp, picker,
-                          #   prompt, proxy, pull, push, rename, run, state, status,
-                          #   style, template, util, validate, watch (one .mts each)
-                          #   + types.mts (shared data-model shapes)
+                          #   init | pull | push | status | check | watch |
+                          #   publish | unpublish | list | executions |
+                          #   data-tables | test | simulate | completion +
+                          #   namespaces: node (run), mock (create|check),
+                          #   mcp (connect|serve)
+  lib/                    # implementation: api, compile, config, datatables,
+                          #   diff, engine, executions, git, init, lifecycle,
+                          #   mcp, mcpconnect, mcpserve, picker, prompt, proxy,
+                          #   pull, push, run, simulate, state, status, style,
+                          #   template, testrun, util, validate, watch (one
+                          #   .mts each) + types.mts (shared data-model shapes)
   data-tables/            # optional: fetched data-table schema + rows (plans/25)
                           #   — top-level, self-gitignored, read-only, never synced
   scripts/typecheck.mts   # tsc wrapper — see Type checking
@@ -58,6 +58,23 @@ n8n-decanter/
 
 ## Decisions made
 
+- **Structure-verb retirement (2026-07-22, post-Plan-33): decanter has no
+  structure/lifecycle verbs — n8n's MCP is the authoring surface, `pull` is
+  the reconciler.** `rename`, `create`, `archive`, `node create`, and
+  `node rename` were removed (maintainer decision; `node run` stays — offline
+  execution has no MCP equivalent). The reasoning: every one of those verbs
+  wrapped an MCP tool the agent can call directly through the guard, and the
+  local bookkeeping they bundled is exactly what `pull` already does for acts
+  made in the UI or by other clients. What replaced them: (a) the **guarded
+  authoring loop** — an agent adds a Code node over MCP `addNode` **without**
+  `jsCode` (the guard blocks code), `pull` lands it as an empty file, the
+  first `push` seeds the source; `getWorkflowDetails` normalizes a
+  jsCode-less JS Code node to `""` at the read choke point so every verb sees
+  it; (b) the scaffolded **`.mcp.json`/`opencode.json` wire the guard by
+  default** (see "MCP guard" below). Losses accepted: no client-side `$('…')`
+  rewrite in local `.ts` sources on rename (n8n never sees `.ts`; documented
+  as a by-hand step), and `create`'s enforced validate-before-create is now
+  the skills'/agent's discipline.
 - **Plan 32 (2026-07-22): the workflow code path rides n8n's MCP server; the
   public API stays only where MCP has no equivalent.** The invariant that
   made the pivot safe: *Code-node source in git* lives in the file layer and
@@ -160,7 +177,7 @@ workflows/
   `renameNode`), which is the whole identity design (Plan 32 Task 3):
   `.decanter.json` maps node-id → file path, MCP ops address nodes *by name*,
   and push looks each id's current name up from a fresh read. A structure-side
-  rename (UI, another agent via MCP, or `node rename`) therefore just moves
+  rename (UI, or any agent via MCP) therefore just moves
   the local file on the next pull; per-pull collision handling is
   deterministic, so a freed kebab base is re-claimed by the next pull. The
   same rename machinery migrates pre-`code/` flat layouts.
@@ -283,8 +300,8 @@ names the verb in its error) — only `executions` and `data-tables` need it
 ## Workflow refs & CLI output (plans/11)
 
 The grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`.
-Node operations live under a **`node` namespace** (`node create` /
-`node rename` / `node run`), mocks under `mock` (`create`/`check`). Flags may
+`node run` lives under the **`node` namespace**, mocks under `mock`
+(`create`/`check`), the agent guard under `mcp` (`connect`/`serve`). Flags may
 sit anywhere; `--publish` (Plan 32) joins `--force`/`--no-typecheck` on push.
 
 Every `[workflow…]` argument is a **ref**: an id, a workflow/folder name, or
@@ -396,26 +413,31 @@ leftovers — pre-Plan-32 artifacts; port and delete them.
 
 Typecheck gate: unchanged (see Type checking; scoping, template verify hook).
 
-## Structure verbs (forwarded acts, Plan 32)
+## Structure & lifecycle acts (n8n's MCP + pull-reconcile)
 
-- **`rename <workflow> "<new name>"`** → MCP
-  `update_workflow [{setWorkflowMetadata, name}]`, then update the local
-  snapshot + cached name. Immediate; the folder never moves (Plan 27).
-- **`node rename <workflow> "<old>" "<new>"`** → local pre-checks (node
-  exists, no collision) → MCP `renameNode` (n8n rewrites connections and
-  `$('…')` expression references server-side; node id stable) → rewrite
-  `$('…')` in local `.ts` sources (the one thing pull can't refresh — `.ts`
-  is one-way) → pull (files and placeholders follow; kebab collisions get
-  `-<id8>`). The API-era local rewriting machinery
-  (connections/params/file-pair logic in `lib/rename.mts`) shrank to the
-  `.ts`-refs pass; `renameNodeRefs`/`findNodeRefs` stay shared with the guard.
-- **`node create <workflow> "<Node name>" [--ts]`** → local checks → MCP
-  `addNode` (type `n8n-nodes-base.code`, typeVersion 2, starter body,
-  position = rightmost + 220) → pull → resolve the landed node **by name**
-  (the server may re-mint the id — the e2e mock does, adversarially) →
-  `--ts`: convert the landed `.js` to `.ts` in place (the starter body is
-  valid TS; the marker lands on first push). Lands disconnected — wiring is
-  structure and stays in n8n.
+The structure/lifecycle **verbs are retired** (see "Decisions made") — the
+acts live in n8n's MCP tools, reached by agents through the guard, and
+decanter's contract is the **reconcile**:
+
+- **Workflow rename** (`setWorkflowMetadata`, or the UI) → next `pull`
+  re-caches the display name; the folder never moves (Plan 27).
+- **Node rename** (`renameNode`; n8n rewrites connections and `$('…')`
+  expression refs server-side, node id stable) → next `pull` renames the
+  local file (kebab collisions get `-<id8>`), re-points the placeholder,
+  updates the id-keyed map. `$('…')` refs inside local `.ts` sources are a
+  documented by-hand step (n8n holds compiled output, never `.ts`).
+- **Code node added** (`addNode` **without** `jsCode` — the guard blocks
+  code) → the node is born empty; `getWorkflowDetails` normalizes the
+  missing `jsCode` to `""`, so `pull` lands it as an empty `code/` file
+  (server-minted id and all) and the first `push` seeds the source. Lands
+  disconnected — wiring is structure and stays in n8n.
+- **Workflow created** (`create_workflow_from_code`; the skills' discipline
+  is `validate_workflow` first) → `pull <fresh id>` (MCP-born workflows are
+  auto-available; born unpublished; the server assigns the id).
+- **Archive** (`archive_workflow`, or the UI) → server-side it unpublishes a
+  live workflow first; afterwards the archived-first gate refuses all MCP
+  access ("archived and cannot be accessed"), which decanter's verbs surface
+  verbatim. The local folder stays as the git record.
 
 ## Lifecycle verbs (`lib/lifecycle.mts`)
 
@@ -423,24 +445,6 @@ Typecheck gate: unchanged (see Type checking; scoping, template verify hook).
   (in-band `success:false` normalized to errors). Since pushes are
   draft-only, `publish` is THE go-live step: already-published is only a
   no-op when `activeVersionId === versionId`; a diverged draft re-publishes.
-- **`create "<name>"`** → MCP `create_workflow_from_code` with
-  `workflow("<kebab-slug>", "<name>")` (the minimal SDK expression — a bare
-  expression, top-level `return` is rejected by the SDK parser), gated by a
-  `validate_workflow` call first (Plan 33 — a rejected expression surfaces
-  the server's errors + hint and never reaches create), then pull (MCP-born
-  workflows are auto-available). Born unpublished. The born-in-n8n rule
-  holds — the server assigns the id.
-- **`archive <workflow> [--force]`** → MCP `archive_workflow` (Plan 33 — the
-  replacement for the API-era hard `delete`; `duplicate` was dropped
-  outright, see "Decisions made"). Same consent semantics the delete verb
-  had: TTY y/N prompt naming workflow + id (plus a "currently published —
-  archiving takes it offline" warning when live), `--force` for
-  non-interactive, local folder kept, stale config entry flagged, one
-  workflow per call. Reversible in the n8n UI (Archived filter), which also
-  owns permanent deletion. Archived workflows refuse all MCP access
-  (server-side archived-first gate: "archived and cannot be accessed"), so
-  the pre-archive `get_workflow_details` read doubles as the
-  not-already-archived check.
 
 ## Execution datasets (`executions`, plans/3 C) and data tables (plans/25)
 
@@ -482,15 +486,30 @@ Radically simplified by Plan 32 — the fast inner loop for a workflow's
   same `notifyPushed` SSE contract, verified by `test/proxy.mts` and a
   dedicated e2e step.
 
-## MCP guard-proxy (`mcp serve`, plans/33)
+## MCP guard (`mcp connect` stdio + `mcp serve` HTTP, plans/33 + retirement wave)
 
 Technical enforcement of the Code-node boundary the template's `AGENTS.md`
-states in prose. `lib/mcpserve.mts`:
+states in prose — one guard core (`guardMessage` in `lib/mcpserve.mts`), two
+transports:
 
-- **Decanter is the sole credential holder.** The proxy authenticates agents
-  with a per-session random secret (printed once; also written with the
-  endpoint to a gitignored `.decanter-proxy.json` for tooling discovery) and
-  forwards upstream with the real bearer/OAuth token via
+- **`mcp connect` (`lib/mcpconnect.mts`) is the default route** — a stdio MCP
+  server the agent spawns itself, which is what lets `init` scaffold a
+  static, secret-free `.mcp.json`/`opencode.json` entry
+  (`{"command":"n8n-decanter","args":["mcp","connect"]}`): the instance MCP
+  is wired the moment init runs. One JSON-RPC message per line; stdout is
+  protocol-only (stderr logging; the dispatcher builds a stderr `Log` and a
+  stderr-logging `McpClient`); strictly ordered processing (session-id
+  capture race-free); SSE responses decoded back to per-line JSON; n8n's
+  202-empty for notifications emits nothing; upstream-down answers an
+  in-band JSON-RPC error naming the host; parse failures fail closed
+  (-32700); same 401-refresh-once and bounded 429/Retry-After policy as the
+  MCP client. No secret exists — stdio pipes are private to the two
+  processes.
+- **`mcp serve` is the HTTP variant** for harnesses that only take an MCP
+  URL. Decanter is the sole credential holder: the proxy authenticates
+  agents with a per-session random secret (printed once; also written with
+  the endpoint to a gitignored `.decanter-proxy.json` for tooling discovery)
+  and forwards upstream with the real bearer/OAuth token via
   `McpClient.bearerToken()` — inheriting the refresh-race coordination; one
   forced refresh on an upstream 401.
 - **Requests are parsed, responses pipe through untouched** (SSE included).

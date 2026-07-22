@@ -44,7 +44,7 @@ local edits — recover via git).
 ## Renames and migrations
 
 Node **ids are stable across renames** (wherever the rename happened — UI,
-MCP, or `node rename`), and the id-keyed state maps each node to its file:
+MCP), and the id-keyed state maps each node to its file:
 pull follows renames by moving the local file to the new kebab-case name.
 Layouts from older versions (node files at the folder root) migrate
 automatically on the next pull.

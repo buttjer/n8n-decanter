@@ -63,9 +63,10 @@ if (offenders.length > 0) {
   const target = proxy ?? "http://127.0.0.1:5680/mcp-server/http (start it: n8n-decanter mcp serve)";
   console.log(
     `n8n MCP routing check: ${offenders.map((o) => `"${o.name}" in ${o.file}`).join(", ")} ` +
-      `points at an n8n instance MCP endpoint directly. Route it through the decanter guard-proxy instead — ` +
-      `set its url to ${target} with the Authorization secret \`mcp serve\` prints. ` +
-      `The proxy forwards everything except Code-node (jsCode) writes, which belong to the file + \`n8n-decanter push\` flow.`,
+      `points at an n8n instance MCP endpoint directly. Route it through the decanter guard instead — ` +
+      `simplest: the stdio server ({"command":"n8n-decanter","args":["mcp","connect"]}, the scaffolded default); ` +
+      `or for URL-based configs set its url to ${target} with the Authorization secret \`mcp serve\` prints. ` +
+      `The guard forwards everything except Code-node (jsCode) writes, which belong to the file + \`n8n-decanter push\` flow.`,
   );
 }
 process.exit(0);

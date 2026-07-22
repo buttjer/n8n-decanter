@@ -28,8 +28,8 @@ A **new** workflow's folder is the **kebab-case slug** of its name
 workflow, it falls back to `<slug>-<id8>` (the same collision suffix node files
 use) and warns.
 
-Folders are a **stable local pick**: an existing folder is *never* renamed — not
-when the workflow is renamed remotely, not by [rename](/docs/cli/rename/). The
+Folders are a **stable local pick**: an existing folder is *never* renamed, no
+matter who renames the workflow (the n8n UI or an agent over MCP). The
 always-current display name lives in `.decanter.json` (`name`) instead, so the
 picker, [list](/docs/cli/list/), and ref-resolution stay accurate while your
 working directory and git history never churn. Any folder name still resolves as
@@ -85,9 +85,9 @@ the per-node sync hashes used by the
 (the display name, refreshed on every pull — it's why a kebab folder still reads
 as the workflow, and why `list`/the picker keep working even if `workflow.json`
 is missing or corrupt). Node **ids** are the identity anchor — they survive
-renames made anywhere (UI, MCP, [node rename](/docs/cli/node-rename/)), so a
-rename just moves the local file on the next pull. Commit it; never edit it by
-hand or "fix" a hash.
+renames made anywhere (the n8n UI, or any agent over MCP), so a rename just
+moves the local file on the next pull. Commit it; never edit it by hand or
+"fix" a hash.
 
 ## `.decanter-auth.json` (sync-dir root)
 

@@ -22,11 +22,6 @@ n8n-decanter watch [workflow]
 n8n-decanter publish [workflow…]    # take the draft(s) live
 n8n-decanter unpublish [workflow…]  # back to draft-only
 
-# Workflow lifecycle
-n8n-decanter create "<name>"                     # blank workflow in n8n, then pull
-n8n-decanter archive <workflow> [--force]        # archive in n8n (restore/delete via the n8n UI)
-n8n-decanter rename <workflow> "<new name>"      # rename the workflow in n8n
-
 # Inspect & test
 n8n-decanter status [workflow…] [--diff]
 n8n-decanter check [workflow…] [--no-typecheck]
@@ -41,24 +36,28 @@ n8n-decanter mock check <workflow> ["<slug>"]                       # structural
 n8n-decanter list [--remote] [--json]
 
 # Node
-n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node in n8n
-n8n-decanter node rename <workflow> "<old node>" "<new node>"   # rename in n8n; local files follow
 n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node locally (offline)
 
-# Agent guard
-n8n-decanter mcp serve [--port N]   # localhost MCP guard-proxy: forwards to n8n, blocks jsCode writes
+# Agent guard — structure/lifecycle acts go through n8n's MCP, guarded
+n8n-decanter mcp connect            # stdio MCP guard (spawned from the scaffolded .mcp.json; no secret)
+n8n-decanter mcp serve [--port N]   # HTTP variant: localhost guard-proxy for URL-configured agents
 ```
+
+Creating, renaming, and archiving workflows — and adding or renaming nodes —
+are **n8n's acts**: do them in the n8n editor or over n8n's MCP tools (your
+agent reaches them through the [guard](/docs/cli/mcp-connect/), which blocks
+only Code-node `jsCode` writes). The next [pull](/docs/cli/pull/) reconciles
+the local mirror: files follow renames, new Code nodes land as files, and the
+first push seeds a node born empty.
 
 ## Placeholder vocabulary
 
 | Token | Means |
 | --- | --- |
 | `<workflow>` / `[workflow…]` | a workflow: **id · name · unique name-prefix · folder name** |
-| `<node>` | a node **name** (`node create`, `node rename`) |
 | `<node-file>` | a path to a node source file (`node run`) |
 | `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
 | `<slug>` | a mock scenario name — `mock create`/`mock check`, `simulate --mock` (kebab-cased) |
-| `<name>` | a new literal name (`create`, `rename`) |
 
 ## Interactive picker
 
@@ -101,9 +100,8 @@ errors with *unknown verb*. Flags may still appear in any position.
 | `check`, `node run`, `list`, `simulate`, `mock`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance) |
 | `status`, `list --remote`, `executions`, `data-tables` | Read the remote, never write |
 | `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
-| `pull`, `push`, `watch`, `create`, `publish`, `unpublish`, `rename`, `node create`, `node rename` | Read/write the live instance (pushes and structure acts land on the **draft**) |
-| `archive` | Read/write the live instance (not a draft act — it retires the whole workflow, unpublishing it first when live) |
-| `mcp serve` | Long-running localhost proxy — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes |
+| `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |
+| `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward
 from the current directory) or the environment. `N8N_HOST` plus **MCP

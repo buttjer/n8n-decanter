@@ -1182,13 +1182,18 @@ await step("completion: prints shell scripts; __complete emits verbs, flags, nam
   r = await cli("__complete");
   assert.equal(r.code, 0, r.out);
   const words = r.out.trim().split("\n");
-  for (const w of ["pull", "push", "watch", "list", "node", "create", "rename", "run", "--force", "--publish", "wf123", "Order Sync v2"]) {
+  // "create" survives as the `mock create` sub-verb; "connect"/"serve" are the `mcp` sub-verbs
+  for (const w of ["pull", "push", "watch", "list", "node", "create", "run", "connect", "serve", "--force", "--publish", "wf123", "Order Sync v2"]) {
     assert.ok(words.includes(w), `__complete must emit "${w}": ${r.out}`);
   }
   assert.ok(!words.includes("__complete"), "__complete must not advertise itself");
-  // moved/removed surfaces must not linger in completion (Plan 27)
+  // moved/removed surfaces must not linger in completion (Plan 27 + the
+  // structure-verb retirement: rename/archive went to n8n's MCP)
   assert.ok(!words.includes("--workflow"), "--workflow was removed");
-  assert.ok(!words.includes("add"), "add moved to `node create`");
+  assert.ok(!words.includes("add"), "add was removed with the node create verb");
+  assert.ok(!words.includes("rename"), "rename now goes through n8n's MCP");
+  assert.ok(!words.includes("archive"), "archive now goes through n8n's MCP");
+  assert.ok(!words.includes("--ts"), "--ts left with node create");
 });
 
 await step("mcp timeout: a hung instance aborts with a clear error", async () => {
@@ -1396,7 +1401,7 @@ await step("guard: dangling $('…') in code and parameters blocks check", async
   writeFileSync(path.join(dir2, "workflow.json"), wfJson);
 });
 
-await step("node rename: forwarded to n8n over MCP; refs and files follow via pull", async () => {
+await step("node rename over raw MCP (the agent path): refs rewritten server-side, pull makes files follow", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   // remote-side wiring that must follow the rename: a connection targeting the
   // node, a $('…') ref in another node's code, and an expression parameter —
@@ -1408,14 +1413,16 @@ await step("node rename: forwarded to n8n over MCP; refs and files follow via pu
   let r = await cli("pull");
   assert.equal(r.code, 0, r.out);
 
-  r = await cli("node", "rename", "wf123", "Amazon Feed", "Amazon Export");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /renamed node "Amazon Feed" -> "Amazon Export" in n8n/);
+  // The rename verbs are retired — an agent (or skill) renames the node over
+  // n8n's MCP; decanter's job is the reconcile on the next pull.
+  await (await mcpClient()).callTool("update_workflow", { workflowId: "wf123", operations: [{ type: "renameNode", oldName: "Amazon Feed", newName: "Amazon Export" }] });
   // remote followed (name, connections, expression params, code refs) — and the id survived
   assert.ok(wf.nodes.some((n: any) => n.name === "Amazon Export" && n.id === "n3"), "node renamed remotely, id stable");
   assert.equal(wf.connections["Transform: EU/US"].main[0][0].node, "Amazon Export", "connection target follows");
   assert.equal(wf.nodes.find((n: any) => n.id === "n4").parameters.value, "={{ $('Amazon Export').first().json.sku }}", "expression parameter follows");
-  // local followed via the rename's own pull: file renamed, refs arrive rewritten
+  // local follows via pull: file renamed, refs arrive rewritten
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
   assert.match(read(dir2, "code", "transform-eu-us.js"), /\$\('Amazon Export'\)/);
   assert.ok(existsSync(path.join(dir2, "code", "amazon-export.ts")), "file renamed");
   assert.ok(!existsSync(path.join(dir2, "code", "amazon-feed.ts")), "old file gone");
@@ -1431,30 +1438,13 @@ await step("node rename: forwarded to n8n over MCP; refs and files follow via pu
   assert.match(rRun.out, /returned 1 item/);
 });
 
-await step("node rename: guards refuse unknown, colliding, and same names", async () => {
-  let r = await cli("node", "rename", "wf123", "Nope", "X");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /no node named "Nope"/);
-  r = await cli("node", "rename", "wf123", "Webhook", "Amazon Export");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /already exists/);
-  r = await cli("node", "rename", "wf123", "Webhook", "Webhook");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /already named/);
-  r = await cli("node", "rename", "wf123", "Webhook");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /old and new node name/);
-});
-
-await step("rename: workflow renamed in n8n immediately; folder stays put", async () => {
-  const r = await cli("rename", "wf123", "Order Sync Final");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /renamed workflow "Order Sync v2" -> "Order Sync Final" in n8n/);
-  assert.equal(db.get("wf123").name, "Order Sync Final", "remote renamed via MCP — no push needed");
-  assert.equal(JSON.parse(read(dir1, "workflow.json")).name, "Order Sync Final");
-  assert.equal(state(dir1).name, "Order Sync Final", "cached name updated by rename");
+await step("workflow rename over raw MCP: pull re-caches the name; folder stays put", async () => {
+  await (await mcpClient()).callTool("update_workflow", { workflowId: "wf123", operations: [{ type: "setWorkflowMetadata", name: "Order Sync Final" }] });
+  assert.equal(db.get("wf123").name, "Order Sync Final", "remote renamed via MCP");
   const r2 = await cli("pull");
   assert.equal(r2.code, 0, r2.out);
+  assert.equal(JSON.parse(read(dir1, "workflow.json")).name, "Order Sync Final");
+  assert.equal(state(dir1).name, "Order Sync Final", "cached name updated by pull");
   assert.ok(existsSync(dir1), "folder unchanged by rename");
   assert.ok(!existsSync(wfDir("Order Sync Final")), "no renamed folder appears");
 });
@@ -1633,16 +1623,17 @@ await step("pull: kebab-name collision gets the -<id8> suffix", async () => {
   assert.match(read(dirF, "workflow.json"), /"\/\/@file:code\/report-n6collid\.js"/);
 });
 
-await step("node rename: kebab collision falls back to -<id8>; freed bases are re-claimed deterministically", async () => {
+await step("remote node rename → pull: kebab collision falls back to -<id8>; freed bases are re-claimed deterministically", async () => {
   // "Transform EU US" kebabs to the same base as "Transform: EU/US" (n2's file)
-  const r = await cli("node", "rename", "wf123", "Report", "Transform EU US");
-  assert.equal(r.code, 0, r.out);
+  await (await mcpClient()).callTool("update_workflow", { workflowId: "wf123", operations: [{ type: "renameNode", oldName: "Report", newName: "Transform EU US" }] });
   assert.equal(remoteNode("wf123", "n5").name, "Transform EU US", "renamed in n8n");
+  const r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
   assert.ok(existsSync(path.join(dirF, "code", "transform-eu-us-n5.js")), "collision suffix used");
   assert.equal(state(dirF).nodes.n5.file, "code/transform-eu-us-n5.js");
-  // with n5 off the "report" base, the rename's pull re-slugs n6collide
-  // ("Report!") onto the now-free plain base — per-pull collision handling
-  // is deterministic, not sticky
+  // with n5 off the "report" base, the pull re-slugs n6collide ("Report!")
+  // onto the now-free plain base — per-pull collision handling is
+  // deterministic, not sticky
   assert.equal(state(dirF).nodes.n6collide.file, "code/report.js");
   assert.ok(existsSync(path.join(dirF, "code", "report.js")), "freed base re-claimed");
   assert.ok(!existsSync(path.join(dirF, "code", "report-n6collid.js")), "suffixed file renamed away");
@@ -1953,23 +1944,22 @@ await step('data-tables: "dataTables": false refuses the fetch but still cleans'
   }
 });
 
-await step("create: blank workflow born in n8n over MCP (auto-available), then pulled into the layout", async () => {
-  let r = await cli("create", "Fresh Flow");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /created "Fresh Flow" \(wf-new-[^)]+\) on the server — unpublished draft/);
+await step("workflow born over raw MCP (create_workflow_from_code, auto-available), then pulled into the layout", async () => {
+  // The create verb is retired — an agent (or skill) creates the workflow
+  // over n8n's MCP (validate_workflow first, per the skills' discipline);
+  // decanter's job is `pull <fresh id>`.
+  await (await mcpClient()).callTool("create_workflow_from_code", { code: 'workflow("fresh-flow", "Fresh Flow")' });
   const created = [...db.values()].find((w) => w.name === "Fresh Flow");
   assert.ok(created, "workflow created in the mock db");
   assert.equal(created.active, false, "born unpublished");
   assert.equal(created.availableInMCP, true, "MCP-created workflows are born available");
+  const r = await cli("pull", created.id);
+  assert.equal(r.code, 0, r.out);
   const dir = wfDir("Fresh Flow");
   assert.ok(existsSync(path.join(dir, ".decanter.json")), "pulled: state file exists");
   assert.ok(existsSync(path.join(dir, "workflow.json")), "pulled: workflow.json exists");
   assert.equal(state(dir).workflowId, created.id, "state points at the new id");
   assert.match(r.out, /wrote fresh-flow[/\\]workflow\.json/);
-  // create needs exactly one name
-  r = await cli("create");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /create needs exactly one name/);
 });
 
 await step("publish/unpublish: toggle live state over MCP; already-in-state is a no-op note", async () => {
@@ -2128,63 +2118,49 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   db.get("wfT1").nodes.pop();
 });
 
-await step("archive: refuses without --force non-interactively; --force archives over MCP, local folder kept", async () => {
+await step("archive over raw MCP: server semantics (unpublish + archived-first gate); decanter's pull refuses, folder kept", async () => {
+  // The archive verb is retired — an agent (or the n8n UI) archives; decanter
+  // only has to respect the server's archived-first gate and keep the folder.
   const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
   const dir = wfDir("Fresh Flow");
-  // make it published so the offline note is exercised too
+  // published, so archiving must take it offline (server-side semantics)
   db.get(id).active = true;
   db.get(id).activeVersionId = db.get(id).versionId;
-  // non-interactive without --force → refuse, remote intact
-  let r = await cli("archive", id);
-  assert.equal(r.code, 1, r.out);
-  assert.match(r.out, /refusing to archive "Fresh Flow" \([^)]+\) without confirmation — re-run with --force/);
-  assert.ok(db.get(id).isArchived !== true, "workflow not archived without consent");
-  // no ref (non-TTY) → error, never falls back to config.workflows or the picker
-  r = await cli("archive");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /archive needs a workflow ref/);
-  assert.ok(db.get("wf123").isArchived !== true, "config workflow untouched by a ref-less archive");
-  // --force archives (a published workflow goes offline); the local folder is left as the git record
-  r = await cli("archive", id, "--force");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /archived "Fresh Flow" \([^)]+\) — it was published and is now offline — restore or permanently delete it from the n8n UI/);
-  assert.match(r.out, /left untouched/);
+  await (await mcpClient()).callTool("archive_workflow", { workflowId: id });
   assert.equal(db.get(id).isArchived, true, "archived on the server, not deleted");
   assert.equal(db.get(id).active, false, "archiving unpublished it");
   assert.ok(existsSync(path.join(dir, ".decanter.json")), "local folder kept as the git-tracked record");
-  // archived workflows refuse MCP access (the server's archived-first gate) — a second archive says so
-  r = await cli("archive", id, "--force");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /is archived and cannot be accessed/);
-  // pull refuses the same way
-  r = await cli("pull", id);
+  // pull refuses via the server's archived-first gate
+  const r = await cli("pull", id);
   assert.equal(r.code, 1);
   assert.match(r.out, /is archived and cannot be accessed/);
 });
 
-await step("node create: Code node born in n8n over MCP (addNode), landed by pull; --ts converts in place", async () => {
-  // self-contained: a fresh workflow so the authoring steps don't perturb others
-  let r = await cli("create", "Authoring Demo");
-  assert.equal(r.code, 0, r.out);
+await step("guarded authoring loop: addNode WITHOUT jsCode over raw MCP → pull lands an empty file → push seeds the code", async () => {
+  // The create/node-create verbs are retired. The agent path under the
+  // guard: create the workflow and add Code nodes over MCP — with NO jsCode
+  // (the guard blocks code in addNode) — then pull, edit the file, push.
+  await (await mcpClient()).callTool("create_workflow_from_code", { code: 'workflow("authoring-demo", "Authoring Demo")' });
   const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
+  let r = await cli("pull", id);
+  assert.equal(r.code, 0, r.out);
   const dir = wfDir("Authoring Demo");
   const before = JSON.parse(read(dir, "workflow.json")).nodes.length;
 
-  r = await cli("node", "create", id, "Parse Order");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /added Code node "Parse Order" \([0-9a-f]+\) -> code[/\\]parse-order\.js — disconnected; wire it in the n8n editor/);
-  // the node was born REMOTELY (the mock even re-mints the id) and landed via pull
+  // the mock re-mints the node id (adversarial for the landing resolution)
+  await (await mcpClient()).callTool("update_workflow", { workflowId: id, operations: [{ type: "addNode", node: { name: "Parse Order", type: "n8n-nodes-base.code", typeVersion: 2, position: [200, 0], parameters: { mode: "runOnceForAllItems" } } }] });
   const remote = db.get(id).nodes.find((n: any) => n.name === "Parse Order");
   assert.ok(remote, "node exists in n8n");
-  assert.equal(remote.type, "n8n-nodes-base.code");
-  assert.equal(remote.parameters.mode, "runOnceForAllItems");
-  assert.match(remote.parameters.jsCode, /New Code node/, "starter source on the server");
+  assert.equal(remote.parameters.jsCode, undefined, "born without code — the guard blocks jsCode in addNode");
+
+  r = await cli("pull", id);
+  assert.equal(r.code, 0, r.out);
   const wf = JSON.parse(read(dir, "workflow.json"));
   assert.equal(wf.nodes.length, before + 1, "node landed in the snapshot");
   const node = wf.nodes.find((n: any) => n.name === "Parse Order");
   assert.equal(node.parameters.jsCode, "//@file:code/parse-order.js");
   assert.equal(node.id, remote.id, "snapshot carries the server-minted id");
-  assert.ok(existsSync(path.join(dir, "code", "parse-order.js")), "source file extracted");
+  assert.equal(read(dir, "code", "parse-order.js"), "", "jsCode-less Code node lands as an empty source file");
   assert.equal(state(dir).nodes[remote.id].file, "code/parse-order.js", "registered in state under the server id");
   assert.ok(!wf.connections["Parse Order"], "lands disconnected");
 
@@ -2192,32 +2168,26 @@ await step("node create: Code node born in n8n over MCP (addNode), landed by pul
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Authoring Demo: OK/);
 
-  // colliding kebab name → -<id8> suffix (a distinct node name that kebabs the same)
-  r = await cli("node", "create", id, "Parse-Order");
+  // the code itself rides the file + push flow
+  writeFileSync(path.join(dir, "code", "parse-order.js"), "return $input.all();\n");
+  r = await cli("push", id);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /-> code[/\\]parse-order-[0-9a-f]{8}\.js/);
+  assert.equal(db.get(id).nodes.find((n: any) => n.name === "Parse Order").parameters.jsCode, "return $input.all();\n", "push seeded the code");
 
-  // --ts converts the pulled .js to .ts in place; the marker lands on first push
-  r = await cli("node", "create", id, "Typed Step", "--ts");
+  // a second node destined for TypeScript: land it, convert .js → .ts in
+  // place (re-point the placeholder), push marks it TS-managed
+  await (await mcpClient()).callTool("update_workflow", { workflowId: id, operations: [{ type: "addNode", node: { name: "Typed Step", type: "n8n-nodes-base.code", typeVersion: 2, position: [200, 200], parameters: {} } }] });
+  r = await cli("pull", id);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /-> code[/\\]typed-step\.ts/);
-  assert.ok(existsSync(path.join(dir, "code", "typed-step.ts")));
-  assert.match(read(dir, "workflow.json"), /"\/\/@file:code\/typed-step\.ts"/);
+  rmSync(path.join(dir, "code", "typed-step.js"));
+  writeFileSync(path.join(dir, "code", "typed-step.ts"), "return $input.all();\n");
+  const wf2 = JSON.parse(read(dir, "workflow.json"));
+  wf2.nodes.find((n: any) => n.name === "Typed Step").parameters.jsCode = "//@file:code/typed-step.ts";
+  writeFileSync(path.join(dir, "workflow.json"), JSON.stringify(wf2, null, 2));
   r = await cli("push", id);
   assert.equal(r.code, 0, r.out);
   const typedRemote = db.get(id).nodes.find((n: any) => n.name === "Typed Step");
   assert.match(typedRemote.parameters.jsCode, /\/\/ @ts-n8n sha256:/, "first push TS-marks the node");
-
-  // duplicate node name refused
-  r = await cli("node", "create", id, "Parse Order");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /a node named "Parse Order" already exists/);
-  // no node name → usage error
-  r = await cli("node", "create", id);
-  assert.equal(r.code, 1);
-  assert.match(r.out, /node create needs exactly one node name/);
-
-  assert.equal(db.get(id).nodes.filter((n: any) => n.type === "n8n-nodes-base.code").length, 3, "three code nodes live in n8n");
 });
 
 await step("convert a .ts node back to .js: re-point + body-equal push clears the remote marker (Plan 33)", async () => {
@@ -2256,6 +2226,20 @@ await step("removed verbs: delete and duplicate are gone (Plan 33) — unknown-v
   assert.equal(r.code, 1);
   assert.match(r.out, /unknown verb: duplicate/);
   assert.ok(![...db.values()].some((w) => w.name === "Clone"), "duplicate is gone — nothing created");
+  // the structure/lifecycle verbs retired with the guard pivot: those acts go
+  // through n8n's MCP; pull reconciles
+  for (const verb of ["rename", "create", "archive"]) {
+    r = await cli(verb, id);
+    assert.equal(r.code, 1, `${verb} must be gone`);
+    assert.match(r.out, new RegExp(`unknown verb: ${verb}`));
+  }
+  r = await cli("node", "create", id, "X");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /unknown node command: create/);
+  r = await cli("node", "rename", id, "A", "B");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /unknown node command: rename/);
+  assert.ok(db.has(id), "nothing mutated by the removed verbs");
 });
 
 if (!hasFailed()) {

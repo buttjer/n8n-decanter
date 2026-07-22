@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import path from "node:path";
-import { addCodeNode } from "./lib/add.mts";
 import { N8nApi } from "./lib/api.mts";
 import { loadConfig, requireApiKey } from "./lib/config.mts";
 import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
@@ -8,14 +7,14 @@ import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
 import { checkMocks, listMockSlugs, pinFixtures, runSimulation, writeMock, type SimulationReport } from "./lib/simulate.mts";
-import { archiveWorkflow, createWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
+import { publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, searchWorkflows } from "./lib/mcp.mts";
+import { runStdioGuard } from "./lib/mcpconnect.mts";
 import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { printTestReport, runTest } from "./lib/testrun.mts";
-import { renameNode, renameWorkflow } from "./lib/rename.mts";
 import { runNode } from "./lib/run.mts";
 import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, readState } from "./lib/state.mts";
 import { statusWorkflow } from "./lib/status.mts";
@@ -62,11 +61,6 @@ ${b("Sync")} ${d("(over n8n's MCP server — Code-node source only; structure li
   ${b("publish")} [workflow…]                     ${d("take the draft(s) live")}
   ${b("unpublish")} [workflow…]                   ${d("return the draft(s) to draft-only")}
 
-${b("Workflow lifecycle")}
-  ${b("create")} "<name>"                         ${d("create a blank workflow in n8n, then pull it")}
-  ${b("archive")} <workflow> [--force]            ${d("archive a workflow in n8n (y/N; restore/delete via the n8n UI)")}
-  ${b("rename")} <workflow> "<new name>"          ${d("rename the workflow in n8n")}
-
 ${b("Inspect & test")}
   ${b("status")} [workflow…] [--diff]             ${d("drift report; exits 1 on conflict/remote drift")}
   ${b("check")} [workflow…] [--no-typecheck]      ${d("offline layout-compliance check")}
@@ -85,12 +79,11 @@ ${b("Mock")} ${d("(fill simulate gaps offline — no engine, no API)")}
   ${b("mock check")} <workflow> ["<slug>"]                       ${d("structurally validate a mock (or all); exits 1 on invalid")}
 
 ${b("Node")}
-  ${b("node create")} <workflow> "<Node name>" [--ts]        ${d("scaffold a disconnected Code node in n8n")}
-  ${b("node rename")} <workflow> "<old node>" "<new node>"   ${d("rename a node in n8n; local files follow")}
   ${b("node run")} <node-file> [fixture.json] [--allow-env]  ${d("run a node locally (offline)")}
 
-${b("Agent guard")}
-  ${b("mcp serve")} [--port N]                    ${d("localhost MCP guard-proxy for agents: forwards to n8n, blocks jsCode writes")}
+${b("Agent guard")} ${d("(structure/lifecycle acts go through n8n's MCP — guarded; jsCode writes are blocked toward the file + push flow)")}
+  ${b("mcp connect")}                             ${d("stdio MCP guard for agents — the scaffolded .mcp.json spawns it; no secret")}
+  ${b("mcp serve")} [--port N]                    ${d("HTTP variant: localhost guard-proxy for URL-configured agents")}
 
 A ${b("<workflow>")} is its id, name, unique name-prefix, or folder name (case-insensitive;
 ambiguity is an error). A ref verb with no ${b("<workflow>")} on a terminal opens the picker.
@@ -101,17 +94,19 @@ MCP (OAuth via ${b("init")}, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional
 powers executions and data-tables.`;
 };
 
-// Verb-first grammar (Plan 27): the command is positional[0]. `add`/`run` and
-// the node-rename overload moved under the `node` namespace (node create/rename/run).
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "list", "executions", "data-tables", "simulate", "test", "mock", "mcp", "publish", "unpublish", "create", "archive", "completion", "node", "__complete", "help"]);
+// Verb-first grammar (Plan 27): the command is positional[0]. The structure/
+// lifecycle verbs (rename, create, archive, node create, node rename) are
+// retired — those acts go through n8n's MCP (guarded via `mcp connect`/
+// `mcp serve`) and `pull` reconciles the local mirror.
+const VERBS = new Set(["init", "pull", "push", "status", "check", "watch", "list", "executions", "data-tables", "simulate", "test", "mock", "mcp", "publish", "unpublish", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
-const NODE_VERBS = new Set(["create", "rename", "run"]);
+const NODE_VERBS = new Set(["run"]);
 /** Sub-verbs of the `mock` namespace; dispatched as internal `mock:<sub>` commands. */
 const MOCK_VERBS = new Set(["create", "check"]);
 /** Sub-verbs of the `mcp` namespace; dispatched as internal `mcp:<sub>` commands. */
-const MCP_VERBS = new Set(["serve"]);
+const MCP_VERBS = new Set(["serve", "connect"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "test", "publish", "unpublish", "archive"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "test", "publish", "unpublish"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -172,7 +167,6 @@ async function main() {
   const allowEnv = args.includes("--allow-env");
   const remoteFlag = args.includes("--remote");
   const diffFlag = args.includes("--diff");
-  const tsFlag = args.includes("--ts");
   const jsonFlag = args.includes("--json");
   const networkNoneFlag = args.includes("--network-none");
   const allFlag = args.includes("--all");
@@ -186,7 +180,7 @@ async function main() {
     const sub = positional[1];
     if (sub === undefined || !NODE_VERBS.has(sub)) {
       console.log(usage());
-      throw new Error(`unknown node command: ${sub ?? "(none)"} — try: n8n-decanter node create|rename|run`);
+      throw new Error(`unknown node command: ${sub ?? "(none)"} — try: n8n-decanter node run (node create/rename now go through n8n's MCP; \`pull\` follows)`);
     }
     command = `node:${sub}`;
     rest = positional.slice(2);
@@ -202,7 +196,7 @@ async function main() {
     const sub = positional[1];
     if (sub === undefined || !MCP_VERBS.has(sub)) {
       console.log(usage());
-      throw new Error(`unknown mcp command: ${sub ?? "(none)"} — try: n8n-decanter mcp serve`);
+      throw new Error(`unknown mcp command: ${sub ?? "(none)"} — try: n8n-decanter mcp connect|serve`);
     }
     command = `mcp:${sub}`;
     rest = positional.slice(2);
@@ -263,7 +257,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...MOCK_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `mock` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--help");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -274,7 +268,7 @@ async function main() {
     return;
   }
 
-  await dispatch(command, rest, { force, publishFlag, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags });
+  await dispatch(command, rest, { force, publishFlag, noTypecheck, remoteFlag, diffFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags });
 }
 
 interface Flags {
@@ -283,7 +277,6 @@ interface Flags {
   noTypecheck: boolean;
   remoteFlag: boolean;
   diffFlag: boolean;
-  tsFlag: boolean;
   jsonFlag: boolean;
   networkNoneFlag: boolean;
   allFlag: boolean;
@@ -291,7 +284,7 @@ interface Flags {
 }
 
 /** Flag defaults for picker-launched verbs (no CLI flags in play). */
-const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, remoteFlag: false, diffFlag: false, tsFlag: false, jsonFlag: false, networkNoneFlag: false, allFlag: false, valueFlags: new Map() };
+const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, remoteFlag: false, diffFlag: false, jsonFlag: false, networkNoneFlag: false, allFlag: false, valueFlags: new Map() };
 
 /**
  * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
@@ -405,7 +398,7 @@ function printSimulationReport(r: SimulationReport, log: Log): void {
 
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
 async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
-  const { force, publishFlag, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags } = flags;
+  const { force, publishFlag, noTypecheck, remoteFlag, diffFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags } = flags;
   // simulate reads local captures + drives a throwaway engine — it never calls
   // n8n, so no credentials are required. Since Plan 32 the sync verbs (and the
   // rename/node namespace, which forward structure acts to n8n) go over MCP;
@@ -471,10 +464,9 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   if (REF_VERBS.has(command)) {
     refs = [];
     for (const r of rest) refs.push(await resolveRef(r));
-  } else if ((command === "rename" || command === "node:create" || command === "node:rename"
-      || command === "mock:create" || command === "mock:check") && rest.length > 0) {
+  } else if ((command === "mock:create" || command === "mock:check") && rest.length > 0) {
     // ref-plus-literals verbs: only the first argument is a workflow ref;
-    // the rest are names (node names, a new workflow name, a mock slug) — not resolved.
+    // the rest are literals (a mock slug) — not resolved.
     refs = [await resolveRef(rest[0]), ...rest.slice(1)];
   }
   // No-ref → picker (Plan 27): a pure ref verb with no workflow, on a terminal,
@@ -790,40 +782,6 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (failed) process.exitCode = 1;
       break;
     }
-    case "create": {
-      if (rest.length !== 1) throw new Error('create needs exactly one name: n8n-decanter create "<name>"');
-      await createWorkflow(mcp(), config, rest[0], log);
-      break;
-    }
-    case "archive": {
-      // Deliberately never falls back to config.workflows — a ref is required,
-      // one workflow per call (no cascade, too much blast radius for a default).
-      if (refs.length === 0) throw new Error("archive needs a workflow ref: n8n-decanter archive <workflow>");
-      if (refs.length > 1) throw new Error("archive takes exactly one workflow — archive them one at a time");
-      await withEnableHint(() => archiveWorkflow(mcp(), config, refs[0], { force }, log));
-      break;
-    }
-    case "rename": {
-      const [id, ...names] = refs;
-      if (!id) throw new Error('rename needs a workflow and a new name: n8n-decanter rename <workflow> "<new name>"');
-      if (names.length !== 1) throw new Error('rename needs exactly one new name: n8n-decanter rename <workflow> "<new name>"');
-      await withEnableHint(() => renameWorkflow(mcp(), config.root, id, names[0], log));
-      break;
-    }
-    case "node:create": {
-      const [id, ...names] = refs;
-      if (!id) throw new Error('node create needs a workflow and a node name: n8n-decanter node create <workflow> "<Node name>" [--ts]');
-      if (names.length !== 1) throw new Error('node create needs exactly one node name: n8n-decanter node create <workflow> "<Node name>" [--ts]');
-      await withEnableHint(() => addCodeNode(mcp(), config, id, names[0], { ts: tsFlag }, log));
-      break;
-    }
-    case "node:rename": {
-      const [id, ...names] = refs;
-      if (!id) throw new Error('node rename needs a workflow and two node names: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
-      if (names.length !== 2) throw new Error('node rename needs the old and new node name: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
-      await withEnableHint(() => renameNode(mcp(), config, id, names[0], names[1], log));
-      break;
-    }
     case "watch": {
       if (ids.length !== 1) throw new Error("watch needs exactly one workflow id (pass it, or list a single workflow in decanter.config.json)");
       // the returned handle exists for tests; the CLI watches until Ctrl-C
@@ -845,6 +803,19 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       log.info("");
       log.info(style.dim("Ctrl-C stops the proxy (decanter's own sync never routes through it)"));
       await new Promise(() => {});
+      break;
+    }
+    case "mcp:connect": {
+      // stdio MCP guard: the agent spawns this process from `.mcp.json`, so
+      // stdout carries protocol messages ONLY — every log line goes to stderr,
+      // and the MCP client is built with the stderr logger for the same reason.
+      const elog: Log = {
+        info: (m) => console.error(m),
+        ok: (m) => console.error(`${styleErr.green("✓")} ${m}`),
+        warn: (m) => console.error(styleErr.yellow(`! ${m}`)),
+        error: (m) => console.error(styleErr.red(`✗ ${m}`)),
+      };
+      await runStdioGuard({ mcp: createMcpClient(config, elog), host: config.host, timeoutMs: config.requestTimeoutMs, log: elog });
       break;
     }
     default:

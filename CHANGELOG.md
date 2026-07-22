@@ -25,8 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of local code. `simulate` stays the offline sibling —
   pre-push/CI/isolation/version-rehearsal — and its docs now recommend
   `test` first.
-- **`mcp serve` — an MCP guard-proxy for coding agents.** A localhost
-  endpoint speaking n8n's MCP protocol: decanter holds the credentials (the
+- **`mcp connect` — the stdio MCP guard, auto-wired by `init`.** The default
+  way a coding agent reaches your instance's MCP server: the scaffolded
+  `.mcp.json` (and `opencode.json`) carry a static, secret-free
+  `n8n-instance` entry (`{"command":"n8n-decanter","args":["mcp","connect"]}`),
+  so guarded instance access exists the moment `init` runs — nothing to
+  start, no secret to manage (stdio pipes are private). Decanter holds the
+  credentials; the same guard rule as `mcp serve` applies (see below).
+  Structure and lifecycle acts — creating/renaming/archiving workflows,
+  adding/renaming/wiring nodes — pass through; Code-node (`jsCode`) writes
+  are blocked toward the file + `push` flow. Fail-closed on unparseable
+  input; an unreachable instance answers the agent with a JSON-RPC error
+  naming the host; logs go to stderr (stdout is protocol-only).
+- **`mcp serve` — the same guard as a localhost HTTP proxy**, for agents
+  configured by URL: decanter holds the credentials (the
   agent gets a per-session secret instead), every read and structure
   operation forwards untouched (SSE included), and exactly one thing is
   blocked — `update_workflow` calls that write Code-node source, via either
@@ -36,21 +48,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in a gitignored `.decanter-proxy.json`. The template gains a
   `mcp-route-check.mjs` session hook that nudges agents whose MCP config
   still points at the instance directly, and the sync-dir `AGENTS.md`
-  contract is now proxy-first.
-
-- **`archive` verb** — archive a workflow on the server over MCP
-  (`archive_workflow`): the workflow moves to n8n's Archived filter
-  (reversible there; a published one is unpublished first), with the same
-  consent gate the old `delete` had (TTY `y/N` naming workflow + id;
-  non-interactive runs need `--force`). The local folder is never touched and
-  a stale `decanter.config.json` entry is flagged. Permanent deletion is
-  deliberately not a decanter surface — the n8n UI owns it.
+  contract is now guard-first.
 
 ### Removed
 
-- **Breaking: the `delete` verb is gone** — replaced by `archive`. Decanter
-  no longer offers a hard delete; permanently removing a workflow is an
-  n8n-UI act (archive it first, then delete it there).
+- **Breaking: the structure/lifecycle verbs are gone — `rename`, `create`,
+  `node create` (and its `--ts` flag), and `node rename`.** Those acts go
+  through **n8n itself**: the n8n editor, or n8n's MCP tools reached through
+  the new `mcp connect`/`mcp serve` guard (which is exactly what the
+  official n8n skills drive). Decanter's job is the reconcile: the next
+  `pull` re-caches a renamed workflow's name (folder stays put), renames a
+  renamed node's local file, and lands a new Code node as a source file. A
+  Code node added over MCP carries **no `jsCode`** (the guard blocks code in
+  `addNode`) — it now lands as an **empty file** whose first `push` seeds
+  the source, completing the guarded authoring loop. Two behaviors did not
+  survive the removal: `$('…')` refs inside local `.ts` sources are no
+  longer rewritten on a node rename (n8n never sees `.ts` — update them by
+  hand after the pull), and validate-before-create is now the calling
+  agent's discipline (`validate_workflow` first, as the n8n skills teach).
+- **Breaking: the `delete` verb is gone.** Decanter no longer offers a hard
+  delete; retiring a workflow is an n8n act (archive it over MCP or in the
+  UI — reversible there, which is also where permanent deletion lives).
 - **Breaking: the `duplicate` verb is gone.** MCP has no lossless full-JSON
   create, so a faithful clone required the public API — rather than keep the
   API dependency or ship a lossy SDK-code re-expression, the verb was
@@ -74,13 +92,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transparently; a token-refresh response without a
   rotated refresh token keeps the old one; workflow lists that hit the
   200-row page cap warn about truncation.
-- **`node create` / `node rename` no longer overwrite unpushed `.js` edits:**
-  both verbs pull the workflow after the structure act, which silently
-  replaced locally edited `.js` files with the remote body — they now refuse
-  up front, naming the dirty files ("push first").
-- **`rename`, `node create`, `node rename`, and `archive` now append the
-  enable-MCP guidance** to the per-workflow "not available in MCP" refusal,
-  matching pull/push/status.
 - **`init` appends `.decanter-auth.json` to a pre-existing `.gitignore`**
   instead of only warning — the file holds the MCP refresh token.
 - **Push verifies `.ts` nodes after the write** (marker hash vs. remote
@@ -89,10 +100,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`create` validates before creating** — the generated Workflow-SDK
-  expression now passes the server's `validate_workflow` gate before
-  `create_workflow_from_code`, surfacing the server's errors and hint
-  verbatim when rejected.
+- **The scaffolded MCP config is rebuilt around the guard + n8n's official
+  docs MCP.** `init`'s `.mcp.json` (and `opencode.json`) now wire two
+  servers: **`n8n-instance`** — the `mcp connect` guard (see Added) — and
+  **`n8n-docs`**, n8n's first-party read-only docs MCP
+  (`https://docs.n8n.io/~gitbook/mcp`, public, no auth), replacing the
+  community `n8n-mcp` server. The docs server can't reach your instance, so
+  it can't bypass the guard — live workflow access goes only through
+  `n8n-instance`. The scaffolded Claude Code allowlist pre-approves
+  `mcp__n8n-docs` plus the offline/read verbs `pull`, `mock`, and
+  `simulate`; instance-mutating verbs still prompt.
 - **A body-equal push now re-registers a missing `@ts-n8n` marker** — when a
   `.ts` node's compiled code already matches the remote but the marker is
   gone (e.g. rewritten in the UI), push writes the node anyway so it is
@@ -134,22 +151,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     conflict artifacts are all gone — the only drift guard left is the
     per-node code check (`--force` still overrides it), and remote structure
     changes never block a push (`status` prints a snapshot-stale hint instead).
-  - **Structure verbs forward to n8n.** `rename`, `node create`, and
-    `node rename` (previously offline + "push to propagate") now issue the
-    matching MCP operation (`setWorkflowMetadata`, `addNode`, `renameNode`)
-    and pull the result — n8n rewrites connections and `$('…')` references
-    server-side, node ids stay stable, and local files follow. `create` builds
-    the blank workflow via MCP (born pullable).
+  - **Structure acts live in n8n.** Renames, new nodes, wiring, and new
+    workflows happen in the n8n editor or over n8n's MCP tools (through the
+    guard) — n8n rewrites connections and `$('…')` references server-side,
+    node ids stay stable, and the next `pull` makes local files follow.
   - **Requires n8n ≥ ~2.20 with MCP access enabled**, plus a per-workflow
     "Available in MCP" opt-in. The picker shows MCP-unavailable workflows as a
     third state (red `⊘`, sorted last) with enable guidance instead of a
     failing pull; `list --remote` marks them (`--json` adds `mcpAvailable`)
     and pull/push errors carry the same guidance.
   - **The public API key becomes optional.** Only the surfaces MCP cannot
-    serve still use it: `executions` and `data-tables` fetches, `duplicate`'s
-    lossless clone (API-born copies need the MCP opt-in before their first
-    pull — the CLI says so), and `delete`'s hard delete. The client retries
-    n8n's MCP rate limiting (429) with backoff automatically.
+    serve still use it: `executions` and `data-tables` fetches. The client
+    retries n8n's MCP rate limiting (429) with backoff automatically.
 - **Breaking: `init` is OAuth-first.** `init` now connects to the instance via
   the standard MCP OAuth flow — browser consent, then a refresh token stored
   in a new gitignored **`.decanter-auth.json`** (rotated on every refresh) —

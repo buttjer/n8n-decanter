@@ -438,13 +438,18 @@ try {
     assert.deepEqual(out, [{ doubled: 4, mode: "forced" }], JSON.stringify(out));
   });
 
-  await step("rename with a unicode name: forwarded over MCP, id stable, executes after publish", async () => {
-    let r = await cli("node", "rename", wfId, "Compute", "Ümläut Nödé");
+  await step("remote node rename (unicode, over raw MCP — the new-world path): pull reconciles, id stable, executes after publish", async () => {
+    // The rename verbs are retired: structure acts go through n8n's MCP
+    // (agent/skills side) and `pull` reconciles the local mirror. Do exactly
+    // that against the real instance.
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpClient = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    await mcpClient.callTool("update_workflow", { workflowId: wfId, operations: [{ type: "renameNode", oldName: "Compute", newName: "Ümläut Nödé" }] });
+    let r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /renamed node "Compute" -> "Ümläut Nödé" in n8n/, r.out);
-    const renamed = JSON.parse(read(TMP, "decanter.config.json")); // config untouched by rename
+    const renamed = JSON.parse(read(TMP, "decanter.config.json")); // config untouched by the reconcile
     assert.ok(renamed.workflows.includes(wfId));
-    assert.match(read(wfDir, "workflow.json"), /"Ümläut Nödé"/, "rename's own pull refreshed the snapshot");
+    assert.match(read(wfDir, "workflow.json"), /"Ümläut Nödé"/, "pull refreshed the snapshot");
     const remote = await api("GET", `/api/v1/workflows/${wfId}`);
     const c1 = remote.nodes.find((n: any) => n.id === "c1");
     assert.equal(c1.name, "Ümläut Nödé", "real n8n accepted the MCP rename — and the node id survived");
@@ -669,14 +674,18 @@ try {
     assert.equal(remote.activeVersionId, remote.versionId, "published & in sync: live version == draft");
   });
 
-  await step("lifecycle verbs: create → push → publish → unpublish → archive round-trip", async () => {
-    // create a blank draft on the server via the CLI, born unpublished
-    let r = await cli("create", "Smoke Lifecycle");
+  await step("lifecycle: workflow born over raw MCP → pull → publish → unpublish → archive round-trip", async () => {
+    // The create verb is retired — the agent path: create over n8n's MCP
+    // (validate_workflow gate is the skills' discipline), then pull the id.
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpRaw = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    const created0 = (await mcpRaw.callTool("create_workflow_from_code", { code: 'workflow("smoke-lifecycle", "Smoke Lifecycle")' })) as { workflowId: string };
+    const lifeId = created0.workflowId;
+    assert.ok(lifeId, "create_workflow_from_code returned the new id: " + JSON.stringify(created0));
+    let r = await cli("pull", lifeId);
     assert.equal(r.code, 0, r.out);
-    const lifeId = r.out.match(/created "Smoke Lifecycle" \(([^)]+)\)/)?.[1];
-    assert.ok(lifeId, "create printed the new id: " + r.out);
     const lifeDir = path.join(ROOT, "smoke-lifecycle");
-    assert.ok(existsSync(path.join(lifeDir, ".decanter.json")), "create pulled the folder");
+    assert.ok(existsSync(path.join(lifeDir, ".decanter.json")), "pull created the folder");
     let remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.active, false, "born unpublished");
     assert.equal(remote.activeVersionId, null, "unpublished → no active version");
@@ -717,15 +726,9 @@ try {
     // case was pinned before) — the real server nulls activeVersionId
     assert.equal(remote.activeVersionId, null, "unpublish clears activeVersionId on the real server");
 
-    // archive needs a ref (never touches config)
-    r = await cli("archive");
-    assert.equal(r.code, 1);
-    assert.match(r.out, /archive needs a workflow ref/);
-    // archive --force → MCP archive_workflow; the workflow survives on the
-    // server (isArchived), it is NOT hard-deleted; local folder kept
-    r = await cli("archive", lifeId, "--force");
-    assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /archived "Smoke Lifecycle" \([^)]+\) — restore or permanently delete it from the n8n UI/);
+    // archive is n8n's act now (agent/UI): raw MCP archive_workflow; the
+    // workflow survives on the server (isArchived), NOT hard-deleted
+    await mcpRaw.callTool("archive_workflow", { workflowId: lifeId });
     remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.isArchived, true, "archived on the server");
     assert.equal(remote.active, false, "stays unpublished");
@@ -765,11 +768,15 @@ try {
     let r = await cli("pull", authId);
     assert.equal(r.code, 0, r.out);
 
-    // add scaffolds a disconnected Code node with the default runnable body —
-    // born in n8n over MCP (addNode), landed locally by its pull
-    r = await cli("node", "create", authId, "Enrich");
+    // the guarded authoring loop: the agent adds a Code node over raw MCP
+    // WITHOUT jsCode (the guard blocks code in addNode); pull lands it as an
+    // empty file; the code itself rides the file + push flow
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpRaw = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    await mcpRaw.callTool("update_workflow", { workflowId: authId, operations: [{ type: "addNode", node: { name: "Enrich", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { mode: "runOnceForAllItems" } } }] });
+    r = await cli("pull", authId);
     assert.equal(r.code, 0, r.out);
-    assert.ok(existsSync(path.join(authDir, "code", "enrich.js")), "add wrote the source file");
+    assert.ok(existsSync(path.join(authDir, "code", "enrich.js")), "jsCode-less node landed as a file");
     const born = await api("GET", `/api/v1/workflows/${authId}`);
     assert.ok(born.nodes.some((n: any) => n.name === "Enrich"), "the scaffold exists in n8n already");
 
@@ -788,13 +795,18 @@ try {
     assert.equal(r.code, 0, r.out);
     r = await cli("check", authId);
     assert.equal(r.code, 0, "wired scaffold must stay compliant: " + r.out);
+
+    // the code itself rides the file + push flow (seeding the born-empty node)
+    writeFileSync(path.join(authDir, "code", "enrich.js"), "for (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\nreturn $input.all();\n");
+    r = await cli("push", authId);
+    assert.equal(r.code, 0, "push seeds the born-empty node: " + r.out);
     r = await cli("publish", authId); // make the webhook live
     assert.equal(r.code, 0, r.out);
 
-    // trigger it: the DEFAULT scaffold body (item.json.myNewField = 1) must run
-    // in n8n's real Code-node sandbox on the webhook item
+    // trigger it: the seeded body (item.json.myNewField = 1) must run in
+    // n8n's real Code-node sandbox on the webhook item
     const out = await webhook({ n: 21 }, "smoke-auth-hook");
-    assert.equal(out[0]?.myNewField, 1, "default scaffold body executed in the sandbox: " + JSON.stringify(out).slice(0, 300));
+    assert.equal(out[0]?.myNewField, 1, "seeded body executed in the sandbox: " + JSON.stringify(out).slice(0, 300));
     assert.equal(out[0]?.body?.n, 21, "scaffold was correctly wired between Webhook and Respond");
 
     // tidy up the authoring workflow (the container is ephemeral, but keep it clean)

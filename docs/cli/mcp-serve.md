@@ -11,7 +11,10 @@ n8n-decanter mcp serve [--port N]
 Starts the **MCP guard-proxy**: a localhost HTTP endpoint that speaks n8n's
 MCP protocol and forwards everything to your instance's `/mcp-server/http` —
 with decanter as the **sole credential holder** and one rule enforced
-technically:
+technically. It is the **HTTP variant** of the guard: for agents whose MCP
+config can spawn a command, prefer [mcp connect](/docs/cli/mcp-connect/) —
+the stdio form the scaffolded `.mcp.json` already wires, with no secret to
+manage. `mcp serve` exists for harnesses that only take an MCP **URL**:
 
 - **Blocked:** `update_workflow` calls that write Code-node source. That
   covers both routes n8n exposes: a `jsCode` **key** anywhere in the
