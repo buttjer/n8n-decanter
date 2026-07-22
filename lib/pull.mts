@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
+import { getWorkflowDetails, type McpClient } from "./mcp.mts";
 import { findWorkflowDir, readState, renameNodeFilePair, writeState } from "./state.mts";
 import type { DecanterState, Log, NodeState, Workflow, WorkflowNode } from "./types.mts";
 import {
@@ -13,7 +13,6 @@ import {
   sha256,
   splitMarker,
   stableWorkflowJson,
-  workflowStructureHash,
 } from "./util.mts";
 
 function writeIfChanged(file: string, content: string): boolean {
@@ -46,9 +45,11 @@ function ensureWorkflowDir(root: string, wf: Workflow, log: Log): { dir: string 
 
 /**
  * Pick/refresh the file name for a node: kebab-case under code/, renaming
- * existing files on node rename (which also migrates pre-code/ layouts).
- * Collision handling is per-pull (`usedNames`), deterministic across nodes
- * that kebab to the same base.
+ * existing files on node rename. This is the node-identity layer (Plan 32
+ * Task 3): the map is keyed on the node *id*, which survives MCP/UI renames,
+ * so a structure-side rename only moves the local file — content and history
+ * stay attached. Collision handling is per-pull (`usedNames`), deterministic
+ * across nodes that kebab to the same base.
  */
 function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: WorkflowNode, ext: string, usedNames: Set<string>, log: Log): { file: string; base: string } {
   let base = kebabCase(node.name);
@@ -61,13 +62,25 @@ function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: Workf
   return { file: wanted, base };
 }
 
-export async function pullWorkflow(api: N8nApi, root: string, id: string, { commitOnPull = false }: { commitOnPull?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
-  const wf = await api.getWorkflow(id);
+/**
+ * Pull one workflow over MCP (Plan 32): read the tip via `get_workflow_details`
+ * (the editor view — the draft when one exists, else the published content),
+ * extract each Code node's `jsCode` into `code/`, and refresh the read-only
+ * `workflow.json` structure snapshot. Code files in git are the source of
+ * truth for Code-node source: `.js` files are overwritten with the remote body
+ * (git is the safety net — a warning flags overwritten unpushed edits), `.ts`
+ * sources are never touched (divergence is warned, inspect with
+ * `status --diff`; no `.remote.js` artifacts since Plan 32).
+ */
+export async function pullWorkflow(mcp: McpClient, root: string, id: string, { commitOnPull = false }: { commitOnPull?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
+  const wf = await getWorkflowDetails(mcp, id);
   const { dir } = ensureWorkflowDir(root, wf, log);
   const state: DecanterState = readState(dir) ?? { workflowId: wf.id, nodes: {} };
   state.workflowId = wf.id;
   state.name = wf.name; // cached display name (Plan 27) — folder stays a stable slug
   state.nodes ??= {};
+  // structural hashing died with Plan 32 — scrub the legacy field on rewrite
+  delete (state as unknown as Record<string, unknown>).lastPulledWorkflowHash;
   const usedNames = new Set<string>();
   const placeholders = new Map<string, string>(); // node id -> file name
 
@@ -81,46 +94,43 @@ export async function pullWorkflow(api: N8nApi, root: string, id: string, { comm
 
     const { file, base } = resolveNodeFile(dir, nodeState, node, tsManaged ? ".ts" : ".js", usedNames, log);
     const filePath = path.join(dir, file);
-    const remoteRel = `${CODE_DIR}/${base}.remote.js`;
-    const remoteJsFile = path.join(dir, remoteRel);
 
     if (tsManaged) {
       if (!existsSync(filePath)) {
-        writeFileSync(remoteJsFile, remoteBody);
-        log.warn(`${wf.name} / ${node.name}: TS-managed on remote but no local ${file} — compiled code saved to ${remoteRel}`);
+        log.warn(`${wf.name} / ${node.name}: TS-managed on remote but no local ${file} — pull cannot reconstruct .ts source; add the file (its compiled code stays on the n8n draft, see status --diff) before pushing`);
       } else {
         const compiled = await compileTs(filePath, log);
         const localHash = sha256(compiled);
         if (localHash === remoteHash) {
-          if (existsSync(remoteJsFile)) {
-            rmSync(remoteJsFile);
-            log.info(`${node.name}: in sync, removed stale ${remoteRel}`);
-          }
+          // in sync — nothing to do
         } else if (localHash === nodeState.lastPushedHash) {
-          writeFileSync(remoteJsFile, remoteBody);
-          log.warn(`${wf.name} / ${node.name}: edited in the n8n UI since last push — remote code saved to ${remoteRel}; port it into ${file} manually`);
+          log.warn(`${wf.name} / ${node.name}: edited in the n8n UI since last push — remote edits are not merged into ${file} (inspect with status --diff, port manually); the next push overwrites them`);
         } else if (remoteHash === nodeState.lastPushedHash) {
           log.info(`${node.name}: local ${file} modified, not yet pushed`);
         } else {
-          writeFileSync(remoteJsFile, remoteBody);
-          log.warn(`${wf.name} / ${node.name}: CONFLICT — both ${file} and the remote code changed since last sync. Remote saved to ${remoteRel}; reconcile manually before pushing`);
+          log.warn(`${wf.name} / ${node.name}: CONFLICT — both ${file} and the remote code changed since last sync; inspect with status --diff and reconcile before pushing`);
         }
       }
     } else if (nodeState.file?.endsWith(".ts") || existsSync(path.join(dir, CODE_DIR, base + ".ts"))) {
       // Local .ts exists but remote carries no marker: never clobber TS source
       // and don't drop a competing .js next to it.
       const tsFile = nodeState.file ?? `${CODE_DIR}/${base}.ts`;
-      writeFileSync(remoteJsFile, remoteBody);
-      log.warn(`${wf.name} / ${node.name}: local ${tsFile} exists but remote code has no @ts-n8n marker (not pushed from TS yet?) — remote saved to ${remoteRel}`);
+      log.warn(`${wf.name} / ${node.name}: local ${tsFile} exists but remote code has no @ts-n8n marker (not pushed from TS yet?) — keeping your .ts; the next push overwrites the remote code`);
       placeholders.set(node.id, tsFile);
-      state.nodes[node.id] = { ...nodeState, file: tsFile, lastPushedHash: remoteHash };
+      state.nodes[node.id] = { ...nodeState, file: tsFile, lastPushedHash: remoteHash, name: node.name };
       continue;
     } else {
+      if (existsSync(filePath)) {
+        const localHash = sha256(readFileSync(filePath, "utf8"));
+        if (localHash !== remoteHash && nodeState.lastPushedHash !== undefined && localHash !== nodeState.lastPushedHash) {
+          log.warn(`${wf.name} / ${node.name}: overwriting unpushed local changes in ${file} with the remote code (recover via git)`);
+        }
+      }
       if (writeIfChanged(filePath, remoteBody)) log.info(`wrote ${path.basename(dir)}/${file}`);
     }
 
     placeholders.set(node.id, file);
-    state.nodes[node.id] = { ...nodeState, file, lastPushedHash: remoteHash };
+    state.nodes[node.id] = { ...nodeState, file, lastPushedHash: remoteHash, name: node.name };
   }
 
   // Drop state for nodes that no longer exist remotely (files stay; git is the safety net).
@@ -132,19 +142,19 @@ export async function pullWorkflow(api: N8nApi, root: string, id: string, { comm
     }
   }
 
-  const wfOut = structuredClone(wf);
-  // Keep workflow.json to the workflow itself: n8n 2.x GET responses embed a
-  // full server-side copy of the *published* version (`activeVersion`, code
-  // included), sharing metadata (`shared`), and the published-version pointer
-  // (`activeVersionId`) — derived data that would duplicate every node's source
-  // in git and/or churn on each publish. None is pushable (sanitizeForPut
-  // whitelists) and no local command reads them from workflow.json (the
-  // version-aware `status` reads `activeVersionId` straight off the live GET),
-  // so dropping them loses nothing. The draft `versionId` is kept — the
+  // workflow.json is a READ-ONLY structure snapshot (Plan 32): written for
+  // review diffs and the offline tooling (simulate, node run, refs, guards),
+  // never pushed — structure is n8n's job now. Derived/permission fields are
+  // dropped: `activeVersion` would duplicate every node's source in git,
+  // `activeVersionId` churns on each publish, `shared`/`scopes`/`canExecute`
+  // are viewer-relative MCP noise. The draft `versionId` is kept — the
   // executions stale-fixture warning compares against it.
+  const wfOut = structuredClone(wf);
   delete wfOut.activeVersion;
   delete wfOut.activeVersionId;
   delete wfOut.shared;
+  delete wfOut.scopes;
+  delete wfOut.canExecute;
   for (const node of wfOut.nodes) {
     const file = placeholders.get(node.id);
     if (file) node.parameters.jsCode = FILE_PLACEHOLDER_PREFIX + file;
@@ -153,7 +163,6 @@ export async function pullWorkflow(api: N8nApi, root: string, id: string, { comm
     log.info(`wrote ${path.basename(dir)}/workflow.json`);
   }
 
-  state.lastPulledWorkflowHash = workflowStructureHash(wf);
   writeState(dir, state);
   if (commitOnPull) {
     await commitWorkflowDir(dir, `decanter: pulled "${wf.name}" (${id})`, log);

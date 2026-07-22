@@ -2,11 +2,31 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnvFile } from "./config.mts";
+import {
+  AUTH_FILE,
+  McpClient,
+  type McpAuthFile,
+  openBrowserCommand,
+  readAuthFile,
+  runOAuthConsent,
+  searchWorkflows,
+  writeAuthFile,
+} from "./mcp.mts";
 import { createPrompt } from "./prompt.mts";
 import { style } from "./style.mts";
 import { classifyTemplateFile, MANIFEST_FILE, readManifest, writeManifest, type TemplateOutcome } from "./template.mts";
 import type { Log } from "./types.mts";
 import { sha256 } from "./util.mts";
+
+/** Like readAuthFile, but a corrupt file only warns — init re-mints it. */
+function readAuthFileTolerant(dir: string, log: Log): McpAuthFile | null {
+  try {
+    return readAuthFile(dir);
+  } catch (err) {
+    log.warn((err as Error).message);
+    return null;
+  }
+}
 
 /**
  * Nearest ancestor of `startDir` holding a package.json — the package root.
@@ -211,7 +231,12 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
   else log.info(`template up to date (${uptodate} unchanged${added.length ? `, ${added.length} added` : ""})`);
 }
 
-/** Interactive bootstrap: prompt for credentials, write .env, copy template/. */
+/**
+ * Interactive bootstrap (Plan 32: OAuth-first): prompt for the host, run the
+ * browser OAuth consent for MCP (the sync backend) with a paste-a-bearer
+ * fallback, offer the OPTIONAL public API key (executions / data-tables /
+ * duplicate / delete only), write .env + .decanter-auth.json, copy template/.
+ */
 export async function init(targetDir: string | undefined, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
   printBanner(log);
   const dir = path.resolve(targetDir ?? ".");
@@ -220,22 +245,67 @@ export async function init(targetDir: string | undefined, { force = false }: { f
   const existing = parseEnvFile(envFile);
   let host = existing.N8N_HOST ?? "";
   let apiKey = existing.N8N_API_KEY ?? "";
+  let mcpToken = existing.N8N_MCP_TOKEN ?? "";
+  const interactive = process.stdin.isTTY === true;
 
-  if (host && apiKey) {
-    // complete .env → nothing to ask; edit or delete .env to change credentials
-    log.info(`using existing .env (${host})`);
+  // --- host
+  if (host !== "") {
+    log.info(`using existing .env host (${host})`);
   } else {
+    if (!interactive) throw new Error("N8N_HOST is not set and this session is non-interactive — write .env yourself or run init in a terminal");
     const rl = createPrompt();
     try {
-      host = (await rl.question(`n8n host${host ? ` [${host}]` : ""}: `)).trim() || host;
-      apiKey = (await rl.question(`n8n API key${apiKey ? " [enter = keep existing]" : ""}: `)).trim() || apiKey;
+      host = (await rl.question("n8n host: ")).trim();
     } finally {
       rl.close();
     }
-    if (!host || !apiKey) throw new Error("host and API key are required");
+    if (!host) throw new Error("host is required");
     if (!/^https?:\/\//.test(host)) host = "https://" + host;
     host = host.replace(/\/+$/, "");
-    writeFileSync(envFile, `N8N_HOST=${host}\nN8N_API_KEY=${apiKey}\n`);
+  }
+
+  // --- MCP credentials (the sync backend): existing → OAuth consent → bearer fallback
+  const auth = readAuthFileTolerant(dir, log);
+  if (mcpToken !== "") {
+    log.info("using existing MCP token from .env (N8N_MCP_TOKEN)");
+  } else if (auth !== null && auth.host === host) {
+    log.info(`using existing MCP OAuth credentials (${AUTH_FILE})`);
+  } else if (interactive) {
+    try {
+      const { clientId, tokens } = await runOAuthConsent(host, { log, openBrowser: openBrowserCommand });
+      writeAuthFile(dir, { host, clientId, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessTokenExpiresAt: tokens.accessTokenExpiresAt });
+      log.ok(`connected to ${host} via OAuth — credentials in ${AUTH_FILE} (gitignored)`);
+    } catch (err) {
+      log.warn(`OAuth consent did not complete (${(err as Error).message})`);
+      const rl = createPrompt();
+      try {
+        mcpToken = (await rl.question("paste an MCP token instead (n8n → Settings → MCP → API key) [Enter to skip]: ")).trim();
+      } finally {
+        rl.close();
+      }
+      if (mcpToken === "") log.warn("no MCP credentials yet — sync verbs (pull/push/watch/…) will not work until you re-run init or set N8N_MCP_TOKEN");
+    }
+  } else {
+    log.warn("no MCP credentials and no terminal for the OAuth consent — set N8N_MCP_TOKEN, or run init interactively");
+  }
+
+  // --- optional public API key (the REST-only surfaces)
+  if (apiKey === "" && interactive) {
+    const rl = createPrompt();
+    try {
+      apiKey = (await rl.question("n8n public API key (optional — executions/data-tables/duplicate/delete) [Enter to skip]: ")).trim();
+    } finally {
+      rl.close();
+    }
+  }
+
+  // Rewrite .env preserving any other keys the user added (comments are not preserved).
+  const envOut: Record<string, string> = { ...existing, N8N_HOST: host };
+  if (apiKey !== "") envOut.N8N_API_KEY = apiKey;
+  if (mcpToken !== "") envOut.N8N_MCP_TOKEN = mcpToken;
+  const envText = Object.entries(envOut).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
+  if (!existsSync(envFile) || readFileSync(envFile, "utf8") !== envText) {
+    writeFileSync(envFile, envText);
     log.info(`wrote ${envFile}`);
   }
 
@@ -256,26 +326,53 @@ export async function init(targetDir: string | undefined, { force = false }: { f
 
   const gitignoreFile = path.join(dir, ".gitignore");
   if (!existsSync(gitignoreFile)) {
-    // executions/ and data-tables/ hold fetched data (may contain
-    // credentials/PII); belt-and-braces with the self-ignoring .gitignore each
-    // fetch verb writes into pre-existing sync dirs
-    writeFileSync(gitignoreFile, "node_modules/\n.env\nworkflows/*/executions/\ndata-tables/\n");
+    // .env and .decanter-auth.json hold credentials; executions/ and
+    // data-tables/ hold fetched data (may contain credentials/PII) —
+    // belt-and-braces with the self-ignoring .gitignore each fetch verb
+    // writes into pre-existing sync dirs
+    writeFileSync(gitignoreFile, `node_modules/\n.env\n${AUTH_FILE}\nworkflows/*/executions/\ndata-tables/\n`);
     log.info("wrote .gitignore");
-  } else if (!readFileSync(gitignoreFile, "utf8").split("\n").some((l) => l.trim() === ".env")) {
-    log.warn(".gitignore exists but does not ignore .env — add it, the file holds your API key");
+  } else {
+    const lines = readFileSync(gitignoreFile, "utf8").split("\n").map((l) => l.trim());
+    if (!lines.includes(".env")) log.warn(".gitignore exists but does not ignore .env — add it, the file holds credentials");
+    if (!lines.includes(AUTH_FILE) && existsSync(path.join(dir, AUTH_FILE))) {
+      log.warn(`.gitignore does not ignore ${AUTH_FILE} — add it, the file holds your MCP refresh token`);
+    }
   }
 
-  try {
-    const res = await fetch(`${host}/api/v1/workflows?limit=1`, {
-      headers: { "X-N8N-API-KEY": apiKey, accept: "application/json" },
-      // best-effort probe: fail fast on a black-holed host rather than hanging init
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (res.ok) log.info(`credentials verified against ${host}`);
-    else log.warn(`credential check failed (${res.status} ${res.statusText}) — .env written anyway`);
-  } catch (err) {
-    const e = err as Error & { cause?: { code?: string } };
-    const reason = e.name === "TimeoutError" ? "timed out after 10s" : e.cause?.code ?? e.message;
-    log.warn(`could not reach ${host} (${reason}) — .env written anyway`);
+  // --- verify: MCP first (the sync backend), then the optional API key
+  const mcpEnv = mcpToken !== "" ? mcpToken : undefined;
+  const mcpAuth = mcpEnv !== undefined
+    ? { kind: "bearer" as const, token: mcpEnv }
+    : (() => {
+        const data = readAuthFileTolerant(dir, log);
+        return data !== null && data.host === host ? { kind: "oauth" as const, file: path.join(dir, AUTH_FILE), data } : null;
+      })();
+  if (mcpAuth !== null) {
+    try {
+      const workflows = await searchWorkflows(new McpClient({ host, auth: mcpAuth, requestTimeoutMs: 10_000 }));
+      const available = workflows.filter((w) => w.availableInMCP).length;
+      log.ok(`MCP connection verified — ${workflows.length} workflow${workflows.length === 1 ? "" : "s"} visible, ${available} available to pull`);
+      if (available < workflows.length) {
+        log.info(style.dim(`  workflows must be opted in per-workflow: n8n workflow card (⋯ menu) or workflow settings → "Available in MCP"`));
+      }
+    } catch (err) {
+      log.warn(`MCP check failed (${(err as Error).message.split("\n")[0]}) — credentials written anyway`);
+    }
+  }
+  if (apiKey !== "") {
+    try {
+      const res = await fetch(`${host}/api/v1/workflows?limit=1`, {
+        headers: { "X-N8N-API-KEY": apiKey, accept: "application/json" },
+        // best-effort probe: fail fast on a black-holed host rather than hanging init
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) log.info(`API key verified against ${host}`);
+      else log.warn(`API key check failed (${res.status} ${res.statusText}) — .env written anyway`);
+    } catch (err) {
+      const e = err as Error & { cause?: { code?: string } };
+      const reason = e.name === "TimeoutError" ? "timed out after 10s" : e.cause?.code ?? e.message;
+      log.warn(`could not reach ${host} (${reason}) — .env written anyway`);
+    }
   }
 }

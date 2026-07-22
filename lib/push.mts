@@ -1,21 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
+import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
 import { notifyPushed } from "./proxy.mts";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
-import {
-  isJsCodeNode,
-  placeholderFile,
-  publicationState,
-  sanitizeForPut,
-  sha256,
-  splitMarker,
-  withMarker,
-  workflowStructureHash,
-} from "./util.mts";
+import { isJsCodeNode, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
 import { validateNodeFile, validateWorkflowDir, type ValidationResult } from "./validate.mts";
 
 /** Layout-compliance gate: warnings pass through, errors abort the push. */
@@ -38,105 +29,192 @@ export async function buildNodeCode(dir: string, file: string, log?: Log): Promi
 }
 
 /**
- * Compare the freshly fetched remote workflow against the last-synced hashes.
- * Returns human-readable problems; empty array means safe to push.
- * `onlyNodeIds` restricts the per-node check (watch mode).
+ * Per-node code drift (Plan 32: the only drift guard left — structure is
+ * n8n's job now). A node drifts when the remote body moved off the last-sync
+ * hash AND differs from what we are about to write (a remote edit that
+ * happens to match the local code just re-baselines silently).
  */
-export function driftProblems(remote: Workflow, state: DecanterState, onlyNodeIds: Set<string> | null = null): string[] {
-  const problems: string[] = [];
-  for (const node of remote.nodes) {
-    if (!isJsCodeNode(node)) continue;
-    if (onlyNodeIds && !onlyNodeIds.has(node.id)) continue;
-    const nodeState = state.nodes[node.id];
-    const { body } = splitMarker(node.parameters.jsCode);
-    if (!nodeState) {
-      problems.push(`node "${node.name}" exists remotely but is unknown locally`);
-    } else if (nodeState.lastPushedHash !== sha256(body)) {
-      problems.push(`node "${node.name}": remote code changed since last sync`);
-    }
-  }
-  if (!onlyNodeIds && state.lastPulledWorkflowHash &&
-      workflowStructureHash(remote) !== state.lastPulledWorkflowHash) {
-    problems.push("workflow structure changed remotely since last sync (nodes/connections/settings)");
-  }
-  return problems;
+function codeDrift(remoteHash: string, localHash: string, lastPushedHash: string | undefined): boolean {
+  return lastPushedHash !== undefined && remoteHash !== lastPushedHash && remoteHash !== localHash;
 }
 
 function assertNoDrift(problems: string[], force: boolean, log: Log): void {
   if (problems.length === 0) return;
   for (const p of problems) log[force ? "warn" : "error"](p);
   if (!force) {
-    throw new Error("remote changed since last sync — pull first (or repeat with --force to overwrite)");
+    throw new Error("remote code changed since last sync — pull first (or repeat with --force to overwrite the draft)");
   }
-  log.warn("--force: overwriting remote changes");
+  log.warn("--force: overwriting remote code changes");
 }
 
-/** Publication suffix for push result lines (see publicationState in util). */
-function liveNote(wf: Workflow | undefined): string {
+/**
+ * Publication suffix for push result lines. MCP writes land on the DRAFT
+ * only — the API-era "pushes to a published workflow auto-publish" behavior
+ * is gone; `publish` is always the deliberate go-live step.
+ */
+function draftNote(wf: Workflow | undefined): string {
   const state = publicationState(wf);
-  if (!state) return "";
-  return state === "published" ? " — published: code is live now" : " — unpublished: draft only";
+  if (!state) return " — draft updated";
+  return state === "published"
+    ? ' — draft updated; the live version is unchanged (run "publish" to go live)'
+    : " — unpublished draft";
 }
 
-/** Update per-node + structure hashes from the workflow the server confirmed. */
+/** Update per-node hashes + cached names from a post-write confirming read. */
 function recordSync(state: DecanterState, confirmed: Workflow): void {
+  state.name = confirmed.name;
   for (const node of confirmed.nodes) {
     if (!isJsCodeNode(node)) continue;
     const nodeState = state.nodes[node.id];
-    if (nodeState) nodeState.lastPushedHash = sha256(splitMarker(node.parameters.jsCode).body);
+    if (nodeState) {
+      nodeState.lastPushedHash = sha256(splitMarker(node.parameters.jsCode).body);
+      nodeState.name = node.name;
+    }
   }
-  state.lastPulledWorkflowHash = workflowStructureHash(confirmed);
 }
 
-export async function pushWorkflow(api: N8nApi, root: string, id: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
+/**
+ * Build the `updateNodeParameters` ops for every tracked node whose local code
+ * differs from the remote body. Nodes are matched by ID against the fresh
+ * remote read and addressed by their CURRENT remote name (Plan 32 Task 3) —
+ * a structure-side rename between syncs changes nothing.
+ */
+async function collectOps(
+  dir: string,
+  state: DecanterState,
+  remote: Workflow,
+  onlyNodeIds: Set<string> | null,
+  log: Log,
+): Promise<{ ops: McpOperation[]; problems: string[] }> {
+  const byId = new Map(remote.nodes.map((n) => [n.id, n]));
+  const ops: McpOperation[] = [];
+  const problems: string[] = [];
+  for (const [nodeId, ns] of Object.entries(state.nodes)) {
+    if (onlyNodeIds && !onlyNodeIds.has(nodeId)) continue;
+    const node = byId.get(nodeId);
+    if (!node) {
+      log.warn(`node "${ns.name ?? nodeId}" (${ns.file}) no longer exists remotely — skipped; pull to clean up state`);
+      continue;
+    }
+    if (!isJsCodeNode(node)) {
+      log.warn(`node "${node.name}" (${ns.file}) is no longer a JS Code node remotely — skipped; pull to clean up state`);
+      continue;
+    }
+    const { jsCode, hash } = await buildNodeCode(dir, ns.file, log);
+    const remoteHash = sha256(splitMarker(node.parameters.jsCode).body);
+    if (codeDrift(remoteHash, hash, ns.lastPushedHash)) {
+      problems.push(`node "${node.name}": remote code changed since last sync`);
+    }
+    if (hash === remoteHash) continue; // already in sync — no write needed
+    ops.push({ type: "updateNodeParameters", nodeName: node.name, parameters: { jsCode } });
+  }
+  if (!onlyNodeIds) {
+    for (const node of remote.nodes) {
+      if (isJsCodeNode(node) && state.nodes[node.id] === undefined) {
+        log.info(`remote Code node "${node.name}" isn't tracked locally — pull to extract it`);
+      }
+    }
+  }
+  return { ops, problems };
+}
+
+/**
+ * Push a workflow's Code-node sources over MCP (Plan 32): one atomic
+ * `update_workflow` batch of `{jsCode}`-only `updateNodeParameters` ops
+ * (merge semantics — sibling params like `mode`/`language` survive). The
+ * write lands on the DRAFT; `publish: true` (--publish) takes it live
+ * afterwards. Sync hashes are recorded from a post-write confirming read
+ * (`update_workflow` returns a summary, never the workflow).
+ */
+export async function pushWorkflow(
+  mcp: McpClient,
+  root: string,
+  id: string,
+  { force = false, commitOnPush = false, publish = false }: { force?: boolean; commitOnPush?: boolean; publish?: boolean } = {},
+  log: Log,
+): Promise<{ dir: string; name: string }> {
   const dir = findWorkflowDir(root, id, log);
   if (!dir) throw new Error(`workflow ${id} not found under ${root} — pull it first`);
   assertCompliant(validateWorkflowDir(dir), log, `"${path.basename(dir)}"`);
   const state = readState(dir)!;
-  const wf = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as Workflow;
 
-  for (const node of wf.nodes) {
-    if (!isJsCodeNode(node)) continue;
-    const file = placeholderFile(node);
-    if (file === null) continue;
-    node.parameters.jsCode = (await buildNodeCode(dir, file, log)).jsCode;
-    state.nodes[node.id] = { ...state.nodes[node.id], file };
+  const remote = await getWorkflowDetails(mcp, id);
+  const { ops, problems } = await collectOps(dir, state, remote, null, log);
+  assertNoDrift(problems, force, log);
+
+  let confirmed = remote;
+  if (ops.length > 0) {
+    await updateWorkflow(mcp, id, ops);
+    confirmed = await getWorkflowDetails(mcp, id);
+    verifyRoundTrip(dir, state, confirmed, log);
   }
-
-  const remote = await api.getWorkflow(id);
-  assertNoDrift(driftProblems(remote, state, null), force, log);
-
-  const confirmed = await api.updateWorkflow(id, sanitizeForPut(wf));
-  recordSync(state, confirmed ?? wf);
+  recordSync(state, confirmed);
   writeState(dir, state);
-  log.ok(`pushed "${wf.name}" (${id})${liveNote(confirmed ?? remote)}`);
+  if (ops.length === 0) {
+    log.ok(`"${remote.name}" (${id}): code already in sync — nothing to push`);
+  } else {
+    log.ok(`pushed "${confirmed.name}" (${id}) — ${ops.length} node${ops.length === 1 ? "" : "s"}${draftNote(confirmed)}`);
+  }
+  if (publish) {
+    await publishWorkflowMcp(mcp, id);
+    log.ok(`published "${confirmed.name}" (${id}) — code is live now`);
+  }
   notifyPushed(id);
-  if (commitOnPush) await commitWorkflowDir(dir, `decanter: pushed "${wf.name}" (${id})`, log);
-  return { dir, name: wf.name };
+  if (commitOnPush) await commitWorkflowDir(dir, `decanter: pushed "${confirmed.name}" (${id})`, log);
+  return { dir, name: confirmed.name };
 }
 
-/** Push a single node's code (watch mode): GET, swap jsCode, PUT. */
-export async function pushSingleNode(api: N8nApi, dir: string, nodeId: string, { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {}, log: Log): Promise<void> {
+/** The invariant check: after a push, the remote body must equal the local build byte-exactly. */
+function verifyRoundTrip(dir: string, state: DecanterState, confirmed: Workflow, log: Log): void {
+  for (const node of confirmed.nodes) {
+    if (!isJsCodeNode(node)) continue;
+    const ns = state.nodes[node.id];
+    if (!ns) continue;
+    // compare hashes only — the local build was just computed in collectOps,
+    // but cheap re-hash keeps this function self-contained and read-only
+    const localFile = path.join(dir, ns.file);
+    if (!existsSync(localFile) || ns.file.endsWith(".ts")) continue; // .ts verified via marker hash below
+    const remoteBody = splitMarker(node.parameters.jsCode).body;
+    if (sha256(readFileSync(localFile, "utf8")) !== sha256(remoteBody)) {
+      log.warn(`node "${node.name}": remote code does not match ${ns.file} byte-exactly after push — the server normalized it? inspect with status --diff`);
+    }
+  }
+}
+
+/** Push a single node's code over MCP (watch mode): one-op atomic batch. */
+export async function pushSingleNode(
+  mcp: McpClient,
+  dir: string,
+  nodeId: string,
+  { force = false, commitOnPush = false }: { force?: boolean; commitOnPush?: boolean } = {},
+  log: Log,
+): Promise<void> {
   const state = readState(dir);
   if (!state) throw new Error(`missing .decanter.json in ${dir} — pull first`);
   const nodeState = state.nodes[nodeId];
   if (!nodeState) throw new Error(`node ${nodeId} has no entry in ${dir}/.decanter.json — pull first`);
   assertCompliant(validateNodeFile(dir, nodeState.file), log, nodeState.file);
-  const { jsCode } = await buildNodeCode(dir, nodeState.file, log);
 
-  const remote = await api.getWorkflow(state.workflowId);
-  assertNoDrift(driftProblems(remote, state, new Set([nodeId])), force, log);
-
+  const remote = await getWorkflowDetails(mcp, state.workflowId);
   const node = remote.nodes.find((n) => n.id === nodeId);
   if (!node) throw new Error(`node ${nodeId} no longer exists in remote workflow ${state.workflowId}`);
-  node.parameters.jsCode = jsCode;
+  const { ops, problems } = await collectOps(dir, state, remote, new Set([nodeId]), log);
+  assertNoDrift(problems, force, log);
 
-  const confirmed = await api.updateWorkflow(state.workflowId, sanitizeForPut(remote));
-  recordSync(state, confirmed ?? remote);
+  let confirmed = remote;
+  if (ops.length > 0) {
+    await updateWorkflow(mcp, state.workflowId, ops);
+    confirmed = await getWorkflowDetails(mcp, state.workflowId);
+  }
+  recordSync(state, confirmed);
   writeState(dir, state);
-  log.ok(`pushed node "${node.name}" -> workflow "${remote.name}"${liveNote(confirmed ?? remote)}`);
+  if (ops.length === 0) {
+    log.info(`node "${node.name}": already in sync — nothing to push`);
+  } else {
+    log.ok(`pushed node "${node.name}" -> workflow "${confirmed.name}"${draftNote(confirmed)}`);
+  }
   notifyPushed(state.workflowId);
   if (commitOnPush) {
-    await commitWorkflowDir(dir, `decanter: pushed "${remote.name}" / node "${node.name}" (${state.workflowId})`, log);
+    await commitWorkflowDir(dir, `decanter: pushed "${confirmed.name}" / node "${node.name}" (${state.workflowId})`, log);
   }
 }

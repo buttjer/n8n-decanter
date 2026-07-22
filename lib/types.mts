@@ -101,6 +101,13 @@ export interface NodeState {
   file: string;
   /** Hash of the *remote* code (marker-less body) at last sync — push or pull. */
   lastPushedHash?: string;
+  /**
+   * Cached node display name (Plan 32). MCP ops address nodes by NAME while
+   * this map is keyed on the id (stable across renames) — the name is looked
+   * up fresh from the remote at push time; this cache only feeds messages
+   * about nodes that no longer exist remotely.
+   */
+  name?: string;
 }
 
 /** .decanter.json — one per workflow folder. */
@@ -114,8 +121,6 @@ export interface DecanterState {
    */
   name?: string;
   nodes: Record<string, NodeState>;
-  /** Code-stripped, key-sorted structure hash at last pull. */
-  lastPulledWorkflowHash?: string;
 }
 
 /** decanter.config.json + credentials, resolved (see loadConfig). */
@@ -146,6 +151,12 @@ export interface DecanterConfig {
    */
   n8nVersion?: string;
   host: string;
+  /**
+   * n8n public API key — OPTIONAL since Plan 32: the workflow code path syncs
+   * over MCP; only the surfaces MCP cannot serve still use the REST API
+   * (executions and data-table reads, `duplicate`'s create, `delete`).
+   * Empty string when unset; those verbs check and fail with guidance.
+   */
   apiKey: string;
 }
 

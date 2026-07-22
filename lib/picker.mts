@@ -1,17 +1,29 @@
 // Interactive workflow picker (Plan 19): bare `n8n-decanter` on a TTY in an
 // inited project. Two stages — type-to-filter workflow list (pulled green,
-// unpulled remote yellow), then a verb menu; unpulled entries pull directly.
-// The pure state machine (filter, reducer, window) is exported for unit
-// tests; runPicker's terminal IO takes injectable input/output streams
-// (Plan 22) so test/interactive.mts can drive it without a real pty. Exists
-// only behind a TTY gate at the CLI, so piped output never sees any of this.
+// unpulled remote yellow, MCP-unavailable red — Plan 32), then a verb menu;
+// unpulled entries pull directly, unavailable ones resolve to enable-MCP
+// guidance instead of a verb. The pure state machine (filter, reducer,
+// window) is exported for unit tests; runPicker's terminal IO takes
+// injectable input/output streams (Plan 22) so test/interactive.mts can
+// drive it without a real pty. Exists only behind a TTY gate at the CLI, so
+// piped output never sees any of this.
 import { emitKeypressEvents } from "node:readline";
 import { style } from "./style.mts";
+
+/** Sentinel "verb" for picking an MCP-unavailable workflow: the CLI prints
+ * enable-MCP guidance instead of dispatching (Plan 32). */
+export const ENABLE_MCP_VERB = "enable-mcp";
 
 export interface PickerEntry {
   id: string;
   name: string;
   pulled: boolean;
+  /**
+   * The workflow's `availableInMCP` flag (Plan 32): false marks a remote
+   * workflow MCP cannot pull yet — listed third, in red, and Enter surfaces
+   * guidance instead of pulling. Pulled/local entries are always true.
+   */
+  available: boolean;
 }
 
 /** The subset of readline's keypress event the reducer cares about. */
@@ -79,10 +91,12 @@ export function filterEntries(entries: PickerEntry[], query: string): PickerEntr
   return entries.filter((e) => e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q));
 }
 
-/** Append remote workflows not already present locally, marked unpulled. */
-export function mergeRemote(entries: PickerEntry[], remote: Array<{ id: string; name: string }>): PickerEntry[] {
+/** Append remote workflows not already present locally, marked unpulled —
+ * MCP-available ones first, unavailable ones last (Plan 32 sort order). */
+export function mergeRemote(entries: PickerEntry[], remote: Array<{ id: string; name: string; available?: boolean }>): PickerEntry[] {
   const known = new Set(entries.map((e) => e.id));
-  return [...entries, ...remote.filter((w) => !known.has(w.id)).map((w) => ({ id: w.id, name: w.name, pulled: false }))];
+  const fresh = remote.filter((w) => !known.has(w.id)).map((w) => ({ id: w.id, name: w.name, pulled: false, available: w.available !== false }));
+  return [...entries, ...fresh.filter((e) => e.available), ...fresh.filter((e) => !e.available)];
 }
 
 /** Scroll window over a list: keeps the cursor visible, clamps to bounds. */
@@ -115,6 +129,8 @@ function reduceWorkflowKey(state: PickerState, key: PickerKey): PickerStep {
     case "enter": {
       const entry = filtered[state.cursor];
       if (!entry) return { done: false, state };
+      // MCP-unavailable: no pull possible — resolve to guidance (Plan 32)
+      if (!entry.available) return { done: true, result: { verb: ENABLE_MCP_VERB, id: entry.id, name: entry.name } };
       if (!entry.pulled) return { done: true, result: { verb: "pull", id: entry.id, name: entry.name } };
       // single-select: the verb is fixed, so a pulled pick resolves at once
       if (state.selectVerb) return { done: true, result: { verb: state.selectVerb, id: entry.id, name: entry.name } };
@@ -161,9 +177,11 @@ const SKELETON_WIDTHS: ReadonlyArray<readonly [number, number]> = [[14, 8], [9, 
 
 const truncate = (text: string, max: number): string => (text.length > max ? text.slice(0, max - 1) + "…" : text);
 
-/** Filled = pulled, hollow = not pulled — differs by *shape*, so the state
- * survives NO_COLOR/monochrome without the old trailing `(not pulled)` words. */
-const statusGlyph = (pulled: boolean): string => (pulled ? style.green("●") : style.yellow("○"));
+/** Filled = pulled, hollow = not pulled, crossed = not available in MCP —
+ * differs by *shape*, so the state survives NO_COLOR/monochrome without the
+ * old trailing `(not pulled)` words. */
+const statusGlyph = (e: Pick<PickerEntry, "pulled" | "available">): string =>
+  !e.available ? style.red("⊘") : e.pulled ? style.green("●") : style.yellow("○");
 
 /**
  * Pure view: `PickerState` → the lines to paint. Fed the docs-site
@@ -195,8 +213,8 @@ export function renderLines(state: PickerState): string[] {
     const e = filtered[i];
     const pointer = i === state.cursor ? style.green("❯") : " ";
     const display = truncate(e.name, 48);
-    const name = (e.pulled ? style.green(display) : style.yellow(display)) + " ".repeat(nameWidth - display.length);
-    lines.push(`${pointer} ${statusGlyph(e.pulled)} ${name}  ${d(e.id)}`);
+    const colored = !e.available ? style.red(display) : e.pulled ? style.green(display) : style.yellow(display);
+    lines.push(`${pointer} ${statusGlyph(e)} ${colored + " ".repeat(nameWidth - display.length)}  ${d(e.id)}`);
   }
   if (filtered.length === 0 && !state.loadingRemote) lines.push(d(state.entries.length === 0 ? "  nothing pulled yet" : "  no match"));
   if (end < filtered.length) lines.push(d(`  … ${filtered.length - end} more`));
@@ -206,9 +224,15 @@ export function renderLines(state: PickerState): string[] {
     }
   }
   if (state.notice) lines.push(d(state.notice));
-  // Legend states the glyph key once (footer), not on every row.
-  if (filtered.length > 0) lines.push(d(`${statusGlyph(true)} pulled · ${statusGlyph(false)} not pulled`));
-  const enterHint = filtered[state.cursor]?.pulled === false ? "enter pull" : "enter select";
+  // Legend states the glyph key once (footer), not on every row; the third
+  // state only appears when the list actually contains an unavailable entry.
+  if (filtered.length > 0) {
+    const legend = `${statusGlyph({ pulled: true, available: true })} pulled · ${statusGlyph({ pulled: false, available: true })} not pulled`;
+    const unavailable = state.entries.some((e) => !e.available) ? ` · ${statusGlyph({ pulled: false, available: false })} not in MCP` : "";
+    lines.push(d(legend + unavailable));
+  }
+  const current = filtered[state.cursor];
+  const enterHint = current?.available === false ? "enter how to enable" : current?.pulled === false ? "enter pull" : "enter select";
   lines.push(d(`↑↓ move · ${enterHint} · esc quit`));
   return lines;
 }
@@ -229,7 +253,7 @@ export type PickerOutputStream = Pick<NodeJS.WritableStream, "write">;
  */
 export async function runPicker(
   local: PickerEntry[],
-  remote: Promise<Array<{ id: string; name: string }>> | undefined,
+  remote: Promise<Array<{ id: string; name: string; available?: boolean }>> | undefined,
   opts: { resume?: PickerResume; notice?: string; selectVerb?: string; input?: PickerInputStream; output?: PickerOutputStream } = {},
 ): Promise<PickerResult> {
   const input: PickerInputStream = opts.input ?? process.stdin;

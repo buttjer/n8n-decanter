@@ -1,72 +1,86 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
+import {
+  createWorkflowFromCode,
+  ENABLE_MCP_HINT,
+  getWorkflowDetails,
+  isUnavailableInMcp,
+  type McpClient,
+  publishWorkflowMcp,
+  unpublishWorkflowMcp,
+} from "./mcp.mts";
 import { createPrompt } from "./prompt.mts";
 import { pullWorkflow } from "./pull.mts";
 import { assertCompliant, buildNodeCode } from "./push.mts";
 import { findWorkflowDir } from "./state.mts";
 import type { DecanterConfig, Log, Workflow } from "./types.mts";
-import { isJsCodeNode, placeholderFile, publicationState, sanitizeForPut } from "./util.mts";
+import { isJsCodeNode, kebabCase, placeholderFile, publicationState, sanitizeForPut } from "./util.mts";
 import { validateWorkflowDir } from "./validate.mts";
 
 /**
- * `publish` — take an unpublished draft live (n8n 2.x activate). A workflow
- * that is already published is a no-op-with-a-note, not an error: a push to a
- * published workflow auto-publishes anyway. Needs credentials (not offline).
+ * `publish` — take the draft live (MCP `publish_workflow`, Plan 32). Since
+ * pushes are draft-only now, this is THE go-live step: on a published
+ * workflow whose draft diverged it publishes the newer draft; only a
+ * workflow whose live version already equals the draft is a no-op note.
  */
-export async function publishWorkflow(api: N8nApi, id: string, log: Log): Promise<void> {
-  const before = await api.getWorkflow(id);
-  if (publicationState(before) === "published") {
-    log.info(`"${before.name}" (${id}) is already published — code is live (pushes auto-publish)`);
+export async function publishWorkflow(mcp: McpClient, id: string, log: Log): Promise<void> {
+  const before = await getWorkflowDetails(mcp, id);
+  if (publicationState(before) === "published" && before.activeVersionId === before.versionId) {
+    log.info(`"${before.name}" (${id}) is already published — the draft is live`);
     return;
   }
-  await api.activateWorkflow(id);
+  await publishWorkflowMcp(mcp, id);
   log.ok(`published "${before.name}" (${id}) — code is live now`);
 }
 
 /**
- * `unpublish` — return a published workflow to draft-only (n8n 2.x deactivate).
- * Already-unpublished is a no-op-with-a-note. Needs credentials (not offline).
+ * `unpublish` — return a published workflow to draft-only (MCP
+ * `unpublish_workflow`). Already-unpublished is a no-op-with-a-note.
  */
-export async function unpublishWorkflow(api: N8nApi, id: string, log: Log): Promise<void> {
-  const before = await api.getWorkflow(id);
+export async function unpublishWorkflow(mcp: McpClient, id: string, log: Log): Promise<void> {
+  const before = await getWorkflowDetails(mcp, id);
   if (publicationState(before) === "unpublished") {
     log.info(`"${before.name}" (${id}) is already unpublished — draft only`);
     return;
   }
-  await api.deactivateWorkflow(id);
+  await unpublishWorkflowMcp(mcp, id);
   log.ok(`unpublished "${before.name}" (${id}) — draft only`);
 }
 
 /**
- * `create "<name>"` — a blank draft born on the server, then pulled so the
- * folder + `.decanter.json` land and the id is printed. Born **unpublished**
- * (`publish` takes it live), so create → edit → push → publish is a full CLI
- * loop. The server still assigns the id and owns the birth (PLAN.md's "born in
- * n8n" rule holds); the CLI only triggers it. Shares `api.createWorkflow` with
- * Plan 21's `duplicate`.
+ * `create "<name>"` — a blank draft born on the server via MCP
+ * (`create_workflow_from_code` with the minimal SDK expression), then pulled
+ * so the folder + `.decanter.json` land and the id is printed. MCP-created
+ * workflows are born `availableInMCP` (spike-verified), so the follow-up pull
+ * just works. Born **unpublished**; create → edit → push → publish is the
+ * full CLI loop. The server still assigns the id and owns the birth
+ * (PLAN.md's "born in n8n" rule holds); the CLI only triggers it.
  */
-export async function createWorkflow(api: N8nApi, config: DecanterConfig, name: string, log: Log): Promise<{ dir: string; id: string }> {
-  const created = await api.createWorkflow({ name, nodes: [], connections: {}, settings: {} });
-  const id = created.id;
+export async function createWorkflow(mcp: McpClient, config: DecanterConfig, name: string, log: Log): Promise<{ dir: string; id: string }> {
+  const created = await createWorkflowFromCode(mcp, name, kebabCase(name));
+  const id = created.workflowId;
   log.ok(`created "${name}" (${id}) on the server — unpublished draft`);
-  const { dir } = await pullWorkflow(api, config.root, id, { commitOnPull: config.commitOnPull }, log);
+  const { dir } = await pullWorkflow(mcp, config.root, id, { commitOnPull: config.commitOnPull }, log);
   log.info(`edit code/, push, then "publish" to go live`);
   return { dir, id };
 }
 
 /**
  * `<ref> duplicate ["<new name>"]` — clone an already-pulled workflow into a
- * brand-new remote one, then pull the copy. The body is assembled from the
- * **local** folder exactly as `push` does (placeholders reconstituted from
- * `code/`, `.ts` nodes compiled), so the clone carries the repo's current
- * content — even edits not yet pushed to the source. The default name is
- * `"<name> (copy)"` (matching the n8n UI). Born **unpublished**, like any
- * create; the source folder and the source remote workflow are left untouched.
- * Pull-first is preserved: the copy is born server-side and materialized via a
- * fresh pull. Reuses `api.createWorkflow` (Plan 20) with a full body.
+ * brand-new remote one. This verb stays on the public REST API (Plan 32
+ * decision): MCP's only creation path is Workflow-SDK *code*, and
+ * re-expressing an arbitrary pulled JSON graph as SDK code is exactly the
+ * lossy transformation the decanter refuses to own — `POST /workflows` with
+ * the assembled body is lossless. The body comes from the **local** folder
+ * exactly as the old API push did (placeholders reconstituted from `code/`,
+ * `.ts` nodes compiled), so the clone carries the repo's current content.
+ * The copy is API-born and therefore NOT `availableInMCP` — the follow-up
+ * pull is attempted and, when refused, turns into guidance instead of an
+ * error. Default name `"<name> (copy)"` (matching the n8n UI); born
+ * unpublished; source folder and remote stay untouched.
  */
-export async function duplicateWorkflow(api: N8nApi, config: DecanterConfig, id: string, newName: string | undefined, log: Log): Promise<{ dir: string; id: string }> {
+export async function duplicateWorkflow(api: N8nApi, mcp: McpClient, config: DecanterConfig, id: string, newName: string | undefined, log: Log): Promise<{ dir: string | null; id: string }> {
   const dir = findWorkflowDir(config.root, id, log);
   if (!dir) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
   assertCompliant(validateWorkflowDir(dir), log, `"${path.basename(dir)}"`);
@@ -82,18 +96,28 @@ export async function duplicateWorkflow(api: N8nApi, config: DecanterConfig, id:
   body.name = newName?.trim() || `${sourceName} (copy)`;
   const created = await api.createWorkflow(body);
   log.ok(`duplicated "${sourceName}" -> "${body.name}" (${created.id}) on the server — unpublished draft`);
-  const { dir: newDir } = await pullWorkflow(api, config.root, created.id, { commitOnPull: config.commitOnPull }, log);
-  log.info(`edit code/, push, then "publish" to go live`);
-  return { dir: newDir, id: created.id };
+  try {
+    const { dir: newDir } = await pullWorkflow(mcp, config.root, created.id, { commitOnPull: config.commitOnPull }, log);
+    log.info(`edit code/, push, then "publish" to go live`);
+    return { dir: newDir, id: created.id };
+  } catch (err) {
+    if (!isUnavailableInMcp(err)) throw err;
+    // API-born workflows aren't opted into MCP — the copy exists, only the pull is gated
+    log.warn(`the copy is not yet available in MCP — ${ENABLE_MCP_HINT}, then: n8n-decanter pull ${created.id}`);
+    return { dir: null, id: created.id };
+  }
 }
 
 /**
  * `<ref> delete` — hard-delete a workflow from the server, deliberately.
- * Destructive and outward-facing, so consent is explicit: on a TTY a `y/N`
- * prompt naming the workflow; non-interactive runs require `--force` and abort
- * without it. The **local folder is never touched** — it stays as the
- * git-tracked record — and a stale `decanter.config.json` `workflows` entry is
- * flagged. One workflow per call (the dispatcher enforces exactly one ref).
+ * Stays on the public REST API (Plan 32 decision): MCP offers only
+ * `archive_workflow`, and this verb's contract is the real
+ * `DELETE /workflows/:id` (which removes even a published workflow
+ * outright). Destructive and outward-facing, so consent is explicit: on a
+ * TTY a `y/N` prompt naming the workflow; non-interactive runs require
+ * `--force` and abort without it. The **local folder is never touched** —
+ * it stays as the git-tracked record — and a stale `decanter.config.json`
+ * `workflows` entry is flagged. One workflow per call.
  */
 export async function deleteWorkflow(api: N8nApi, config: DecanterConfig, id: string, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
   const remote = await api.getWorkflow(id); // authoritative name + proof it exists

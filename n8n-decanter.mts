@@ -2,14 +2,15 @@
 import path from "node:path";
 import { addCodeNode } from "./lib/add.mts";
 import { N8nApi } from "./lib/api.mts";
-import { loadConfig } from "./lib/config.mts";
+import { loadConfig, requireApiKey } from "./lib/config.mts";
 import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
 import { checkMocks, listMockSlugs, pinFixtures, runSimulation, writeMock, type SimulationReport } from "./lib/simulate.mts";
 import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
-import { mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
+import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, searchWorkflows } from "./lib/mcp.mts";
+import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { renameNode, renameWorkflow } from "./lib/rename.mts";
@@ -52,18 +53,18 @@ ${b("Setup")}
   ${b("init")} [dir] [--force]                    ${d("interactive setup: .env, starter files, config")}
   ${b("completion")} zsh|bash                     ${d("print a shell completion script for your rc file")}
 
-${b("Sync")}
-  ${b("pull")} [workflow…]                        ${d("pull workflows into workflows/<kebab>/ (default: config list)")}
-  ${b("push")} [workflow…] [--force] [--no-typecheck]   ${d("push code + workflow.json back")}
-  ${b("watch")} [workflow]                        ${d("watch code/ + workflow.json, push on save")}
+${b("Sync")} ${d("(over n8n's MCP server — Code-node source only; structure lives in n8n)")}
+  ${b("pull")} [workflow…]                        ${d("pull code into workflows/<kebab>/ (default: config list)")}
+  ${b("push")} [workflow…] [--force] [--publish] [--no-typecheck]   ${d("push code to the draft (--publish takes it live)")}
+  ${b("watch")} [workflow]                        ${d("watch code/, push each save to the draft")}
   ${b("publish")} [workflow…]                     ${d("take the draft(s) live")}
   ${b("unpublish")} [workflow…]                   ${d("return the draft(s) to draft-only")}
 
 ${b("Workflow lifecycle")}
-  ${b("create")} "<name>"                         ${d("create a blank workflow on the server, then pull it")}
-  ${b("duplicate")} <workflow> ["<name>"]         ${d("clone a workflow into a new one, then pull it")}
-  ${b("delete")} <workflow> [--force]             ${d("delete a workflow from the server (y/N; folder kept)")}
-  ${b("rename")} <workflow> "<new name>"          ${d("rename the workflow (offline; push to propagate)")}
+  ${b("create")} "<name>"                         ${d("create a blank workflow in n8n, then pull it")}
+  ${b("duplicate")} <workflow> ["<name>"]         ${d("clone a workflow into a new one (needs the API key)")}
+  ${b("delete")} <workflow> [--force]             ${d("delete a workflow from the server (y/N; needs the API key)")}
+  ${b("rename")} <workflow> "<new name>"          ${d("rename the workflow in n8n")}
 
 ${b("Inspect & test")}
   ${b("status")} [workflow…] [--diff]             ${d("drift report; exits 1 on conflict/remote drift")}
@@ -81,16 +82,17 @@ ${b("Mock")} ${d("(fill simulate gaps offline — no engine, no API)")}
   ${b("mock check")} <workflow> ["<slug>"]                       ${d("structurally validate a mock (or all); exits 1 on invalid")}
 
 ${b("Node")}
-  ${b("node create")} <workflow> "<Node name>" [--ts]        ${d("scaffold a disconnected Code node (offline)")}
-  ${b("node rename")} <workflow> "<old node>" "<new node>"   ${d("rename a node everywhere (offline)")}
+  ${b("node create")} <workflow> "<Node name>" [--ts]        ${d("scaffold a disconnected Code node in n8n")}
+  ${b("node rename")} <workflow> "<old node>" "<new node>"   ${d("rename a node in n8n; local files follow")}
   ${b("node run")} <node-file> [fixture.json] [--allow-env]  ${d("run a node locally (offline)")}
 
 A ${b("<workflow>")} is its id, name, unique name-prefix, or folder name (case-insensitive;
 ambiguity is an error). A ref verb with no ${b("<workflow>")} on a terminal opens the picker.
 An ${b("<execution-id>")} is an n8n execution id (numeric).
 
-Config: decanter.config.json (searched upward from cwd), credentials from .env
-next to it or the environment (N8N_HOST, N8N_API_KEY).`;
+Config: decanter.config.json (searched upward from cwd). Credentials: N8N_HOST +
+MCP (OAuth via ${b("init")}, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional)
+powers executions, data-tables, duplicate, and delete.`;
 };
 
 // Verb-first grammar (Plan 27): the command is positional[0]. `add`/`run` and
@@ -157,6 +159,7 @@ async function main() {
     }
   }
   const force = args.includes("--force");
+  const publishFlag = args.includes("--publish");
   const noTypecheck = args.includes("--no-typecheck");
   const allowEnv = args.includes("--allow-env");
   const remoteFlag = args.includes("--remote");
@@ -195,7 +198,7 @@ async function main() {
   if (command === undefined && args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
     let pickerConfig: ReturnType<typeof loadConfig> | undefined;
     try {
-      pickerConfig = loadConfig(process.cwd(), { requireCredentials: false });
+      pickerConfig = loadConfig(process.cwd(), { requireHost: false });
     } catch {
       // no decanter.config.json in reach — bare invocation stays usage()
     }
@@ -244,9 +247,9 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...MOCK_VERBS); // sub-verbs after `node` / `mock`
-    words.push("--force", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--help");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--help");
     try {
-      const config = loadConfig(process.cwd(), { requireCredentials: false });
+      const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
     } catch {
       // no decanter.config.json in reach — verbs and flags still complete
@@ -255,11 +258,12 @@ async function main() {
     return;
   }
 
-  await dispatch(command, rest, { force, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags });
+  await dispatch(command, rest, { force, publishFlag, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags });
 }
 
 interface Flags {
   force: boolean;
+  publishFlag: boolean;
   noTypecheck: boolean;
   remoteFlag: boolean;
   diffFlag: boolean;
@@ -271,23 +275,28 @@ interface Flags {
 }
 
 /** Flag defaults for picker-launched verbs (no CLI flags in play). */
-const PICKER_FLAGS: Flags = { force: false, noTypecheck: false, remoteFlag: false, diffFlag: false, tsFlag: false, jsonFlag: false, networkNoneFlag: false, allFlag: false, valueFlags: new Map() };
+const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, remoteFlag: false, diffFlag: false, tsFlag: false, jsonFlag: false, networkNoneFlag: false, allFlag: false, valueFlags: new Map() };
 
 /**
  * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
  * back in the same workflow's verb menu until Esc (workflow list, then quit)
- * or Ctrl-C. The remote list is fetched once and cached across iterations; a
- * verb error is logged and returns to the menu instead of ending the session.
- * The process exit code reflects the last verb run.
+ * or Ctrl-C. The remote list comes over MCP (`search_workflows` sees every
+ * workflow; the `availableInMCP` flag feeds the third picker state, Plan 32),
+ * fetched once and cached across iterations; a verb error is logged and
+ * returns to the menu instead of ending the session. The process exit code
+ * reflects the last verb run.
  */
 async function pickerLoop(config: DecanterConfig): Promise<void> {
   printBanner(log);
-  let remoteCache: Array<{ id: string; name: string }> | undefined;
+  let remoteCache: Array<{ id: string; name: string; available: boolean }> | undefined;
   let remoteNotice: string | undefined;
-  let remotePending: Promise<Array<{ id: string; name: string }>> | undefined =
-    config.host !== "" && config.apiKey !== ""
-      ? new N8nApi(config).listWorkflows().then((ws) => ws.map((w) => ({ id: w.id, name: w.name })))
-      : undefined;
+  let remotePending: Promise<Array<{ id: string; name: string; available: boolean }>> | undefined;
+  try {
+    const mcp = createMcpClient(config);
+    remotePending = searchWorkflows(mcp).then((ws) => ws.map((w) => ({ id: w.id, name: w.name ?? w.id, available: w.availableInMCP })));
+  } catch (err) {
+    remoteNotice = `remote list unavailable (${(err as Error).message.split("\n")[0]})`;
+  }
   remotePending?.then((ws) => {
     remoteCache = ws;
     remotePending = undefined;
@@ -298,13 +307,20 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
   let resume: PickerResume | undefined;
   for (;;) {
     // re-listed each round: a pull just added a folder (or renamed one)
-    const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true }));
+    const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true, available: true }));
     const entries = remoteCache !== undefined ? mergeRemote(local, remoteCache) : local;
     const picked = await runPicker(entries, remotePending, { resume, notice: remoteNotice });
     if (picked === "quit") return;
     if (picked === "interrupted") {
       process.exitCode = 130;
       return;
+    }
+    if (picked.verb === ENABLE_MCP_VERB) {
+      // an MCP-unavailable workflow: guidance instead of a verb (Plan 32)
+      log.warn(`"${picked.name}" is not available in MCP — ${ENABLE_MCP_HINT}`);
+      console.log("");
+      resume = undefined;
+      continue;
     }
     log.info(style.dim(`❯ ${picked.verb} ${picked.name}`));
     process.exitCode = 0;
@@ -331,7 +347,7 @@ function interactive(): boolean {
  * config default / error path exactly as a piped run would.
  */
 async function pickOneWorkflow(config: DecanterConfig, verb: string, log: Log): Promise<string | undefined> {
-  const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true }));
+  const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true, available: true }));
   if (local.length === 0) return undefined;
   const picked = await runPicker(local, undefined, { selectVerb: verb });
   if (picked === "quit" || picked === "interrupted") return undefined;
@@ -373,31 +389,42 @@ function printSimulationReport(r: SimulationReport, log: Log): void {
 
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
 async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
-  const { force, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags } = flags;
+  const { force, publishFlag, noTypecheck, remoteFlag, diffFlag, tsFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags } = flags;
   // simulate reads local captures + drives a throwaway engine — it never calls
-  // the n8n API, so no credentials are required. Workflow `rename` and the node
-  // namespace's create/rename only touch local files.
-  const offline = command === "check" || command === "rename" || command === "node:create" || command === "node:rename" || command === "simulate"
+  // n8n, so no credentials are required. Since Plan 32 the sync verbs (and the
+  // rename/node namespace, which forward structure acts to n8n) go over MCP;
+  // only executions/data-tables fetches, duplicate, and delete still use the
+  // REST API (requireApiKey at the verb).
+  const offline = command === "check" || command === "simulate"
     || command === "mock:create" || command === "mock:check"
     || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"))
     || (command === "data-tables" && rest.includes("clean"));
-  const config = loadConfig(process.cwd(), { requireCredentials: !offline });
-  const api = new N8nApi(config);
+  const config = loadConfig(process.cwd(), { requireHost: !offline });
+  /** REST client for the API-only verbs — guarded so the error names the verb. */
+  const api = (verb: string): N8nApi => new N8nApi(requireApiKey(config, verb));
+  /** MCP client (the sync backend) — created lazily so offline verbs never need credentials. */
+  let mcpClient: McpClient | undefined;
+  const mcp = (): McpClient => {
+    mcpClient ??= createMcpClient(config, log);
+    return mcpClient;
+  };
 
   /**
    * Workflow-name arguments: resolve a ref locally (id → name → unique
-   * prefix); `pull` falls back to the remote workflow list for not-yet-pulled
-   * names. An id-shaped ref that matches nothing passes through unchanged —
-   * it may exist only remotely (pull/status by fresh id must keep working).
+   * prefix); `pull` falls back to the remote workflow list (MCP
+   * `search_workflows` — it lists every workflow, opted-in or not) for
+   * not-yet-pulled names. An id-shaped ref that matches nothing passes
+   * through unchanged — it may exist only remotely (pull/status by fresh id
+   * must keep working).
    */
   const resolveRef = async (ref: string): Promise<string> => {
     const local = matchWorkflowRef(listWorkflowRefs(config.root, log), ref);
     if (local) return local.id;
     if (command === "pull") {
       try {
-        const remote = await api.listWorkflows();
-        const hit = matchWorkflowRef(remote.map((w) => ({ id: w.id, names: [w.name] })), ref);
+        const remote = await searchWorkflows(mcp());
+        const hit = matchWorkflowRef(remote.map((w) => ({ id: w.id, names: [w.name ?? ""] })), ref);
         if (hit) return hit.id;
       } catch (err) {
         log.warn(`could not list remote workflows to resolve "${ref}" (${(err as Error).message.split("\n")[0]})`);
@@ -452,18 +479,20 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         try {
           if (command === "pull") {
             transient.show(`${prefix}pulling ${id}…`);
-            const { name, dir } = await pullWorkflow(api, config.root, id, { commitOnPull: config.commitOnPull }, plog);
+            const { name, dir } = await pullWorkflow(mcp(), config.root, id, { commitOnPull: config.commitOnPull }, plog);
             plog.ok(`pulled "${name}" -> ${dir}${dur()}`);
           } else if (command === "push") {
             transient.show(`${prefix}pushing ${id}…`);
-            await pushWorkflow(api, config.root, id, { force, commitOnPush: config.commitOnPush }, { ...plog, ok: (m) => plog.ok(m + dur()) });
+            await pushWorkflow(mcp(), config.root, id, { force, commitOnPush: config.commitOnPush, publish: publishFlag }, { ...plog, ok: (m) => plog.ok(m + dur()) });
           } else {
-            const { remoteDrift } = await statusWorkflow(api, config.root, id, plog, { diff: diffFlag });
+            const { remoteDrift } = await statusWorkflow(mcp(), config.root, id, plog, { diff: diffFlag });
             drifted ||= remoteDrift;
           }
         } catch (err) {
           failed = true;
           plog.error(`${id}: ${(err as Error).message}`);
+          // the per-workflow MCP gate: point at the n8n-side switch
+          if (isUnavailableInMcp(err)) plog.info(`  ${ENABLE_MCP_HINT}`);
         } finally {
           transient.clear();
         }
@@ -475,12 +504,14 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     case "list": {
       const pulled = listWorkflowRefs(config.root, log);
       const known = new Set(pulled.map((r) => r.id));
-      const remote = remoteFlag ? (await api.listWorkflows()).filter((w) => !known.has(w.id)) : [];
+      // --remote lists over MCP: search_workflows sees EVERY workflow, but only
+      // availableInMCP ones are pullable — the rest get the enable guidance.
+      const remote = remoteFlag ? (await searchWorkflows(mcp())).filter((w) => !known.has(w.id)) : [];
       if (jsonFlag) {
         // agent-friendly: pulled workflows carry a dir; remote-only ones dir: null
-        const rows: Array<{ name: string; id: string; dir: string | null }> = [
+        const rows: Array<{ name: string; id: string; dir: string | null; mcpAvailable?: boolean }> = [
           ...pulled.map((r) => ({ name: r.name, id: r.id, dir: path.relative(process.cwd(), r.dir) || "." })),
-          ...remote.map((w) => ({ name: w.name, id: w.id, dir: null })),
+          ...remote.map((w) => ({ name: w.name ?? w.id, id: w.id, dir: null, mcpAvailable: w.availableInMCP })),
         ];
         console.log(JSON.stringify(rows, null, 2));
         break;
@@ -489,8 +520,15 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         log.info(`${style.bold(r.name)}  ${style.dim(r.id)}  ${style.dim(path.relative(process.cwd(), r.dir) || ".")}`);
       }
       if (remoteFlag) {
-        for (const wf of remote) {
-          log.info(`${style.bold(wf.name)}  ${style.dim(wf.id)}  ${style.dim("(not pulled)")}`);
+        for (const wf of remote.filter((w) => w.availableInMCP)) {
+          log.info(`${style.bold(wf.name ?? wf.id)}  ${style.dim(wf.id)}  ${style.dim("(not pulled)")}`);
+        }
+        const unavailable = remote.filter((w) => !w.availableInMCP);
+        for (const wf of unavailable) {
+          log.info(`${style.bold(wf.name ?? wf.id)}  ${style.dim(wf.id)}  ${style.dim("(not available in MCP)")}`);
+        }
+        if (unavailable.length > 0) {
+          log.info(style.dim(`to pull a "(not available in MCP)" workflow: ${ENABLE_MCP_HINT}`));
         }
       } else if (pulled.length === 0) {
         log.info(`no pulled workflows under ${config.root} — try: n8n-decanter list --remote`);
@@ -575,8 +613,9 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
           log.error(`${label}: ${(err as Error).message}`);
         }
       };
-      for (const e of execIds) await attempt(`execution ${e}`, () => fetchExecutionById(api, config.root, e, log));
-      for (const id of wfIds) await attempt(id, () => fetchExecutions(api, config.root, id, { status, limit }, log));
+      const execApi = api("executions");
+      for (const e of execIds) await attempt(`execution ${e}`, () => fetchExecutionById(execApi, config.root, e, log));
+      for (const id of wfIds) await attempt(id, () => fetchExecutions(execApi, config.root, id, { status, limit }, log));
       if (failed) process.exitCode = 1;
       break;
     }
@@ -599,7 +638,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 250)) {
         throw new Error("--limit must be an integer between 1 and 250 (the data-table rows API page cap)");
       }
-      await fetchDataTables(api, config.configDir, {
+      await fetchDataTables(api("data-tables"), config.configDir, {
         tableRefs,
         limit,
         filter: valueFlags.get("filter"),
@@ -686,8 +725,8 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       let failed = false;
       for (const id of ids) {
         try {
-          if (command === "publish") await publishWorkflow(api, id, log);
-          else await unpublishWorkflow(api, id, log);
+          if (command === "publish") await publishWorkflow(mcp(), id, log);
+          else await unpublishWorkflow(mcp(), id, log);
         } catch (err) {
           failed = true;
           log.error(`${id}: ${(err as Error).message}`);
@@ -698,7 +737,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     }
     case "create": {
       if (rest.length !== 1) throw new Error('create needs exactly one name: n8n-decanter create "<name>"');
-      await createWorkflow(api, config, rest[0], log);
+      await createWorkflow(mcp(), config, rest[0], log);
       break;
     }
     case "delete": {
@@ -706,41 +745,41 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       // one workflow per call (no cascade, too much blast radius for a default).
       if (refs.length === 0) throw new Error("delete needs a workflow ref: n8n-decanter <ref> delete");
       if (refs.length > 1) throw new Error("delete takes exactly one workflow — delete them one at a time");
-      await deleteWorkflow(api, config, refs[0], { force }, log);
+      await deleteWorkflow(api("delete"), config, refs[0], { force }, log);
       break;
     }
     case "rename": {
       const [id, ...names] = refs;
       if (!id) throw new Error('rename needs a workflow and a new name: n8n-decanter rename <workflow> "<new name>"');
       if (names.length !== 1) throw new Error('rename needs exactly one new name: n8n-decanter rename <workflow> "<new name>"');
-      renameWorkflow(config.root, id, names[0], log);
+      await renameWorkflow(mcp(), config.root, id, names[0], log);
       break;
     }
     case "node:create": {
       const [id, ...names] = refs;
       if (!id) throw new Error('node create needs a workflow and a node name: n8n-decanter node create <workflow> "<Node name>" [--ts]');
       if (names.length !== 1) throw new Error('node create needs exactly one node name: n8n-decanter node create <workflow> "<Node name>" [--ts]');
-      addCodeNode(config.root, id, names[0], { ts: tsFlag }, log);
+      await addCodeNode(mcp(), config, id, names[0], { ts: tsFlag }, log);
       break;
     }
     case "node:rename": {
       const [id, ...names] = refs;
       if (!id) throw new Error('node rename needs a workflow and two node names: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
       if (names.length !== 2) throw new Error('node rename needs the old and new node name: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
-      renameNode(config.root, id, names[0], names[1], log);
+      await renameNode(mcp(), config, id, names[0], names[1], log);
       break;
     }
     case "duplicate": {
       const [id, ...names] = refs;
       if (!id) throw new Error('duplicate needs a workflow ref: n8n-decanter <ref> duplicate ["<new name>"]');
       if (names.length > 1) throw new Error('duplicate takes at most one new name: n8n-decanter <ref> duplicate ["<new name>"]');
-      await duplicateWorkflow(api, config, id, names[0], log);
+      await duplicateWorkflow(api("duplicate"), mcp(), config, id, names[0], log);
       break;
     }
     case "watch": {
       if (ids.length !== 1) throw new Error("watch needs exactly one workflow id (pass it, or list a single workflow in decanter.config.json)");
       // the returned handle exists for tests; the CLI watches until Ctrl-C
-      await watchWorkflow(api, config, ids[0], { force }, log);
+      await watchWorkflow(mcp(), config, ids[0], { force }, log);
       await new Promise(() => {});
       break;
     }
