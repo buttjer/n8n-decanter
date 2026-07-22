@@ -13,6 +13,17 @@ and give the agent grounded knowledge tooling beyond the scaffolded n8n-mcp.
 (agent-behavior, safety-critical); Sonnet for the mechanical doc-surface
 propagation and any small verb/flag.
 
+> **Coordination with [Plan 32](OPEN-32-mcp-native-code-layer.md) (MCP-native pivot) —
+> read before executing Theme C.** Plan 32 proposes making the first-party instance MCP
+> decanter's *sync backend* (OAuth-first in `init`), which supersedes parts of this plan on a
+> go; the full split lives in Plan 32 → "Relation to Plan 30". Short version:
+> **execute freely:** Themes A, B, D, Task 8c (docs MCP) and the F4 recipe — valuable and
+> unchanged under either outcome. **Hold until Plan 32's go/no-go:** Task 8's *instance-MCP*
+> wiring branch (probe → paste-token → `.mcp.json`) and the Task 7/8 **precedence-override
+> snippet** — on a go, Plan 32 Task 5 owns MCP auth/wiring and Task 9 owns the override
+> (its line differs: structure may go via MCP/skills; Code-node source stays decanter's),
+> and czlonkowski demotes to no-instance fallback + templates (grounding-ladder rung 2).
+
 ## Why
 
 The scaffold already gives agents a strong **edit-time** contract — the
