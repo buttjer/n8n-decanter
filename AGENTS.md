@@ -19,6 +19,19 @@ don't let either drift from the code.
 - Prefer bullet points over paragraphs.
 - **Highlight** important things and decisions so they stand out.
 
+## Session labels: tag Plan work `[Plan NN] Planning` / `[Plan NN] Executing`
+
+When a session's task maps to a numbered backlog Plan (`plans/…`, "Plan NN"),
+label the session for that plan and phase so concurrent sessions stay legible:
+
+- **Planning** that plan → **`[Plan NN] Planning`**
+- **Executing** that plan → **`[Plan NN] Executing`**
+
+Append a round number `(2)`…`(99)` for repeat passes; the **first round carries
+no number**. E.g. `[Plan 30] Planning` → `[Plan 30] Planning (2)` after a
+revision; `[Plan 30] Executing` → `[Plan 30] Executing (2)` for a second exec
+pass. Work that doesn't map to a numbered Plan gets no such label.
+
 ## What this is
 
 Standalone CLI that syncs n8n workflows into a git-friendly, folder-per-workflow
