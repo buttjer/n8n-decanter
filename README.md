@@ -151,7 +151,7 @@ n8n-decanter                        # interactive picker (terminal, inited
                                     #   stays in the workflow's menu between
                                     #   verbs, Esc backs out, Esc Esc quits
 # Setup
-n8n-decanter init [dir]             # interactive bootstrap (see Setup)
+n8n-decanter init [dir] [--force]   # interactive bootstrap (see Setup)
 n8n-decanter completion zsh|bash    # print a shell completion script
 
 # Sync
@@ -172,7 +172,7 @@ n8n-decanter rename <workflow> "<new name>"  # rename the workflow in n8n (folde
 # Inspect & test
 n8n-decanter status [workflow…] [--diff]   # drift report (--diff: line diffs);
                                     #   exits 1 on conflict/remote drift
-n8n-decanter check [workflow…]      # offline layout-compliance + typecheck
+n8n-decanter check [workflow…] [--no-typecheck]   # offline layout-compliance + typecheck
 n8n-decanter executions [workflow…] [--status=success|error|waiting] [--limit=N]
                                     # fetch recent execution data (run JSON)
                                     #   into workflows/<folder>/executions/

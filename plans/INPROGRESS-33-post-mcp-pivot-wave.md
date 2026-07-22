@@ -309,7 +309,11 @@ Task 1 (MCP re-expression; no hard delete in decanter).
    `AGENTS.md` loop guidance. Keeping it as a USP strengthens the case for
    [Plan 26](OPEN-26-npx-engine-backend.md) (npx backend — drops `simulate`'s
    Docker dependency), which stays independent.
-7. **AGENTS.md MCP-facts + docs update pass:** the `validate_workflow` spike
+7. *(Done 2026-07-22 — validate_workflow wording verified TRUE and annotated;
+   the re-verified tooling facts folded into AGENTS.md's MCP section; the
+   three docs nits fixed — overview's archive annotation, README's
+   `--no-typecheck` + `init [dir] [--force]`.)*
+   **AGENTS.md MCP-facts + docs update pass:** the `validate_workflow` spike
    claim ("must pass validate_workflow first") becomes TRUE once Task 1 routes
    create/duplicate through the loop — verify the wording then, instead of
    softening it; fold in the re-verified
