@@ -2,3 +2,9 @@
 # guesses their language by content and pollutes the stats; highlighting and
 # diffs stay normal (deliberately not linguist-vendored).
 *.example -linguist-detectable
+
+# Vendored third-party libs for the demo-GIF recorder (html2canvas-pro, gif.js);
+# keep them out of the language stats and collapsed in diffs. record.js is ours.
+website/public/gifgen/html2canvas-pro.min.js linguist-vendored
+website/public/gifgen/gif.js linguist-vendored
+website/public/gifgen/gif.worker.js linguist-vendored

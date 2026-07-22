@@ -14,7 +14,7 @@ world.
 ## Why
 
 - **The vocabulary already exists; the verb doesn't.**
-  [Plan 34](OPEN-34-post-pivot-identity-and-messaging.md) coined **"preflights"**
+  [Plan 34](DONE-34-post-pivot-identity-and-messaging.md) coined **"preflights"**
   as the umbrella for `check`/`simulate`/`test` — scoped 2026-07-22 to
   *marketing/docs vocabulary only*, with the verb parked in
   [DECISIONS-NEEDED](DECISIONS-NEEDED.md). **Maintainer go-ahead 2026-07-22:
@@ -42,7 +42,7 @@ world.
   selection → same defaulting as `test`/`simulate` plus auto-fetch; real verb
   vs alias → **real verb** — orchestration, skip logic, and scoring are new
   behavior, not a shell alias).
-- [Plan 34](OPEN-34-post-pivot-identity-and-messaging.md) — coins the term and
+- [Plan 34](DONE-34-post-pivot-identity-and-messaging.md) — coins the term and
   names the extension slot ("the preflight card then points at one verb").
   Coordination only; Plan 34's copy tasks pick the verb up once it lands.
 - User direction (2026-07-22): staged fast→slow, use *all* local + instance-MCP
