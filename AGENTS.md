@@ -183,7 +183,7 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   Release; the maintainer publishes to npm. **Cutting a release is the
   maintainer's call — open a release PR only when explicitly asked, never
   automatically because `[Unreleased]` is non-empty.**
-- CI (typecheck + `npm test`) must be green before merge, now enforced
+- CI (lint + typecheck + `npm test`) must be green before merge, now enforced
   GitHub-side (see the ruleset bullet below). The ruleset gates **every** merge
   on the required checks — markdown-only changes can't *fail* them, but they
   still gate the merge, so watch them to green (`gh pr checks <n> --watch`)
@@ -305,6 +305,11 @@ npm test              # unit tests (node:test, test/unit/) + e2e suite
                       #   interactive suite run fine sandboxed).
                       #   STEP=<substring> (env or --step=) runs a single
                       #   step/scenario of e2e/proxy/smoke in isolation
+npm run lint          # Biome linter (biome.json); CI gates on it. Config
+                      #   keeps the correctness/suspicious rules but turns off
+                      #   the deliberate-style rules this repo intentionally
+                      #   uses (useTemplate, noNonNullAssertion, noExplicitAny,
+                      #   noTemplateCurlyInString). `npm run lint:fix` autofixes.
 npm run typecheck     # tsc -p tsconfig.cli.json (CLI sources) + scripts/
                       #   typecheck.mts (node files — NOT plain tsc, see below)
 npm run test:smoke    # OPT-IN, dev-only: real n8n in Docker (test/smoke-n8n.mts,
