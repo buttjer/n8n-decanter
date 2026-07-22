@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { N8nApi } from "./api.mts";
 import { compileTs } from "./compile.mts";
 import { unifiedDiff } from "./diff.mts";
+import { getWorkflowDetails, type McpClient } from "./mcp.mts";
 import { findWorkflowDir, readState } from "./state.mts";
 import { style } from "./style.mts";
 import type { Log, Workflow } from "./types.mts";
@@ -18,16 +18,18 @@ async function localBody(dir: string, file: string, log?: Log): Promise<string |
 
 export interface StatusResult {
   /**
-   * True when a pull is needed or a push would clobber remote changes
-   * (CONFLICT, remote edits, unknown/deleted remote nodes, not pulled yet).
-   * Local-only "push pending" changes do NOT count — that's a normal dev
-   * state. The CLI exits 1 on it (plans/10 decision, 2026-07-18).
+   * True when a pull is needed or a push would clobber remote CODE changes
+   * (CONFLICT, remote code edits, deleted/unknown code nodes, not pulled
+   * yet). Local-only "push pending" changes do NOT count — that's a normal
+   * dev state. Structure changes do NOT count either (Plan 32: structure is
+   * n8n's job; a stale snapshot is an info line, not drift). The CLI exits 1
+   * on it (plans/10 decision, 2026-07-18; narrowed to code by plans/32).
    */
   remoteDrift: boolean;
 }
 
-export async function statusWorkflow(api: N8nApi, root: string, id: string, log: Log, { diff = false }: { diff?: boolean } = {}): Promise<StatusResult> {
-  const remote = await api.getWorkflow(id);
+export async function statusWorkflow(mcp: McpClient, root: string, id: string, log: Log, { diff = false }: { diff?: boolean } = {}): Promise<StatusResult> {
+  const remote = await getWorkflowDetails(mcp, id);
   const dir = findWorkflowDir(root, id, log);
   if (!dir) {
     log.warn(`${remote.name} (${id}): not pulled yet`);
@@ -40,27 +42,26 @@ export async function statusWorkflow(api: N8nApi, root: string, id: string, log:
   const state = readState(dir)!;
   const pub = publicationState(remote);
   // Version-aware note: on a published workflow whose live version lags the
-  // draft (a UI edit not yet published), say so; otherwise the plain state word,
+  // draft (edits not yet published), say so; otherwise the plain state word,
   // or nothing when the server omits `active` (defensive, mirrors publicationState).
   const pubNote = publishedVersionLagsDraft(remote)
-    ? `  published — live version is older than the draft (push or "publish" to go live)`
+    ? `  published — live version is older than the draft ("publish" to go live)`
     : pub ? `  ${pub}` : "";
   log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]${pubNote}`);
 
-  const remoteStruct = workflowStructureHash(remote);
+  // Structure is n8n's job (Plan 32) — the snapshot comparison is purely
+  // informational: a stale workflow.json only means "pull to refresh the file".
   const wfFile = path.join(dir, "workflow.json");
-  const localStruct = existsSync(wfFile)
-    ? workflowStructureHash(JSON.parse(readFileSync(wfFile, "utf8")) as Workflow)
-    : null;
-  const base = state.lastPulledWorkflowHash;
-  if (remoteStruct !== base && localStruct !== base) {
-    log.warn("  structure: changed both locally and remotely");
-    drift();
-  } else if (remoteStruct !== base) {
-    log.warn("  structure: changed remotely — pull");
-    drift();
-  } else if (localStruct !== base) log.info("  structure: changed locally — push pending");
-  else log.ok("  structure: in sync");
+  if (existsSync(wfFile)) {
+    try {
+      const localStruct = workflowStructureHash(JSON.parse(readFileSync(wfFile, "utf8")) as Workflow);
+      if (localStruct !== workflowStructureHash(remote)) {
+        log.info("  structure snapshot out of date — pull to refresh workflow.json (structure is managed in n8n)");
+      }
+    } catch {
+      log.warn("  workflow.json unreadable — pull to rewrite the snapshot");
+    }
+  }
 
   for (const node of remote.nodes) {
     if (!isJsCodeNode(node)) continue;

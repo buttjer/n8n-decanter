@@ -1,6 +1,6 @@
 ---
 title: node rename
-description: Rename a node everywhere it is referenced, atomically and offline.
+description: Rename a node in n8n; references and local files follow automatically.
 order: 19
 ---
 
@@ -8,20 +8,18 @@ order: 19
 n8n-decanter node rename <workflow> "<old node>" "<new node>"
 ```
 
-Renaming a node by hand means touching four places at once: the node's
-`name`, every reference in `connections`, every `$('…')` reference in code,
-and the source file name with its `//@file:` placeholder. `node rename`
-rewrites all of them atomically, refuses colliding names, and re-validates the
-folder afterwards.
+Forwards the rename to n8n (an MCP `renameNode` operation) — n8n rewrites the
+`connections` and every `$('…')` expression reference **server-side**, and the
+node's id stays stable — then rewrites `$('…')` references in local `.ts`
+sources (the one thing pull can't refresh) and pulls the result: the source
+file moves to the new kebab-case name and the snapshot follows.
 
-It works **offline**; the next [push](/docs/cli/push/) propagates the rename
-to n8n.
-
-- The source file is renamed to the new kebab-case name (with its `.remote.js`
-  sibling); a collision with an existing file falls back to the `-<id8>`
-  suffix, the same as [pull](/docs/cli/pull/) and
-  [node create](/docs/cli/node-create/).
+- A file-name collision falls back to the `-<id8>` suffix, the same as
+  [pull](/docs/cli/pull/) and [node create](/docs/cli/node-create/).
 - Unknown, colliding, and same-name renames are refused before anything is
-  written.
+  sent.
+- Renames made **outside** decanter (the n8n editor, another agent via MCP)
+  are picked up by the next pull the same way — node ids anchor the file
+  mapping.
 
 To rename the **workflow** itself, use [rename](/docs/cli/rename/).

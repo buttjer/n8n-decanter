@@ -1,6 +1,6 @@
 ---
 title: init
-description: Interactive bootstrap — credentials, starter template, config, agent tooling.
+description: Interactive bootstrap — OAuth consent, starter template, config, agent tooling.
 order: 2
 ---
 
@@ -10,14 +10,27 @@ n8n-decanter init [dir] [--force]
 
 Interactive setup for a new (or existing) sync dir:
 
-- Prompts for the n8n host and API key and writes them to `.env`. When `.env`
-  already holds both values, the prompts are skipped and the values reused —
-  edit or delete `.env` to change credentials. A best-effort credential check
-  runs at the end.
+- Prompts for the n8n host, then connects via **OAuth**: your browser opens
+  n8n's consent page, and the resulting refresh token lands in a gitignored
+  `.decanter-auth.json` (rotated automatically on every refresh). No browser
+  or piped run? Paste an **MCP token** instead (minted in n8n → Settings →
+  MCP → API key; stored as `N8N_MCP_TOKEN` in `.env`).
+- Offers the **optional public API key** (`N8N_API_KEY`) — only needed for
+  [executions](/docs/cli/executions/), [data-tables](/docs/cli/data-tables/),
+  [duplicate](/docs/cli/duplicate/), and [delete](/docs/cli/delete/).
+- When credentials already exist they are reused — edit or delete `.env` /
+  `.decanter-auth.json` to change them. A best-effort connection check runs
+  at the end (it also reports how many workflows are already
+  "Available in MCP").
 - Copies the starter template. Files named `X.example` in the template land
   as `X` in the target, and a copy-time baseline is recorded in
   `.decanter-template.json` (see [Re-running init](#re-running-init)).
-- Scaffolds `decanter.config.json` and a `.gitignore`.
+- Scaffolds `decanter.config.json` and a `.gitignore` (which covers `.env`
+  and `.decanter-auth.json`).
+
+The instance needs MCP access enabled once (n8n → Settings → MCP; ~2.20+),
+and each workflow you sync needs its "Available in MCP" flag — see
+[configuration](/docs/concepts/configuration/).
 
 ## TypeScript tooling
 

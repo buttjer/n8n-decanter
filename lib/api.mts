@@ -1,5 +1,11 @@
 import type { DataTable, DataTableColumn, DataTableRow, Execution, Workflow, WorkflowPut } from "./types.mts";
 
+/**
+ * n8n public REST API client — since Plan 32 only the surfaces MCP cannot
+ * serve: executions (no MCP read of full run data), data-table rows (MCP is
+ * add-only), `duplicate`'s lossless create, and `delete`'s hard delete.
+ * The workflow code path (pull/push/watch/status/publish) lives in lib/mcp.mts.
+ */
 export class N8nApi {
   #host: string;
   #apiKey: string;
@@ -13,23 +19,6 @@ export class N8nApi {
 
   async getWorkflow(id: string): Promise<Workflow> {
     return this.#request("GET", `/api/v1/workflows/${encodeURIComponent(id)}`) as Promise<Workflow>;
-  }
-
-  /**
-   * All workflows, cursor-paginated. Name matching stays client-side — the
-   * server-side `name` filter is exact-match only, which defeats prefix
-   * resolution.
-   */
-  async listWorkflows(): Promise<Workflow[]> {
-    const all: Workflow[] = [];
-    let cursor: string | undefined;
-    do {
-      const query = new URLSearchParams({ limit: "100", ...(cursor !== undefined && { cursor }) });
-      const page = (await this.#request("GET", `/api/v1/workflows?${query}`)) as { data: Workflow[]; nextCursor?: string | null };
-      all.push(...page.data);
-      cursor = page.nextCursor ?? undefined;
-    } while (cursor !== undefined);
-    return all;
   }
 
   /**
@@ -102,30 +91,15 @@ export class N8nApi {
     return (await this.#request("GET", `/api/v1/data-tables/${encodeURIComponent(id)}/rows?${query}`)) as { data: DataTableRow[]; nextCursor?: string | null };
   }
 
-  async updateWorkflow(id: string, body: WorkflowPut): Promise<Workflow | undefined> {
-    return this.#request("PUT", `/api/v1/workflows/${encodeURIComponent(id)}`, body) as Promise<Workflow | undefined>;
-  }
-
   /**
    * Create a workflow on the server (n8n 2.x `POST /workflows`). The required
    * fields are name + nodes/connections/settings (verified against 2.30.7 —
-   * name-only is rejected), so `create` posts empty collections while
-   * `duplicate` posts the cloned nodes/connections. Born **unpublished**
-   * (`active:false`); the caller pulls the returned id so the folder + state
-   * land. Shared by `create` (blank) and `duplicate` (Plan 21).
+   * name-only is rejected). Since Plan 32 only `duplicate` uses this — the
+   * lossless clone MCP's code-based creation cannot express. Born
+   * **unpublished** (`active:false`).
    */
   async createWorkflow(body: WorkflowPut): Promise<Workflow> {
     return this.#request("POST", "/api/v1/workflows", body) as Promise<Workflow>;
-  }
-
-  /** Take the draft live (n8n 2.x publish). Idempotent server-side; returns the workflow. */
-  async activateWorkflow(id: string): Promise<Workflow | undefined> {
-    return this.#request("POST", `/api/v1/workflows/${encodeURIComponent(id)}/activate`) as Promise<Workflow | undefined>;
-  }
-
-  /** Return a published workflow to draft-only. Idempotent server-side; returns the workflow. */
-  async deactivateWorkflow(id: string): Promise<Workflow | undefined> {
-    return this.#request("POST", `/api/v1/workflows/${encodeURIComponent(id)}/deactivate`) as Promise<Workflow | undefined>;
   }
 
   /**

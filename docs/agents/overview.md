@@ -28,18 +28,22 @@ Violating these corrupts sync state, which is why they're machine-enforced:
 2. Never write a `// @ts-n8n sha256:…` marker line — the tool appends it to
    compiled output on push.
 3. `.decanter.json` is machine state — never edit it, never "fix" a hash.
-4. `code/<node>.remote.js` is an incoming-change artifact — port it, delete
-   it; never edit or push over it.
+
+Two boundary rules sit next to them: **Code-node source is authored as files
+here and synced by decanter — never edited on the instance** (not in the UI,
+not via n8n's MCP tools or skills); and **`workflow.json` is a read-only
+snapshot** — structure changes go through n8n. The scaffolded `AGENTS.md`
+spells out how that boundary interacts with the official n8n skills pack.
 
 ## Who runs what
 
 | Commands | Agent policy |
 | --- | --- |
-| `check`, `node run`, `rename`, `node create` | Offline and safe — run freely. |
-| `status` | Reads the remote, no writes — safe, but it does contact the instance. |
-| `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks (`publish` takes the draft live). |
+| `check`, `node run`, `mock` | Offline and safe — run freely. |
+| `status`, `list --remote` | Read the remote, no writes — safe, but they do contact the instance. |
+| `pull`, `push`, `watch`, `create`, `duplicate`, `rename`, `node create`, `node rename`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks. Pushes land on the **draft**; `publish` (or `push --publish`) takes it live. |
 | `delete` | **Destructive** — removes a workflow from the server (hard delete, even if published). Never without an explicit instruction to delete *that* workflow. |
-| `push --force` | Never without explicit instruction — it overrides the drift guard protecting UI edits. (On `delete`, `--force` instead skips the confirmation — same rule.) |
+| `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. (On `delete`, `--force` instead skips the confirmation — same rule.) |
 
 The default loop for an agent: edit → verify offline → report that the change
 is ready to push. See [The offline feedback loop](/docs/agents/offline-loop/).

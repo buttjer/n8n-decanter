@@ -16,6 +16,18 @@ export function parseEnvFile(file: string): Record<string, string> {
   return values;
 }
 
+/**
+ * Guard for the REST-API-only verbs (executions, data-tables, duplicate,
+ * delete — the surfaces MCP cannot serve). Names the verb so the error says
+ * *why* an API key is suddenly needed in an otherwise MCP-only setup.
+ */
+export function requireApiKey(config: DecanterConfig, verb: string): DecanterConfig {
+  if (config.apiKey === "") {
+    throw new Error(`\`${verb}\` uses the n8n public REST API (MCP does not cover it) — set N8N_API_KEY in .env next to decanter.config.json (n8n → Settings → n8n API)`);
+  }
+  return config;
+}
+
 /** Load .env (if present) into process.env, not overriding existing vars. */
 export function loadEnv(dir: string): void {
   for (const [key, value] of Object.entries(parseEnvFile(path.join(dir, ".env")))) {
@@ -23,8 +35,14 @@ export function loadEnv(dir: string): void {
   }
 }
 
-/** Load decanter.config.json from cwd (or nearest ancestor) and resolve paths. */
-export function loadConfig(cwd: string = process.cwd(), { requireCredentials = true } = {}): DecanterConfig {
+/**
+ * Load decanter.config.json from cwd (or nearest ancestor) and resolve paths.
+ * `requireHost` gates only N8N_HOST (online verbs need it): the API key is
+ * optional since Plan 32 (MCP is the sync backend; `requireApiKey` guards the
+ * REST-API-only verbs at use time) and MCP credentials are resolved separately
+ * (lib/mcp.mts `resolveMcpAuth` — env token or .decanter-auth.json).
+ */
+export function loadConfig(cwd: string = process.cwd(), { requireHost = true } = {}): DecanterConfig {
   let dir = path.resolve(cwd);
   for (;;) {
     const file = path.join(dir, "decanter.config.json");
@@ -49,8 +67,8 @@ export function loadConfig(cwd: string = process.cwd(), { requireCredentials = t
       loadEnv(dir);
       const host = (process.env.N8N_HOST ?? "").replace(/\/+$/, "");
       const apiKey = process.env.N8N_API_KEY ?? "";
-      if (requireCredentials && (!host || !apiKey)) {
-        throw new Error("N8N_HOST and N8N_API_KEY must be set (via .env next to decanter.config.json or the environment)");
+      if (requireHost && !host) {
+        throw new Error("N8N_HOST must be set (via .env next to decanter.config.json or the environment)");
       }
       return {
         configDir: dir,

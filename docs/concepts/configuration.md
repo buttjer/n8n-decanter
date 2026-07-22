@@ -5,7 +5,8 @@ order: 5
 ---
 
 `decanter.config.json` is searched upward from the current directory;
-credentials come from `.env` next to it or from the environment.
+credentials come from `.env` / `.decanter-auth.json` next to it or from the
+environment.
 
 ```json
 {
@@ -27,29 +28,38 @@ credentials come from `.env` next to it or from the environment.
 | `workflows` | `[]` | Workflow ids processed when a command gets no refs. |
 | `commitOnPush` | `true` | Auto-commit the workflow folder after a successful push. |
 | `commitOnPull` | `true` | Same for pull. |
-| `requestTimeoutMs` | `30000` | n8n API request timeout — raise for slow instances. |
-| `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the recommended key needn't carry the data-table read scopes); `data-tables clean` still works. |
+| `requestTimeoutMs` | `30000` | Request timeout (MCP and API) — raise for slow instances. |
+| `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the API key needn't carry the data-table read scopes); `data-tables clean` still works. |
 | `browserReload` | off | `"proxy"` enables the [live-reload proxy](/docs/concepts/watch-live-reload/) during watch. |
 | `proxyPort` | `5679` | Port for that proxy. |
 | `bundleDependencies` | `[]` | npm packages `.ts` nodes may import; [bundled on push](/docs/concepts/typescript-nodes/). Pure-JS only. |
 
 ## Credentials
 
-- `.env` next to the config: `N8N_HOST`, `N8N_API_KEY` — written by
-  [init](/docs/cli/init/), never committed (the scaffolded `.gitignore`
-  covers it).
-- Or the same variables from the process environment.
+The sync rides n8n's **MCP server**; the public API key is an optional extra.
+In order of resolution:
 
-Use a **minimal-scope API key** (n8n 2.x keys carry scopes) rather than a
-full-access one, so a leaked `.env` has a smaller blast radius. The scopes the
-CLI actually uses:
+1. **`N8N_HOST`** — always required for online verbs (`.env` or environment).
+2. **MCP credentials** (the sync verbs — pull, push, watch, status, publish,
+   unpublish, create, rename, node create/rename):
+   - `N8N_MCP_TOKEN` (`.env` or environment) — a rotatable token from n8n →
+     Settings → MCP → API key. Takes precedence when set.
+   - Otherwise `.decanter-auth.json` — the OAuth client id + refresh token
+     [init](/docs/cli/init/) minted via browser consent. The refresh token
+     rotates on every use; the file is rewritten automatically. Delete it and
+     re-run `init` to re-consent (also the fix for a
+     "MCP session expired" error).
+3. **`N8N_API_KEY` (optional)** — only for the verbs MCP cannot serve:
+   [executions](/docs/cli/executions/), [data-tables](/docs/cli/data-tables/),
+   [duplicate](/docs/cli/duplicate/), [delete](/docs/cli/delete/). Scope it
+   minimally: `execution:read`, `execution:list`, `workflow:read`,
+   `workflow:create`, `workflow:delete`, and the `dataTable:*` read scopes
+   (only while `dataTables` is on).
 
-- `workflow:read`, `workflow:list`, `workflow:update` — pull, push, status, watch
-- `workflow:create`, `workflow:delete` — [create](/docs/cli/create/), [delete](/docs/cli/delete/)
-- `workflow:activate`, `workflow:deactivate` — [publish / unpublish](/docs/cli/publish/)
-- `execution:read`, `execution:list` — the [executions](/docs/cli/executions/) verb
-- `dataTable:list`, `dataTable:read`, `dataTableColumn:read`, `dataTableRow:read`
-  — the [data-tables](/docs/cli/data-tables/) verb (only needed while
-  `dataTables` is on, its default)
+The instance needs **MCP access enabled** once (n8n → Settings → MCP;
+requires an n8n with the built-in MCP server, ~2.20+), and each synced
+workflow needs its **"Available in MCP"** flag (workflow card ⋯ menu, or
+workflow settings) — [list --remote](/docs/cli/list/) and the picker show
+which workflows still need it.
 
-`check`, `node run`, `rename`, `node create`, and plain `list` need no credentials at all.
+`check`, `node run`, `mock`, and plain `list` need no credentials at all.
