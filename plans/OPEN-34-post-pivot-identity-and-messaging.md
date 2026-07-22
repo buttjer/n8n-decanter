@@ -1,11 +1,11 @@
 # Plan 34 — Post-pivot identity & messaging: keep the name, retell the story
 
-**Priority:** P2 (must land with / immediately after the pivot ships — outdated
-messaging on a shipped pivot is P1)
-**Status:** Blocked — hard gate: starts only after [Plan 32](OPEN-32-mcp-native-code-layer.md)
-is **fully executed**; coordinate with [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md)
-Task 2 (verb renames, e.g. `delete`→`archive`) so command-facing copy is written
-once. Task 1 (the positioning kit) may be drafted earlier for sign-off.
+**Priority:** P1 (website landing — live factual drift since the pivot merged) /
+P2 (the positioning layer)
+**Status:** Open — the former hard gate cleared 2026-07-22:
+[Plan 32](DONE-32-mcp-native-code-layer.md) executed and merged (PR #97).
+Coordinate command-facing copy with [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md)'s
+lifecycle work (`delete`→`archive`, the `test` verb) so it's written once.
 **Theme:** The outward identity — name verdict, taglines, README, website
 landing, docs framing, npm/GitHub metadata, comparison positioning — retold for
 the Code-node-layer scope. **The name `n8n-decanter` stays** (decision recorded
@@ -15,23 +15,25 @@ the mechanical surface sweep.
 
 ## Why
 
-[Plan 32](OPEN-32-mcp-native-code-layer.md) changes what the project *is* —
-decanter stops owning canonical workflow sync and becomes the **Code-node
+[Plan 32](DONE-32-mcp-native-code-layer.md) changed what the project *is* —
+decanter stopped owning canonical workflow sync and became the **Code-node
 craftsmanship layer**, with structure + lifecycle delegated to n8n's MCP +
-skills. Every outward surface still tells the pre-pivot story. The current
-canonical sentence — *"n8n-decanter syncs your n8n instance into a git-friendly,
-folder-per-workflow layout … pushed back through the n8n API"* — becomes wrong
-on three axes at once:
+skills. Its execution (PR #97, merged 2026-07-22) already landed the
+**accuracy** layer in `README.md` + `/docs`: a new canonical paragraph (MCP,
+draft-first, structure-stays-n8n's-job), rewritten caveats, a "Draft-first by
+construction" bullet. What remains — this plan's scope:
 
-- **Overclaims** — canonical whole-workflow sync is deliberately ceded;
-  `workflow.json` demotes to a read-only snapshot (Plan 32 Task 6).
-- **Factually wrong** — the code path is MCP, not the public API; the API key
-  degrades to an optional extra (Plan 33 Task 2).
-- **Undersells** — the pivot's headline wins aren't told anywhere: draft-first
-  pushes (today's #1 README *caveat* — "pushing to a published workflow
-  republishes it immediately" — becomes a flagship *feature*), OAuth instead of
-  a long-lived key, the guard-proxy token custody story, the instance-side
-  `test` verb.
+- **Website landing untouched by #97 — live factual drift (P1).** The hero
+  (`website/src/pages/index.astro`) still says *"… pushed back through the n8n
+  API"* and the features array still sells the old whole-workflow drift-guard
+  framing ("keep you from clobbering remote edits"). The site now contradicts
+  the shipped tool.
+- **The positioning layer was deliberately left open** — tagline unchanged;
+  the whole "How it compares" section is pre-pivot (including a stale
+  *"first-party repo-authored creation planned (`node create` +
+  `push --create`)"* cell — `push --create` was dropped in Plan 21); the
+  pivot's wins (draft-first, OAuth, upcoming guard-proxy/`test`) aren't
+  *positioned*, only documented; npm/GitHub metadata and demo GIFs untouched.
 
 Separately, the maintainer challenged **the name itself** (2026-07-22): does
 "decanter" still fit a tool that no longer pours the whole workflow into git?
@@ -69,9 +71,9 @@ Challenge and verdict, so the reasoning survives:
 
 - This session (2026-07-22): maintainer's name challenge + "README and website
   communication need to adapt".
-- [Plan 32](OPEN-32-mcp-native-code-layer.md) Task 7 — the docs/changelog/
-  PLAN.md **accuracy** overhaul. This plan is the **positioning** layer on top;
-  the boundary is drawn in Non-goals.
+- [Plan 32](DONE-32-mcp-native-code-layer.md) Task 7 — the docs/changelog/
+  PLAN.md **accuracy** overhaul (landed with PR #97). This plan is the
+  **positioning** layer on top; the boundary is drawn in Non-goals.
 - [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) — verb renames, `test` verb,
   verb-taxonomy docs; command-facing copy here follows its outcomes.
 
@@ -90,13 +92,25 @@ Challenge and verdict, so the reasoning survives:
      (concrete, names who it's for); abstractions ("like real software")
      become the concrete goods (*typed, tested, in git*) — also "real
      software" subtly disses n8n just as the positioning starts leaning on
-     n8n's own MCP. Candidates for sign-off:
-     1. *"The agent-first n8n code toolkit — code-heavy workflows, typed,
-        tested, shipped draft-first."* (recommended)
-     2. *"Work on the code inside n8n like a real codebase — built for AI
-        coding agents."* (minimal evolution, keeps current equity)
+     n8n's own MCP. Second maintainer round: *"typed, tested, shipped
+     draft-first"* alone drops **shared code/imports** and the **local/offline
+     benefits** (simulate, `node run`, executions) — a one-liner can't hold
+     six features, so the kit is **two-tier**: a tight headline plus a
+     standing subline that always enumerates the **four pillars** — **typed**
+     (TS + typed globals), **shared** (imports/npm bundling, Cloud-safe),
+     **tested locally** (offline `check`/`node run`/`simulate` on real
+     executions), **draft-first** (the MCP ship path). Candidates for
+     sign-off:
+     1. Headline *"The agent-first n8n code toolkit"* + subline *"Code-heavy
+        workflows: typed TypeScript with shared libraries, tested offline
+        against real executions, shipped draft-first over n8n's MCP."*
+        (recommended — README bold line + paragraph, website h1 + p)
+     2. One-line variant where only one line fits (npm `description`):
+        *"The agent-first n8n code toolkit — typed nodes, shared libraries,
+        offline tests, draft-first shipping."*
      3. *"n8n runs the workflow; decanter owns the code — a toolkit for
-        code-heavy workflows, built for AI coding agents."* (boundary-led)
+        code-heavy workflows, built for AI coding agents."* (boundary-led
+        alternative headline)
    - **Canonical paragraph** replacing the "syncs your instance … n8n API"
      sentence: decanter extracts every Code node's source into its own
      `.js`/`.ts` file — typed, testable, reviewable, in git — and syncs it
@@ -104,29 +118,29 @@ Challenge and verdict, so the reasoning survives:
    - **Boundary sentence** (used everywhere the scope is explained):
      *"Structure and lifecycle belong to n8n — editor, MCP, skills. The code
      inside belongs to decanter."*
-2. **README rewrite** (`README.md`):
-   - Hero + intro paragraph from the kit.
-   - **Feature bullets:** rewrite the sync/guard bullets (drift-guard "keeps
-     you from clobbering remote edits" framing changes with the sync model);
-     add draft-first push, OAuth-first `init`, `test`; the API-key-scopes
-     Setup block shrinks to the optional-API-key surfaces (data-table rows,
-     `executions` if kept — per Plan 33).
-   - **Caveats:** today's two flagship caveats (immediate republish on push; no
-     optimistic locking through the API) are **solved by the pivot** — flip
-     them into the story of *why* MCP, don't just delete them. New caveats in:
-     version floor (~2.13/2.20), per-workflow `availableInMCP` opt-in, MCP
-     surface churn.
-   - **"How it compares" reframe:** decanter no longer competes on canonical
-     sync — n8n's MCP + skills become the *complement it builds on*, not a
-     rival (say so explicitly). Re-examine every row: "Versioning" becomes
-     code-first (+ read-only structure snapshot); add rows for the new
-     differentiators — **draft-first edits/deliberate publish** (the
+2. **README positioning pass** (`README.md` — #97 already landed the accuracy
+   baseline: intro paragraph, caveats, draft-first bullet):
+   - Hero tagline + intro re-cast from the kit (Task 1's headline + subline).
+   - **Feature bullets:** order/frame around the four pillars; make **shared
+     code** and the **local/offline loop** as prominent as draft-first.
+   - **"How it compares" reframe (fully open — untouched by #97):** decanter
+     no longer competes on canonical sync — n8n's MCP + skills become the
+     *complement it builds on*, not a rival (say so explicitly). Re-examine
+     every row ("Versioning" becomes code-first + read-only snapshot; fix the
+     stale *"planned (`node create` + `push --create`)"* cell); add rows for
+     the new differentiators — **draft-first edits/deliberate publish** (the
      API-based tools can't do it) and **instance-side pinned tests with
-     diff** (`test`). Update the "Choose X if you…" cards.
-3. **Website landing** (`website/src/pages/index.astro`): hero h1/p, the
+     diff** (`test`, once Plan 33 ships it). Update the "Choose X if you…"
+     cards and the bottom line.
+3. **Website landing** (`website/src/pages/index.astro`) — **P1: carries the
+   live drift** (hero still says "pushed back through the n8n API"; features
+   still sell the whole-workflow drift-guard framing). Hero h1/p, the
    `features` array, choose-cards and the condensed compare table — the site
    mirrors the README; change both in lockstep. Check `BaseLayout` /
-   head metadata (title, description, OG) for the old sentence.
+   head metadata (title, description, OG) for the old sentence. If the
+   positioning kit isn't signed off yet, an accuracy-only hotfix of the hero
+   paragraph (mirroring #97's README intro) may ship first — don't let the
+   factual drift wait for copy polish.
 4. **Docs framing sweep** (positioning only — verb-page mechanics belong to
    Plan 32 Task 7 / Plan 33): `docs/getting-started/*` (OAuth-first init, API
    key optional), `docs/concepts/sync-layout.md` (snapshot semantics) and
@@ -164,10 +178,12 @@ Challenge and verdict, so the reasoning survives:
 
 ## Notes
 
-- **Gate rationale:** shipping this copy before Plan 32 executes would
-  advertise a tool that doesn't exist — npm still serves the API-based CLI.
-  Execution order: after Plan 32; after (or with) Plan 33 Task 2's verb
-  renames so command copy is written once.
+- **Gate history:** originally hard-gated on Plan 32's execution (advertising
+  an unshipped pivot); the gate cleared 2026-07-22 when PR #97 merged. npm's
+  *published* package still predates the pivot until the next release — that's
+  the normal `[Unreleased]` steady state, not a reason to hold messaging
+  (GitHub + site follow main). Command-facing copy (`archive`, `test`) still
+  follows Plan 33's outcomes so it's written once.
 - **Changelog:** pure messaging/docs copy is not a CLI behavior change → no
   `[Unreleased]` entry of its own (the pivot's entries land with Plans 32/33).
 - The README/website duplication (feature bullets + compare table exist in

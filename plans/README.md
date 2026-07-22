@@ -193,15 +193,6 @@ items not yet claimed by one. Recommended order:
     (2026-07-22, n8n 2.30.7): byte-exact jsCode read/write, draft-first edits, and
     OAuth-first auth with refresh tokens all confirmed — the API can be dropped for
     the code path. Breaking; awaiting go/no-go. Proposed 2026-07-22.
-34. [Post-pivot identity & messaging](BLOCKED-34-post-pivot-identity-and-messaging.md) —
-    retell the outward story for the Code-node-layer scope once Plan 32 has
-    executed (hard gate; command copy follows Plan 33's verb renames): README
-    hero/bullets/caveats/compare reframe, website landing, docs framing sweep,
-    npm/GitHub metadata, demo-GIF currency. Records the name verdict: the
-    challenge (2026-07-22) concluded **`n8n-decanter` stays** — the pivot
-    sharpens the decanting metaphor (the code is the pour; structure stays in
-    the bottle), and a rename would stack breaking churn on the pivot for zero
-    capability. Proposed 2026-07-22.
 33. [Post-MCP-pivot wave](BLOCKED-33-post-mcp-pivot-wave.md) — everything queued
     *behind* Plan 32, now grounded in its execution (PR #97, reviewed
     2026-07-22 by a 16-agent audit+verify pass; gate: #97 merged). The old
@@ -221,6 +212,17 @@ items not yet claimed by one. Recommended order:
     template override), `simulate` kept as a differentiator with `test` as the
     recommended default (decided 2026-07-22), and the AGENTS.md MCP-facts
     update. Proposed 2026-07-22.
+34. [Post-pivot identity & messaging](OPEN-34-post-pivot-identity-and-messaging.md) —
+    retell the outward story for the Code-node-layer scope (#97 landed the
+    *accuracy* layer; this owns the *positioning* layer): tagline/positioning
+    kit for sign-off, README compare reframe, **website landing (P1 — the hero
+    still says "pushed back through the n8n API", contradicting shipped
+    main)**, docs framing sweep, npm/GitHub metadata, demo-GIF currency;
+    command copy follows Plan 33's `archive`/`test`. Records the name verdict:
+    the challenge (2026-07-22) concluded **`n8n-decanter` stays** — the pivot
+    sharpens the decanting metaphor (the code is the pour; structure stays in
+    the bottle), and a rename would stack breaking churn on the pivot for zero
+    capability. Proposed 2026-07-22.
 
 ## Conventions
 
