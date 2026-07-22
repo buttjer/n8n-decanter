@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, beforeEach, describe, it } from "node:test";
-import { loadConfig, loadEnv, parseEnvFile } from "../../lib/config.mts";
+import { loadConfig, loadEnv, parseEnvFile, requireApiKey } from "../../lib/config.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-config-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -22,6 +22,7 @@ function configDir(cfg: object | string, env?: string): string {
 beforeEach(() => {
   delete process.env.N8N_HOST;
   delete process.env.N8N_API_KEY;
+  delete process.env.N8N_MCP_TOKEN;
 });
 
 describe("parseEnvFile", () => {
@@ -144,11 +145,25 @@ describe("loadConfig", () => {
     });
   });
 
-  it("requires credentials unless requireCredentials is false", () => {
+  it("requires only the host (requireHost); the API key is optional since Plan 32", () => {
     const dir = configDir({});
-    assert.throws(() => loadConfig(dir), /N8N_HOST and N8N_API_KEY must be set/);
-    const cfg = loadConfig(dir, { requireCredentials: false });
+    assert.throws(() => loadConfig(dir), /N8N_HOST must be set/);
+    const cfg = loadConfig(dir, { requireHost: false });
     assert.equal(cfg.host, "");
     assert.equal(cfg.apiKey, "");
+    // a host alone satisfies the default load — no API key needed for MCP sync
+    const withHost = configDir({}, "N8N_HOST=http://n8n.local\n");
+    const cfg2 = loadConfig(withHost);
+    assert.equal(cfg2.host, "http://n8n.local");
+    assert.equal(cfg2.apiKey, "");
+  });
+
+  it("requireApiKey guards the REST-only verbs, naming the verb", () => {
+    const dir = configDir({}, "N8N_HOST=http://n8n.local\n");
+    const cfg = loadConfig(dir);
+    assert.throws(() => requireApiKey(cfg, "executions"), /`executions` uses the n8n public REST API/);
+    assert.throws(() => requireApiKey(cfg, "duplicate"), /N8N_API_KEY/);
+    const withKey = { ...cfg, apiKey: "k" };
+    assert.equal(requireApiKey(withKey, "executions"), withKey, "passes the config through when the key exists");
   });
 });

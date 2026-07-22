@@ -4,10 +4,16 @@
 //
 // Black-box by design: drives the CLI as a subprocess and talks to n8n with
 // plain fetch — no lib/ imports, so nothing here can accidentally share a
-// bug with the code under test. One deliberate exception: the structural-
-// watch step drives lib/watch.mts in-process (same as the e2e watch step) —
-// watch is interactive and long-running, unscriptable as a subprocess
-// without a pty, and in-process log capture is what the asserts need.
+// bug with the code under test. One deliberate exception: the watch step
+// drives lib/watch.mts in-process (same as the e2e watch step) — watch is
+// interactive and long-running, unscriptable as a subprocess without a pty,
+// and in-process log capture is what the asserts need.
+//
+// Plan 32: the workflow code path rides n8n's built-in MCP server — the
+// bootstrap enables MCP + mints the rotatable MCP token via the owner cookie
+// (undocumented /rest routes, fine for a throwaway container; see AGENTS.md
+// "Driving a real n8n in Docker"), and the seed step exercises the
+// per-workflow availableInMCP gate before toggling it on.
 //
 // Env knobs: SMOKE_N8N_TAG overrides the pinned image tag (version-bump
 // testing); SMOKE_KEEP=1 keeps the container alive after the run.
@@ -69,6 +75,7 @@ process.on("SIGINT", () => void teardown().then(() => process.exit(130)));
 
 let HOST = "";
 let KEY = "";
+let MCP = ""; // rotatable MCP bearer token (the sync backend's credential)
 let COOKIE = ""; // owner session cookie — kept so a step can mint a scoped-down key
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-smoke-"));
 const ROOT = path.join(TMP, "workflows");
@@ -218,19 +225,55 @@ try {
     assert.ok(keyRes.ok, `api key creation failed ${versionNote}: ${keyRes.status} ${keyText}`);
     KEY = JSON.parse(keyText).data.rawApiKey;
     assert.ok(KEY, `no rawApiKey in response ${versionNote}`);
+    // Plan 32: enable the built-in MCP server + mint the rotatable MCP token.
+    // The env flag does NOT flip the DB setting (verified on 2.30.7) — the
+    // cookie-authed PATCH does; rotate returns the only readable raw token.
+    const mcpEnable = await fetch(`${HOST}/rest/mcp/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ mcpAccessEnabled: true }),
+    });
+    assert.ok(mcpEnable.ok, `enabling MCP failed ${versionNote}: ${mcpEnable.status} ${await mcpEnable.text()}`);
+    const rotate = await fetch(`${HOST}/rest/mcp/api-key/rotate`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+    });
+    const rotateText = await rotate.text();
+    assert.ok(rotate.ok, `MCP token rotate failed ${versionNote}: ${rotate.status} ${rotateText}`);
+    MCP = JSON.parse(rotateText).data.apiKey;
+    assert.ok(MCP, `no MCP apiKey in rotate response ${versionNote}`);
   });
+
+  /** Per-workflow MCP opt-in — API-born workflows start gated (Plan 32). */
+  const enableMcpAccess = async (...ids: string[]): Promise<void> => {
+    const res = await fetch(`${HOST}/rest/mcp/workflows/toggle-access`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie: COOKIE },
+      body: JSON.stringify({ availableInMCP: true, workflowIds: ids }),
+    });
+    assert.ok(res.ok, `toggle-access failed: ${res.status} ${await res.text()}`);
+  };
 
   await step("seed: workflow created via the public API (2.x has POST /workflows)", async () => {
     const created = await api("POST", "/api/v1/workflows", seedWorkflow());
     wfId = created.id;
     assert.ok(wfId, "no id on created workflow");
-    writeFileSync(path.join(TMP, ".env"), `N8N_HOST=${HOST}\nN8N_API_KEY=${KEY}\n`);
+    writeFileSync(path.join(TMP, ".env"), `N8N_HOST=${HOST}\nN8N_API_KEY=${KEY}\nN8N_MCP_TOKEN=${MCP}\n`);
     writeFileSync(path.join(TMP, "decanter.config.json"),
       JSON.stringify({ root: "./workflows", workflows: [wfId], commitOnPush: false, commitOnPull: false }, null, 2));
-    env = { ...process.env, N8N_HOST: HOST, N8N_API_KEY: KEY };
+    env = { ...process.env, N8N_HOST: HOST, N8N_API_KEY: KEY, N8N_MCP_TOKEN: MCP };
   });
 
-  await step("pull: real workflow lands in the decanter layout", async () => {
+  await step("MCP gate: pull refuses an un-opted-in workflow with guidance; toggling admits it", async () => {
+    // API-born workflows are NOT availableInMCP — the real per-workflow gate
+    const r = await cli("pull");
+    assert.equal(r.code, 1, "pull must refuse before the opt-in: " + r.out);
+    assert.match(r.out, /not available in MCP/i, r.out);
+    assert.match(r.out, /workflow card|workflow settings/i, "enable guidance surfaced: " + r.out);
+    await enableMcpAccess(wfId);
+  });
+
+  await step("pull: real workflow lands in the decanter layout (over MCP)", async () => {
     const r = await cli("pull");
     assert.equal(r.code, 0, r.out);
     wfDir = path.join(ROOT, "smoke-wf");
@@ -239,21 +282,30 @@ try {
     assert.match(read(wfDir, "code", "compute.js"), /doubled: n \* 2/);
   });
 
-  await step("no false drift: pull→push→status stays in sync against real PUT normalization", async () => {
+  await step("no false drift: pull→push→status stays in sync against the real MCP round-trip", async () => {
     let r = await cli("push");
     assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /code already in sync — nothing to push/, "fresh pull must be a no-op push: " + r.out);
     r = await cli("status");
-    assert.equal(r.code, 0, "status must be in sync after push: " + r.out);
-    assert.match(r.out, /structure: in sync/);
+    assert.equal(r.code, 0, "status must be in sync after pull: " + r.out);
     assert.match(r.out, /Compute: in sync/);
     assert.ok(!r.out.includes("push pending"), "no false local drift: " + r.out);
+    // a real edit round-trips byte-exact (the Plan 32 invariant)
+    writeFileSync(path.join(wfDir, "code", "compute.js"),
+      read(wfDir, "code", "compute.js").replace("n * 2", "n * 2 + 0"));
     r = await cli("push");
     assert.equal(r.code, 0, r.out);
     r = await cli("status");
-    assert.equal(r.code, 0, "still in sync after second push: " + r.out);
+    assert.equal(r.code, 0, "in sync after push: " + r.out);
+    assert.match(r.out, /Compute: in sync/);
     r = await cli("pull");
     assert.equal(r.code, 0, r.out);
-    assert.ok(!existsSync(path.join(wfDir, "code", "compute.remote.js")), "no conflict artifact from normalization");
+    assert.match(read(wfDir, "code", "compute.js"), /n \* 2 \+ 0/, "byte-exact round-trip");
+    // restore the seed body for later steps
+    writeFileSync(path.join(wfDir, "code", "compute.js"),
+      read(wfDir, "code", "compute.js").replace("n * 2 + 0", "n * 2"));
+    r = await cli("push");
+    assert.equal(r.code, 0, r.out);
   });
 
   await step("marker survival: TS push round-trips the @ts-n8n line byte-intact", async () => {
@@ -290,37 +342,56 @@ try {
       "return [{ json: { doubled: double(n), plus: add(n, 100) } }];",
       "",
     ].join("\n"));
-    const r = await cli("push");
+    let r = await cli("push");
     assert.equal(r.code, 0, r.out);
-    await api("POST", `/api/v1/workflows/${wfId}/activate`);
+    // pushes are draft-only now — the deliberate publish takes it live
+    r = await cli("publish", wfId);
+    assert.equal(r.code, 0, r.out);
     const out = await webhook({ n: 21 }); // its own bounded poll covers webhook registration lag
     assert.deepEqual(out, [{ doubled: 42, plus: 121 }], `bundled node must compute through shared/ AND the npm package: ${JSON.stringify(out)}`);
   });
 
-  await step("each-item mode: bundled node under runOnceForEachItem", async () => {
-    const wf = JSON.parse(read(wfDir, "workflow.json"));
-    const compute = wf.nodes.find((n: any) => n.id === "c1");
-    compute.parameters.mode = "runOnceForEachItem";
-    writeFileSync(path.join(wfDir, "workflow.json"), JSON.stringify(wf, null, 2));
+  await step("each-item mode: structure set by a second client, code + --publish by decanter", async () => {
+    // the node's `mode` is structure now (Plan 32) — n8n's side owns it; the
+    // public API PUT plays the second client here, then pull mirrors it
+    const remote = await api("GET", `/api/v1/workflows/${wfId}`);
+    await api("PUT", `/api/v1/workflows/${wfId}`, {
+      name: remote.name,
+      nodes: remote.nodes.map((n: any) => (n.id === "c1" ? { ...n, parameters: { ...n.parameters, mode: "runOnceForEachItem" } } : n)),
+      connections: remote.connections,
+      settings: remote.settings ?? {},
+    });
+    let r = await cli("pull");
+    assert.equal(r.code, 0, r.out);
+    assert.match(read(wfDir, "workflow.json"), /"runOnceForEachItem"/, "snapshot mirrors the structure change");
     writeFileSync(path.join(wfDir, "code", "compute.ts"), [
       'import { double } from "../../../shared/math";',
       "const n = Number(($json.body as { n?: number }).n ?? 0);",
       "return { json: { doubled: double(n), mode: 'each' } };",
       "",
     ].join("\n"));
-    const r = await cli("push"); // structural + code change; workflow is active -> goes live
+    // draft-first: the live version must NOT change until --publish
+    const liveBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).activeVersionId;
+    r = await cli("push");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /published: code is live now/, "active 2.x workflow auto-publishes on push: " + r.out);
+    assert.match(r.out, /draft updated; the live version is unchanged/, "push is draft-only: " + r.out);
+    const between = await api("GET", `/api/v1/workflows/${wfId}`);
+    assert.equal(between.activeVersionId, liveBefore, "activeVersionId untouched by a push");
+    assert.notEqual(between.versionId, between.activeVersionId, "the draft diverged from the live version");
+    r = await cli("push", "--publish"); // no code change left — publish still runs
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /code is live now/, r.out);
     const out = await webhook({ n: 5 });
     assert.deepEqual(out, [{ doubled: 10, mode: "each" }], JSON.stringify(out));
   });
 
-  await step("publish semantics: draft push stays draft, active push goes live", async () => {
+  await step("publish semantics: every push stays a draft; unpublished stays unpublished", async () => {
     const second = await api("POST", "/api/v1/workflows", {
       ...seedWorkflow(),
       name: "Smoke Draft",
       nodes: seedWorkflow().nodes.map((n: any) => (n.id === "w1" ? { ...n, parameters: { ...n.parameters, path: "smoke-draft" } } : n)),
     });
+    await enableMcpAccess(second.id);
     const cfg = JSON.parse(read(TMP, "decanter.config.json"));
     writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ ...cfg, workflows: [wfId, second.id] }, null, 2));
     let r = await cli("pull", second.id);
@@ -329,7 +400,7 @@ try {
     writeFileSync(path.join(draftDir, "code", "compute.js"), "return [{ json: { draft: true } }];\n");
     r = await cli("push", second.id);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /unpublished: draft only/, "inactive workflow must stay a draft: " + r.out);
+    assert.match(r.out, /unpublished draft/, "inactive workflow must stay a draft: " + r.out);
     const remote = await api("GET", `/api/v1/workflows/${second.id}`);
     assert.equal(remote.active, false, "push must not activate an inactive workflow");
   });
@@ -351,9 +422,9 @@ try {
       read(wfDir, "code", "compute.ts").replace("mode: 'each'", "mode: 'forced'"));
     let r = await cli("push", wfId);
     assert.equal(r.code, 1, "push must abort on real remote drift: " + r.out);
-    assert.match(r.out, /pull first|--force/, r.out);
-    r = await cli("push", wfId, "--force");
-    assert.equal(r.code, 0, "--force must override the drift guard: " + r.out);
+    assert.match(r.out, /remote code changed since last sync/, r.out);
+    r = await cli("push", wfId, "--force", "--publish");
+    assert.equal(r.code, 0, "--force must override the per-node drift guard: " + r.out);
     r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
     r = await cli("status", wfId);
@@ -362,22 +433,22 @@ try {
     assert.deepEqual(out, [{ doubled: 4, mode: "forced" }], JSON.stringify(out));
   });
 
-  await step("rename with a unicode name propagates and keeps executing", async () => {
+  await step("rename with a unicode name: forwarded over MCP, id stable, executes after publish", async () => {
     let r = await cli("node", "rename", wfId, "Compute", "Ümläut Nödé");
     assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /renamed node "Compute" -> "Ümläut Nödé" in n8n/, r.out);
     const renamed = JSON.parse(read(TMP, "decanter.config.json")); // config untouched by rename
     assert.ok(renamed.workflows.includes(wfId));
-    const files = read(wfDir, "workflow.json");
-    assert.match(files, /"Ümläut Nödé"/);
-    r = await cli("push", wfId);
-    assert.equal(r.code, 0, r.out);
+    assert.match(read(wfDir, "workflow.json"), /"Ümläut Nödé"/, "rename's own pull refreshed the snapshot");
     const remote = await api("GET", `/api/v1/workflows/${wfId}`);
-    assert.equal(remote.nodes.find((n: any) => n.id === "c1").name, "Ümläut Nödé", "real n8n accepted the rename");
-    assert.ok(remote.connections["Ümläut Nödé"], "rewritten connections accepted");
+    const c1 = remote.nodes.find((n: any) => n.id === "c1");
+    assert.equal(c1.name, "Ümläut Nödé", "real n8n accepted the MCP rename — and the node id survived");
+    assert.ok(remote.connections["Ümläut Nödé"], "n8n rewrote the connections server-side");
+    // the rename landed on the draft — publish takes it live for the webhook
+    r = await cli("publish", wfId);
+    assert.equal(r.code, 0, r.out);
     const out = await webhook({ n: 3 });
     assert.deepEqual(out, [{ doubled: 6, mode: "forced" }], "workflow still executes after rename: " + JSON.stringify(out));
-    r = await cli("pull", wfId);
-    assert.equal(r.code, 0, r.out);
     r = await cli("status", wfId);
     assert.equal(r.code, 0, "in sync after rename round-trip: " + r.out);
   });
@@ -417,88 +488,77 @@ try {
     assert.deepEqual(got.pinData, seed, `pinData survives the round-trip: ${JSON.stringify(got.pinData)}`);
   });
 
-  await step("structural watch: clean push, no phantom re-push, conflict detected", async () => {
-    // Plan 12 residue: does the real PUT response's structure hash match the
-    // local file (baseline = response hash — a mismatch means every no-op
-    // save phantom-re-pushes), and does a real concurrent edit -> conflict?
+  // The Code node's current source path, read from its live placeholder — the
+  // rename step moved it to code/ümläut-nödé.ts, so nothing here may hardcode it.
+  const computeSrc = (): string => {
+    const node = JSON.parse(read(wfDir, "workflow.json")).nodes.find((n: any) => n.id === "c1");
+    const rel = String(node?.parameters?.jsCode ?? "").match(/^\/\/@file:(.+)$/)?.[1];
+    assert.ok(rel, `no //@file: placeholder on the Code node: ${node?.parameters?.jsCode}`);
+    return path.join(wfDir, rel);
+  };
+
+  await step("watch (code-only): a save pushes the node to the DRAFT; workflow.json saves warn, never push", async () => {
     const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib", "watch.mts")).href);
-    const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib", "api.mts")).href);
-    const apiClient = new N8nApi({ host: HOST, apiKey: KEY });
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpClient = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
     const config = {
       configDir: TMP, root: ROOT, workflows: [wfId], commitOnPush: false, commitOnPull: false,
-      browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: HOST, apiKey: KEY,
+      browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: HOST, apiKey: KEY,
     };
     const logs: string[] = [];
     const capture = (m: string) => logs.push(m);
     const log = { info: capture, ok: capture, warn: capture, error: capture };
-    const wfJson = path.join(wfDir, "workflow.json");
-    const setPosition = (pos: [number, number]): void => {
-      const wf = JSON.parse(read(wfJson));
-      wf.nodes.find((n: any) => n.id === "c1").position = pos;
-      writeFileSync(wfJson, JSON.stringify(wf, null, 2));
-    };
-    // non-TTY stdin so the conflict prompt skips instead of hanging the suite
-    const stdinWasTty = process.stdin.isTTY;
-    process.stdin.isTTY = false;
-    const handle = await watchWorkflow(apiClient, config, wfId, {}, log);
+    const srcFile = computeSrc();
+    const original = read(srcFile);
+    const liveBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).activeVersionId;
+    const handle = await watchWorkflow(mcpClient, config, wfId, {}, log);
     try {
       // TMP is not a git repo — watch must warn and skip the startup pull
       assert.ok(logs.some((m) => m.includes("no git safety net")), logs.join("\n"));
-      // clean structural push: a position move lands on the real instance
-      setPosition([222, 2]);
-      await sleep(2500);
-      let remote = await api("GET", `/api/v1/workflows/${wfId}`);
-      assert.deepEqual(remote.nodes.find((n: any) => n.id === "c1").position, [222, 2],
-        "structural save must reach n8n:\n" + logs.join("\n"));
-      // phantom re-push check: baseline is now the PUT *response* hash — if
-      // real n8n normalized any PUT-accepted field, this no-op save would
-      // GET+push again instead of staying silent (anti-loop branch)
-      const updatedAt = remote.updatedAt;
+      // a code save reaches the DRAFT on the real instance…
+      writeFileSync(srcFile, original.replace("mode: 'forced'", "mode: 'watched'"));
+      let pushed = false;
+      for (let i = 0; i < 20 && !pushed; i++) {
+        await sleep(500);
+        pushed = logs.some((m) => m.includes("pushed node"));
+      }
+      assert.ok(pushed, "watch pushed the code save:\n" + logs.join("\n"));
+      const remote = await api("GET", `/api/v1/workflows/${wfId}`);
+      // the node is TS-managed — the draft carries the COMPILED body (esbuild
+      // normalizes quotes), so match the value, not the source spelling
+      assert.match(remote.nodes.find((n: any) => n.id === "c1").parameters.jsCode, /watched/, "draft carries the save");
+      assert.equal(remote.activeVersionId, liveBefore, "…and the LIVE version is untouched (draft-only)");
+      // a workflow.json save warns once and pushes nothing
+      const wfJson = path.join(wfDir, "workflow.json");
       const logCount = logs.length;
-      writeFileSync(wfJson, read(wfJson)); // same bytes, new fs event
-      await sleep(2500);
-      remote = await api("GET", `/api/v1/workflows/${wfId}`);
-      assert.equal(remote.updatedAt, updatedAt, "no phantom re-push after a no-op save");
-      assert.equal(logs.length, logCount, "anti-loop skip must be silent:\n" + logs.slice(logCount).join("\n"));
-      // second client changes the structure remotely, local edit differs -> conflict
-      await api("PUT", `/api/v1/workflows/${wfId}`, {
-        name: remote.name,
-        nodes: remote.nodes.map((n: any) => (n.id === "c1" ? { ...n, position: [444, 4] } : n)),
-        connections: remote.connections,
-        settings: remote.settings ?? {},
-      });
-      setPosition([333, 3]);
-      await sleep(2500);
-      assert.ok(logs.some((m) => m.includes("structural conflict")), "conflict detected:\n" + logs.join("\n"));
-      assert.ok(logs.some((m) => m.includes("non-interactive session")), "non-TTY skips the prompt:\n" + logs.join("\n"));
-      remote = await api("GET", `/api/v1/workflows/${wfId}`);
-      assert.deepEqual(remote.nodes.find((n: any) => n.id === "c1").position, [444, 4],
-        "skipped conflict must leave the remote untouched");
+      writeFileSync(wfJson, read(wfJson));
+      await sleep(1500);
+      assert.ok(logs.slice(logCount).some((m) => m.includes("read-only structure snapshot")), "snapshot warning:\n" + logs.join("\n"));
     } finally {
-      process.stdin.isTTY = stdinWasTty;
       await handle.close();
     }
-    // resolve like the prompt's [r] would, out-of-band: pull re-baselines
-    let r = await cli("pull", wfId);
+    // restore + take live so later webhook steps see the expected code
+    writeFileSync(srcFile, original);
+    let r = await cli("push", wfId, "--publish");
     assert.equal(r.code, 0, r.out);
     r = await cli("status", wfId);
-    assert.equal(r.code, 0, "in sync after conflict resolution: " + r.out);
+    assert.equal(r.code, 0, "in sync after watch session: " + r.out);
   });
 
-  await step("error surfaces: bad key -> clean 401, unknown id -> clean 404", async () => {
-    const badEnv = { ...env, N8N_API_KEY: "definitely-wrong" };
+  await step("error surfaces: bad MCP token -> clean 401 guidance, unknown id -> clean not-found", async () => {
+    const badEnv = { ...env, N8N_MCP_TOKEN: "definitely-wrong" };
     try {
       await execFile(process.execPath, [CLI, "status", wfId], { cwd: TMP, env: badEnv, encoding: "utf8" });
-      assert.fail("must exit non-zero with a bad key");
+      assert.fail("must exit non-zero with a bad MCP token");
     } catch (err) {
       const e = err as { stdout?: string; stderr?: string };
       const out = (e.stdout ?? "") + (e.stderr ?? "");
-      assert.match(out, /401/, "401 surfaced: " + out);
+      assert.match(out, /MCP token was rejected \(401\)/, "401 guidance surfaced: " + out);
       assert.ok(!out.includes("    at "), "no stack trace without DEBUG: " + out);
     }
     const r = await cli("status", "aaaaaaaaaaaaaaaa");
     assert.equal(r.code, 1);
-    assert.match(r.out, /404/, r.out);
+    assert.match(r.out, /not found|permission/i, r.out);
   });
 
   await step("executions API: shape matches what Plan 3 C designs against", async () => {
@@ -535,14 +595,19 @@ try {
     assert.equal(remote.active, false, "born unpublished");
     assert.equal(remote.activeVersionId, null, "unpublished → no active version");
 
-    // give it a trigger so it can go live, then push (stays draft while unpublished)
-    const wf = JSON.parse(read(lifeDir, "workflow.json"));
-    wf.nodes = [{ id: "lh1", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { httpMethod: "POST", path: "smoke-life-hook" } }];
-    wf.connections = {};
-    writeFileSync(path.join(lifeDir, "workflow.json"), JSON.stringify(wf, null, 2));
+    // give it a trigger so it can go live — structure is n8n's job now, the
+    // public API PUT plays the second client; pull mirrors it
+    await api("PUT", `/api/v1/workflows/${lifeId}`, {
+      name: "Smoke Lifecycle",
+      nodes: [{ id: "lh1", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { httpMethod: "POST", path: "smoke-life-hook" } }],
+      connections: {},
+      settings: {},
+    });
+    r = await cli("pull", lifeId);
+    assert.equal(r.code, 0, r.out);
     r = await cli("push", lifeId);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /unpublished: draft only/, "push to an unpublished workflow stays draft: " + r.out);
+    assert.match(r.out, /code already in sync|unpublished draft/, "push to an unpublished workflow stays draft: " + r.out);
 
     // publish → live; activeVersionId now matches the draft
     r = await cli("publish", lifeId);
@@ -598,25 +663,33 @@ try {
     });
     authId = created.id;
     authDir = path.join(ROOT, "smoke-authoring");
+    await enableMcpAccess(authId); // API-born → gated until opted in
     let r = await cli("pull", authId);
     assert.equal(r.code, 0, r.out);
 
-    // add scaffolds a disconnected Code node with the default runnable body
+    // add scaffolds a disconnected Code node with the default runnable body —
+    // born in n8n over MCP (addNode), landed locally by its pull
     r = await cli("node", "create", authId, "Enrich");
     assert.equal(r.code, 0, r.out);
     assert.ok(existsSync(path.join(authDir, "code", "enrich.js")), "add wrote the source file");
+    const born = await api("GET", `/api/v1/workflows/${authId}`);
+    assert.ok(born.nodes.some((n: any) => n.name === "Enrich"), "the scaffold exists in n8n already");
 
-    // wire it into the chain: Webhook -> Enrich -> Respond (add never wires)
-    const wf = JSON.parse(read(authDir, "workflow.json"));
-    wf.connections = {
-      Webhook: { main: [[{ node: "Enrich", type: "main", index: 0 }]] },
-      Enrich: { main: [[{ node: "Respond", type: "main", index: 0 }]] },
-    };
-    writeFileSync(path.join(authDir, "workflow.json"), JSON.stringify(wf, null, 2));
+    // wire it into the chain: Webhook -> Enrich -> Respond — wiring is
+    // structure, so the second client (API PUT) does it; pull mirrors
+    await api("PUT", `/api/v1/workflows/${authId}`, {
+      name: born.name,
+      nodes: born.nodes,
+      connections: {
+        Webhook: { main: [[{ node: "Enrich", type: "main", index: 0 }]] },
+        Enrich: { main: [[{ node: "Respond", type: "main", index: 0 }]] },
+      },
+      settings: born.settings ?? {},
+    });
+    r = await cli("pull", authId);
+    assert.equal(r.code, 0, r.out);
     r = await cli("check", authId);
     assert.equal(r.code, 0, "wired scaffold must stay compliant: " + r.out);
-    r = await cli("push", authId);
-    assert.equal(r.code, 0, r.out);
     r = await cli("publish", authId); // make the webhook live
     assert.equal(r.code, 0, r.out);
 
@@ -636,6 +709,12 @@ try {
     cloneId = r.out.match(/duplicated "Smoke Authoring" -> "Smoke Authoring Copy" \(([^)]+)\)/)?.[1] ?? "";
     assert.ok(cloneId, "duplicate printed the new id: " + r.out);
     assert.notEqual(cloneId, authId, "distinct new id");
+    // the clone is API-born → MCP-gated: duplicate surfaces guidance, then the
+    // n8n-side opt-in admits the pull
+    assert.match(r.out, /not yet available in MCP/, "gate guidance surfaced: " + r.out);
+    await enableMcpAccess(cloneId);
+    r = await cli("pull", cloneId);
+    assert.equal(r.code, 0, r.out);
 
     const clone = await api("GET", `/api/v1/workflows/${cloneId}`);
     assert.equal(clone.active, false, "clone born unpublished even though the source is published");
@@ -694,14 +773,6 @@ try {
     const outDir = path.join(dir, "executions");
     return existsSync(outDir) ? readdirSync(outDir).filter((f) => /^\d+\.json$/.test(f)) : [];
   };
-  // The Code node's current source path, read from its live placeholder — the
-  // rename step moved it to code/ümläut-nödé.ts, so nothing here may hardcode it.
-  const computeSrc = (): string => {
-    const node = JSON.parse(read(wfDir, "workflow.json")).nodes.find((n: any) => n.id === "c1");
-    const rel = String(node?.parameters?.jsCode ?? "").match(/^\/\/@file:(.+)$/)?.[1];
-    assert.ok(rel, `no //@file: placeholder on the Code node: ${node?.parameters?.jsCode}`);
-    return path.join(wfDir, rel);
-  };
   // Tolerant POST: returns the status without demanding a usable response —
   // used to drive a *failing* run, where the Respond node is never reached.
   const fireHook = async (payload: unknown): Promise<number> => {
@@ -756,7 +827,7 @@ try {
       "return { json: { doubled: double(Number(body.n ?? 0)), mode: 'forced' } };",
       "",
     ].join("\n"));
-    r = await cli("push", wfId); // active workflow → goes live
+    r = await cli("push", wfId, "--publish"); // draft-first: publish takes it live
     assert.equal(r.code, 0, r.out);
     // one success (the polling helper also confirms webhook re-registration)…
     const ok = await webhook({ n: 9 });

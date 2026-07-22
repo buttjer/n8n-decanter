@@ -17,9 +17,9 @@ import {
 } from "../../lib/picker.mts";
 
 const entries: PickerEntry[] = [
-  { id: "aaa111", name: "Billing Sync", pulled: true },
-  { id: "bbb222", name: "Mail Digest", pulled: true },
-  { id: "ccc333", name: "Backup", pulled: false },
+  { id: "aaa111", name: "Billing Sync", pulled: true, available: true },
+  { id: "bbb222", name: "Mail Digest", pulled: true, available: true },
+  { id: "ccc333", name: "Backup", pulled: false, available: true },
 ];
 
 const state = (over: Partial<PickerState> = {}): PickerState => ({ ...initialState(entries, false), ...over });
@@ -40,13 +40,22 @@ describe("filterEntries", () => {
 });
 
 describe("mergeRemote", () => {
-  it("appends only unknown ids, marked unpulled", () => {
+  it("appends only unknown ids, marked unpulled (available unless flagged)", () => {
     const merged = mergeRemote(entries, [
       { id: "aaa111", name: "Billing Sync" },
       { id: "ddd444", name: "New Remote" },
     ]);
     assert.equal(merged.length, 4);
-    assert.deepEqual(merged[3], { id: "ddd444", name: "New Remote", pulled: false });
+    assert.deepEqual(merged[3], { id: "ddd444", name: "New Remote", pulled: false, available: true });
+  });
+
+  it("sorts MCP-unavailable remotes last (Plan 32 third state)", () => {
+    const merged = mergeRemote(entries, [
+      { id: "eee555", name: "Gated", available: false },
+      { id: "ddd444", name: "Open", available: true },
+    ]);
+    assert.deepEqual(merged.map((e) => e.id), ["aaa111", "bbb222", "ccc333", "ddd444", "eee555"]);
+    assert.equal(merged[4].available, false);
   });
 });
 
@@ -172,9 +181,9 @@ describe("renderLines (pure view, Plan 23)", () => {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping literal ANSI SGR escapes is the point.
   const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
   const mixed: PickerEntry[] = [
-    { id: "aaa111", name: "Billing Sync", pulled: true },
-    { id: "bbb222", name: "A", pulled: false },
-    { id: "ccc333", name: "Mail Digest Nightly", pulled: true },
+    { id: "aaa111", name: "Billing Sync", pulled: true, available: true },
+    { id: "bbb222", name: "A", pulled: false, available: true },
+    { id: "ccc333", name: "Mail Digest Nightly", pulled: true, available: true },
   ];
   const render = (over: Partial<PickerState> = {}): string[] =>
     renderLines({ ...initialState(mixed, false), ...over }).map(plain);
@@ -208,6 +217,33 @@ describe("renderLines (pure view, Plan 23)", () => {
     assert.ok(lines[0].startsWith("Billing Sync"));
     assert.ok(lines[0].includes("aaa111"));
     assert.ok(lines.some((l) => l.includes("❯") && l.includes(PICKER_VERBS[0])));
+  });
+});
+
+describe("MCP-unavailable entries (Plan 32 third state)", () => {
+  const withGated: PickerEntry[] = [...entries, { id: "eee555", name: "Gated Flow", pulled: false, available: false }];
+
+  it("enter on an unavailable workflow resolves to the enable-mcp guidance verb", () => {
+    const s = { ...initialState(withGated, false), cursor: 3 };
+    const step = reduceKey(s, { name: "return" });
+    assert.deepEqual(step, { done: true, result: { verb: "enable-mcp", id: "eee555", name: "Gated Flow" } });
+  });
+
+  it("renders the ⊘ glyph, extends the legend, and swaps the enter hint", () => {
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping literal ANSI SGR escapes is the point.
+    const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
+    const lines = renderLines({ ...initialState(withGated, false), cursor: 3 }).map(plain);
+    const gated = lines.find((l) => l.includes("Gated Flow"))!;
+    assert.match(gated, /⊘\s+Gated Flow/);
+    assert.ok(lines.some((l) => l.includes("⊘ not in MCP")), "legend gains the third state: " + lines.join("|"));
+    assert.ok(lines.some((l) => l.includes("enter how to enable")), "enter hint: " + lines.join("|"));
+  });
+
+  it("keeps the two-state legend when nothing is unavailable", () => {
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping literal ANSI SGR escapes is the point.
+    const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
+    const lines = renderLines(initialState(entries, false)).map(plain);
+    assert.ok(!lines.some((l) => l.includes("not in MCP")), lines.join("|"));
   });
 });
 

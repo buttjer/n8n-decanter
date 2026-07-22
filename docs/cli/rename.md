@@ -1,6 +1,6 @@
 ---
 title: rename
-description: Rename a workflow (offline); the folder is a stable local slug and stays put.
+description: Rename a workflow in n8n; the folder is a stable local slug and stays put.
 order: 12
 ---
 
@@ -8,9 +8,9 @@ order: 12
 n8n-decanter rename <workflow> "<new name>"
 ```
 
-Changes the workflow's display name in `workflow.json` and caches it in
-`.decanter.json` (`name`). It works **offline**; the next
-[push](/docs/cli/push/) propagates the rename to n8n.
+Renames the workflow **in n8n** (over the MCP server), then updates the local
+`workflow.json` snapshot and the cached name in `.decanter.json` — no push
+needed, the rename is immediate.
 
 The **folder is left untouched** — folder names are a stable local slug (see
 [sync layout](/docs/concepts/sync-layout/)), not a mirror of the workflow name,

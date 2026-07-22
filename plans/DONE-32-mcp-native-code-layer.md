@@ -1,7 +1,15 @@
 # Plan 32 — MCP-native strategy: decanter as the Code-node code layer
 
 **Priority:** P2 (strategy shift)
-**Status:** Not started — spike complete (2026-07-22); awaiting go/no-go sign-off
+**Status:** **EXECUTED 2026-07-22** (feat/plan-32-mcp-native-code-layer; GO given by the
+maintainer via "Execute Plan 32"). Tasks 1–9 all landed (Task 6's read-only snapshot folded
+into the core pull). Per-verb Task 4 outcomes: publish/unpublish/create → MCP; **duplicate
+and delete kept on the public API** (lossless clone / hard-delete contracts — MCP offers
+only SDK-code creation and archive); executions + data-tables stay API per the spike.
+Verified end-to-end by the reworked e2e (mock REST+MCP) and the smoke suite on the real
+2.30.7 container (28 steps, incl. the availability gate, draft-first pushes, and the MCP
+rename). New live findings recorded in PLAN.md: the MCP endpoint rate-limits (429 → client
+backoff) and OAuth refresh tokens are single-use (rotate-persist).
 **Theme:** Stop owning canonical workflow sync via the public REST API; narrow decanter's
 scope to the **Code-node source layer** (js/ts files, shared code, TS features, diagnostics,
 local run) and delegate workflow **structure + lifecycle** to n8n's own **MCP server + skills**,

@@ -27,8 +27,9 @@ discriminated unions). The local `.ts` is the only source of truth:
 - **Comments are stripped and line numbers shift** in the compiled output —
   n8n error line numbers won't match the source, and the node code shown in
   the n8n UI is undocumented output. Documentation belongs in the `.ts`.
-- [pull](/docs/cli/pull/) never touches `.ts` sources; UI edits arrive as
-  `code/<node>.remote.js` files to port manually.
+- [pull](/docs/cli/pull/) never touches `.ts` sources; instance-side edits
+  are warned about — inspect them with `status --diff` and port what you want
+  to keep into the `.ts` by hand (the next push overwrites the remote edit).
 
 To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
 its `//@file:` placeholder in `workflow.json` — the tool picks up the new

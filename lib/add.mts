@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { type McpClient, updateWorkflow } from "./mcp.mts";
+import { pullWorkflow } from "./pull.mts";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
-import type { Log, Workflow, WorkflowNode } from "./types.mts";
-import { CODE_DIR, CODE_NODE_TYPE, FILE_PLACEHOLDER_PREFIX, kebabCase, stableWorkflowJson } from "./util.mts";
-import { validateWorkflowDir } from "./validate.mts";
+import type { DecanterConfig, Log, Workflow, WorkflowNode } from "./types.mts";
+import { CODE_NODE_TYPE, FILE_PLACEHOLDER_PREFIX, stableWorkflowJson } from "./util.mts";
 
 /**
  * Starter source for a freshly scaffolded Code node: valid, self-contained
@@ -31,20 +32,19 @@ function nextPosition(nodes: WorkflowNode[]): [number, number] {
 }
 
 /**
- * Scaffold a `n8n-nodes-base.code` node into a pulled workflow in one atomic,
- * guard-checked step (offline; `push` propagates). Mints a v4 uuid, writes the
- * kebab-case source file under `code/` (sharing pull/rename's `-<id8>` collision
- * suffix), appends the node object (default parameters, `mode:
- * runOnceForAllItems`, a `//@file:` placeholder) to `workflow.json`, and
- * registers it in `.decanter.json`. **No connections are wired** — the node
- * lands disconnected but compliant; wiring stays in the editor. Re-validates
- * afterwards and fails loudly on any violation, exactly like `rename`.
+ * Scaffold a `n8n-nodes-base.code` node — born in n8n over MCP (`addNode`
+ * with the starter source, Plan 32: creating the vessel for code is a
+ * Code-node-layer act, forwarded like every structure touch), then pulled so
+ * the kebab-case file under `code/` and the `.decanter.json` entry land.
+ * **No connections are wired** — the node lands disconnected; wiring stays
+ * in the editor. `--ts` converts the pulled `.js` to `.ts` in place (the
+ * starter body is valid TS); the `@ts-n8n` marker appears on first push.
  */
-export function addCodeNode(root: string, id: string, nodeName: string, { ts = false }: { ts?: boolean } = {}, log: Log): void {
+export async function addCodeNode(mcp: McpClient, config: DecanterConfig, id: string, nodeName: string, { ts = false }: { ts?: boolean } = {}, log: Log): Promise<void> {
   nodeName = nodeName.trim();
   if (!nodeName) throw new Error("node name must not be empty");
-  const dir = findWorkflowDir(root, id, log);
-  if (!dir) throw new Error(`workflow ${id} not found under ${root} — pull it first`);
+  const dir = findWorkflowDir(config.root, id, log);
+  if (!dir) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) throw new Error(`missing workflow.json in ${dir} — pull first`);
   let wf: Workflow;
@@ -56,39 +56,42 @@ export function addCodeNode(root: string, id: string, nodeName: string, { ts = f
   if (wf.nodes.some((n) => n.name === nodeName)) throw new Error(`a node named "${nodeName}" already exists in "${wf.name}"`);
 
   const nodeId = randomUUID();
-  const ext = ts ? ".ts" : ".js";
-  mkdirSync(path.join(dir, CODE_DIR), { recursive: true });
-  let base = kebabCase(nodeName);
-  if (existsSync(path.join(dir, CODE_DIR, `${base}${ext}`))) {
-    base = `${base}-${nodeId.slice(0, 8)}`;
-    if (existsSync(path.join(dir, CODE_DIR, `${base}${ext}`))) {
-      throw new Error(`cannot add "${nodeName}": both kebab-case targets exist (${CODE_DIR}/${base}${ext})`);
+  await updateWorkflow(mcp, id, [{
+    type: "addNode",
+    node: {
+      id: nodeId,
+      name: nodeName,
+      type: CODE_NODE_TYPE,
+      typeVersion: 2,
+      position: nextPosition(wf.nodes),
+      parameters: { mode: "runOnceForAllItems", jsCode: DEFAULT_SOURCE },
+    },
+  }]);
+
+  const pulled = await pullWorkflow(mcp, config.root, id, { commitOnPull: config.commitOnPull }, log);
+  const state = readState(pulled.dir);
+  // the server may re-mint the node id — resolve the new node by NAME once
+  const entry = state === null ? undefined : Object.entries(state.nodes).find(([, ns]) => ns.name === nodeName);
+  if (!entry || state === null) {
+    throw new Error(`node "${nodeName}" was created in n8n but did not land locally — pull and inspect`);
+  }
+  const [landedId, ns] = entry;
+  let file = ns.file;
+
+  if (ts && file.endsWith(".js")) {
+    // convert in place: the starter body is valid TS; push compiles + markers it
+    const tsFile = file.replace(/\.js$/, ".ts");
+    renameSync(path.join(pulled.dir, file), path.join(pulled.dir, tsFile));
+    ns.file = tsFile;
+    writeState(pulled.dir, state);
+    const snapshot = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
+    const node = snapshot.nodes.find((n) => n.id === landedId);
+    if (node) {
+      node.parameters.jsCode = FILE_PLACEHOLDER_PREFIX + tsFile;
+      writeFileSync(wfFile, stableWorkflowJson(snapshot));
     }
-  }
-  const file = `${CODE_DIR}/${base}${ext}`;
-  writeFileSync(path.join(dir, file), DEFAULT_SOURCE);
-
-  const node: WorkflowNode = {
-    id: nodeId,
-    name: nodeName,
-    type: CODE_NODE_TYPE,
-    typeVersion: 2,
-    position: nextPosition(wf.nodes),
-    parameters: { mode: "runOnceForAllItems", jsCode: FILE_PLACEHOLDER_PREFIX + file },
-  };
-  wf.nodes.push(node);
-  writeFileSync(wfFile, stableWorkflowJson(wf));
-
-  const state = readState(dir);
-  if (state) {
-    state.nodes[nodeId] = { file };
-    writeState(dir, state);
+    file = tsFile;
   }
 
-  log.info(`added Code node "${nodeName}" (${nodeId}) -> ${file} — disconnected; wire it in the editor, then push to propagate`);
-
-  const { errors } = validateWorkflowDir(dir);
-  if (errors.length > 0) {
-    throw new Error(`add left the workflow non-compliant — files were written, inspect (git diff) and fix:\n${errors.map((e) => `  ${e}`).join("\n")}`);
-  }
+  log.info(`added Code node "${nodeName}" (${landedId}) -> ${file} — disconnected; wire it in the n8n editor`);
 }

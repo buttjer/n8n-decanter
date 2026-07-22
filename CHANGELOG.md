@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: the workflow code path now syncs over n8n's built-in MCP server —
+  decanter is the Code-node code layer, n8n owns structure (Plan 32).**
+  `pull`/`push`/`watch`/`status`/`publish`/`unpublish` ride
+  `POST /mcp-server/http` instead of the public REST API. What that means in
+  practice:
+  - **Pushes are draft-first.** `push` writes only each Code node's `jsCode`
+    (an atomic `update_workflow` batch with merge semantics) to the workflow's
+    **draft**; the live version never changes until an explicit `publish` — or
+    the new **`push --publish`**, which combines the two. The API-era
+    "auto-publish on push to an active workflow" behavior is gone.
+  - **`workflow.json` is now a read-only structure snapshot.** Pull refreshes
+    it for review diffs and the offline tooling; nothing pushes it. The
+    whole-workflow structural hashing, the structural drift guard, watch's
+    structural-conflict prompt (`workflow.remote.json`), and the `.remote.js`
+    conflict artifacts are all gone — the only drift guard left is the
+    per-node code check (`--force` still overrides it), and remote structure
+    changes never block a push (`status` prints a snapshot-stale hint instead).
+  - **Structure verbs forward to n8n.** `rename`, `node create`, and
+    `node rename` (previously offline + "push to propagate") now issue the
+    matching MCP operation (`setWorkflowMetadata`, `addNode`, `renameNode`)
+    and pull the result — n8n rewrites connections and `$('…')` references
+    server-side, node ids stay stable, and local files follow. `create` builds
+    the blank workflow via MCP (born pullable).
+  - **Requires n8n ≥ ~2.20 with MCP access enabled**, plus a per-workflow
+    "Available in MCP" opt-in. The picker shows MCP-unavailable workflows as a
+    third state (red `⊘`, sorted last) with enable guidance instead of a
+    failing pull; `list --remote` marks them (`--json` adds `mcpAvailable`)
+    and pull/push errors carry the same guidance.
+  - **The public API key becomes optional.** Only the surfaces MCP cannot
+    serve still use it: `executions` and `data-tables` fetches, `duplicate`'s
+    lossless clone (API-born copies need the MCP opt-in before their first
+    pull — the CLI says so), and `delete`'s hard delete. The client retries
+    n8n's MCP rate limiting (429) with backoff automatically.
+- **Breaking: `init` is OAuth-first.** `init` now connects to the instance via
+  the standard MCP OAuth flow — browser consent, then a refresh token stored
+  in a new gitignored **`.decanter-auth.json`** (rotated on every refresh) —
+  with a paste-a-token fallback (`N8N_MCP_TOKEN`, minted in n8n → Settings →
+  MCP) for piped/headless runs. The public API key prompt is now optional.
+
 ### Added
 
 - **New `mock` namespace — fill `simulate` gaps with committed mock scenarios.**

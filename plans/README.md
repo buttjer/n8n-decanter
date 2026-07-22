@@ -184,7 +184,7 @@ items not yet claimed by one. Recommended order:
     doc-only "narrow `run`" backlog item with enforcement. Mechanism decided:
     `worker_threads` scrubbed context (option A), no A/B config toggle. Breaking
     (default execution semantics change). Proposed 2026-07-22.
-32. [MCP-native code layer](OPEN-32-mcp-native-code-layer.md) — strategy shift:
+32. [MCP-native code layer](DONE-32-mcp-native-code-layer.md) — strategy shift:
     stop owning canonical workflow sync via the public API; narrow decanter to the
     **Code-node source layer** (js/ts, shared code, TS, local run) and delegate
     workflow structure + lifecycle to n8n's built-in **MCP server + skills**. The

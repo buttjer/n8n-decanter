@@ -12,9 +12,9 @@ import { createStepRunner } from "./harness.mts";
 const { step, passedCount } = createStepRunner();
 
 const ENTRIES: PickerEntry[] = [
-  { id: "aaa111", name: "Billing Sync", pulled: true },
-  { id: "bbb222", name: "Mail Digest", pulled: true },
-  { id: "ccc333", name: "Backup", pulled: false },
+  { id: "aaa111", name: "Billing Sync", pulled: true, available: true },
+  { id: "bbb222", name: "Mail Digest", pulled: true, available: true },
+  { id: "ccc333", name: "Backup", pulled: false, available: true },
 ];
 
 function makeIo() {
