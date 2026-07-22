@@ -525,9 +525,14 @@ verb uses a dedicated client with a ≥320 s timeout):
   (`--mock`); a node with no captured output is a hard **gap** error before
   anything runs (an unpinned network node would hit the real world). Pure
   nodes execute for real on the instance; `--trigger` → `triggerNodeName`.
-  `prepare_test_pin_data` was evaluated and **not** used: client-built pins
-  from local captures/mocks are reproducible and reviewable, server-generated
-  synthetic data is neither.
+  `prepare_test_pin_data` was evaluated and **not** used for pin *values* —
+  correcting an earlier misread (2026-07-22, from the n8n source): the tool
+  returns per-node output **JSON Schemas + coverage counts, no data**
+  (`readOnlyHint: true`; the caller authors the values). Client-built pins
+  from local captures/mocks remain the source of truth — real captured values
+  double as the diff baseline, which schemas can't provide.
+  [Plan 37](plans/OPEN-37-scenario-pin-sets.md) adopts the tool as a **schema
+  oracle** for scaffolding gap fills (`scenario create --scaffold`).
 - **Always the draft tip.** Pre-check read captures `versionId` +
   per-node byte-exact jsCode. Local ≠ draft on a TTY → the what-to-test
   prompt (local = drift-guarded draft-only push first; draft wording:
