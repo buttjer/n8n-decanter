@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`test` — instance-side pinned test runs (the recommended runtime
+  check).** `n8n-decanter test <workflow>` runs the workflow on your
+  instance via MCP `test_workflow`: the trigger and network/credentialed
+  nodes are pinned from a capture (`--execution`, default newest) or a
+  committed mock (`--mock`), logic nodes execute for real on the
+  instance-exact engine, and each node's output is diffed against the
+  capture (exit 1 on divergence; `--trigger` picks the start node,
+  `--json` emits the report). The run targets the **draft** — the live
+  version is never affected. On a terminal, when local code differs from
+  the draft, `test` offers to push it first (drift-guarded, draft-only)
+  and afterwards to keep or restore the pre-test draft (n8n version
+  history when available, byte-exact write-back below n8n 2.29);
+  non-interactive runs never mutate and say when they tested the draft
+  instead of local code. `simulate` stays the offline sibling —
+  pre-push/CI/isolation/version-rehearsal — and its docs now recommend
+  `test` first.
 - **`mcp serve` — an MCP guard-proxy for coding agents.** A localhost
   endpoint speaking n8n's MCP protocol: decanter holds the credentials (the
   agent gets a per-session secret instead), every read and structure

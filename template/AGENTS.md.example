@@ -364,12 +364,29 @@ Rules:
 - These fetches use the n8n **public API key** (`N8N_API_KEY`) — the one
   surface MCP doesn't cover. Without a key configured the verb says so.
 
+## Runtime checks: `test` (instance) and `simulate` (offline)
+
+Two pinned-run checks share the capture/mock sources; **recommend `test`
+first** — it runs on the instance's exact engine (community nodes included)
+with no Docker. Reach for `simulate` when the run must be offline: pre-push
+verification of uncommitted local code, CI without an instance,
+`--network-none` isolation, engine-version rehearsal. Both diff node output
+against the capture and exit 1 on divergence.
+
+- `n8n-decanter test <workflow>` — pinned run **on the instance** (MCP;
+  draft only, the live version is never touched). Non-interactive runs never
+  mutate: they test the draft as-is and say so when your local edits aren't
+  pushed yet — `push` first to test local code.
+- `n8n-decanter simulate <workflow>` — the same idea through a **local**
+  n8n engine (Docker), fully offline.
+
 ## Filling simulation gaps (`mocks/` — committed scenarios)
 
 `n8n-decanter simulate <workflow>` replays a workflow through a real n8n engine,
-pinning network nodes to a captured execution. A **gap** is a network node the
+pinning network nodes to a captured execution (`test` pins the same way,
+instance-side, and uses the same mocks). A **gap** is a network node the
 replay reaches that has **no captured data** (added or reparametrized since the
-capture). `simulate` hard-errors on a gap rather than run half-real — and this
+capture). Both verbs hard-error on a gap rather than run half-real — and this
 is a task you, the agent, are well-suited to complete. **The CLI never calls an
 LLM or needs an API key; you author the mock data locally.**
 

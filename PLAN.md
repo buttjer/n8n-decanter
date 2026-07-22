@@ -509,6 +509,42 @@ states in prose. `lib/mcpserve.mts`:
   in the sync dir reaches an n8n `/mcp-server/http` endpoint that isn't
   loopback; `AGENTS.md.example` states the boundary proxy-first.
 
+## Instance-side test runs (`test`, plans/33)
+
+`lib/testrun.mts` — the recommended runtime check, wrapping MCP
+`test_workflow` (synchronous; the server caps the run at 5 minutes, so the
+verb uses a dedicated client with a ≥320 s timeout):
+
+- **Pin split = `simulate`'s classification** (shared code): every enabled
+  non-pure, non-loop-driver node — trigger/network/credentialed — is pinned
+  from the capture (`--execution`, default newest) or committed mock
+  (`--mock`); a node with no captured output is a hard **gap** error before
+  anything runs (an unpinned network node would hit the real world). Pure
+  nodes execute for real on the instance; `--trigger` → `triggerNodeName`.
+  `prepare_test_pin_data` was evaluated and **not** used: client-built pins
+  from local captures/mocks are reproducible and reviewable, server-generated
+  synthetic data is neither.
+- **Always the draft tip.** Pre-check read captures `versionId` +
+  per-node byte-exact jsCode. Local ≠ draft on a TTY → the what-to-test
+  prompt (local = drift-guarded draft-only push first; draft wording:
+  live-workflow vs current-draft); unpublished skips the prompt and pushes.
+  After a pushed test: keep, or restore via `restore_workflow_version`
+  (n8n ≥ 2.29) with a write-back fallback gated on the draft still matching
+  our push; the pre-push snapshot persists crash-safe in the gitignored
+  `executions/.test-snapshot.json`; state re-baselines after restore so
+  local edits read "pending push", not conflict. **Non-TTY never mutates**
+  and prints "tested the draft, not your local code" when local differs —
+  no choice flags, choices are verb composition.
+- **Diff** (client-side): the test execution is read back over MCP
+  `get_execution(includeData)`; each pure node with captured expectations
+  diffs first-run/first-output items via `simulate`'s `diffItems`; exit 1
+  on divergence; `--json` emits the report. The verb takes exactly ONE
+  workflow ref (the plan sketched `[workflow…]`; selectors are per-workflow,
+  so multi-ref was dropped for `simulate` parity).
+- `simulate` stays the offline sibling (decided 2026-07-22): pre-push
+  verification of uncommitted code, CI without an instance, isolation,
+  version rehearsal — docs recommend `test` first everywhere.
+
 ## Init flow (`n8n-decanter init [dir]`)
 
 Bootstraps a sync directory. Plan 32 made it OAuth-first:

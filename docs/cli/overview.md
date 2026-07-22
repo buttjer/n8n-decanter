@@ -34,6 +34,7 @@ n8n-decanter executions [workflow…] [--status=…] [--limit=N]
 n8n-decanter executions [workflow…] clean
 n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=col:asc|desc] [--limit=N] [--all]
 n8n-decanter data-tables [table…] clean
+n8n-decanter test <workflow> [--execution <execution-id> | --mock <slug>] [--trigger <node>] [--json]
 n8n-decanter simulate <workflow> [--execution <execution-id> | --mock <slug>] [--pin <execution-id>] [--network-none] [--json]
 n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]   # committed, gap-fillable mock scenario (offline)
 n8n-decanter mock check <workflow> ["<slug>"]                       # structurally validate a mock (offline)
@@ -99,6 +100,7 @@ errors with *unknown verb*. Flags may still appear in any position.
 | --- | --- |
 | `check`, `node run`, `list`, `simulate`, `mock`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance) |
 | `status`, `list --remote`, `executions`, `data-tables` | Read the remote, never write |
+| `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
 | `pull`, `push`, `watch`, `create`, `publish`, `unpublish`, `rename`, `node create`, `node rename` | Read/write the live instance (pushes and structure acts land on the **draft**) |
 | `archive` | Read/write the live instance (not a draft act — it retires the whole workflow, unpublishing it first when live) |
 | `mcp serve` | Long-running localhost proxy — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes |

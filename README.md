@@ -38,14 +38,22 @@ so nothing goes live until you `publish`. Workflow *structure* stays n8n's job
   a gitignored temp dir, so agents see actual payload shapes (and build
   accurate `node run` fixtures) instead of guessing; `executions clean` removes
   it when done.
+- **Instance-side pinned test runs** — `test` runs the workflow on **your
+  n8n instance** (draft only, never the live version): trigger/network/
+  credentialed nodes pinned from a capture, logic nodes executed for real on
+  the instance-exact engine (community nodes included, no Docker), each node
+  diffed against the capture — exits 1 on divergence. The recommended
+  runtime check.
 - **Engine-true simulation** — `simulate` replays a whole workflow through a
-  real n8n engine using a captured execution as the mock: pure nodes run for
-  real, network nodes pinned, credentials stripped. It diffs each node against
-  the capture (exits 1 on divergence — a CI-gateable regression check) and, in
-  a terminal, prints a URL to open the run in the n8n webapp. Nodes with no
-  captured data (gaps) are filled by hand — or by your IDE agent — in committed,
-  named [mock scenarios](docs/cli/mock.md) (`mock create` / `mock check`), no
-  API key or model call; the CLI stays fully offline.
+  real n8n engine **offline** (Docker) using a captured execution as the mock:
+  pure nodes run for real, network nodes pinned, credentials stripped. It
+  diffs each node against the capture (exits 1 on divergence) and, in a
+  terminal, prints a URL to open the run in the n8n webapp. The offline
+  sibling of `test`: pre-push verification of uncommitted code, CI without an
+  instance, `--network-none` isolation, engine-version rehearsal. Nodes with
+  no captured data (gaps) are filled by hand — or by your IDE agent — in
+  committed, named [mock scenarios](docs/cli/mock.md) (`mock create` /
+  `mock check`), no API key or model call.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
 - **Agent guard-proxy** — `mcp serve` gives coding agents full n8n MCP access
@@ -175,6 +183,11 @@ n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=c
                                     #   into a gitignored top-level data-tables/;
                                     #   filter/search/sort pull a slice server-side
 n8n-decanter data-tables [table…] clean     # delete fetched data-table data (offline)
+n8n-decanter test <workflow> [--execution <execution-id> | --mock <slug>] [--trigger <node>] [--json]
+                                    # pinned run ON THE INSTANCE (draft; the
+                                    #   recommended runtime check — instance-exact
+                                    #   engine, no Docker); diffs vs the capture,
+                                    #   exits 1 on divergence
 n8n-decanter simulate <workflow> [--execution <execution-id>] [--network-none] [--json]
                                     # replay the whole workflow through a real
                                     #   n8n engine (Docker): pure nodes run for

@@ -33,6 +33,11 @@ const db = new Map<string, any>();
 let updateCount = 0; // update_workflow calls served — watch steps assert deltas
 let slowUpdateMs = 0; // when > 0, update_workflow responses are delayed (queued-push test)
 let createCount = 0;
+// ---- test_workflow scripting (the `test` verb steps) ----
+let lastTestCall: { workflowId: string; pinData: Record<string, unknown[]>; triggerNodeName?: string } | undefined;
+let testRunData: Record<string, unknown> = {}; // runData get_execution serves back
+let testRunOutcome: { status: string; error?: string; executionId?: string | null } = { status: "success" };
+let testExecCount = 0;
 const mkid = () => Math.random().toString(16).slice(2, 14).padEnd(12, "0");
 
 /** Rewrite literal $('Old') / $("Old") refs in a string (the mock's stand-in
@@ -155,6 +160,27 @@ function callMcpTool(name: string, args: any): any | null {
       wf.active = false;
       wf.activeVersionId = null;
       return ok({ success: true, workflowId: wf.id });
+    }
+    case "test_workflow": {
+      const gated = gate(args.workflowId);
+      if (gated) return gated;
+      const wf = db.get(args.workflowId);
+      const names = new Set(wf.nodes.map((n: any) => n.name));
+      const unknown = Object.keys(args.pinData ?? {}).filter((k) => !names.has(k));
+      if (unknown.length > 0) return err(JSON.stringify({ error: `Pin data contains unknown node names: ${unknown.join(", ")}. Check for typos — node names must match exactly.` }));
+      lastTestCall = { workflowId: args.workflowId, pinData: args.pinData, triggerNodeName: args.triggerNodeName };
+      if (testRunOutcome.status !== "success") {
+        return ok({ executionId: testRunOutcome.executionId ?? null, status: testRunOutcome.status, error: testRunOutcome.error });
+      }
+      return ok({ executionId: `test-exec-${++testExecCount}`, status: "success" });
+    }
+    case "get_execution": {
+      const gated = gate(args.workflowId);
+      if (gated) return gated;
+      return ok({
+        execution: { id: args.executionId, workflowId: args.workflowId, mode: "manual", status: "success", startedAt: null, stoppedAt: null },
+        ...(args.includeData === true && { data: { resultData: { runData: testRunData } } }),
+      });
     }
     case "archive_workflow": {
       const gated = gate(args.workflowId);
@@ -2030,6 +2056,76 @@ await step("executions: warns when a captured run's version differs from the loc
     exec202.workflowVersionId = prev;
     rmSync(exDir, { recursive: true, force: true });
   }
+});
+
+await step("test: instance-side pinned run — pin split, diff, non-TTY read-only, failure + gap surfacing", async () => {
+  // dedicated workflow (clean node names) + a capture to pin from
+  db.set("wfT1", {
+    id: "wfT1", name: "Instance Test Flow", active: false, availableInMCP: true,
+    createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+    nodes: [
+      { id: "t1", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { path: "t" } },
+      { id: "t2", name: "Compute", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { jsCode: "return [{ json: { doubled: 2 } }];\n" } },
+    ],
+    connections: { Hook: { main: [[{ node: "Compute", type: "main", index: 0 }]] } },
+    settings: {}, staticData: null, pinData: {}, tags: [], versionId: "tv1", activeVersionId: null,
+  });
+  (EXECUTIONS as any[]).push({
+    id: 301, status: "success", mode: "webhook", workflowId: "wfT1", workflowVersionId: "tv1",
+    startedAt: "2026-07-19T11:00:00.000Z", stoppedAt: "2026-07-19T11:00:01.000Z",
+    data: { resultData: { runData: {
+      Hook: [{ data: { main: [[{ json: { n: 1 }, pairedItem: { item: 0 } }]] } }],
+      Compute: [{ data: { main: [[{ json: { doubled: 2 }, pairedItem: { item: 0 } }]] } }],
+    } } },
+  });
+  let r = await cli("pull", "wfT1");
+  assert.equal(r.code, 0, r.out);
+  r = await cli("executions", "wfT1");
+  assert.equal(r.code, 0, r.out);
+
+  // in-sync, non-TTY: pins the trigger, runs, diffs clean, never mutates
+  const updatesBefore = updateCount;
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /no --execution\/--mock given; using the latest capture 301/);
+  assert.match(r.out, /1 node\(s\) pinned from capture 301/);
+  assert.match(r.out, /Compute: matches capture/);
+  assert.match(r.out, /instance test matches the capture/);
+  assert.match(r.out, /live \(published\) version was never affected/);
+  assert.equal(updateCount, updatesBefore, "non-TTY test never mutates the draft");
+  assert.deepEqual(Object.keys(lastTestCall!.pinData), ["Hook"], "trigger pinned, pure nodes run for real");
+
+  // local edit, non-TTY: tests the DRAFT as-is and says so; still read-only
+  const computeFile = path.join(wfDir("Instance Test Flow"), "code", "compute.js");
+  const originalCompute = read(wfDir("Instance Test Flow"), "code", "compute.js");
+  writeFileSync(computeFile, "return [{ json: { doubled: 3 } }];\n");
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /local code differs from the draft — this tested the draft, NOT your local code; run `n8n-decanter push` first/);
+  assert.equal(updateCount, updatesBefore, "still no mutation with local edits pending");
+  writeFileSync(computeFile, originalCompute);
+
+  // divergence → exit 1 with the per-node diff
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 999 } }]] } }] };
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /Compute: diverged from capture/);
+  assert.match(r.out, /instance test diverged: Compute/);
+
+  // instance-side failure (the 5-min timeout wording) surfaces verbatim
+  testRunOutcome = { status: "error", error: "Workflow execution timed out after 300 seconds", executionId: null };
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /instance test run failed: Workflow execution timed out after 300 seconds/);
+  testRunOutcome = { status: "success" };
+
+  // gap: a network node with no captured output must abort BEFORE anything runs
+  db.get("wfT1").nodes.push({ id: "t3", name: "Fetch Prices", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [440, 0], parameters: { url: "http://x" } });
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /cannot pin "Fetch Prices"[\s\S]*mock create/);
+  db.get("wfT1").nodes.pop();
 });
 
 await step("archive: refuses without --force non-interactively; --force archives over MCP, local folder kept", async () => {

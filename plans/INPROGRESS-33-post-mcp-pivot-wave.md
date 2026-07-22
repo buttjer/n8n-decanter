@@ -224,7 +224,12 @@ Task 1 (MCP re-expression; no hard delete in decanter).
       remains the accepted contract.)*
 4. **Guard-proxy stack** — technical enforcement of the Code-node boundary
    (decided 2026-07-22; the landed contract is instructions-only). Three
-   layers, shipped together:
+   layers, shipped together: *(Done 2026-07-22 — hosted as a dedicated
+   `mcp serve` verb rather than inside `watch` (single-purpose long-running
+   process; watch users run both); per-session secret + gitignored
+   `.decanter-proxy.json` discovery file; 10-check `test/guardproxy.mts`
+   suite. Smoke coverage on the pinned container is still owed — see
+   Acceptance.)*
    - **(a) Local MCP guard-proxy** — decanter as sole token holder; agent MCP
      config points at a localhost proxy forwarding JSON-RPC to
      `POST /mcp-server/http`. Parse **requests only** (`tools/call` →
@@ -248,7 +253,14 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 5. **`test` verb** — instance-side pinned-data run (decided 2026-07-22):
    `n8n-decanter test [workflow…]` wrapping MCP `test_workflow` (synchronous,
    draft, 5-min timeout; trigger/credentialed/HTTP nodes pinned via `pinData`,
-   logic nodes run for real).
+   logic nodes run for real). *(Done 2026-07-22 — `lib/testrun.mts` +
+   e2e scenario. Deviations: exactly ONE workflow ref per run (simulate
+   parity; the selector flags are per-workflow anyway);
+   `prepare_test_pin_data` evaluated and NOT used — client-built pins from
+   local captures/mocks are reproducible/reviewable, server-generated
+   synthetic data is neither; `fixtures/` overrides not consulted (captures
+   and mocks only, per this task's own source list). Smoke coverage on the
+   real container still owed — see Acceptance.)*
    - **Interface mirrors `simulate`:** pinData from captures
      (`--execution <id>`, default newest) or committed mocks
      (`--mock <slug>`); `--trigger <node>` → `triggerNodeName`. Client-side
@@ -280,7 +292,10 @@ Task 1 (MCP re-expression; no hard delete in decanter).
      `simulate` = local/offline runtime (pre-push/CI/isolation/
      version-rehearsal). Requirements: MCP-backed (OAuth, `availableInMCP`,
      version floor). Docs trio + backlog distinctive-features entry.
-6. **`simulate`/Docker: KEEP — DECIDED (maintainer 2026-07-22). `test` becomes
+6. *(Done 2026-07-22 — the split is documented everywhere simulate appears:
+   taxonomy table in docs/cli/test.md, simulate docs + README recommend
+   `test` first, template AGENTS.md gained the runtime-checks section.)*
+   **`simulate`/Docker: KEEP — DECIDED (maintainer 2026-07-22). `test` becomes
    the primary/recommended way; `simulate` stays as a differentiator
    (potential USP).** The functional case that carried it (legacy ruled out as
    a reason): pre-push verification of uncommitted local state (`test` can

@@ -14,6 +14,7 @@ import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
+import { printTestReport, runTest } from "./lib/testrun.mts";
 import { renameNode, renameWorkflow } from "./lib/rename.mts";
 import { runNode } from "./lib/run.mts";
 import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, readState } from "./lib/state.mts";
@@ -73,8 +74,10 @@ ${b("Inspect & test")}
   ${b("executions")} [workflow…] clean            ${d("delete fetched execution data (offline)")}
   ${b("data-tables")} [table…] [--filter=… --search=… --sort=… --limit=N --all]   ${d("fetch data-table schema + rows (read-only)")}
   ${b("data-tables")} [table…] clean              ${d("delete fetched data-table data (offline)")}
+  ${b("test")} <workflow> [--execution <execution-id> | --mock <slug>] [--trigger <node>] [--json]
+  ${d("                                            pinned run on the INSTANCE (draft; recommended); exits 1 on divergence")}
   ${b("simulate")} <workflow> [--execution <execution-id> | --mock <slug>] [--network-none] [--json]
-  ${d("                                            replay through a real n8n engine (Docker); exits 1 on divergence")}
+  ${d("                                            replay through a LOCAL n8n engine (Docker, offline); exits 1 on divergence")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
 
 ${b("Mock")} ${d("(fill simulate gaps offline — no engine, no API)")}
@@ -100,7 +103,7 @@ powers executions and data-tables.`;
 
 // Verb-first grammar (Plan 27): the command is positional[0]. `add`/`run` and
 // the node-rename overload moved under the `node` namespace (node create/rename/run).
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "list", "executions", "data-tables", "simulate", "mock", "mcp", "publish", "unpublish", "create", "archive", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "list", "executions", "data-tables", "simulate", "test", "mock", "mcp", "publish", "unpublish", "create", "archive", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["create", "rename", "run"]);
 /** Sub-verbs of the `mock` namespace; dispatched as internal `mock:<sub>` commands. */
@@ -108,7 +111,7 @@ const MOCK_VERBS = new Set(["create", "check"]);
 /** Sub-verbs of the `mcp` namespace; dispatched as internal `mcp:<sub>` commands. */
 const MCP_VERBS = new Set(["serve"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "publish", "unpublish", "archive"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "test", "publish", "unpublish", "archive"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -145,7 +148,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version|mock|filter|search|sort|port)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version|mock|filter|search|sort|port|trigger)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -260,7 +263,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...MOCK_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `mock` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--help");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -710,6 +713,29 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (jsonFlag) console.log(JSON.stringify(report, null, 2));
       else printSimulationReport(report, log);
       if (!report.ok) process.exitCode = 1;
+      break;
+    }
+    case "test": {
+      if (refs.length !== 1) throw new Error("test needs exactly one workflow ref: n8n-decanter test <workflow> [--execution <id> | --mock <slug>] [--trigger <node>]");
+      const dir = findWorkflowDir(config.root, refs[0], log);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      const mockSlug = valueFlags.get("mock");
+      if (mockSlug !== undefined && valueFlags.get("execution") !== undefined) {
+        throw new Error("pass either --mock <slug> or --execution <id>, not both");
+      }
+      const source = mockSlug !== undefined ? "mock" as const : "capture" as const;
+      const ref = mockSlug ?? valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
+      if (ref === undefined) throw new Error(`no execution to pin from: pass --execution <id> (or --mock <slug>), or fetch one with \`n8n-decanter executions ${refs[0]}\``);
+      if (source === "capture" && valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution/--mock given; using the latest capture ${ref}`));
+      // test_workflow is synchronous with a 5-minute server-side cap — this
+      // call needs a client whose timeout outlives it
+      const testMcp = createMcpClient({ ...config, requestTimeoutMs: Math.max(config.requestTimeoutMs, 320_000) }, log);
+      await withEnableHint(async () => {
+        const report = await runTest(testMcp, config, dir, refs[0], { ref, source, trigger: valueFlags.get("trigger") }, log);
+        if (jsonFlag) console.log(JSON.stringify(report, null, 2));
+        else printTestReport(report, log);
+        if (!report.ok) process.exitCode = 1;
+      });
       break;
     }
     case "mock:create": {

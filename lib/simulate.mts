@@ -140,7 +140,7 @@ export interface Simulation {
 }
 
 type NodeRun = { data?: { main?: Array<Array<RunItem> | null> } };
-type RunData = Record<string, NodeRun[]>;
+export type RunData = Record<string, NodeRun[]>;
 
 /** Pull the `resultData.runData` map out of a capture, validating shape defensively. */
 function runDataOf(exec: Execution, execId: string): RunData {
@@ -152,7 +152,7 @@ function runDataOf(exec: Execution, execId: string): RunData {
 }
 
 /** Items a node emitted on its first run, first output — `[]` if it emitted none. */
-function firstRunItems(runs: NodeRun[] | undefined): RunItem[] | undefined {
+export function firstRunItems(runs: NodeRun[] | undefined): RunItem[] | undefined {
   if (!runs || runs.length === 0) return undefined;
   const main = runs[0]?.data?.main;
   if (!Array.isArray(main)) return [];
@@ -180,7 +180,7 @@ export function sourceFile(dir: string, ref: string, source: SimSource): string 
 }
 
 /** Read + validate a replay source (a raw capture, or a committed mock scenario). */
-function readCapture(dir: string, ref: string, source: SimSource): { exec: Execution; runData: RunData } {
+export function readCapture(dir: string, ref: string, source: SimSource): { exec: Execution; runData: RunData } {
   const file = sourceFile(dir, ref, source);
   if (!file) {
     throw new Error(source === "mock"
