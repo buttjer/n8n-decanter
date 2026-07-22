@@ -192,10 +192,11 @@ items not yet claimed by one. Recommended order:
     the switch); structure-in-git drops to a read-only nice-to-have. Spike done
     (2026-07-22, n8n 2.30.7): byte-exact jsCode read/write, draft-first edits, and
     OAuth-first auth with refresh tokens all confirmed — the API can be dropped for
-    the code path. Breaking; awaiting go/no-go. Proposed 2026-07-22.
-33. [Post-MCP-pivot wave](BLOCKED-33-post-mcp-pivot-wave.md) — everything queued
-    *behind* Plan 32, now grounded in its execution (PR #97, reviewed
-    2026-07-22 by a 16-agent audit+verify pass; gate: #97 merged). The old
+    the code path. Breaking; executed as PR #97 (merged 2026-07-22).
+    Proposed 2026-07-22.
+33. [Post-MCP-pivot wave](INPROGRESS-33-post-mcp-pivot-wave.md) — everything queued
+    *behind* Plan 32, now grounded in its execution (PR #97, merged
+    2026-07-22; reviewed by a 16-agent audit+verify pass). The old
     review gate is answered — push guards, pull/snapshot invariant, node-verb
     re-design, and API-optional all verified satisfied; MCP smoke tests real
     (28 steps on the pinned container). Remaining: re-express lifecycle on MCP

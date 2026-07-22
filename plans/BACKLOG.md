@@ -228,7 +228,7 @@ entries carry no priority field) — adjust freely.
 ### Open — distinctive features (differentiators, tracked as their own class)
 
 - [ ] **Decanter-native code-node authoring skill, distributed skills.sh-first**
-      (2026-07-22, deferred out of [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md)).
+      (2026-07-22, deferred out of [Plan 33](INPROGRESS-33-post-mcp-pivot-wave.md)).
       A small **original** skill (1–2 files, no n8n-io/skills fork — Plan 30's
       "override, not fork" stands) teaching agents the decanter authoring loop:
       *Code nodes are authored as files under `code/` and synced via decanter

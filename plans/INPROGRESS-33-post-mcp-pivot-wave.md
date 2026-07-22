@@ -1,11 +1,13 @@
 # Plan 33 — Post-MCP-pivot wave: PR #97 review results, triage ratification, `test` verb, guard-proxy stack
 
-**Priority:** P2 (Tasks 1–3 become P1 the moment PR #97 merges)
-**Status:** Blocked — gate: **PR #97** (`feat/plan-32-mcp-native-code-layer`, the
-Plan 32 execution) merged to main. The execution **review is DONE** (2026-07-22,
-16-agent audit+verify pass over the PR diff — see Notes → Review method); its
-results are folded into the tasks below. Plan 32 / DONE-32 itself stays
-untouched.
+**Priority:** P1 (Tasks 1–3) / P2 (Tasks 4–7)
+**Status:** In progress (execution started 2026-07-22) — unblocked 2026-07-22:
+the gate (**PR #97**,
+`feat/plan-32-mcp-native-code-layer`, the Plan 32 execution) merged to main as
+`3c77f2a`. The execution **review is DONE** (2026-07-22, 16-agent audit+verify
+pass over the PR diff — see Notes → Review method); its results are folded into
+the tasks below. Plan 32 / [DONE-32](DONE-32-mcp-native-code-layer.md) itself
+stays untouched.
 **Theme:** Everything queued behind the MCP pivot, now grounded in the *actual*
 execution: re-express the lifecycle verbs the execution kept on REST
 (**decided**: `archive` replaces `delete`, `duplicate` goes MCP), fix the
@@ -30,9 +32,8 @@ the MCP foundation.
 
 - Session 2026-07-22 (Plan 32 review with the maintainer; memory note
   `plan32-execution-review-checklist` — superseded by this file).
-- **PR #97** — the Plan 32 execution under review
-  ([DONE-32](DONE-32-mcp-native-code-layer.md) once merged; `OPEN-32` on main
-  until then).
+- **PR #97** — the Plan 32 execution under review (merged 2026-07-22 →
+  [DONE-32](DONE-32-mcp-native-code-layer.md)).
 - [Plan 30](OPEN-30-agent-llm-working-ergonomics.md) — precedence-override
   lineage (Task 4 rewrites it proxy-first) and "override, not fork".
 - [Plan 0](BACKLOG.md) — decanter-native code-node authoring skill (deferred,
@@ -290,9 +291,9 @@ Task 1 (MCP re-expression; no hard delete in decanter).
    execution reads `get_execution`/`search_executions`;
    `prepare_test_pin_data`; `publish_workflow(versionId)` = publish a past
    version straight to live — future `publish --version`?; docs count 41 vs.
-   the spike's 33). Post-merge link hygiene: this file's OPEN-32 references →
-   DONE-32; `plans/README.md` entry 32's "awaiting go/no-go" clause is stale
-   once #97 merges. Minor docs nits from the review: `docs/cli/overview.md`
+   the spike's 33). *(Post-merge link hygiene — this file's OPEN-32 refs →
+   DONE-32, `plans/README.md` entry 32's stale "awaiting go/no-go" clause —
+   done 2026-07-22 with the unblock.)* Minor docs nits from the review: `docs/cli/overview.md`
    groups `delete` under the draft-acts annotation (it's a hard remove);
    README's `check` line lacks `[--no-typecheck]`; `init [dir]` vs
    `init [dir] [--force]` asymmetry.
