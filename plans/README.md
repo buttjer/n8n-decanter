@@ -162,6 +162,13 @@ items not yet claimed by one. Recommended order:
     compile, marker, bundling, or `.remote` flow — so it funnels through one new
     source-field abstraction in `lib/util.mts`. Offline `run` stays JS-only.
     Proposed 2026-07-21.
+31. [Sandbox `run` for untrusted node code](OPEN-31-run-sandbox-boundary.md) —
+    give `node run` an actual execution boundary so agent-generated code is
+    **safe by default** (no host `process`/`fetch`/`import()`), with `--unsafe`
+    to opt back into today's full-host-access behavior. Supersedes the
+    doc-only "narrow `run`" backlog item with enforcement. Mechanism decided:
+    `worker_threads` scrubbed context (option A), no A/B config toggle. Breaking
+    (default execution semantics change). Proposed 2026-07-22.
 
 ## Conventions
 

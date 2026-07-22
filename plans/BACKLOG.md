@@ -70,6 +70,10 @@ entries carry no priority field) — adjust freely.
       agents that `run` generated/untrusted node files. **Recommend:** state
       plainly in README + template `AGENTS.md` that `run` is not a sandbox
       (never `run` a node you wouldn't execute by hand). Severity: moderate.
+      (graduated 2026-07-22 to
+      [Plan 31](OPEN-31-run-sandbox-boundary.md), which goes further than the
+      doc note: an enforced safe-by-default sandbox with `--unsafe` to opt out —
+      the doc half stays as Plan 31's fallback for `--unsafe`.)
 - [ ] **`run`'s faked n8n context silently diverges from n8n — `$jmespath`
       throws, other globals are absent, and the docs never mark the boundary.**
       `lib/run.mts` `buildGlobals`: `$jmespath` (line ~170) is wired to *throw*
