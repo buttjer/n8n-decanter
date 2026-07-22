@@ -19,6 +19,19 @@ don't let either drift from the code.
 - Prefer bullet points over paragraphs.
 - **Highlight** important things and decisions so they stand out.
 
+## Session labels: tag Plan work `[Plan NN] Planning` / `[Plan NN] Executing`
+
+When a session's task maps to a numbered backlog Plan (`plans/…`, "Plan NN"),
+label the session for that plan and phase so concurrent sessions stay legible:
+
+- **Planning** that plan → **`[Plan NN] Planning`**
+- **Executing** that plan → **`[Plan NN] Executing`**
+
+Append a round number `(2)`…`(99)` for repeat passes; the **first round carries
+no number**. E.g. `[Plan 30] Planning` → `[Plan 30] Planning (2)` after a
+revision; `[Plan 30] Executing` → `[Plan 30] Executing (2)` for a second exec
+pass. Work that doesn't map to a numbered Plan gets no such label.
+
 ## What this is
 
 Standalone CLI that syncs n8n workflows into a git-friendly, folder-per-workflow
@@ -151,6 +164,19 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   npm script on every `npm install`) refuses any commit made in the main
   checkout (not just on the `main` branch) — see "The main checkout is guarded
   locally too" below.
+- **When a plan number is known, prefix everything with it — from the moment
+  it's known, in both planning and execution.** If the work belongs to a
+  numbered plan (`plans/*-N-*.md`, "Plan 27"), name the **branch** and
+  **worktree** `<type>/plan-NN-<slug>` and `.worktrees/<type>-plan-NN-<slug>`
+  (e.g. `feat/plan-27-verb-grammar`, `.worktrees/feat-plan-27-verb-grammar`),
+  and prefix the **agent session** `[Plan 27] …`. This ties the session, branch,
+  worktree, and PR back to the plan at a glance. The plan number is often known
+  only *after* work has started (planning surfaces it, or an existing plan gets
+  claimed mid-task) — **when it becomes known, it's worth a rename**: create a
+  correctly-named worktree/branch and move the work over (see "One worktree per
+  task" for the move-files recipe), and rename the session. Zero-padding is
+  optional (`plan-7` and `plan-07` are both fine); when the item is Plan 0 /
+  BACKLOG with no number of its own, use the ordinary `<type>/<slug>` form.
 - **Feature PRs are decoupled from releases — merging one is never a release.**
   A user-facing PR only appends its entry under `[Unreleased]` (per the
   Changelog rules); it does **not** bump `package.json`, tag, or cut a Release.

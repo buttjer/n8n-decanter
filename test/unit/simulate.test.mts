@@ -8,13 +8,21 @@ import { afterEach, describe, it } from "node:test";
 import {
   assertDryRunSafe,
   buildSimulation,
+  checkMocks,
+  detectGaps,
   diffItems,
   isPureNode,
+  listMockSlugs,
   pinFixtures,
   PURE_NODE_TYPES,
+  SIM_CAP_PREFIX,
   SIM_START_NODE,
+  SimulationGapError,
+  sourceFile,
+  validateMockRunData,
+  writeMock,
 } from "../../lib/simulate.mts";
-import { latestCaptureId } from "../../lib/executions.mts";
+import { MOCKS_DIR, latestCaptureId } from "../../lib/executions.mts";
 import type { Log, Workflow, WorkflowNode } from "../../lib/types.mts";
 
 const warnings: string[] = [];
@@ -147,7 +155,7 @@ describe("buildSimulation — hard errors", () => {
         Webhook: run([item({})]), Compute: run([item({})]), Tag: run([item({})]), Fetch: run([item({ status: "ok" })]),
       } } } }),
     });
-    await assert.rejects(buildSimulation(dir, "1", log), /no captured output for network node\(s\): Fetch2/);
+    await assert.rejects(buildSimulation(dir, "1", log), /reached with no captured data: Fetch2/);
   });
 
   it("hard-errors on a multi-iteration loop (a non-driver node ran more than once)", async () => {
@@ -159,7 +167,7 @@ describe("buildSimulation — hard errors", () => {
   });
 
   it("errors when the capture file is missing", async () => {
-    await assert.rejects(buildSimulation(scaffoldBase(), "999", log), /not captured under/);
+    await assert.rejects(buildSimulation(scaffoldBase(), "999", log), /execution 999 not captured under executions\//);
   });
 
   it("warns (not errors) when the capture ran a different workflow version", async () => {
@@ -232,6 +240,29 @@ describe("buildSimulation — single-iteration loops (tier 1)", () => {
     };
     await assert.rejects(buildSimulation(scaffoldLoop(runData), "1", log), /only single-iteration loops replay/);
   });
+
+  it("tier-2: allowMultiBatch turns a multi-batch loop into a capped iteration-1 preview", async () => {
+    const runData = {
+      Webhook: run([item({ n: 1 })]),
+      Loop: [{ data: { main: [[], [item({})]] } }, { data: { main: [[], [item({})]] } }, { data: { main: [[item({})], []] } }],
+      Work: [{ data: { main: [[item({})]] } }, { data: { main: [[item({})]] } }],
+      Done: run([item({ done: true })]),
+    };
+    const sim = await buildSimulation(scaffoldLoop(runData), "1", log, { allowMultiBatch: true });
+    assert.equal(sim.bestEffortLoop, true);
+    assert.equal(sim.loopIterations, 2); // body Work ran twice → 2 batches
+    // a synthetic Limit cap was spliced in front of the driver, capping its input
+    const cap = sim.workflow.nodes.find((n) => n.name === `${SIM_CAP_PREFIX}Loop`);
+    assert.ok(cap, "expected a cap node in front of the loop driver");
+    assert.equal(cap!.type, "n8n-nodes-base.limit");
+    assert.equal((cap!.parameters as { maxItems?: number }).maxItems, 1); // default batchSize
+    // the driver's incoming edge (from Webhook) now targets the cap, and cap -> Loop
+    const conns = sim.workflow.connections as Record<string, { main?: unknown[][] }>;
+    assert.deepEqual((conns.Webhook.main as any)[0], [{ node: `${SIM_CAP_PREFIX}Loop`, type: "main", index: 0 }]);
+    assert.deepEqual((conns[`${SIM_CAP_PREFIX}Loop`].main as any)[0], [{ node: "Loop", type: "main", index: 0 }]);
+    // still a valid dry-run workflow (Limit is on the pure allowlist)
+    assert.doesNotThrow(() => assertDryRunSafe(sim.workflow));
+  });
 });
 
 describe("buildSimulation — untaken / disabled exemptions", () => {
@@ -263,8 +294,169 @@ describe("latestCaptureId", () => {
     });
     assert.equal(latestCaptureId(dir), "17");
   });
+  it("does not count committed mocks (slug-named scenarios aren't 'latest'-ordered)", () => {
+    const dir = scaffold({ "executions/3.json": "{}", "mocks/happy-path.json": "{}" });
+    assert.equal(latestCaptureId(dir), "3");
+  });
   it("returns null when there are no captures", () => {
     assert.equal(latestCaptureId(scaffold({ "workflow.json": "{}" })), null);
+  });
+});
+
+describe("gaps — SimulationGapError context", () => {
+  // Fetch -> Fetch2(http, no data): Fetch2 is a reachable, unpinned network node.
+  function gapDir(): string {
+    const wf = baseWorkflow();
+    wf.nodes.push({ id: "h2", name: "Fetch2", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [800, 0], parameters: { url: "http://x" } } as WorkflowNode);
+    (wf.connections as any).Fetch = { main: [[{ node: "Fetch2", type: "main", index: 0 }]] };
+    return scaffold({
+      "workflow.json": JSON.stringify(wf),
+      ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: { c: { file: "code/compute.js" } } }),
+      "code/compute.js": "return [];\n",
+      "executions/1.json": JSON.stringify({ id: 1, workflowId: "wf1", workflowVersionId: "v1", data: { resultData: { runData: {
+        Webhook: run([item({})]), Compute: run([item({})]), Tag: run([item({})]), Fetch: run([item({ status: "ok" })]),
+      } } } }),
+    });
+  }
+
+  it("throws SimulationGapError carrying per-node context (type, params, input)", async () => {
+    const err = await buildSimulation(gapDir(), "1", log).then(() => null, (e) => e);
+    assert.ok(err instanceof SimulationGapError, "expected a SimulationGapError");
+    assert.equal(err.gaps.length, 1);
+    assert.equal(err.gaps[0].node, "Fetch2");
+    assert.equal(err.gaps[0].type, "n8n-nodes-base.httpRequest");
+    assert.deepEqual(err.gaps[0].parameters, { url: "http://x" });
+    // input = the captured items feeding Fetch2 (Fetch's output)
+    assert.deepEqual(err.gaps[0].input, [item({ status: "ok" })]);
+  });
+
+  it("detectGaps returns the same contexts, and [] when there are none", async () => {
+    assert.deepEqual((await detectGaps(gapDir(), "1", log)).map((g) => g.node), ["Fetch2"]);
+    assert.deepEqual(await detectGaps(scaffoldBase(), "1", log), []);
+  });
+});
+
+describe("mock create (writeMock) + sourceFile resolution", () => {
+  it("sourceFile resolves mocks by slug and captures by id", () => {
+    const dir = scaffold({ "executions/1.json": "{}", "mocks/happy-path.json": "{}" });
+    assert.ok(sourceFile(dir, "happy-path", "mock")!.includes(`${MOCKS_DIR}/happy-path.json`));
+    assert.ok(sourceFile(dir, "1", "capture")!.includes("executions/1.json"));
+    assert.equal(sourceFile(dir, "nope", "mock"), null);
+    // a mock ref is kebab-slugged on lookup
+    assert.ok(sourceFile(dir, "Happy Path", "mock")!.includes("happy-path.json"));
+  });
+
+  const gapWorkflowDir = () => {
+    const wf = baseWorkflow();
+    wf.nodes.push({ id: "h2", name: "Fetch2", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [800, 0], parameters: { url: "http://x" } } as WorkflowNode);
+    (wf.connections as any).Fetch = { main: [[{ node: "Fetch2", type: "main", index: 0 }]] };
+    return scaffold({
+      "workflow.json": JSON.stringify(wf),
+      ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: { c: { file: "code/compute.js" } } }),
+      "code/compute.js": "return [];\n",
+      "executions/1.json": JSON.stringify({ id: 1, workflowId: "wf1", workflowVersionId: "v1", data: { resultData: { runData: {
+        Webhook: run([item({})]), Compute: run([item({})]), Tag: run([item({})]), Fetch: run([item({ status: "ok" })]),
+      } } } }),
+    });
+  };
+
+  it("promotes a capture to a named mock scenario, flagging gap nodes to fill", async () => {
+    const dir = gapWorkflowDir();
+    const result = await writeMock(dir, "1", "happy path", log); // slug kebab-slugged
+    assert.equal(result.slug, "happy-path");
+    assert.deepEqual(result.gaps, ["Fetch2"]);
+    const mock = JSON.parse(readFileSync(path.join(dir, MOCKS_DIR, "happy-path.json"), "utf8"));
+    // the mock is a full copy of the capture (real runData preserved) + guidance block
+    assert.deepEqual(mock.data.resultData.runData.Fetch, run([item({ status: "ok" })]));
+    assert.equal(mock._decanterMock.sourceExecution, "1");
+    assert.equal(mock._decanterMock.fill.length, 1);
+    assert.equal(mock._decanterMock.fill[0].node, "Fetch2");
+    assert.deepEqual(mock._decanterMock.fill[0].inputSample, [{ status: "ok" }]);
+    assert.ok(warnings.some((w) => /credentials\/PII/.test(w)), warnings.join("|"));
+    // refuses to clobber an existing mock (protects hand-filled data)
+    await assert.rejects(writeMock(dir, "1", "happy path", log), /mock "happy-path" already exists/);
+  });
+
+  it("defaults the slug to the execution id when none is given", async () => {
+    const dir = gapWorkflowDir();
+    const result = await writeMock(dir, "1", "1", log);
+    assert.equal(result.slug, "1");
+    assert.ok(existsSync(path.join(dir, MOCKS_DIR, "1.json")));
+  });
+
+  it("validateMockRunData: no-op on a real capture (no _decanterMock marker)", () => {
+    const capture = { id: 1, data: { resultData: { runData: { A: run([item({ x: 1 })]) } } } } as any;
+    assert.doesNotThrow(() => validateMockRunData(capture, "1"));
+  });
+
+  it("validateMockRunData: passes a well-formed filled mock", () => {
+    const mock = {
+      id: 1, data: { resultData: { runData: { Enrich: run([item({ ok: true })]) } } },
+      _decanterMock: { sourceExecution: "1", fill: [{ node: "Enrich" }] },
+    } as any;
+    assert.doesNotThrow(() => validateMockRunData(mock, "1"));
+  });
+
+  it("validateMockRunData: catches malformed runData shape with a node-named error", () => {
+    const badItem = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: [[42]] } }] } } }, _decanterMock: { fill: [] } } as any;
+    assert.throws(() => validateMockRunData(badItem, "1"), /Enrich run 0 item 0: each item must be an object/);
+    const badMain = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: "nope" } }] } } }, _decanterMock: { fill: [] } } as any;
+    assert.throws(() => validateMockRunData(badMain, "1"), /data\.main must be an array of outputs/);
+    const noJson = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: [[{ nope: 1 }]] } }] } } }, _decanterMock: { fill: [] } } as any;
+    assert.throws(() => validateMockRunData(noJson, "1"), /needs a "json" field/);
+  });
+
+  it("validateMockRunData: flags a fill node left without data (incomplete mock)", () => {
+    const mock = {
+      id: 1, data: { resultData: { runData: { A: run([item({})]) } } },
+      _decanterMock: { fill: [{ node: "Enrich" }] },
+    } as any;
+    assert.throws(() => validateMockRunData(mock, "1"), /incomplete: add runData for Enrich/);
+  });
+
+  it("a filled mock (source=mock) resolves the gap; an unfilled one still errors", async () => {
+    const wf = baseWorkflow();
+    wf.nodes.push({ id: "h2", name: "Fetch2", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [800, 0], parameters: {} } as WorkflowNode);
+    (wf.connections as any).Fetch = { main: [[{ node: "Fetch2", type: "main", index: 0 }]] };
+    const base = { id: 1, workflowId: "wf1", workflowVersionId: "v1", _decanterMock: { fill: [{ node: "Fetch2" }] }, data: { resultData: { runData: {
+      Webhook: run([item({})]), Compute: run([item({})]), Tag: run([item({})]), Fetch: run([item({ status: "ok" })]),
+    } } } };
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(wf),
+      ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: { c: { file: "code/compute.js" } } }),
+      "code/compute.js": "return [];\n",
+      // filled mock: Fetch2 now has runData
+      "mocks/happy-path.json": JSON.stringify({ ...base, data: { resultData: { runData: {
+        ...base.data.resultData.runData, Fetch2: run([item({ enriched: true })]),
+      } } } }),
+      // unfilled mock: Fetch2 absent → validator flags it before the transform
+      "mocks/unfilled.json": JSON.stringify(base),
+    });
+    const sim = await buildSimulation(dir, "happy-path", log, { source: "mock" });
+    assert.ok(sim.pinned.includes("Fetch2"), "Fetch2 should be pinned from the mock");
+    assert.match(String(nodeNamed(sim.workflow, "Fetch2").parameters.jsCode), /"enriched":true/);
+    await assert.rejects(buildSimulation(dir, "unfilled", log, { source: "mock" }), /incomplete: add runData for Fetch2/);
+  });
+});
+
+describe("mock check (checkMocks) + listMockSlugs", () => {
+  const withMocks = (mocks: Record<string, unknown>) => scaffold(
+    Object.fromEntries(Object.entries(mocks).map(([slug, body]) => [`mocks/${slug}.json`, JSON.stringify(body)])),
+  );
+  const goodMock = { _decanterMock: { fill: [{ node: "Enrich" }] }, data: { resultData: { runData: { Enrich: run([item({ ok: true })]) } } } };
+  const badMock = { _decanterMock: { fill: [{ node: "Enrich" }] }, data: { resultData: { runData: {} } } }; // Enrich unfilled
+
+  it("listMockSlugs returns the sorted slugs", () => {
+    assert.deepEqual(listMockSlugs(withMocks({ "b-two": goodMock, "a-one": goodMock })), ["a-one", "b-two"]);
+    assert.deepEqual(listMockSlugs(scaffold({ "workflow.json": "{}" })), []);
+  });
+
+  it("checkMocks: 0 invalid for a good mock, >0 for a bad one, by slug or all", () => {
+    const dir = withMocks({ good: goodMock, bad: badMock });
+    assert.equal(checkMocks(dir, "good", log), 0);
+    assert.equal(checkMocks(dir, "bad", log), 1);
+    assert.equal(checkMocks(dir, undefined, log), 1); // all: one bad
+    assert.equal(checkMocks(scaffold({ "workflow.json": "{}" }), undefined, log), 0); // none → 0
   });
 });
 

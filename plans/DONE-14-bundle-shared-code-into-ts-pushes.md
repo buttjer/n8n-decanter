@@ -259,7 +259,7 @@ Rules that keep it sane (all guard/compile errors, not silent behavior):
   (`status --diff` readability of bundled output),
   [Plan 4](DONE-4-editor-node-diagnostics.md) (ts-plugin must keep
   suppressing on module-shaped node files),
-  [Plan 7](OPEN-7-engine-true-simulation-suite.md) (simulation reuses the
+  [Plan 7](DONE-7-engine-true-simulation-suite.md) (simulation reuses the
   same compile choke point), [Plan 11](DONE-11-cli-look-and-feel.md) (diff
   styling).
 - **CHANGELOG**: Added + Fixed entries per task 7; the guard's new rules are

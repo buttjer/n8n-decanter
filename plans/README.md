@@ -30,14 +30,14 @@ items not yet claimed by one. Recommended order:
 6. [TypeScript migration](DONE-6-typescript-migration.md) — convert the CLI's own
    source to strict `.mts` run natively via Node type stripping (no build
    step).
-7. [Engine-true simulation suite](OPEN-7-engine-true-simulation-suite.md) —
+7. [Engine-true simulation suite](DONE-7-engine-true-simulation-suite.md) —
    replay a whole workflow through the real n8n engine offline: network nodes
    pinned from captured executions, pure nodes run for real, enforced
-   no-side-effects. **The `simulate` verb shipped 2026-07-20/21** (Docker
-   backend) with a per-node diff, `--pin`, a picker entry, and a browsable
-   viewer that opens the run in the n8n webapp. Remaining: gap handling (the
-   guide-to-pin / viewer-pin / `--guess-gaps` trust ladder) and the npx backend
-   (split to Plan 26).
+   no-side-effects. **Done 2026-07-21** (Docker backend): the `simulate` verb
+   with a per-node diff, `--pin`, picker entry, and a browsable viewer; gap
+   handling via the `mock` namespace (committed, hand-fillable `mocks/` scenarios
+   + offline `mock check` — no LLM API); and tier-1/tier-2 loop handling. The
+   dependency-free **npx backend was split to [Plan 26](OPEN-26-npx-engine-backend.md)**.
 8. [Folder hierarchy in sync layout](BLOCKED-8-folder-hierarchy-in-sync-layout.md) —
    local dirs above a workflow folder become its n8n folder path, pushed
    one-way via the folders public API (the API can write placement but not
@@ -169,6 +169,13 @@ items not yet claimed by one. Recommended order:
     drift guard; and render the banner logo in the **website's brand orange**
     (truecolor `#E18428`, graceful 256/16-color fallback) instead of red.
     Proposed 2026-07-21.
+31. [Sandbox `run` for untrusted node code](OPEN-31-run-sandbox-boundary.md) —
+    give `node run` an actual execution boundary so agent-generated code is
+    **safe by default** (no host `process`/`fetch`/`import()`), with `--unsafe`
+    to opt back into today's full-host-access behavior. Supersedes the
+    doc-only "narrow `run`" backlog item with enforcement. Mechanism decided:
+    `worker_threads` scrubbed context (option A), no A/B config toggle. Breaking
+    (default execution semantics change). Proposed 2026-07-22.
 
 ## Conventions
 

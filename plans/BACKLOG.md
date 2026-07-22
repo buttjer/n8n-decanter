@@ -70,6 +70,10 @@ entries carry no priority field) — adjust freely.
       agents that `run` generated/untrusted node files. **Recommend:** state
       plainly in README + template `AGENTS.md` that `run` is not a sandbox
       (never `run` a node you wouldn't execute by hand). Severity: moderate.
+      (graduated 2026-07-22 to
+      [Plan 31](OPEN-31-run-sandbox-boundary.md), which goes further than the
+      doc note: an enforced safe-by-default sandbox with `--unsafe` to opt out —
+      the doc half stays as Plan 31's fallback for `--unsafe`.)
 - [ ] **`run`'s faked n8n context silently diverges from n8n — `$jmespath`
       throws, other globals are absent, and the docs never mark the boundary.**
       `lib/run.mts` `buildGlobals`: `$jmespath` (line ~170) is wired to *throw*
@@ -171,9 +175,13 @@ entries carry no priority field) — adjust freely.
       entry. Severity: low (deferred until `add` ships).
       (done 2026-07-20, alongside Plan 21's `add`: verb + docs + agent template
       + e2e step removed; `add` now mints the id. Breaking → v0.4.0.)
-- [ ] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
+- [x] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
       templates. Low priority for a solo project, but cheap and conventional if
       contributions are wanted (CONTRIBUTING.md already invites them).
+      (done 2026-07-22: `.github/CODEOWNERS` (`* @buttjer`),
+      `PULL_REQUEST_TEMPLATE.md` (mirrors the CONTRIBUTING/AGENTS acceptance
+      criteria), and `ISSUE_TEMPLATE/` bug + feature templates with a
+      `config.yml` pointing security reports at the existing SECURITY.md flow.)
 - [ ] **Cross-PR docs-drift guardrail in CI** (2026-07-20). The `/docs` pages
       can fall behind the CLI when a behavior change and its docs live in
       *separate* PRs: v0.3.0 (#29 — `--allow-env` + `executions` in the picker)
@@ -246,12 +254,14 @@ entries carry no priority field) — adjust freely.
       workflow → [Plan 21](DONE-21-repo-authored-workflows.md) `duplicate`;
       both preserve pull-first. The data-model-inverting `push --create`
       variant was dropped by user decision. Both shipped 2026-07-20.)
-- [ ] **Engine-true simulation suite** — real e2e test or simulation suite: is
+- [x] **Engine-true simulation suite** — real e2e test or simulation suite: is
       there a way to really execute the workflow with the n8n engine using
       executions data as a mock/dry run? Also making sure nothing is really
       written through APIs or similar. Keep in mind executions data can be
       flawed or change in the future. (graduated to
-      [Plan 7](OPEN-7-engine-true-simulation-suite.md))
+      [Plan 7](DONE-7-engine-true-simulation-suite.md) — **done 2026-07-21**,
+      Docker backend; the dependency-free npx backend is split to
+      [Plan 26](OPEN-26-npx-engine-backend.md))
 
 ### Done
 

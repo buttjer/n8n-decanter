@@ -20,6 +20,7 @@
       "Bash(find *)",
       "Bash(head *)",
       "Bash(tail *)",
+      "Bash(sort *)",
       "Bash(echo *)",
       "Bash(printf *)",
       "Bash(jq *)",
