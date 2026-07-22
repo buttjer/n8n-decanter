@@ -45,6 +45,20 @@ Decided with the user (this session):
 - **The public API is dropped for the code path.** MCP reads and writes Code-node `jsCode`
   byte-exact (spike-confirmed), so a pure-MCP tool is viable for both directions. See Notes →
   Spike findings.
+- **[n8n-io/skills](https://github.com/n8n-io/skills): lean on the *knowledge* skills; keep
+  the *build/lifecycle* ones subordinate.** The official pack splits in two: knowledge skills
+  (`code-nodes`, `expressions`, `data-tables`, `binary-and-data`, `credentials-and-security`,
+  `debugging`) complement decanter with zero conflict — lean on them heavily in user space.
+  Build/lifecycle skills (`workflow-lifecycle`, `subworkflows`, `agents`, `loops`,
+  `error-handling`, `extending-mcp`) mutate the live instance via MCP; under this pivot most
+  stop conflicting (structure is n8n/MCP's job now), but **the Code-node write path is the one
+  boundary that must stay decanter's** — a skill editing `jsCode` on the instance bypasses the
+  git files and drifts the source of truth. So the sharpened line (vs. Plan 30's "knowledge
+  good / building bad") is: **decanter owns Code-node source; skills own the rest of
+  structure/lifecycle.** Caveats: the plugin installs the *whole* pack (no cherry-pick), the
+  skills are not decanter- or instance-version-aware, and heavy reliance without a precedence
+  override actively undermines decanter — so the boundary must be declared, not assumed
+  (Task 9).
 
 ## Source
 
@@ -106,6 +120,16 @@ Decided with the user (this session):
    `PATCH /rest/mcp/workflows/toggle-access` where creds allow, per Task 5's caveat).
    Non-TTY/piped invocations print the same guidance line-oriented. The signal is the
    `availableInMCP` flag from `search_workflows`, not a failed detail read.
+9. **Wire n8n-io/skills into the template's sync-dir `AGENTS.md` (user space) with a precedence
+   override.** Recommend/scaffold the **knowledge** skills as the default authoring aids; keep
+   the **build/lifecycle** skills subordinate to a decanter override that must *dominate, not
+   trail* — per the Design-decision bullet. Core rule to encode: *"n8n skills for knowledge;
+   workflow structure may go through MCP/skills, but **Code-node source is authored as files and
+   pushed/synced by decanter — never edited on the instance directly**; this AGENTS.md wins."*
+   Follow the repo convention (substance in the tool-agnostic sync-dir `AGENTS.md`, per-agent
+   files as thin pointers). Note the install pulls the whole pack (can't cherry-pick), so the
+   override — not selective install — is what holds the boundary. Relates to
+   [[n8n-agent-grounding-landscape]] (Plan 30 "override, don't fork").
 
 ## Acceptance / verification
 
