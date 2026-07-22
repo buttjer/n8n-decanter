@@ -26,11 +26,8 @@
   #term-demo-body :global(.ok) { color: #34d399; }
   #term-demo-body :global(.warn) { color: #fbbf24; }
   #term-demo-body :global(.dim) { color: #71717a; }
-  #term-demo-body :global(.sel) {
-    background: #27272a;
-    border-radius: 4px;
-    color: #fafafa;
-  }
+  /* Selected row is marked by the ❯ pointer alone — no highlight background. */
+  #term-demo-body :global(.sel) { color: #fafafa; }
   #term-demo-body :global(.cur) { animation: term-blink 1s steps(1) infinite; }
   @keyframes term-blink { 50% { opacity: 0; } }
 </style>
