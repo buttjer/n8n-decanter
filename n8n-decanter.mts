@@ -434,6 +434,22 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     throw new Error(`no workflow matches "${ref}"${known.length > 0 ? ` — pulled workflows: ${known.join(", ")}` : " — nothing pulled yet"}`);
   };
 
+  /**
+   * One-shot MCP verbs (archive/rename/node …): append the enable-MCP
+   * guidance to the per-workflow refusal, the same way the pull/push/status
+   * loop does (Plan 33 — previously these verbs surfaced only n8n's raw text).
+   */
+  const withEnableHint = async (fn: () => Promise<unknown>): Promise<void> => {
+    try {
+      await fn();
+    } catch (err) {
+      if (!isUnavailableInMcp(err)) throw err;
+      log.error((err as Error).message);
+      log.info(`  ${ENABLE_MCP_HINT}`);
+      process.exitCode = 1;
+    }
+  };
+
   let refs = rest;
   if (REF_VERBS.has(command)) {
     refs = [];
@@ -744,28 +760,28 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       // one workflow per call (no cascade, too much blast radius for a default).
       if (refs.length === 0) throw new Error("archive needs a workflow ref: n8n-decanter archive <workflow>");
       if (refs.length > 1) throw new Error("archive takes exactly one workflow — archive them one at a time");
-      await archiveWorkflow(mcp(), config, refs[0], { force }, log);
+      await withEnableHint(() => archiveWorkflow(mcp(), config, refs[0], { force }, log));
       break;
     }
     case "rename": {
       const [id, ...names] = refs;
       if (!id) throw new Error('rename needs a workflow and a new name: n8n-decanter rename <workflow> "<new name>"');
       if (names.length !== 1) throw new Error('rename needs exactly one new name: n8n-decanter rename <workflow> "<new name>"');
-      await renameWorkflow(mcp(), config.root, id, names[0], log);
+      await withEnableHint(() => renameWorkflow(mcp(), config.root, id, names[0], log));
       break;
     }
     case "node:create": {
       const [id, ...names] = refs;
       if (!id) throw new Error('node create needs a workflow and a node name: n8n-decanter node create <workflow> "<Node name>" [--ts]');
       if (names.length !== 1) throw new Error('node create needs exactly one node name: n8n-decanter node create <workflow> "<Node name>" [--ts]');
-      await addCodeNode(mcp(), config, id, names[0], { ts: tsFlag }, log);
+      await withEnableHint(() => addCodeNode(mcp(), config, id, names[0], { ts: tsFlag }, log));
       break;
     }
     case "node:rename": {
       const [id, ...names] = refs;
       if (!id) throw new Error('node rename needs a workflow and two node names: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
       if (names.length !== 2) throw new Error('node rename needs the old and new node name: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
-      await renameNode(mcp(), config, id, names[0], names[1], log);
+      await withEnableHint(() => renameNode(mcp(), config, id, names[0], names[1], log));
       break;
     }
     case "watch": {

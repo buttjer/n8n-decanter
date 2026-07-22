@@ -1,5 +1,6 @@
 node_modules/
 .env
+.decanter-auth.json
 /.worktrees/
 .claude/settings.local.json
 .claude/.cc-writes/

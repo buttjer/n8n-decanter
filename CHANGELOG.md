@@ -27,12 +27,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   API dependency or ship a lossy SDK-code re-expression, the verb was
   dropped. Duplicate workflows from the n8n UI and `pull` the copy.
 
+### Fixed
+
+- **Refresh-token race (OAuth):** two concurrent MCP calls — or `watch` plus
+  a manual `push` sharing `.decanter-auth.json` — could both redeem the
+  single-use refresh token, killing the session for the loser ("re-run
+  init"). Concurrent calls now share one redemption, a lost cross-process
+  race recovers by re-reading the winner's rotated auth file, and auth-file
+  writes are atomic.
+- **MCP client hardening:** a transient handshake failure no longer poisons
+  every later call in the same run; a 200-with-HTML answer (captive
+  portal/reverse proxy) gets a named error instead of a raw `SyntaxError`;
+  body-read timeouts use the friendly timeout message; a bogus-huge
+  `Retry-After` is capped (30 s); a dropped MCP session (404 with a session
+  id) re-handshakes once transparently; a token-refresh response without a
+  rotated refresh token keeps the old one; workflow lists that hit the
+  200-row page cap warn about truncation.
+- **`node create` / `node rename` no longer overwrite unpushed `.js` edits:**
+  both verbs pull the workflow after the structure act, which silently
+  replaced locally edited `.js` files with the remote body — they now refuse
+  up front, naming the dirty files ("push first").
+- **`rename`, `node create`, `node rename`, and `archive` now append the
+  enable-MCP guidance** to the per-workflow "not available in MCP" refusal,
+  matching pull/push/status.
+- **`init` appends `.decanter-auth.json` to a pre-existing `.gitignore`**
+  instead of only warning — the file holds the MCP refresh token.
+- **Push verifies `.ts` nodes after the write** (marker hash vs. remote
+  body — catches server-side normalization), and watch's single-node pushes
+  run the same post-push verification as full pushes.
+
 ### Changed
 
 - **`create` validates before creating** — the generated Workflow-SDK
   expression now passes the server's `validate_workflow` gate before
   `create_workflow_from_code`, surfacing the server's errors and hint
   verbatim when rejected.
+- **A body-equal push now re-registers a missing `@ts-n8n` marker** — when a
+  `.ts` node's compiled code already matches the remote but the marker is
+  gone (e.g. rewritten in the UI), push writes the node anyway so it is
+  recognized as TS-managed again (previously skipped as "in sync").
+- **`mock create` strips the capture's embedded `workflowData`** — committed
+  mocks no longer duplicate every Code node's source in git; the compliance
+  guard warns about legacy mocks that still embed it, and it now also flags
+  Python Code nodes honestly (their `pythonCode` stays inline in
+  `workflow.json`; extraction is a planned feature).
+- **Template refresh (from the MCP pivot):** the sync-dir `AGENTS.md`
+  contract was rewritten around the MCP boundary (Code-node source = files +
+  decanter push; structure = n8n/MCP; knowledge skills recommended) with
+  matching `.cursor` rules, and `.env.example` is OAuth-first (MCP
+  credentials primary, the API key optional with a minimal scope list).
 - **`N8N_API_KEY` now powers only `executions` and `data-tables`** — the last
   lifecycle verbs left the REST API, so the recommended key scopes shrink to
   `workflow:list`, `execution:read`, `execution:list`, and the `dataTable:*`

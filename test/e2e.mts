@@ -656,6 +656,18 @@ await step("marker removed remotely (rewrite in UI): .ts never clobbered", async
   const r2 = await cli("push");
   assert.equal(r2.code, 0, r2.out);
   assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/);
+
+  // body-equal but marker stripped (say, a UI copy-paste of the identical
+  // compiled code): push must still send the node so the marker re-registers
+  // TS management (PLAN.md's body-equal-no-marker contract, Plan 33)
+  const marked = remoteNode("wf123", "n3").parameters.jsCode;
+  // strip only the marker line, keeping the body byte-exact (incl. its trailing \n)
+  remoteNode("wf123", "n3").parameters.jsCode = marked.replace(/\/\/ @ts-n8n sha256:[0-9a-f]+\s*$/, "");
+  assert.ok(!/@ts-n8n/.test(remoteNode("wf123", "n3").parameters.jsCode), "marker stripped for the scenario");
+  const r3 = await cli("push");
+  assert.equal(r3.code, 0, r3.out);
+  assert.match(r3.out, /pushed/, "a body-equal no-marker node is still written: " + r3.out);
+  assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/, "marker re-registered");
 });
 
 await step("structure changed remotely: never blocks push; status hints; pull refreshes the snapshot", async () => {

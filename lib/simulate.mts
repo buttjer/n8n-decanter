@@ -574,7 +574,12 @@ export async function writeMock(dir: string, execId: string, slug: string, log: 
     fill: gaps.map((g) => ({ node: g.node, type: g.type, parameters: g.parameters, inputSample: g.input.map((i) => i.json) })),
   };
   mkdirSync(path.dirname(mockFile), { recursive: true });
-  writeFileSync(mockFile, JSON.stringify({ ...exec, _decanterMock: meta }, null, 2) + "\n");
+  // Strip the capture's embedded workflowData: nothing reads it, and it
+  // carries every Code node's inline jsCode — committing it would duplicate
+  // node source in git, violating the snapshot invariant (Plan 33; the
+  // compliance guard warns about legacy mocks that still embed it).
+  const { workflowData: _dropped, ...cleanExec } = exec as Execution & { workflowData?: unknown };
+  writeFileSync(mockFile, JSON.stringify({ ...cleanExec, _decanterMock: meta }, null, 2) + "\n");
 
   const rel = path.relative(process.cwd(), mockFile);
   if (gaps.length > 0) {

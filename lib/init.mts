@@ -332,10 +332,15 @@ export async function init(targetDir: string | undefined, { force = false }: { f
     writeFileSync(gitignoreFile, `node_modules/\n.env\n${AUTH_FILE}\nworkflows/*/executions/\ndata-tables/\n`);
     log.info("wrote .gitignore");
   } else {
-    const lines = readFileSync(gitignoreFile, "utf8").split("\n").map((l) => l.trim());
+    const content = readFileSync(gitignoreFile, "utf8");
+    const lines = content.split("\n").map((l) => l.trim());
     if (!lines.includes(".env")) log.warn(".gitignore exists but does not ignore .env — add it, the file holds credentials");
-    if (!lines.includes(AUTH_FILE) && existsSync(path.join(dir, AUTH_FILE))) {
-      log.warn(`.gitignore does not ignore ${AUTH_FILE} — add it, the file holds your MCP refresh token`);
+    if (!lines.includes(AUTH_FILE)) {
+      // append rather than warn (Plan 33): the file holds the MCP refresh
+      // token — leaving it committable on a re-init is a real leak, and an
+      // append to a user's .gitignore is safely additive
+      writeFileSync(gitignoreFile, `${content}${content.endsWith("\n") || content === "" ? "" : "\n"}${AUTH_FILE}\n`);
+      log.info(`appended ${AUTH_FILE} to .gitignore — it holds your MCP refresh token`);
     }
   }
 
