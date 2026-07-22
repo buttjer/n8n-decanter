@@ -7,10 +7,11 @@ Plan 32 execution) merged to main. The execution **review is DONE** (2026-07-22,
 results are folded into the tasks below. Plan 32 / DONE-32 itself stays
 untouched.
 **Theme:** Everything queued behind the MCP pivot, now grounded in the *actual*
-execution: ratify (or override) where PR #97 diverged from the maintainer's
-standing triage decisions, fix the defects and close the test debts the review
-found, then ship the follow-up wave — the `test` verb, the guard-proxy stack,
-and the `simulate` keep/drop decision.
+execution: re-express the lifecycle verbs the execution kept on REST
+(**decided**: `archive` replaces `delete`, `duplicate` goes MCP), fix the
+defects and close the test debts the review found, then ship the follow-up
+wave — the `test` verb, the guard-proxy stack, and the `simulate` keep/drop
+decision.
 **Model:** Opus for the proxy/`test` design and the refresh-race fix; Sonnet for
 the mechanical hardening + docs/test passes.
 
@@ -19,10 +20,11 @@ the mechanical hardening + docs/test passes.
 Plan 32 executed as PR #97 (56 files, +3820/−2576). A full multi-agent review of
 the diff (each finding adversarially re-verified) answered the review-gate
 questions this plan originally carried, so the gate is replaced by its
-**outcome** (below). What remains is: two deliberate divergences from the
-maintainer's post-plan triage decisions that need a ratify-or-override call,
-a set of verified defects/debts, and the follow-up features that only make
-sense on the MCP foundation.
+**outcome** (below). What remains is: the maintainer's override of the two
+places the execution stayed on REST (decided 2026-07-22: MCP `archive`
+replaces `delete`, `duplicate` moves to the SDK-code path — Task 1), a set of
+verified defects/debts, and the follow-up features that only make sense on
+the MCP foundation.
 
 ## Source
 
@@ -81,39 +83,49 @@ verifier; not repeated as tasks):
   create→push→publish→unpublish→delete lifecycle. (~8 of the 28 are REST-side
   steps — executions/data-tables/tags/pinData.)
 
-**Diverged from the maintainer's standing decisions** → Task 1 (ratification).
+**Diverged from the maintainer's standing decisions** — `delete` stayed a REST
+hard delete; `duplicate` stayed the lossless REST clone; `create` skips
+`validate_workflow`. The maintainer **overrode** all three on 2026-07-22 →
+Task 1 (MCP re-expression; no hard delete in decanter).
 
 **Defects/debts found** → Tasks 2–3.
 
 ## Tasks
 
-1. **Ratify or override the executed Task 4 triage** (maintainer decision;
-   the execution documented explicit counter-rationales in `lifecycle.mts`,
-   PLAN.md, and the docs — decide, then align either the standing decisions or
-   the code):
-   - **`delete`: stayed a REST hard delete, verb not renamed.** Executor's
-     rationale (stated thrice): MCP offers only `archive_workflow`; this verb's
-     contract is the real `DELETE /workflows/:id` (removes even a published
-     workflow outright). The standing decision was rename-to-`archive` on MCP.
-     *Recommendation: ratify the executor — a hard delete is a genuine
-     API-only capability, consistent with "the API stays for what MCP can't
-     do"; an optional `archive` verb could still be added later without
-     touching `delete`.*
-   - **`duplicate`: stayed the lossless REST `POST /workflows` clone** (body
-     assembled from the local folder, placeholders reconstituted), with
-     guidance to enable MCP on the copy + pull. Executor's rationale:
-     re-expressing an arbitrary pulled JSON graph as SDK code is exactly the
-     lossy transformation decanter refuses to own. The standing decision was
-     `create_workflow_from_code` + `validate_workflow` loop.
-     *Recommendation: ratify — losslessness is the tool's core value; note
-     `duplicate` is now the only verb needing BOTH credentials.*
-   - **`create`: MCP-native but without the `validate_workflow` gate** — it
-     sends only the constant blank `workflow("<slug>", "<name>")` expression,
-     so the loop was dropped (implicit rationale in `mcp.mts` docstring; no
-     explicit one). Fine as-is, **but** `AGENTS.md` spike notes still claim SDK
-     code "must pass `validate_workflow` first" — reconcile in Task 6. If
-     create/duplicate ever send non-trivial SDK code, the validate loop from
-     the standing decision still needs building.
+1. **Re-express lifecycle on MCP — DECIDED (maintainer 2026-07-22, overriding
+   the execution's counter-rationales): `archive` replaces `delete`; `duplicate`
+   moves to the MCP SDK-code path. No hard delete in decanter.**
+   - **`archive` replaces `delete` (Breaking: verb removed).** Drop the REST
+     hard-delete verb entirely; new `archive` verb on MCP `archive_workflow`
+     (same confirmation gate: TTY y/N naming workflow+id, non-TTY refuses
+     without `--force`; local folder kept, stale `decanter.config.json` entry
+     flagged — carry the executed `delete` UX over). Permanent removal is
+     deliberately **out of decanter's surface** — docs point at the n8n UI for
+     hard deletion. Touches: dispatcher + completion, `lib/lifecycle.mts`
+     (replace `api.deleteWorkflow` + its "Plan 32 decision" rationale block),
+     `docs/cli/delete.md` → `docs/cli/archive.md`, README, overview,
+     **Breaking:** changelog entries (removed `delete`, added `archive`),
+     PLAN.md decision update. Side effect: the `docs/cli/overview.md`
+     draft-acts grouping nit resolves itself (`archive` genuinely isn't a
+     draft act either — give it its own annotation).
+   - **`duplicate` re-based on MCP:** local folder (incl. unpushed edits —
+     keep the executed property) → **generate n8n Workflow SDK code** (lean on
+     `get_sdk_reference`/`get_node_types`) → **`validate_workflow`
+     iterate-on-errors loop** (its `valid`/`warnings` (node name + parameter
+     path)/`errors`/`hint` output is shaped for exactly this) →
+     `create_workflow_from_code`. The executor's lossiness concern is
+     accepted as a *risk to manage, not a blocker*: anything the SDK bridge
+     cannot express fails loudly in the validate loop rather than cloning
+     silently wrong, and **fidelity is an acceptance criterion** (see
+     Acceptance: pull the clone back, compare code-stripped canonical
+     structure + byte-exact jsCode against the source folder). Wins: the copy
+     is **born `availableInMCP`** (the whole enable-MCP-on-the-copy guidance
+     flow disappears), and `duplicate` stops needing the API key — the
+     API-only surface shrinks to `executions` + `data-tables` fetches.
+   - **Route `create` through the same `validate_workflow` loop** once it
+     exists (cheap; makes AGENTS.md's "must pass validate_workflow first"
+     spike claim true instead of needing softening — adjust Task 7
+     accordingly).
 2. **Hardening fixes from the review** (each verified in the diff;
    file:line refs are PR-head):
    - **HIGH — refresh-token race (single-use rotation):** no in-process mutex
@@ -262,9 +274,10 @@ verifier; not repeated as tasks):
    candidate: complementary — `test` lightweight default, `simulate` for
    pre-push/CI/isolation. Decide, then document the split (folds into
    Task 5's taxonomy table).
-7. **AGENTS.md MCP-facts + docs update pass:** reconcile the
-   `validate_workflow` spike claim with reality (creation ships without it —
-   soften "must pass validate_workflow first"); fold in the re-verified
+7. **AGENTS.md MCP-facts + docs update pass:** the `validate_workflow` spike
+   claim ("must pass validate_workflow first") becomes TRUE once Task 1 routes
+   create/duplicate through the loop — verify the wording then, instead of
+   softening it; fold in the re-verified
    tooling facts (docs tool reference is NOT exhaustive — version-history
    tools `get_workflow_history`/`get_workflow_version`/
    `restore_workflow_version` are undocumented-but-real, n8n 2.29.0+;
@@ -280,8 +293,14 @@ verifier; not repeated as tasks):
 
 ## Acceptance / verification
 
-- Task 1 ratification recorded (in this file + PLAN.md if the decision
-  changes anything) — no surface left contradicting the decision.
+- Task 1: `delete` gone, `archive` present (MCP `archive_workflow`), both with
+  **Breaking:** changelog entries and the full docs trio; `duplicate` runs the
+  SDK-code path with the `validate_workflow` loop and **passes the fidelity
+  check** — clone pulled back and compared against the source folder:
+  code-stripped canonical structure equal, every Code node's jsCode
+  byte-exact; `duplicate` no longer requires `N8N_API_KEY` (API-only surface
+  = `executions` + `data-tables` fetches); no surface (code, README, docs,
+  PLAN.md, template) left contradicting the decision.
 - Task 2 HIGH fix verified by the Task 3.3 concurrent-refresh test; the
   remaining hardening items each land with a unit/e2e assertion where
   testable.
