@@ -91,7 +91,12 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
    strings), [lib/validate.mts](../lib/validate.mts) (the inline-code snapshot
    warning + reserved-subdir comment), [n8n-decanter.mts](../n8n-decanter.mts)
    (dispatch, help), picker menu labels. Metadata block `_decanterMock` →
-   `_decanterScenario` (reader accepts both).
+   `_decanterScenario` (reader accepts both). Post-#107 template surfaces:
+   the scaffolded Claude Code allowlist's `Bash(n8n-decanter mock)` /
+   `mock:*` entries
+   ([template/.claude/settings.local.json.example](../template/.claude/settings.local.json.example))
+   and the "Filling simulation gaps (`mocks/` — committed scenarios)" section
+   in [template/AGENTS.md.example](../template/AGENTS.md.example).
 2. **Migration + compat.** On any verb touching the dir: auto-migrate
    `mocks/<slug>.json` → `scenarios/<slug>.json` (git-aware move semantics like
    pull's rename machinery; refuse on collision). Legacy `fixtures/` files:
@@ -169,12 +174,19 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
   (mechanism-true, n8n vocabulary), `fixture` (conventional but collided with
   the shipped `fixtures/` it replaces), `pindata`, `baseline`, `seed`.
   `scenario` won on "the user understands it before reading docs".
-- **Relation to the official skills:** `n8n-workflow-lifecycle-official`
-  documents the in-session pin protocol (schemas → agent-generated values →
-  `test_workflow`, per-execution, unpersisted). decanter persists, reviews,
-  and versions the same data; an agent using decanter fills a scenario once
-  and commits instead of re-improvising pins every session. Worth one line in
-  the [Plan 30](OPEN-30-agent-llm-working-ergonomics.md) agent-docs chapter.
+- **Relation to the official skills + the #107 guard (skills-first surface):**
+  `n8n-workflow-lifecycle-official` documents the in-session pin protocol
+  (schemas → agent-generated values → `test_workflow`, per-execution,
+  unpersisted). The #107 guard (`mcp serve`/`mcp connect`) blocks **only**
+  jsCode-writing `update_workflow` — `prepare_test_pin_data` and
+  `test_workflow` pass through — so guard-wired agents can already run that
+  ephemeral flow today. decanter persists, reviews, and versions the same
+  data; an agent fills a scenario once and commits instead of re-improvising
+  pins every session. The now-shipped
+  [docs/agents/n8n-skills.md](../docs/agents/n8n-skills.md) chapter (which
+  recommends exactly that lifecycle skill) gets the one-line pointer to
+  scenarios as the durable counterpart. decanter's own `--scaffold` uses its
+  own MCP client (`.decanter-auth.json`), not the guard — no coupling.
 - **Relation to [Plan 36](OPEN-36-preflight-verb.md):** independent — either
   can land first; the losing side sweeps the other's wording (tracked in both
   plans' relation notes).
