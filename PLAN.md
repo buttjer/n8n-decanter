@@ -1,8 +1,19 @@
 # n8n-decanter — Plan
 
-Standalone CLI that keeps n8n workflows in git: pull **full workflows** into a
-folder-per-workflow layout, keep every Code node's source as its own file
-(`.js` with JSDoc, or `.ts` compiled one-way), and push them back.
+Standalone CLI that keeps the **Code-node source** of n8n workflows in git:
+one folder per workflow, every Code node's source as its own file (`.js` with
+JSDoc, or `.ts` compiled one-way), synced with the instance over **n8n's
+built-in MCP server** — draft-first, code-only. Workflow *structure* is n8n's
+job (the editor, or n8n's own MCP tools); decanter mirrors it into a
+read-only `workflow.json` snapshot for review diffs and offline tooling.
+
+This identity is the Plan 32 pivot (2026-07-22, maintainer GO): decanter
+stopped being a canonical whole-workflow sync tool over the public REST API
+and became **the Code-node craftsmanship layer** — the distinctive part
+(shared TS, typecheck, local run/simulate, per-node git history) — while
+structure and lifecycle are delegated to n8n's own agent surface (MCP +
+official skills). Rewritten from the API-era plan; superseded mechanics are
+kept below as compact history where they explain present shapes.
 
 ## Project layout
 
@@ -10,8 +21,9 @@ folder-per-workflow layout, keep every Code node's source as its own file
 n8n-decanter/
   package.json            # deps: esbuild, luxon; devDeps: typescript,
                           #   @types/node, @types/luxon
-  .env                    # N8N_HOST, N8N_API_KEY (gitignored; written by init)
-  .env.example
+  .env                    # N8N_HOST, optional N8N_MCP_TOKEN + N8N_API_KEY
+                          #   (gitignored; written by init)
+  .decanter-auth.json     # MCP OAuth credentials (gitignored; minted by init)
   decanter.config.json
   n8n-decanter.mts        # CLI entry (verb-first: `n8n-decanter <verb> …`):
                           #   init | pull | push | status | check | rename |
@@ -20,7 +32,7 @@ n8n-decanter/
                           #   simulate | completion + namespaces:
                           #   node (create|rename|run), mock (create|check)
   lib/                    # implementation: add, api, compile, config, datatables,
-                          #   diff, executions, git, init, lifecycle, picker,
+                          #   diff, executions, git, init, lifecycle, mcp, picker,
                           #   prompt, proxy, pull, push, rename, run, state, status,
                           #   style, template, util, validate, watch (one .mts each)
                           #   + types.mts (shared data-model shapes)
@@ -30,11 +42,12 @@ n8n-decanter/
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
                           #   added here later is copied too
-  test/                   # e2e.mts (mock-API e2e) + proxy.mts + interactive.mts
-                          #   (picker terminal IO, PassThrough streams) + unit/
-                          #   — all npm test; smoke-n8n.mts (opt-in Docker
-                          #   smoke, plans/15); harness.mts (shared step
-                          #   runner: STEP=<substring> isolates one step,
+  test/                   # e2e.mts (mock REST+MCP e2e) + proxy.mts +
+                          #   interactive.mts (picker terminal IO, PassThrough
+                          #   streams) + unit/ — all npm test; smoke-n8n.mts
+                          #   (opt-in Docker smoke incl. the MCP path, plans/15
+                          #   + plans/32); harness.mts (shared step runner:
+                          #   STEP=<substring> isolates one step,
                           #   skip-on-prerequisite-failure, plans/22)
   tsconfig.json           # workflow node files: allowJs + checkJs, includes workflows/
   tsconfig.cli.json       # the CLI's own .mts sources: strict NodeNext, no emit
@@ -44,10 +57,42 @@ n8n-decanter/
 
 ## Decisions made
 
+- **Plan 32 (2026-07-22): the workflow code path rides n8n's MCP server; the
+  public API stays only where MCP has no equivalent.** The invariant that
+  made the pivot safe: *Code-node source in git* lives in the file layer and
+  survived the backend swap untouched. What flexed: `workflow.json` demoted
+  to a read-only snapshot; whole-workflow structural hashing, the
+  PUT-canonical drift guard, watch's structural-conflict machinery
+  (`workflow.remote.json`), and the `.remote.js` conflict artifacts all
+  deleted; per-node content hashing kept as the only drift guard. Spike- and
+  smoke-verified against n8n 2.30.7 (see "MCP backend" below).
+- **Draft-first is the product, not a caveat.** MCP `update_workflow` writes
+  land on the workflow's draft and `publish_workflow` is a separate act —
+  the API-era "auto-publish on push to an active workflow" behavior (a
+  server-side `publishIfActive: true` hardcode) is gone along with the API
+  path. `push --publish` composes the two for the common case.
+- **Structure acts are forwarded, never synced.** `rename`, `node create`,
+  and `node rename` (offline in the API era, "push to propagate") now issue
+  the matching MCP op (`setWorkflowMetadata`, `addNode`, `renameNode`) and
+  pull the result. The framing that keeps the boundary honest: sync verbs
+  touch only Code-node source; ref verbs *relay deliberate user acts* to
+  n8n — decanter still never owns structure.
+- **Per-verb API decisions (Plan 32 Task 4):** `publish`/`unpublish`/`create`
+  re-based onto MCP (`create_workflow_from_code` with the minimal
+  `workflow('<slug>', '<name>')` SDK expression; MCP-created workflows are
+  born `availableInMCP`, so the follow-up pull works). `duplicate` **stays on
+  the public API** — MCP's only creation path is SDK *code*, and re-expressing
+  an arbitrary pulled JSON graph as SDK code is a lossy transformation the
+  lossless `POST /workflows` avoids; the API-born copy is MCP-gated until the
+  user flips its flag (the CLI says so). `delete` **stays on the public API**
+  — MCP offers only `archive_workflow`, and the verb's contract is the real
+  hard delete. `executions` and `data-tables` stay on the API (no MCP row
+  reads; execution reads existed only partially at spike time).
 - **esbuild** compiles `.ts` node files (`bundle: false`, `format: "cjs"`,
   `target: node18`). Comments are stripped and lines shift — accepted.
-  Consequence: n8n-UI edits on TS nodes can't be auto-merged back into the
-  `.ts`; they are *detected* and surfaced as `<Node>.remote.js` for manual porting.
+  Consequence: instance-side edits on TS nodes can't be auto-merged back into
+  the `.ts`; they are *detected* and warned about (`status --diff` to
+  inspect; the `.remote.js` artifact files died with Plan 32).
 - **`.js` nodes are the lossless default**: pushed/pulled verbatim, byte-identical
   round-trip. Type-check via JSDoc + `checkJs`. Git merges them like any file.
 - **`.ts` nodes are one-way**: local `.ts` is source of truth. Push compiles and
@@ -59,53 +104,39 @@ n8n-decanter/
   ```
 
   Presence of the marker ⇒ node is TS-managed (self-describing, no config entry).
-  Pull strips the marker line before hashing/comparing.
+  Pull strips the marker line before hashing/comparing. Push also sends a
+  body-equal node when the remote lacks the marker (so a freshly converted
+  `.ts` node gets marked on its first push instead of warning forever).
 - **Git workflow (decided 2026-07-19; releases decoupled 2026-07-21):
   protected main, releases via a dedicated release PR.** No direct commits to
   main; short-lived branches, squash-merged via PR (linear main, one commit per
   PR). **Feature PRs are decoupled from releases** — a user-facing PR only
   appends its entry under `[Unreleased]`; it does *not* bump `package.json`,
-  tag, or release. `[Unreleased]` accumulates across many PRs, so user-facing
-  work sitting there on main is the expected steady state. **Releasing is a
-  separate, deliberate act:** a `chore/release-x.y.z` PR rolls `[Unreleased]` →
-  `[x.y.z]` and bumps the version; merging it *is* the release, after which the
-  squash commit is tagged `vX.Y.Z` and published as a GitHub Release (changelog
-  section as notes). `npm publish` is the maintainer's step. Full scheme in
-  AGENTS.md ("Git workflow & releases"); GitHub ruleset enforcement is live now
-  that the repo is public (plans/DONE-13).
-- **n8n 2.x only (user decision 2026-07-19).** The tool targets the n8n 2.x
-  line exclusively — the draft/publish model is treated as the native model,
-  no 1.x compatibility hedges. Continuously verified against real 2.x
-  instances by the plans/15 smoke suite; the "across the line" half of that
-  claim is backed by a small version matrix (plans/22, added 2026-07-20) —
-  the CI `smoke` job (cron + manual dispatch only) runs the suite against an
-  oldest-supported, a middle, and the latest verified 2.x tag via
-  `SMOKE_N8N_TAG`, instead of asserting it from one pinned point release.
-  Passing set recorded in `test/smoke-n8n.mts`'s header comment. A
-  consequence recorded 2026-07-19: the 2.x public API *does* offer `POST
-  /api/v1/workflows`, so workflow birth can be **triggered from the CLI** — the
-  `create` verb (plans/20) posts a blank draft and pulls it. The server still
-  assigns the id and owns the birth (born-in-n8n holds; the CLI just triggers
-  it); there is no id-less repo folder that becomes a workflow on push.
+  tag, or release. Releasing is a separate, deliberate `chore/release-x.y.z`
+  PR. `npm publish` is the maintainer's step. Full scheme in AGENTS.md.
+- **n8n 2.x only (user decision 2026-07-19), with an MCP floor since Plan 32.**
+  The tool targets the 2.x line exclusively; the MCP sync path additionally
+  needs the built-in MCP server (~2.20+; all Plan 32 behavior verified on
+  2.30.7), MCP access enabled instance-wide, and the per-workflow
+  `availableInMCP` opt-in. Continuously verified against real 2.x instances
+  by the plans/15 smoke suite (version matrix via `SMOKE_N8N_TAG`, plans/22).
 
 ## Synced content layout
 
 ```
 workflows/
-  <n8n folder path>/            # only if the API exposes it, see Open questions
-    <workflow-slug>/            # kebab-case slug of the name (a stable local pick)
-      workflow.json             # full workflow, jsCode replaced by "//@file:code/<node-name>.js"
-      code/
-        <node-name>.js          # JSDoc-typed Code node (lossless)
-        <node-name>.ts          # TS Code node (one-way)
-        <node-name>.remote.js   # written by pull on conflict/UI-edit, visible on purpose
-      .decanter.json            # state, see below
-      executions/               # optional: fetched run data (plans/3) — temp,
-        <execId>.json           #   self-gitignored, never synced back
-      fixtures/                 # optional: committed pins (simulate --pin, plans/7)
-        <node>.json             #   one network node's captured output, provenance-stamped
-      mocks/                    # optional: committed, hand-fillable mock scenarios
-        <slug>.json             #   (mock create/check, plans/7) — capture + gap fills; tracked
+  <workflow-slug>/            # kebab-case slug of the name (a stable local pick)
+    workflow.json             # READ-ONLY structure snapshot; jsCode replaced by
+                              #   "//@file:code/<node-name>.js" placeholders
+    code/
+      <node-name>.js          # JSDoc-typed Code node (lossless)
+      <node-name>.ts          # TS Code node (one-way)
+    .decanter.json            # state, see below
+    executions/               # optional: fetched run data (plans/3) — temp,
+      <execId>.json           #   self-gitignored, never synced back
+    fixtures/                 # optional: committed pins (simulate --pin, plans/7)
+    mocks/                    # optional: committed, hand-fillable mock scenarios
+      <slug>.json             #   (mock create/check, plans/7) — tracked
 ```
 
 - Workflow **id** lives in `workflow.json` (and `.decanter.json`) → the folder
@@ -114,17 +145,27 @@ workflows/
   collision with a different workflow falls back to `<slug>-<id8>` + a warn); an
   **existing** folder is left as-is — folders are sticky and never follow a
   remote rename (Plan 27). The always-current display name is cached in
-  `.decanter.json.name` (read by the picker / `list` / ref-resolution). Folders
-  synced before Plan 27 keep their old (spaces/caps) names and still resolve.
-- Node files live in the folder's `code/` subdir and are named after the node
-  name in **kebab-case** (`Parse Order` → `code/parse-order.js`). Node **id**
-  (stable in the workflow JSON) is the real key; `.decanter.json` maps node-id →
-  file path (with the `code/` prefix),
-  so node renames rename the file instead of orphaning it — the same rename
-  machinery migrates pre-`code/` flat layouts on the next pull.
-- `workflow.json` is pretty-printed with stable key order → clean diffs.
-- No per-file header comments needed: which workflow/node a file belongs to is
-  resolved from `.decanter.json` + the placeholders in `workflow.json`.
+  `.decanter.json.name`.
+- Node files live in the folder's `code/` subdir, named after the node name in
+  **kebab-case** (`Parse Order` → `code/parse-order.js`). Node **id** is the
+  real key — **ids survive renames** (spike-verified, including MCP
+  `renameNode`), which is the whole identity design (Plan 32 Task 3):
+  `.decanter.json` maps node-id → file path, MCP ops address nodes *by name*,
+  and push looks each id's current name up from a fresh read. A structure-side
+  rename (UI, another agent via MCP, or `node rename`) therefore just moves
+  the local file on the next pull; per-pull collision handling is
+  deterministic, so a freed kebab base is re-claimed by the next pull. The
+  same rename machinery migrates pre-`code/` flat layouts.
+- **`workflow.json` is a read-only snapshot** (Plan 32 Task 6, promoted from
+  nice-to-have to core since so much offline tooling reads it): pull rewrites
+  it from the workflow *tip*; nothing pushes it; `status` prints an
+  informational stale hint when the remote structure moved. Pretty-printed
+  with stable key order → clean review diffs of structure changes made in
+  n8n. The one meaningful local edit is re-pointing a `//@file:` placeholder
+  (the human-visible file map; push honors it — that's how `.js` ↔ `.ts`
+  conversions work). Derived/permission fields are stripped on pull:
+  `activeVersion`, `activeVersionId`, `shared`, `scopes`, `canExecute`. The
+  draft `versionId` is kept (the executions stale-fixture warning reads it).
 
 ### `.decanter.json` (per workflow)
 
@@ -133,21 +174,78 @@ workflows/
   "workflowId": "0cXNQKKzmO0pXiCq",
   "name": "Order Sync",
   "nodes": {
-    "<node-id>": { "file": "code/amazon-feed.ts", "lastPushedHash": "sha256:…" }
-  },
-  "lastPulledWorkflowHash": "sha256:…"
+    "<node-id>": {
+      "file": "code/amazon-feed.ts",
+      "lastPushedHash": "sha256:…",
+      "name": "Amazon Feed"
+    }
+  }
 }
 ```
 
-`name` is the cached display name, refreshed from `wf.name` on every pull
-(Plan 27) — it lets the folder stay a stable kebab slug while the picker /
-`list` / ref-resolution show the real name, and hardens them against a
-missing/corrupt `workflow.json`. Absent on states written before Plan 27
-(callers fall back to `workflow.json`, then the folder name).
+`name` (workflow-level) is the cached display name, refreshed on every pull
+(Plan 27). Per-node `name` (Plan 32) is a cache for messages about nodes that
+vanished remotely — push always resolves id → current name from a fresh read,
+never from this cache. `lastPushedHash` = hash of the *remote* marker-less
+code body at last sync (push **or** pull) — the per-node drift base and the
+only sync hash left. The API-era `lastPulledWorkflowHash` (structure hash) is
+gone; pull scrubs it from old state files.
 
-`lastPushedHash` = hash of the compiled JS (marker excluded) at last push — the
-"base" for drift detection. `lastPulledWorkflowHash` = hash of the sanitized,
-code-stripped workflow JSON, to warn about structural UI edits.
+## MCP backend (`lib/mcp.mts`, Plan 32)
+
+The sync backend is n8n's built-in MCP server — `POST /mcp-server/http`,
+JSON-RPC over streamable HTTP, spoken by a minimal hand-rolled client (no SDK
+dependency). Everything below is verified against n8n 2.30.7 (spike + smoke,
+2026-07-22; raw shapes in the plan32-mcp-api-facts memory and AGENTS.md
+"Driving a real n8n in Docker").
+
+- **Protocol:** `initialize` handshake (protocol `2025-03-26`) once per
+  process, echo the `mcp-session-id` response header on later calls, send
+  `accept: application/json, text/event-stream` and parse both plain-JSON and
+  SSE (`data:` lines) responses. Tool results are
+  `{content:[{type:"text",text}], structuredContent?, isError?}`; the client
+  prefers `structuredContent`, falls back to parsing `text`, and normalizes
+  `isError` to a thrown `McpToolError` carrying the server's message verbatim
+  (n8n's own guidance texts are good — surface them unfiltered).
+  `publish_workflow` reports failure **in-band** (`success:false` + `error`),
+  normalized to a throw too.
+- **Tools used:** `search_workflows` (lists ALL workflows instance-wide,
+  `availableInMCP` flag per row; limit ≤ 200, no cursor),
+  `get_workflow_details` (full nodes with ids + byte-exact `jsCode`,
+  `versionId`/`activeVersionId`; the workflow **tip** — draft if one exists,
+  else published content), `update_workflow` (atomic op batch, name-addressed;
+  `updateNodeParameters` **merges** — a `{jsCode}`-only write preserves
+  sibling params; returns a summary, never the workflow), `publish_workflow`
+  / `unpublish_workflow`, `create_workflow_from_code`.
+- **The availability gate:** `search_workflows` sees everything, but
+  details/update/publish refuse workflows without `availableInMCP`
+  ("Workflow is not available in MCP. Enable MCP access from the workflow
+  card…"). Surfaced as a third picker state (red `⊘`, sorted last, Enter →
+  guidance), `(not available in MCP)` markers + hint in `list --remote`
+  (`--json`: `mcpAvailable`), and an appended hint on pull/push errors
+  (`isUnavailableInMcp` classifier). Toggling is a user act in n8n — the
+  internal `/rest/mcp/workflows/toggle-access` route is version-fragile and
+  only used by the smoke suite's bootstrap, never by the shipped CLI.
+- **Auth:** two methods, resolved in order — `N8N_MCP_TOKEN` (rotatable
+  bearer from n8n Settings → MCP; the public API key is NOT a valid MCP
+  bearer) wins, else the OAuth credentials in `.decanter-auth.json` (host,
+  client id, refresh token, cached access token + expiry; 0600). **Refresh
+  tokens rotate and the old one is invalid the moment a refresh succeeds** —
+  the client persists the rotated pair before doing anything else, caches
+  access tokens (3600 s, 60 s margin) so refreshes stay rare, refreshes once
+  on a 401, and maps a terminal `invalid_grant` to "re-run init". An auth
+  file minted for a different host is ignored with a warning. OAuth endpoint
+  discovery (`/.well-known/oauth-authorization-server`) re-bases every
+  advertised endpoint onto the configured host — instances behind
+  proxies/containers advertise their own idea of their URL.
+- **Rate limiting:** n8n 429s the MCP endpoint under bursts (hit live by the
+  smoke suite's rapid CLI runs). The client backs off and retries (≤ 5,
+  Retry-After-aware, else 1/2/4/8 s) — safe for every tool since a 429'd
+  request was not applied.
+- **Errors:** 404 → "enable MCP access in n8n (Settings → MCP; needs ~2.20+)";
+  401 bearer → "mint a fresh token (the public API key is not a valid MCP
+  token)"; timeouts honor `requestTimeoutMs` with the same guidance as the
+  API era.
 
 ## Config
 
@@ -161,748 +259,387 @@ code-stripped workflow JSON, to warn about structural UI edits.
 ```
 
 Ids only — names, folders, node lists are all derived on pull. Optional keys:
-`commitOnPush`/`commitOnPull` (default `true`, see Push/Pull),
-`requestTimeoutMs` (default `30000` — per-request timeout on all n8n API
-calls, plans/10; init's credential probe is fixed at 10 s),
-`dataTables` (default `true` — gates the read-only `data-tables` fetch, plans/25;
-`false` refuses it and the recommended key needn't carry the read scopes),
-`bundleDependencies` (default `[]` — npm packages `.ts` nodes may import;
-bundled into the compiled node on push, plans/14; read at compile time by an
-upward config search so `run` stays config-optional), and — for watch's
-browser live-reload (plans/5) — `browserReload` (`"off"` default, or `"proxy"`)
-and `proxyPort` (default `5679`).
+`commitOnPush`/`commitOnPull` (default `true`), `requestTimeoutMs` (default
+`30000` — per-request timeout on MCP and API calls; init's probes are fixed
+at 10 s), `dataTables` (default `true`, plans/25), `bundleDependencies`
+(default `[]`, plans/14), and — for watch's browser live-reload (plans/5) —
+`browserReload` (`"off"` default, or `"proxy"`) and `proxyPort` (default
+`5679`).
+
+Credentials (Plan 32): `N8N_HOST` is required for online verbs; MCP
+credentials (env token or auth file) power the sync/structure verbs;
+`N8N_API_KEY` is **optional** and guarded per-verb (`requireApiKey` names the
+verb in its error) — only `executions`, `data-tables`, `duplicate`, `delete`
+need it. `loadConfig`'s old `requireCredentials` became `requireHost`.
 
 ## Workflow refs & CLI output (plans/11)
 
-The grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`. The
-command is `positional[0]`; everything after it is an argument, so a workflow
-literally named like a verb needs no special rule (`status push` runs `status`
-on the workflow named `push`), and verb-last (`wf123 push`) errors with
-*unknown verb*. Node operations live under a **`node` namespace** (`node create`
-/ `node rename` / `node run`); the parser special-cases `positional[0] ===
-"node"` and takes the real verb from `positional[1]`. Flags may sit anywhere.
+The grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`.
+Node operations live under a **`node` namespace** (`node create` /
+`node rename` / `node run`), mocks under `mock` (`create`/`check`). Flags may
+sit anywhere; `--publish` (Plan 32) joins `--force`/`--no-typecheck` on push.
 
-Every `[workflow…]` argument is really a **ref**: an id, a workflow/folder
-name, or a unique name prefix. Resolution is tiered — exact id → exact name
-(case-insensitive; the cached `.decanter.json.name`, `workflow.json` `name`,
-*and* the folder basename all count) → unique prefix — and never prompts:
-several matches in a tier error with the candidate list. An **id-shaped ref
-that matches nothing passes through unresolved** so `pull`/`status` of a fresh
-remote id keep working; `pull` additionally resolves unknown names against
-`GET /api/v1/workflows` (cursor-paginated, matched client-side). A ref verb
-given no workflow opens the picker on a TTY, else falls back to the config /
-errors. Config entries stay ids only.
+Every `[workflow…]` argument is a **ref**: an id, a workflow/folder name, or
+a unique name prefix. Resolution is tiered — exact id → exact name
+(case-insensitive) → unique prefix — and never prompts. An id-shaped ref that
+matches nothing passes through unresolved; `pull` additionally resolves
+unknown names against MCP `search_workflows` (which sees every workflow,
+opted-in or not). A ref verb given no workflow opens the picker on a TTY.
 
-Discovery surfaces, primary first: the **interactive picker** — bare
-`n8n-decanter` (no verb, no refs, no flags) on a TTY (stdin *and* stdout) in
-an inited project opens with the init logo banner, then a type-to-filter
-list (`lib/picker.mts`): pulled workflows green, unpulled remote ones yellow
-with a literal `(not pulled)` suffix (never color alone), remote entries
-appended asynchronously as `GET /workflows` lands (skipped without
-credentials; failures degrade to a dim notice) — while loading, dim `░`
-skeleton rows of varied widths mark where they will appear. Enter on a
-pulled workflow opens a verb menu (status/pull/push/watch/check/executions; a
-letter cycles matching verbs, so `p` alternates pull/push); Enter on an unpulled
-one runs `pull` directly. The picker only produces `{verb, id}` and
-re-enters the normal dispatcher path (`dispatch()`, the extracted verb
-switch) — identical semantics to typing the command. The session is a
-loop: after a verb finishes (or fails — errors log and return), the same
-workflow's verb menu re-opens with the cursor on the verb just run; the
-local list is re-scanned each round (a pull just added a folder) while the
-remote list is fetched once per session. Esc steps back to the workflow
-list, Esc there quits; Ctrl-C interrupts (exit 130); the exit code
-otherwise reflects the last verb run. Raw mode and cursor are always
-restored, and stdin EOF quits rather than wedging. Any other bare
-invocation — piped, or no config in reach — prints usage unchanged, so
-scripts and LLM harnesses never meet the picker. The pure state machine
-(filter, key reducer, scroll window, resume) is exported for unit tests;
-only `runPicker` touches the terminal. Secondary surfaces: `list` (one line per
-pulled workflow: name, id, folder; `--remote` appends unpulled remote ones)
-and `completion zsh|bash`, a printed shell script that delegates to the
-hidden, credentials-free `__complete` verb (verbs, flags, local names/ids;
-silently name-less without a config) — kept deliberately when the picker
-landed (decision 2026-07-19): it serves mid-command tab completion, which
-the picker doesn't replace.
+The **interactive picker** (Plan 19/23) shows three states since Plan 32:
+pulled (green `●`), unpulled-but-available (yellow `○`), and
+**MCP-unavailable (red `⊘`, sorted last)** — Enter on a `⊘` row resolves to
+an `enable-mcp` sentinel the CLI turns into guidance (where the n8n-side
+switch lives) instead of a failing pull; the legend gains `⊘ not in MCP` only
+when such rows exist, and the Enter hint switches to "enter how to enable".
+The remote list rides `search_workflows`. Everything else about the picker
+(type-to-filter, verb menu, resume loop, skeleton rows, TTY-gating, pure
+state machine exported for tests) is unchanged from Plans 19/23/27.
 
 Output follows **one rule: styling and transient output exist only when the
-target stream is a TTY** (`util.styleText` per stream — `NO_COLOR` respected,
-though Node ignores it when `FORCE_COLOR` is set). Piped output is plain
-line-oriented text; no information is carried by color alone. Vocabulary
-(`lib/style.mts`): `✓ ` green success (`Log.ok`), `! ` yellow warn, `✗ ` red
-error (was `x `), dim metadata, bold names, OSC 8 `link()` (plain text+URL
-when piped). Progress — `[2/5]` counters and `(0.4s)` durations — is plain
-text in both modes; the transient `pulling <id>…` rewrite, the `init` logo
-(quadrant-block minifont; piped runs get one `n8n-decanter v<version>` line),
-and hyperlinks are TTY-only. `watch` prints a deep link to
-`<origin>/workflow/<id>` (proxy origin when live-reload runs, upstream
-otherwise).
-
-Exit codes: `status` exits **1 on conflict/remote drift** — anything where a
-pull is needed or a push would clobber remote work (CONFLICT, remote-only
-structure/code changes, remote nodes unknown locally or deleted, not pulled
-yet); local-only "push pending" edits exit 0 (plans/10 decision, 2026-07-18:
-the normal dev state must stay green). `status --diff` (plans/3 B) adds a
-unified line diff under each drifted node — `-` remote, `+` local, `.ts`
-nodes diffed as their compiled JS (what the sync hashes compare) — via the
-zero-dep LCS differ in `lib/diff.mts`. `DEBUG=1` prints stack traces on
-errors; the default is the one-line message.
+target stream is a TTY**; piped output is plain line-oriented text and no
+information is carried by color alone (the `⊘` glyph carries the third state
+by shape). Exit codes: `status` exits **1 on code conflict/remote code
+drift** — narrowed by Plan 32: remote *structure* changes are an
+informational snapshot-stale hint, not drift (structure is n8n's business,
+and MCP/skills edits would otherwise keep CI permanently red). `DEBUG=1`
+prints stack traces.
 
 ## Pull flow (`n8n-decanter pull [id…]`)
 
 For each configured workflow:
 
-1. `GET /api/v1/workflows/:id` (header `X-N8N-API-KEY`).
+1. MCP `get_workflow_details` — the tip (draft if one exists, else the
+   published content; a *superseded* published version is unreadable over
+   MCP, so pull syncs the tip by design). Unavailable → the server's
+   guidance text + the CLI's enable hint.
 2. Locate the local folder by id (scan `.decanter.json`s under root). An
-   existing folder is kept as-is (sticky, Plan 27); a new one is created as the
-   kebab-case slug of the name (`<slug>-<id8>` + warn on collision). Cache the
-   display name in `.decanter.json.name`.
-3. For each Code node (`n8n-nodes-base.code`), matched by node id:
-   - **Marker present** → TS-managed:
-     - `hash(remote jsCode minus marker) == hash(compile(local .ts))` → in sync, skip.
-     - hashes differ, local compiled hash == `lastPushedHash` → **UI edit**: write
-       `code/<node>.remote.js`, print warning, leave `.ts` untouched.
-     - both differ → **conflict**: same as above, louder warning.
-   - **No marker** → plain/JSDoc JS: write `code/<node>.js` verbatim (overwrite;
-     git history is the safety net).
-   - Node renamed → rename the file, update `.decanter.json` (also how flat
-     pre-`code/` layouts migrate).
-4. Write `workflow.json` with each `jsCode` replaced by `//@file:<filename>`,
-   keeping the file to the workflow itself: the n8n 2.x derived fields
-   `activeVersion` (a server-side copy of the published version, code
-   included), `shared` (sharing metadata), and `activeVersionId` (the
-   published-version pointer, which churns on every publish and has no local
-   reader — version-aware `status` reads it off the live GET) are left out —
-   code exists exactly once (in `code/`), and diffs show your changes, not
-   publish churn. None is pushable (PUT whitelist), so nothing is lost. The
-   draft `versionId` is kept (the executions stale-fixture warning reads it).
-5. Update `.decanter.json` hashes.
+   existing folder is kept as-is (sticky, Plan 27); a new one gets the
+   kebab slug (`<slug>-<id8>` + warn on collision). Cache the display name.
+3. For each JS Code node (`n8n-nodes-base.code`), matched by node id:
+   - **Marker present** → TS-managed: compare `hash(remote body)` vs
+     `hash(compile(local .ts))` — in sync → nothing; local == lastPushedHash
+     → **instance-side edit**: warn (inspect via `status --diff`), `.ts`
+     untouched; remote == lastPushedHash → local modified, info; both moved →
+     **CONFLICT** warning. No `.remote.js` files are written (Plan 32).
+   - **No marker, local `.ts` exists** → never clobber TS source: keep the
+     `.ts`, warn ("not pushed from TS yet?"), re-baseline.
+   - **No marker** → plain JS: overwrite `code/<node>.js` with the remote
+     body (git is the safety net; a warning flags when that clobbers
+     unpushed local edits).
+   - Node renamed → rename the file (id-keyed map), update state.
+4. Write the `workflow.json` snapshot (placeholders substituted; derived
+   fields stripped — see layout).
+5. Update `.decanter.json`: per-node `lastPushedHash` (= remote body hash),
+   per-node `name`, workflow `name`; scrub the legacy structure hash.
+6. Optional auto-commit (`commitOnPull`).
 
-## Push flow (`n8n-decanter push [id…]`)
+## Push flow (`n8n-decanter push [id…] [--force] [--publish]`)
 
-Before anything else, two local gates run: the **compliance guard** (below) per
-workflow, and — unless `--no-typecheck` — the **typecheck** once per push.
-Guard errors abort and are *not* bypassable with `--force` (that flag only
-overrides remote-drift protection); they must be fixed.
+Before anything else, two local gates run: the **compliance guard** per
+workflow and — unless `--no-typecheck` — the **typecheck** once per push.
+Guard errors abort and are *not* bypassable with `--force`.
 
-1. Read `workflow.json`, resolve `//@file:` placeholders:
-   - `.js` → verbatim.
-   - `.ts` → esbuild → append marker with hash → `jsCode`.
-2. **Drift guard**: `GET` the workflow first (needed for the PUT anyway). For each
-   Code node compare remote hash vs `lastPushedHash`; on mismatch abort with a
-   "remote changed since last sync — pull first" message. `--force` overrides.
-   Same check for the code-stripped workflow hash (structural UI edits).
-3. Sanitize and `PUT /api/v1/workflows/:id`. The PUT endpoint rejects unknown
-   fields, so send only:
-   - top level: `name`, `nodes`, `connections`, `settings`, `staticData`
-   - `settings`, whitelisted: `saveExecutionProgress`, `saveManualExecutions`,
-     `saveDataErrorExecution`, `saveDataSuccessExecution`, `executionTimeout`,
-     `timezone`, `errorWorkflow`
-4. Update `.decanter.json` (`lastPushedHash` per node, workflow hash).
+1. Refresh the id→file map from the snapshot's `//@file:` placeholders (the
+   human-visible file map — this is what makes a local `.js` → `.ts`
+   re-point take effect).
+2. MCP `get_workflow_details` (fresh read). For each tracked node id: resolve
+   its **current remote name** (the name↔id reconciliation — renames made
+   anywhere are absorbed here), build the local payload (`.js` verbatim;
+   `.ts` esbuild + marker), and compare hashes:
+   - remote body moved off `lastPushedHash` *and* differs from the local
+     payload → **per-node drift**: abort with "pull first" (`--force`
+     overrides). A remote edit that equals the local payload re-baselines
+     silently.
+   - body equal (and marker present where expected) → skip; else queue a
+     `{type:"updateNodeParameters", nodeName, parameters:{jsCode}}` op.
+   - node id missing remotely → warn + skip (pull cleans state); a remote
+     Code node not tracked locally → info ("pull to extract it") — never an
+     abort (structure is n8n's business).
+3. One atomic `update_workflow` batch (merge semantics keep sibling params
+   like `mode`/`language` intact). The write lands on the **draft**;
+   `versionId` moves, `activeVersionId` doesn't.
+4. **Confirming read** — `update_workflow` returns only a summary, so hashes
+   are recorded from a post-write `get_workflow_details` (the moral successor
+   of the API-era "record from the PUT response" rule), with a byte-exact
+   round-trip warning if the server normalized anything.
+5. `--publish` → `publish_workflow` afterwards. Result lines state the draft
+   reality: `— draft updated; the live version is unchanged (run "publish"
+   to go live)` / `— unpublished draft` / `— published: code is live now`.
+6. Optional auto-commit (`commitOnPush`); the live-reload proxy is notified.
 
 ## Compliance guard (`n8n-decanter check [id…]`)
 
-Validates pulled folders against this plan's layout — runs automatically at
-the start of every push, and standalone as `check` (offline; needs no
-credentials, so it works in CI without secrets). Without ids it checks every
-folder under `root` that has a `.decanter.json`.
+Unchanged by Plan 32 in substance — the guard validates the *file layer*,
+which is exactly the layer decanter still owns. Runs at the start of every
+push and standalone as `check` (offline, credential-free).
 
-Errors (block push / exit 1):
+Errors (block push / exit 1): inline `jsCode` in the snapshot instead of a
+placeholder; placeholders referencing missing files, `.remote.js` leftovers,
+non-`.js`/`.ts` files, or files outside `code/`; a `.js` file ending with an
+`@ts-n8n` marker; imports in `.js` nodes / bundling violations in `.ts`
+nodes (plans/14); missing/corrupt `workflow.json` or `.decanter.json`;
+structural integrity of the snapshot (dangling connections, duplicate node
+names/ids, orphan code files, dangling literal `$('…')` references in code
+and expression parameters).
 
-- Code node in `workflow.json` with inline `jsCode` instead of a `//@file:`
-  placeholder (hand edit or bad merge).
-- Placeholder referencing a missing file, a `*.remote.js` conflict artifact,
-  anything that isn't `.js`/`.ts`, or a file outside the `code/` subdir
-  (pre-`code/` layouts — a fresh pull migrates them).
-- A `.js` node file ending with an `@ts-n8n` marker line (would be
-  misidentified as TS-managed on the next pull).
-- Missing/corrupt `workflow.json` or `.decanter.json`.
-- Structural integrity (added 2026-07-18, plans/2): dangling connection
-  sources/targets (every key in `wf.connections` and every `{ node: … }`
-  target must name a real node), duplicate node names or ids, orphan
-  `.js`/`.ts` files no placeholder references (`.d.ts` and `*.remote.js`
-  exempt; only the folder root and `code/` are scanned — other subdirs are
-  reserved for artifacts like `executions/` (live since plans/3 C),
-  `fixtures/` and `mocks/` (plans/7)),
-  and dangling literal `$('…')` references in node source files *and* in
-  expression parameters. The `$('…')` scan is a deliberate regex heuristic
-  (shared `findNodeRefs`/`renameNodeRefs` in `lib/util.mts`): literal
-  single-argument calls only; `$(var)`, multi-arg, and `${…}` templates are
-  skipped.
+Warnings (don't block): unresolved `.remote.js` / `workflow.remote.json`
+leftovers — pre-Plan-32 artifacts; port and delete them.
 
-Warnings (don't block):
+Typecheck gate: unchanged (see Type checking; scoping, template verify hook).
 
-- Unresolved `*.remote.js` leftovers — push will overwrite those remote edits.
+## Structure verbs (forwarded acts, Plan 32)
 
-Typecheck gate: `push` and `check` run `scripts/typecheck.mts` against the
-nearest `tsconfig.json` at/above the config dir; skipped with an info message
-when none exists (e.g. an init'ed sync dir), skippable with `--no-typecheck`.
-With explicit ids, `check` scopes the typecheck too: the workflow dirs are
-passed to the script, which still compiles the whole project (cross-file types
-need the full graph) but only reports/counts diagnostics under those dirs;
-file-less diagnostics (broken tsconfig) always surface. The template's
-PostToolUse verify hook leans on this — it reads `workflowId` from the edited
-file's sibling `.decanter.json` (ids, not folder names, are what `check`
-resolves) and runs `check <id>`, so an unrelated broken workflow can't block
-an edit. Watch validates only its own node file on code saves — structural
-saves run the full compliance guard via push — and never typechecks (fast
-inner loop).
+- **`rename <workflow> "<new name>"`** → MCP
+  `update_workflow [{setWorkflowMetadata, name}]`, then update the local
+  snapshot + cached name. Immediate; the folder never moves (Plan 27).
+- **`node rename <workflow> "<old>" "<new>"`** → local pre-checks (node
+  exists, no collision) → MCP `renameNode` (n8n rewrites connections and
+  `$('…')` expression references server-side; node id stable) → rewrite
+  `$('…')` in local `.ts` sources (the one thing pull can't refresh — `.ts`
+  is one-way) → pull (files and placeholders follow; kebab collisions get
+  `-<id8>`). The API-era local rewriting machinery
+  (connections/params/file-pair logic in `lib/rename.mts`) shrank to the
+  `.ts`-refs pass; `renameNodeRefs`/`findNodeRefs` stay shared with the guard.
+- **`node create <workflow> "<Node name>" [--ts]`** → local checks → MCP
+  `addNode` (type `n8n-nodes-base.code`, typeVersion 2, starter body,
+  position = rightmost + 220) → pull → resolve the landed node **by name**
+  (the server may re-mint the id — the e2e mock does, adversarially) →
+  `--ts`: convert the landed `.js` to `.ts` in place (the starter body is
+  valid TS; the marker lands on first push). Lands disconnected — wiring is
+  structure and stays in n8n.
 
-## Rename (`n8n-decanter node rename <workflow> "<old>" "<new>"`)
+## Lifecycle verbs (`lib/lifecycle.mts`)
 
-Added 2026-07-18 (plans/2; moved under the `node` namespace in Plan 27). Renames
-a node atomically everywhere the old name
-is load-bearing, replacing the manual 4-step dance: `node.name`, connection
-keys and `{ node: … }` targets, literal `$('…')` references in every node
-source file and expression parameter (via the same shared regex as the
-guard), the kebab-case source filename plus its `.remote.js` sibling (never
-across extensions; collisions fall back to `-<first 8 of node id>`), the
-`//@file:` placeholder, and the `.decanter.json` entry. `.remote.js`
-*contents* are never rewritten — they mirror remote code. Refuses unknown,
-colliding, empty, and unchanged names; re-runs the compliance guard
-afterwards and fails loudly (files stay written; git is the safety net).
-Offline by design — `push` propagates.
+- **`publish` / `unpublish`** → MCP `publish_workflow` / `unpublish_workflow`
+  (in-band `success:false` normalized to errors). Since pushes are
+  draft-only, `publish` is THE go-live step: already-published is only a
+  no-op when `activeVersionId === versionId`; a diverged draft re-publishes.
+- **`create "<name>"`** → MCP `create_workflow_from_code` with
+  `workflow("<kebab-slug>", "<name>")` (the minimal SDK expression — a bare
+  expression, top-level `return` is rejected by the SDK parser), then pull
+  (MCP-born workflows are auto-available). Born unpublished. The born-in-n8n
+  rule holds — the server assigns the id.
+- **`duplicate <workflow> ["<name>"]`** → public API `POST /workflows` with
+  the body assembled from the local folder (placeholders reconstituted,
+  `.ts` compiled — lossless, including unpushed edits), then a *tried* pull:
+  the API-born copy is MCP-gated, so the refusal becomes guidance ("enable,
+  then `pull <id>`") instead of an error. Needs `N8N_API_KEY`.
+- **`delete <workflow> [--force]`** → public API hard delete, unchanged
+  semantics (y/N prompt, `--force` for non-interactive, local folder kept,
+  stale config entry flagged). Needs `N8N_API_KEY`.
 
-`rename <workflow> "<new name>"` (top-level, Plan 27) sets `wf.name` and the
-cached `.decanter.json.name`; the folder is a stable local slug and is **left
-untouched** (it no longer follows the workflow name). `push` propagates.
+## Execution datasets (`executions`, plans/3 C) and data tables (plans/25)
 
-## Execution datasets (`n8n-decanter executions [workflow…]`, plans/3 C)
+Both **unchanged by Plan 32 and deliberately still on the public API** — the
+surfaces MCP cannot serve (spike-verified: data-table tools are add-only with
+no row reads; full execution run-data reads were not available). Their design
+records stand as before:
 
-Added 2026-07-19. Fetches recent executions with full run data
-(`GET /api/v1/executions?includeData=true`, filtered by `workflowId`;
-`--status=success|error|waiting` and `--limit=N` — default 5, API page cap
-250 — pass through to the API) into
-`workflows/<folder>/executions/<execId>.json`, verbatim and pretty-printed. A
-purely numeric argument is an execution id (`GET /executions/{id}`), routed
-to its workflow's folder via the response's `workflowId`. Read-only against
-the API by design — nothing under `executions/` is ever synced back.
-
-Purpose: **temporary reference data so agents (and humans) see real payload
-shapes** — items live under
-`data.resultData.runData["<Node>"][0].data.main[0][]` — instead of guessing
-when writing `run` fixtures or debugging nodes; also the designated fixture
-source for the simulation suite (plans/7). `executions clean` (offline)
-deletes the dirs — for the given refs, or every pulled workflow.
-
-Two decisions from the 2026-07-18 review (plans/3):
-
-- **Standalone verb, not part of `pull`** — fetching on every pull would be
-  scope creep and a surprise network/data cost.
-- **Never in git.** Run data can contain credentials/PII, and `executions/`
-  sits inside the commit-on-pull/push pathspec — so the verb writes each dir
-  *self-ignoring* (`executions/.gitignore` containing `*`, robust for
-  pre-existing sync dirs and custom roots), and init's scaffolded root
-  `.gitignore` lists `workflows/*/executions/` as well.
-
-Caveat (recorded in plans/3, smoke-verified): executions run the *published*
-workflow version (per-execution `workflowVersionId`, n8n 2.x) — possibly
-older than the draft/repo state. Convenience data, not ground truth. **Enforced
-(plans/20):** after writing execution files, the verb compares each
-`workflowVersionId` against the local draft `versionId` (from `workflow.json`)
-and warns when they differ — the captured data may not match the code you're
-editing. A warning, not an error; the data is still useful.
-`run --from-execution` (auto-building a fixture from a captured execution)
-was deliberately deferred to the backlog — agents read the JSON directly.
-
-## Data tables (`n8n-decanter data-tables [table…]`, plans/25)
-
-Added 2026-07-21. The data-table analogue of `executions`: a **read-only** fetch
-of n8n data-table schema + rows (the built-in project-scoped tables, n8n ≥ 2.x)
-into local, gitignored files, for developing/debugging a workflow against real
-table contents offline. **The CLI never writes a data table** — only GET is ever
-issued against the data-table endpoints (create/update/delete tables, columns,
-and rows are all out of scope, and their write scopes stay off the recommended
-key).
-
-Placement is **instance/project-level, not per-workflow.** Data tables aren't
-owned by one workflow (they're project-scoped), so — unlike `executions/`, which
-nests under each `workflows/<slug>/` — fetched tables land in a **single
-top-level `data-tables/` dir** next to `decanter.config.json` (`configDir`),
-self-ignored (`data-tables/.gitignore` = `*`; tables can hold PII, same
-reasoning as `executions/`) and never synced back. Layout:
-`data-tables/<slug>/{meta,columns,rows}.json`, where `<slug>` is the kebab of the
-table name with the id appended (names aren't guaranteed unique). `meta.json`
-records id/name/projectId, the applied `filter`/`search`/`sortBy`/`limit`, and
-the row count, so a filtered `rows.json` is self-describing (never mistaken for
-the whole table).
-
-Rows can be large, so the verb pulls a **filtered slice** by pushing the query
-to the server: `--filter` (a JSON string of conditions, 1:1 with the API param),
-`--search` (free text), `--sort` (`col:asc|desc`), `--limit` (rows/page, default
-100, cap 250), and `--all` (follow `cursor` to exhaust a filtered result).
-Default is a single capped page.
-
-Config-gated by **`dataTables`** (boolean, default `true`): `false` refuses the
-fetch with a clear message and the recommended key needn't carry the read scopes.
-The gate is on the fetch only — `data-tables clean` (offline delete of the local
-dir) stays available regardless.
-
-Live-verified against `n8nio/n8n:2.31.4` (2026-07-21, recorded in the
-plan25-datatables-api-facts memory): the read scopes are **`dataTable:list`,
-`dataTable:read`, `dataTableColumn:read`, `dataTableRow:read`** (the current
-n8n names them `dataTable:*`, not the older internal `dataStore:*`); a key
-lacking them 403s. Endpoints: `GET /api/v1/data-tables` (`{data,nextCursor}`,
-cursor-paginated; the list inlines columns), `/{id}/columns` (a bare array), and
-`/{id}/rows` (`{data,nextCursor}`, server-side `filter`/`search`/`sortBy`/`limit`
-+ `cursor`). The table `id` is a 16-char alphanumeric token like a workflow id
-(the row `id` inside a table is numeric). Pre-2.x instances 404 — the verb
-surfaces a friendly "need n8n ≥ 2.x" hint; a full-access key still works.
-
-Wiring live data-table reads *into* the `run` emulator / `simulate` engine (so
-Data Table nodes execute offline) is a separate, larger effort (plans/25
-non-goals, relates to plans/7) — this verb is fetch-to-disk only.
+- `executions [workflow…] [--status=…] [--limit=N]` fetches recent executions
+  with full run data into self-gitignored `workflows/<folder>/executions/`;
+  a numeric arg fetches one by id; `clean` is offline. Executions run the
+  *published* version — the stale-fixture warning compares each
+  `workflowVersionId` against the snapshot's draft `versionId` (kept in
+  `workflow.json` for exactly this). Never synced back; never in git.
+- `data-tables [table…] [--filter/--search/--sort/--limit/--all]` fetches
+  schema + rows into the top-level self-gitignored `data-tables/` dir;
+  read-only by design; config-gated by `dataTables`; `clean` offline. Scopes
+  and endpoint facts in the plan25-datatables-api-facts memory.
 
 ## Watch mode (`n8n-decanter watch <workflow>`)
 
-Fast inner loop while developing a workflow: resolve its folder by id and
-watch both the `code/` dir and `workflow.json`. Takes exactly one workflow
-id — or none when the config lists a single workflow. (Was
-single-node-*file* scoped until plans/5's browser live-reload made watching a
-whole workflow the natural fit; structural watch added 2026-07-18, plans/12.)
+Radically simplified by Plan 32 — the fast inner loop for a workflow's
+**code**:
 
-**Watch start = snapshot commit + pull.** Before the watchers arm, watch
-makes a safety commit of the workflow folder (regardless of
-`commitOnPush`/`commitOnPull` — it's the data-loss guard, not sync
-bookkeeping; no-op on a clean tree), then pulls, so every session begins
-committed and in sync with remote. Order is the guarantee: pull overwrites
-plain `.js` files and `workflow.json` with remote unconditionally, so the
-commit must land first. If the snapshot fails (no git), the startup pull is
-skipped rather than pulling over an unsnapshotted tree. A structural conflict
-already present at start (local and remote both moved) warns that remote wins
-the working tree and git holds the local version.
-
-**Code saves** map the changed file back to its node (via `.decanter.json`,
-re-read each time so a mid-session rename still resolves) and push **only
-that node** (GET workflow → replace `jsCode` → sanitized PUT) — remote
-structure is preserved by construction; per-node drift guard as before.
-
-**`workflow.json` saves** push the structure via a full push (compliance
-guard + placeholder resolution + full drift guard; still no typecheck), gated
-by a 3-way check against the **session baseline** — the structure hash both
-sides agreed on at the session's last sync point. The baseline lives in
-memory because single-node pushes re-baseline `lastPulledWorkflowHash` from
-their PUT responses, silently absorbing n8n-UI structural edits into
-`.decanter.json`; the in-memory copy keeps them detectable (a warning fires
-right after the node push that reveals one). Per save: local == baseline →
-skip (the anti-loop guard: covers formatting-only saves and watch's own pull
-rewrite); remote == baseline → push; both moved → interactive conflict
-prompt — `[m]erge` writes a diff-friendly `workflow.remote.json` (`//@file:`
-placeholders substituted only where the remote code still matches the last
-sync; the guard warns while it exists) for manual reconciliation, `[l]ocal`
-force-pushes over the remote changes, `[r]emote` pulls over the local file
-(git holds the previous version), Enter skips until the next save. Non-TTY
-sessions log the conflict and skip; `--force` resolves as keep-local without
-prompting. Known footguns, accepted: `git checkout` rewriting
-`workflow.json` triggers a structural push or prompt (same class as node
-files), and only the PUT-whitelisted fields propagate — local edits to e.g.
-`active` or tags silently don't push.
-
-**Browser live-reload (optional, plans/5).** With `browserReload: "proxy"`,
-watch first boots a transparent reverse proxy on `127.0.0.1:<proxyPort>`
-(default 5679, native `node:http`/`net`/`tls`, no new dep). It pipes every
-request to `host` untouched — auth, assets, and n8n's native `/rest/push`
-WebSocket — and injects a small live-reload client into `text/html` responses
-(buffered, injected before `</body>`; everything else streams through). Open the
-editor via the **proxy URL**; each successful single-node push calls
-`notifyPushed` (a module singleton in `lib/proxy.mts`, also invoked by full
-`push`), which broadcasts a `pushed` SSE event and the client reloads the tab —
-unless the editor has unsaved changes (a synthetic-`beforeunload` dirty probe →
-console warning instead) or a different workflow is open. A port-bind failure
-warns and watch keeps syncing without reload. Clean for a local http `host`;
-https/remote is best-effort (Secure cookies don't survive the plain-http hop).
-**Auth/WebSocket passthrough and the dirty safeguard need a live instance to
-verify** — the offline-testable parts are covered by `test/proxy.mts`.
+- **Watch start = snapshot commit + pull**, unchanged rationale (the commit
+  must land before pull overwrites `.js` files and the snapshot; no git → the
+  startup pull is skipped). A dim note states the draft-only reality: run
+  `publish` to take changes live.
+- **Code saves** map the changed file back to its node (state re-read per
+  event, so mid-session renames resolve) and push **only that node** — a
+  single-op MCP `update_workflow`, per-node drift guard as in push. 200 ms
+  debounce, overlap guard, dirty-set queueing — all as before.
+- **`workflow.json` saves push nothing.** The snapshot is read-only; the
+  first save in a session warns once ("structure changes belong in n8n"),
+  then stays quiet. The whole structural-watch apparatus — 3-way baseline,
+  conflict prompt (`[m]/[l]/[r]`), `workflow.remote.json`, promptFactory
+  injection — is deleted.
+- **Browser live-reload (plans/5)** is untouched: same transparent proxy,
+  same `notifyPushed` SSE contract, verified by `test/proxy.mts` and a
+  dedicated e2e step.
 
 ## Init flow (`n8n-decanter init [dir]`)
 
-Bootstraps a sync directory (defaults to cwd, runs before any config exists):
+Bootstraps a sync directory. Plan 32 made it OAuth-first:
 
-1. Prompt for host + API key; values from an existing `.env` are offered as
-   defaults (enter keeps them). Host is normalized (`https://` prepended when
-   no scheme, trailing `/` stripped). Write `.env`. The docs (`.env.example`,
-   README) recommend a **scoped** API key limited to the scopes the CLI uses —
-   `workflow:read`/`list`/`update` and `execution:read`/`list` — over a
-   full-access key, since the key lives beside the config and a leak is
-   otherwise instance-wide. Guidance only; init never creates the key.
-2. Copy `template/` into the target **recursively and completely** — whatever
-   the template contains ships. Copy is **modification-aware** (dpkg
-   conffile-style, `lib/template.mts`): init records the `sha256` of each file
-   as copied in a git-tracked `.decanter-template.json` manifest at the sync-dir
-   root (keys are materialized rel paths; `.env` is excluded — protected +
-   credential-bearing). On re-init, each file is classified from three hashes —
-   manifest baseline, on-disk, current-template — via the pure
-   `classifyTemplateFile`: `added` (copy), `uptodate` (skip), `update` (pristine
-   but template moved → batched `y/N` confirm; non-interactive reports "updates
-   available" and applies nothing), `converged`/`adopt` (silently re-baseline),
-   `drift-modified`/`drift-conflict` (leave, report). `--force` is the escape
-   hatch — overwrite every file regardless, flagging the ones that "had local
-   changes", then re-baseline. This *replaces* the old blunt "never overwrite by
-   default / `--force` clobbers all" behavior while keeping re-init safe. Files
-   named `X.example`
-   materialize as `X`: the suffix keeps agent-tooling config (CLAUDE.md,
-   `.claude/settings*`, opencode.json, …) inert inside this repo while
-   working on the CLI itself, but live in init'ed dirs. Name template files
-   `<full real name>.example` (e.g. `settings.local.json.example`, not
-   `settings.local.example`). `.env.example` materializes to `.env` and is
-   therefore always skipped — init has just written the real `.env`.
-   The template also ships `shared/` for shared types and helpers used by
-   node files, plus agent permission configs (`.claude/settings.local.json`,
-   `opencode.json`) that allow edits in `workflows/` and `shared/` while
-   denying `.decanter.json`, `*.remote.js`, `.env`, and `push --force` —
-   the CLI compliance guard stays the wall behind those. `.mcp.json` embeds
-   the [n8n-mcp](https://github.com/czlonkowski/n8n-mcp) server through a
-   small `sh -c` wrapper that sources `./.env` (with `set -a` so the vars are
-   exported, mapping `N8N_HOST` to n8n-mcp's `N8N_API_URL`) and then `exec`s
-   `npx n8n-mcp`. That keeps credentials out of the committable file *and*
-   needs no shell setup — Claude Code does not read `.env` itself. Two
-   gotchas: don't use `${VAR}` syntax inside the wrapper (Claude Code expands
-   `${…}` in `.mcp.json` fields before the shell sees them, plain `$VAR` is
-   safe), and the wrapper is POSIX-sh (macOS/Linux). Without a `.env` the
-   server still starts, in docs-only mode. See the shared-code
-   caveat in Implementation notes.
-3. Create `decanter.config.json` (empty workflow list) and `.gitignore`
-   (`node_modules/`, `.env`) if missing; if a `.gitignore` exists that doesn't
-   ignore `.env`, warn (the file holds the API key).
-4. Best-effort credential check: `GET /api/v1/workflows?limit=1`; failure is
-   a warning, not an error.
+1. **Host** prompt (existing `.env` value reused with a note; normalized).
+2. **MCP credentials** — existing `N8N_MCP_TOKEN` or a host-matching
+   `.decanter-auth.json` are reused. Otherwise, on a TTY: the **OAuth
+   consent flow** (`runOAuthConsent` in `lib/mcp.mts`) — RFC 7591 dynamic
+   client registration → PKCE S256 authorize URL opened in the browser
+   (`DECANTER_NO_BROWSER=1` prints it only) → localhost callback server
+   catches the code → token exchange → `.decanter-auth.json` (0600). Any
+   failure falls back to a paste-a-token prompt. Piped/non-TTY runs skip the
+   browser and go straight to the token prompt — init stays scriptable
+   (`printf "host\ntoken\nkey\n" | n8n-decanter init`).
+3. **Optional API key** prompt (Enter to skip) — executions / data-tables /
+   duplicate / delete only.
+4. `.env` is rewritten preserving unknown keys (comments are not preserved);
+   template copy (modification-aware manifest machinery, unchanged — see
+   below), `decanter.config.json` scaffold, `.gitignore` (now also covering
+   `.decanter-auth.json`).
+5. **Verification probes**: an MCP `search_workflows` reporting how many
+   workflows are visible and how many are `availableInMCP` (with a hint about
+   the per-workflow switch), plus the old `GET /api/v1/workflows?limit=1`
+   probe when an API key was given.
 
-Prompting must buffer piped stdin (plain `readline/promises` drops lines that
-arrive before `question()` and hangs on EOF — see Implementation notes).
+**One shared prompt session** serves every question — a second
+`createPrompt()` would lose piped answers the first one buffered (the same
+class of bug the buffering prompt helper solved in the API era; rediscovered
+when init grew multiple questions).
+
+The template machinery (dpkg-conffile-style `.decanter-template.json`
+manifest, `X.example` materialization, `--force` semantics) is unchanged from
+plans/16. The template's agent contract (`AGENTS.md.example`) was rewritten
+for Plan 32: Code-node source is authored as files and synced by decanter —
+never edited on the instance (UI, MCP tools, or skills); `workflow.json` is a
+read-only snapshot; structure/lifecycle may go through n8n's MCP tools and
+the official n8n skills pack, whose **knowledge** skills are recommended
+while the build/lifecycle skills are subordinated to the decanter override
+(Task 9 — the override, not selective installation, holds the boundary; the
+pack installs whole).
 
 ## Type checking
 
-- `tsconfig.json`: `"allowJs": true, "checkJs": true`, includes `workflows/`,
-  excludes `**/*.remote.js`. `"moduleDetection": "force"` gives every node
-  file its own module scope, so same-named top-level declarations across
-  node files don't collide ("cannot redeclare"); `.d.ts` files are exempt
-  from `force`, so `n8n-globals.d.ts` stays ambient.
-- `n8n-globals.d.ts` covers `.ts` and JSDoc-`.js` files alike.
-- **`$('Node').item` is typed non-undefined** (like `$input.item`). It
-  resolves the paired item in "Run Once for Each Item" context; a missing
-  pairing *throws* at runtime rather than yielding `undefined`, so a
-  `| undefined` union only added false TS2532s on the common cross-node
-  access without modeling a real value. A single ambient `.d.ts` can't vary
-  by node mode anyway (and tsserver couldn't honor it), so the shim follows
-  its "loose where n8n is dynamic" convention. Callers who genuinely want an
-  index-checked lookup use `itemMatching(i)` / `first()` / `last()`.
-- `.js` node files start with `// @ts-check` + JSDoc types.
-- `npm run typecheck` → `tsc -p tsconfig.cli.json && node
-  scripts/typecheck.mts`. The first half strict-checks the CLI's own `.mts`
-  sources. The second checks node files and is **not** plain `tsc --noEmit`:
-  node code is a function body, and `tsc` rejects top-level `return` (TS1108)
-  — in checkJs `.js` and `.ts` files alike; the wrapper, not the file type,
-  is what makes typecheck pass. The
-  script wraps node files in `async function () { … }` in memory via a custom
-  CompilerHost — files on disk stay verbatim — and maps diagnostic lines back
-  (−1). Node files are recognized by a `.decanter.json` sibling — directly, or
-  in the parent of their `code/` dir.
-- Editor tsservers don't apply the wrapper, so the template ships
-  **`decanter-ts-plugin/`** — a tsserver language-service plugin that drops
-  exactly TS1108/TS1375/TS1378 on node files (same recognition rule as the
-  wrapper; every other diagnostic and every non-node file untouched). Loaded
-  via the sync-dir tsconfig `plugins` entry plus a `file:./decanter-ts-plugin`
-  devDependency; VS Code must run the *workspace* TypeScript
-  (`.vscode/settings.json` sets `typescript.tsdk`, one-time "Use Workspace
-  Version" consent) because `typescript.tsserver.pluginPaths` is
-  machine-scoped and the bundled tsserver can't resolve workspace plugins.
-  JetBrains IDEs use the project TypeScript by default. (plans/4)
+Unchanged by Plan 32 (the file layer is decanter's layer):
+
+- `tsconfig.json`: `allowJs` + `checkJs`, includes `workflows/`, excludes
+  `**/*.remote.js` (harmless legacy exclusion); `moduleDetection: "force"`.
+- `scripts/typecheck.mts` wraps node files in an in-memory `async function`
+  (node files recognized by a `.decanter.json` sibling — directly or in the
+  parent of their `code/` dir) and maps diagnostic lines back; files on disk
+  stay verbatim. `decanter-ts-plugin/` suppresses TS1108/TS1375/TS1378 on
+  node files in editors (plans/4).
+- `npm run typecheck` = `tsc -p tsconfig.cli.json` (the CLI's own strict
+  sources) + the wrapper script.
 
 ## Milestones
 
-1. ✅ **Scaffold + pull, single workflow, flat layout** — project setup, fetch,
-   extract code files, placeholders, marker detection, `.decanter.json`.
-   (Validates the whole data model.)
-2. ✅ **push** — reassembly, compile+marker, drift guard, PUT.
-3. ✅ **multi-workflow loop + rename handling** (workflow + node renames by id).
-4. ⬜ **n8n folder hierarchy** — only if the API exposes it (see below).
-   Deferred: needs a live instance to verify; layout is flat until then.
-5. ✅ **QoL**: `watch`, `status` (local vs remote drift report).
-6. ✅ **init** — interactive bootstrap, see Init flow. (Added after v1 of this
-   plan.)
-7. ✅ **compliance guard + `check`** — see Compliance guard. (Added after v1.)
-8. ✅ **structural validation + `rename`** — connection/uniqueness/orphan/
-   `$('…')` checks in the guard, atomic rename verb. (2026-07-18, plans/2.)
+1. ✅ Scaffold + pull, single workflow (API era — validated the data model).
+2. ✅ push — reassembly, compile+marker, drift guard (API era).
+3. ✅ multi-workflow loop + rename handling by id.
+4. ⬜ n8n folder hierarchy — still blocked on API exposure
+   ([Plan 8](plans/BLOCKED-8-folder-hierarchy-in-sync-layout.md)).
+5. ✅ QoL: `watch`, `status`.
+6. ✅ `init`; 7. ✅ compliance guard + `check`; 8. ✅ structural validation +
+   `rename` (plans/2).
+9. ✅ **Plan 32 (2026-07-22): MCP-native code layer** — `lib/mcp.mts` client
+   + OAuth, pull/push/status/watch re-based (draft-first, code-only),
+   structure verbs forwarded, lifecycle re-based, picker third state, init
+   OAuth-first, template contract rewritten, e2e mock became a REST+MCP mock,
+   smoke suite drives the MCP path on the real container (28 steps green on
+   2.30.7).
 
-## Implementation notes (decisions & observations from the 2026-07-17 build)
+## Implementation notes (decisions & observations)
 
-Everything below was validated by `npm test` (`test/e2e.mts`): an in-process
-mock n8n API — including the strict PUT that rejects unknown fields — driven
-through the real CLI as a subprocess. 11 scenarios: init (+ idempotent re-init),
-pull, byte-identical `.js` round-trip, TS convert + marker, UI-edit and
-conflict surfacing, structural drift abort, status, renames, single-node push.
+Validated by `npm test` (unit + e2e with an in-process **REST+MCP mock** +
+proxy + interactive suites) and the opt-in Docker smoke suite. Notes from the
+API-era build that still hold are kept; superseded ones are marked.
 
-- **Top-level `return`**: node code is a function body. esbuild
-  (`transform`, `format: "cjs"`) accepts it; `tsc` rejects it (TS1108) in
-  checkJs `.js` and `.ts` files alike → `scripts/typecheck.mts`
-  wrapper (see Type checking).
-- **`lastPushedHash` really means "remote code hash at last sync"** (push *or*
-  pull). Pull updates it even when surfacing a UI edit/conflict — otherwise
-  push would stay blocked forever after the warned pull. Consequence: after a
-  warned pull, push *will* overwrite the remote edits; `code/<node>.remote.js`
-  + git history are the safety net. This matches the "pull first" guard message.
-- **Sync hashes are recorded from the PUT *response*** (server-canonical
-  form), not the request body, to avoid false drift when the server
-  normalizes the workflow.
-- **Extension transitions are never auto-renamed.** Remote marker appears but
-  locally there's only a `.js` (or no file): remote code goes to
-  `code/<node>.remote.js` + warning, nothing is silently relabeled as TS source.
-  Reverse (local `.ts`, remote without marker — e.g. node re-created in the
-  UI): remote goes to `.remote.js`, the `.ts` is never clobbered.
-- **Filename sanitization** (open question resolved by decision):
-  `/ \ : * ? " < > |` → `-`, control chars stripped, trailing dots stripped,
-  empty → `unnamed`. Same-name collisions get `-<first 8 chars of node id>`.
-  Workflow *folders* use the sanitized name as-is (human-readable); node
-  *files* additionally go through kebab-case (see next bullet).
-- **Kebab-case `code/` layout (added 2026-07-18, backlog)**: node sources live
-  in `<workflow>/code/`, named `kebabCase(sanitizeFilename(node name))` —
-  camelCase/acronym boundaries split, Unicode letters kept, non-alphanumerics
-  collapsed to `-` (`Transform: EU/US` → `code/transform-eu-us.js`). The
-  `//@file:` placeholders and `.decanter.json` `file` entries carry the
-  `code/` prefix (always `/`-separated). Migration is free: the existing
-  node-rename machinery in pull renames old flat files into `code/`, and the
-  compliance guard hard-errors on node files outside `code/` (pointing at
-  pull). Everything that located a node file's `.decanter.json`/
-  `workflow.json` as a *sibling* (watch, run, `scripts/typecheck.mts`, the
-  template verify hook) also looks one level up from a dir named `code/`.
-- **`run` staticData (2026-07-18, plans/3 A)**: `$getWorkflowStaticData` is
-  seeded from `workflow.json`'s `staticData` using n8n's own key scheme
-  (`global`, `node:<node name>`); string-form staticData (the DB-serialized
-  shape some API responses carry) is parsed. A fixture `staticData` field
-  (`{ global?, node? }` — `node` meaning the node being run) replaces the
-  matching slice whole, no merging. Mutations are visible during the run,
-  never persisted — `run` stays offline.
-- **`run` `$env` isolation (2026-07-20)**: n8n's `$env` is scoped, so `run`'s
-  `$env` is **empty by default** — it does *not* inherit `process.env` (which
-  carries `N8N_API_KEY` and any other exported secret, straight into the
-  returned JSON if a node prints `$env`). Precedence: a fixture's `env` field
-  wins; otherwise `--allow-env` opts back into `{ ...process.env }`; otherwise
-  `{}`. The flag is threaded `runNode` → `buildGlobals` via an `allowEnv`
-  option. (Backlog high item; earlier default leaked the whole environment.)
-- **Name resolution is composed, not monolithic (2026-07-18, plans/11)**:
-  `lib/state.mts` exports `listWorkflowRefs` (dir scan; names from folder
-  basename + `workflow.json`), pure `matchWorkflowRef` (the tiered matcher,
-  throws on ambiguity), and `looksLikeWorkflowId`; the dispatcher composes
-  them per verb (only `pull` consults the API). Version for the `init`
-  banner walks up from `import.meta.url` to the nearest `package.json` —
-  required since plans/13's publish build also runs the CLI from `dist/`.
-- **Nodes deleted remotely** are dropped from `.decanter.json` with a warning;
-  their files stay on disk (git is the safety net).
-- **Watch** resolves a workflow by id and watches its `code/` dir and
-  `workflow.json` with native `fs.watch`, mapping each changed code file back
-  to its node (state re-read per change, so mid-session renames resolve) and
-  pushing just that node; `workflow.json` saves take the structural 3-way
-  path (see Watch mode). Atomic editor saves replace the inode and break
-  plain *file* watches, so it watches the dirs and filters by name; 200 ms
-  debounce, per-run overlap guard, a dirty set so saves landing during a push
-  aren't lost — a pending structural push subsumes queued node pushes (full
-  push covers all nodes). No chokidar dependency. (Workflow-id scope since
-  plans/5 — a single node file before; structural watch since plans/12, which
-  also dropped the "no Code nodes to watch" error — a code-less workflow is
-  watchable for structure.)
-- **Browser live-reload proxy (added 2026-07-18, plans/5)**: `lib/proxy.mts`, a
-  native-Node reverse proxy that watch boots when `browserReload: "proxy"` (see
-  Watch mode). Deliberate deviations from the plan sketch, all to stay
-  dependency-free and self-contained: SSE (not a WebSocket) for the reload
-  channel, the client inlined in the module (no `src/templates/` asset), and a
-  typed `notifyPushed` module singleton instead of `global.__decanterProxy` —
-  no-op without a running proxy, so plain `push` calls it safely. HTML is
-  buffered to inject before `</body>` (`accept-encoding` stripped so it arrives
-  uncompressed); non-HTML and `HEAD` stream through untouched. Dirty detection
-  is a best-effort synthetic-`beforeunload` probe (framework-agnostic but
-  version-sensitive; fails toward *not* reloading). `test/proxy.mts` covers
-  injection, passthrough, client/SSE, and graceful port-bind failure; live
-  auth/WebSocket passthrough is unverified (mock can't answer it).
-- **Piped stdin for init prompts**: `readline/promises` drops lines that
-  arrive before `question()` is called and hangs on stdin EOF → init uses a
-  small buffering prompt helper so `printf "host\nkey\n" | n8n-decanter init`
-  works.
-- **Layout deviation**: implementation is split into `lib/*.mts` modules with
-  a thin CLI entry instead of one big `n8n-decanter.mts`.
-- **Id-first argument order (added 2026-07-17, backlog)**: the dispatcher
-  takes the *first* positional token that matches a known verb as the
-  command, wherever it sits — `wf123 push` ≡ `push wf123`; flags may appear
-  in any position too. Consequence of first-verb-wins: an id/path that
-  literally equals a verb name must be passed *after* the verb (accepted —
-  n8n ids are nanoid-style and can't collide). Docs (CLI help, README)
-  present id-first as the canonical form; verb-first is the accepted
-  alternative.
-- **TypeScript CLI (added 2026-07-17, plans/6)**: the CLI's own sources are
-  `.mts`, executed natively via Node's type stripping — no build step;
-  engines `>=22.18` (the first line where stripping is on by default; Node
-  18/20 are EOL). `tsconfig.cli.json` holds the strict NodeNext project:
-  `erasableSyntaxOnly` keeps the sources strippable (no enums, namespaces,
-  or parameter properties — a permanent style rule), and
-  `allowImportingTsExtensions` matches the runtime's literal `.mts` import
-  specifiers. `composite` + declaration-only emit into `node_modules/.cache`
-  exists solely so the root `tsconfig.json` can list the project under
-  `references` — that is what lets tsserver bind the `.mts` files to it.
-  The root `tsconfig.json`'s name and role are unchanged: it is the workflow
-  node-file config, discovered *by name* by `scripts/typecheck.mts` and by
-  the sync-dir upward search in `lib/validate.mts`. Shared data-model shapes
-  (`Workflow`, `JsCodeNode`, `DecanterState`, `DecanterConfig`, …) live in
-  `lib/types.mts`; `isJsCodeNode` is a type guard.
-- **Publish-build pipeline (added 2026-07-18, plans/13)**: "no build step"
-  above is a *dev-time* guarantee only — the published npm tarball ships
-  compiled JS. Node refuses to type-strip `.mts` once a package lands under
-  `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so
-  publishing the raw `.mts` sources can never work; this was discovered by
-  the tarball smoke test, not designed upfront. `tsconfig.build.json` runs
-  `tsc` with `rewriteRelativeImportExtensions` (shebang preserved) into
-  `dist/`, invoked by the `prepack` script — so it only ever runs during
-  `npm pack`/`npm publish`, never in normal dev. `package.json`'s `bin`
-  points at `dist/n8n-decanter.mjs`; `files` ships `dist/` + `template/` +
-  `CHANGELOG.md` (raw `lib/*.mts` and `n8n-decanter.mts` are *not*
-  published). Two runtime spots had to become extension-aware to work in
-  both the dev tree and an installed `dist/`: `lib/validate.mts`'s
-  `runTypecheck` picks `.mts` vs `.mjs` for the `scripts/typecheck` child
-  process from its own `import.meta.url`, and `lib/init.mts`'s
-  `packageRootFrom` walks up from either `lib/` (dev) or `dist/lib/`
-  (installed) to find the package root for `template/`. `npm link` from a
-  checkout needs `npm run build` once first, since the linked package hits
-  the same node_modules type-stripping wall.
-- **Testing note**: the e2e test binds a localhost port and must exec the CLI
-  *asynchronously* (the mock server shares the test process; a sync exec
-  deadlocks). Sandboxed environments may block the port bind.
-- **`test/e2e.mts` is one sequential, stateful scenario against a single
-  shared mock** (not per-test isolation — that's a deliberate speed trade,
-  plans/22): every step builds on the previous step's on-disk/remote state.
-  `test/harness.mts`'s `createStepRunner` gives this two debugging aids:
-  `STEP=<substring>` (env or `--step=`) runs only matching steps, and once a
-  step fails, every step after it is skipped with a `prerequisite "<name>"
-  failed` reason instead of cascading into an unrelated crash. Interactive
-  surfaces that were "TTY only, untested by CI" now have coverage without a
-  pty: `lib/picker.mts`'s `runPicker` and `lib/watch.mts`'s `watchWorkflow`
-  (conflict prompt) take injectable input/output streams / a prompt factory,
-  driven by `test/interactive.mts` (picker) and dedicated `test/e2e.mts`
-  steps (watch conflict `[m]`/`[l]`/`[r]`/Enter, and watch↔proxy SSE wiring).
-- **Structure drift detection** hashes the sanitized, code-stripped workflow
-  with recursively sorted keys, so key order never causes false drift.
-- **Compliance guard** (milestone 7): `--force` deliberately does *not*
-  bypass it — force is for "I know the remote changed", not for pushing a
-  malformed tree. The guard's checks live in `lib/validate.mts`, shared by
-  push (full validation), watch (per-node subset, no typecheck), and `check`.
-  `check` loads config without requiring credentials.
-- **Structural guard + `rename` (added 2026-07-18, plans/2)**: the guard's
-  new integrity checks and `rename` share one `$('…')` regex
-  (`findNodeRefs`/`renameNodeRefs` in `lib/util.mts`), kept exported for the
-  planned `run`/`simulate` work (plans 3/7). The e2e mock originally renamed
-  a node without updating `connections`; the connection-integrity check
-  caught it — real n8n rewrites connections on rename, the mock now mirrors
-  that.
-- **`shared/` code in `.ts` nodes is bundled on push (plans/14, 2026-07-18)**.
-  This replaces an earlier, wrong note claiming type-only imports worked and
-  value imports failed at n8n runtime — in truth esbuild rejects *any*
-  top-level import (even `import type`) next to a top-level `return`, so
-  `.ts` nodes could import nothing at all; only JSDoc `@typedef` in `.js`
-  nodes ever worked. Mechanism (`lib/compile.mts`): hoist the leading import
-  block, wrap the body in an async arrow **assigned onto a plain shim
-  object** (`__n8n_node.default = …` — deliberately no `export` in the
-  entry), esbuild-bundle as an iife (`absWorkingDir` = sync root →
-  machine-stable output and hashes), rewrite esbuild's `__copyProps`
-  CJS-interop helper to eager data assignment, prepend the shim var, append
-  `return __n8n_node.default();` — the artifact remains a function body, so
-  the marker, `run`, and push contracts are untouched, and n8n globals pass
-  through as free identifiers. The export-free entry and the interop rewrite
-  are load-bearing (verified against real n8n 2.30.7, plans/15): **n8n's
-  task-runner sandbox neuters getter property descriptors** — reading a
-  `defineProperty`-getter yields undefined — and esbuild lowers module
-  exports and CJS interop to exactly such getters. **No-import nodes keep
-  the plain-transform output byte-identically** (zero drift on upgrade).
-  Rules (shared by
-  `check` and the compiler): imports at the top of the file only; relative
-  imports stay inside the sync dir; npm packages opt in per package via
-  config `bundleDependencies` (pure JS only — no native addons); Node
-  builtins always error (bundling can't include them; runtime allowance is
-  the instance's `NODE_FUNCTION_ALLOW_BUILTIN` policy). Shared edits
-  surface as push-pending drift on every importing node — that is the
-  propagation mechanism. `.js` nodes never bundle (lossless tier); the
-  typecheck wrapper inserts its function header *after* the import block so
-  imports stay module-scoped and diagnostic lines keep mapping.
-- **n8n 2.x publish semantics (researched 2026-07-18 in the n8n source)**:
-  n8n 2.x splits workflows into a draft (`versionId`) and a published version
-  (`activeVersionId`) — UI Save = draft, UI Publish = live. The public API is
-  blunter than the UI:
-  - `PUT /workflows/:id` hardcodes `publishIfActive: true` server-side →
-    pushing to a *published* workflow **auto-publishes immediately**; there
-    is no draft-only update on a published workflow via the public API. An
-    *unpublished* workflow only gets its draft updated and stays unpublished.
-  - `GET` returns the **draft** — pull can pick up unpublished UI edits, and
-    the next push to a published workflow publishes them along.
-  - The PUT also hardcodes `forceSave: true`, and the body schema has no
-    checksum field (`versionId` is readOnly) → **n8n's own optimistic
-    locking is unreachable through the public API**; decanter's drift guard
-    is the only conflict protection, which is why it exists.
-  - Surfaced in decanter (2026-07-18): `publicationState` in `lib/util.mts`
-    reads the `active` flag; push result lines append `— published: code is
-    live now` / `— unpublished: draft only`, watch warns at start on a
-    published workflow, `status` shows the state. Servers without an
-    `active` field (mocks, exotic versions) get unchanged output.
-  - **Lifecycle verbs (plans/20, 2026-07-20).** The CLI can now *act* on the
-    publish bit, not only observe it:
-    - `publish` / `unpublish` (`lib/lifecycle.mts`) call `POST
-      /api/v1/workflows/:id/activate` / `.../deactivate` (both return the full
-      workflow, both idempotent server-side; separate scopes
-      `workflow:activate` / `workflow:deactivate`). Already-in-that-state is a
-      no-op with a note, not an error.
-    - `create "<name>"` calls `POST /api/v1/workflows` with a minimal body
-      (`{ name, nodes: [], connections: {}, settings: {} }` — the accepted
-      minimum) then pulls the returned id. Born **unpublished**
-      (`active:false`, `activeVersionId:null`). Shares `api.createWorkflow`
-      with plans/21's `duplicate`. This does **not** invert the born-in-n8n
-      rule — the server assigns the id and owns the birth; the CLI triggers it.
-    - `delete <workflow>` calls `DELETE /api/v1/workflows/:id`, which **hard-deletes
-      even a published workflow** (verified: no refusal, no archive — GET after
-      → 404). So the CLI's `y/N` confirmation (`--force` to skip; required
-      non-interactively) is the *only* guard. The local folder is never
-      touched; a stale config `workflows` entry is flagged. Ref-required, one
-      per call — never cascades over config.
-  - **Version-aware `status` (plans/20).** The 2.x GET carries `versionId`
-    (draft) and `activeVersionId` (published; `null` when unpublished, `==
-    versionId` when in sync). `publishedVersionLagsDraft` (`lib/util.mts`) flags
-    a published workflow whose live version is older than the draft (a UI edit
-    not yet published) → `status` says so instead of the plain `published`
-    note. Both fields are stripped from `workflow.json` on pull
-    (remote/derived; `activeVersionId` churns on publish, no local reader — the
-    draft `versionId` is kept, the executions warning below reads it).
-  - Upstream: PR n8n-io/n8n#31954 (`publishBehavior: "skip"` on
-    `WorkflowService.update`) was closed unmerged and never exposed the
-    choice to API clients anyway; draft-only pushes need a new upstream
-    change (feature request candidate). Staged rollouts today require
-    unpublish → push → publish (triggers down in between) or a staging-copy
-    workflow.
+- **Top-level `return`**: node code is a function body; esbuild accepts it,
+  `tsc` rejects it (TS1108) → the typecheck wrapper.
+- **`lastPushedHash` means "remote code hash at last sync"** (push *or*
+  pull). Pull re-baselines even when surfacing an edit/conflict — otherwise
+  push would stay blocked forever after a warned pull. Consequence: after a
+  warned pull, push overwrites the surfaced remote edits; `status --diff` +
+  git history are the safety net.
+- **Hashes are recorded from a post-write confirming read** (Plan 32) — MCP
+  `update_workflow` returns a summary, never the workflow; the confirming
+  `get_workflow_details` is the successor of the API-era "record from the
+  PUT response" rule and doubles as the byte-exact round-trip check.
+- **Name↔id reconciliation is a lookup, not machinery** (Plan 32 Task 3):
+  MCP addresses nodes by name, state is keyed by id, and push resolves
+  id → current name from the fresh read it needs anyway. Renames from any
+  actor are absorbed for free; ids surviving renames is the load-bearing
+  server behavior (spike-verified).
+- **n8n rate-limits the MCP endpoint (429)** — discovered live when the smoke
+  suite's rapid CLI runs tripped it; the client's backoff-retry (safe: a
+  429'd request was not applied) fixed it. Also: each CLI process does the
+  full initialize handshake — acceptable, but part of why bursts hit limits.
+- **OAuth refresh tokens are single-use** (rotate-on-refresh,
+  `invalid_grant` on reuse — verified live). The client persists the rotated
+  pair immediately and caches access tokens to keep refreshes rare;
+  concurrent processes racing a refresh is accepted (the loser gets the
+  "re-run init" error).
+- **Extension transitions are never auto-renamed**: a local `.ts` is never
+  clobbered by an unmarked remote, and compiled output is never relabeled as
+  TS source — warn-only since Plan 32 (no `.remote.js` artifacts).
+- **Filename sanitization / kebab-case `code/` layout**: unchanged
+  (plans/2 + backlog decisions — `/ \ : * ? " < > |` → `-`, collisions get
+  `-<id8>`, per-pull deterministic).
+- **`run` staticData + `$env` isolation** (plans/3 A, 2026-07-20): unchanged.
+- **Name resolution is composed, not monolithic** (plans/11): unchanged;
+  `pull`'s remote fallback now queries `search_workflows`.
+- **Nodes deleted remotely** are dropped from state with a warning; files
+  stay on disk (git is the safety net). On push they warn + skip.
+- **Watch internals**: dir watches (editor saves replace inodes), 200 ms
+  debounce, dirty-set, state re-read per event — unchanged; the structural
+  half is gone (see Watch mode).
+- **Browser live-reload proxy** (plans/5): unchanged, incl. the SSE reload
+  channel and dirty-tab probe.
+- **Piped stdin for prompts**: `readline/promises` drops early lines and
+  hangs on EOF → the buffering prompt helper; **one session per command** —
+  a second `createPrompt()` loses lines the first one buffered (Plan 32
+  rediscovery when init grew multiple questions).
+- **TypeScript CLI + publish-build pipeline** (plans/6, plans/13): unchanged
+  — native type stripping in dev, compiled `dist/` in the npm tarball,
+  `erasableSyntaxOnly`, extension-aware runtime spots.
+- **Testing**: the e2e suite is one sequential, stateful scenario against a
+  single shared mock that now serves **both** surfaces — `POST
+  /mcp-server/http` (bearer-authed JSON-RPC; initialize answers plain JSON,
+  tools/call answers SSE so both client parser branches stay covered; ops
+  applied with the verified merge/rename/re-mint semantics; per-workflow
+  `availableInMCP` honored) and the REST endpoints for the API-only verbs.
+  Async exec stays mandatory (in-process mock). `McpClient` has its own unit
+  suite (envelope/SSE parsing, auth precedence, refresh rotation persistence,
+  401/404/timeout mapping) against a scripted `node:http` server; push's
+  drift/addressing logic is unit-tested through `pushWorkflow` with a stub
+  `callTool`. The smoke suite bootstraps MCP itself (enable + rotate token +
+  per-workflow toggle via the owner cookie — spike-only internals, fine for a
+  throwaway container) and exercises the gate, draft-first pushes,
+  `--force`, the MCP rename (id stability + server-side reference rewriting,
+  live), watch, and lifecycle on the real image.
+- **`shared/` bundling in `.ts` nodes** (plans/14): unchanged, including the
+  export-free entry and CJS-interop rewrite (n8n's task-runner sandbox
+  neuters getter descriptors) and the "no-import nodes keep byte-identical
+  plain output" guarantee.
+- **n8n 2.x publish semantics — API era, superseded but explanatory
+  (researched 2026-07-18):** the public API's `PUT` hardcoded
+  `publishIfActive: true` and `forceSave: true` (no reachable optimistic
+  locking), which is why the API-era decanter had auto-publish-on-push and a
+  PUT-canonical drift guard. Plan 32's MCP path made both obsolete: writes
+  are draft-only by construction and the per-node hash check is the conflict
+  protection. The version-aware `status` fields (`versionId` /
+  `activeVersionId`, `publishedVersionLagsDraft`) carried over unchanged —
+  they're first-class in the MCP responses too.
 
 ## Open questions (verify against a live instance)
 
-- ~~Does this n8n version's public API expose folder placement
-  (`parentFolderId`/project) on `GET /workflows/:id`?~~ **Answered for n8n
-  2.30 (2026-07-19, raw GET via the plans/15 smoke rig): no placement field
-  in the response** (`parentFolderId`/`project` absent) — flat layout stands;
-  [Plan 8](plans/BLOCKED-8-folder-hierarchy-in-sync-layout.md)'s push-driven
-  inversion is confirmed. Re-confirmed 2026-07-20 by Plan 8's task-1 spike
-  against 2.30.7 with a folder-scoped key — no placement key on the single GET
-  **or** the workflow-list items. Re-check on version bumps via the smoke suite.
-- ~~Node name characters that need filename sanitization beyond `/` and `:`.~~
-  Resolved by decision, see Implementation notes.
-- ~~Whether `PUT` preserves workflow fields that are neither sent nor
-  whitelisted (tags, pinned data) on an untouched round-trip.~~ **Verified
-  against n8n 2.30.7 (2026-07-19, plans/15 + plans/18 smoke suite): both
-  tags and pinned data survive an untouched pull→push round-trip** (asserted
-  weekly by the suite). Pinned data was upgraded from "preserved *by
-  construction*" to live-verified on 2026-07-19: the plans/18 smoke step
-  seeds `pinData` via the public API — which *can* write it on
-  n8n ≥ 2.30.7 (the earlier "cannot" note was a stale 1.x-era claim) —
-  and the round-trip leaves it intact, since the PUT whitelist never sends
-  it and the server keeps its stored copy.
-- ~~The exact activate/deactivate endpoint shapes, whether the 2.x GET carries
-  `versionId`/`activeVersionId`, the minimal `POST /workflows` create body, and
-  what `DELETE` does to a *published* workflow (plans/20 live gates).~~
-  **Answered against n8n 2.30.7 (2026-07-20, plans/15 smoke rig + a throwaway
-  probe):** `POST /workflows/:id/activate` and `.../deactivate` both return the
-  full workflow and are idempotent, on **separate** scopes
-  (`workflow:activate` / `workflow:deactivate`); the GET carries both
-  `versionId` and `activeVersionId` (the latter `null` when unpublished); the
-  minimal accepted create body is `{ name, nodes, connections, settings }`
-  (name-only is rejected) and returns an **unpublished** draft; `DELETE`
-  **hard-deletes even a published workflow** (no refusal, no archive — GET
-  after → 404). All four are now asserted by the smoke suite. Re-check on
-  version bumps.
+- ~~Folder placement on the API GET~~ — answered no (2026-07-19/20, Plan 8
+  blocked on upstream exposure). MCP note: `get_workflow_details` carries a
+  `parentFolderId` field (null in tests) — re-check Plan 8 against the MCP
+  surface when it matters.
+- ~~Filename sanitization; PUT round-trip preservation of tags/pinData;
+  activate/deactivate shapes; create body; DELETE on published~~ — all
+  answered in the API era (see git history of this file); the still-relevant
+  outcomes are recorded above.
+- **MCP surface churn**: the tool inventory grew between spike and docs
+  (33 → 40+ tools; execution reads, version-history tools appeared). The
+  Plan 32 client pins only the six tools listed under "MCP backend"; anything
+  new (e.g. re-basing `executions`, version-history reads) is future-plan
+  material, re-verified against a live instance first.
+- **Refresh-token concurrency**: two decanter processes refreshing the same
+  OAuth session race the rotation (loser needs re-consent). Accepted for
+  now — access-token caching makes it rare; revisit if it bites (keychain
+  storage / lockfile are candidates).
