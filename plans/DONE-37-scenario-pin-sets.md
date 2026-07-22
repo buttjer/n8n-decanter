@@ -2,7 +2,9 @@
 
 **Priority:** P2 (data-model consolidation + a differentiator: the durable,
 reviewed counterpart to the official skills' ephemeral pin flow)
-**Status:** Not started
+**Status:** Done (2026-07-22) — `mock`→`scenario` rename, `fixtures/`/`--pin`
+fold, per-node provenance + synthetic-pins labeling, and `--scaffold` schema
+oracle all shipped; docs/changelog/PLAN updated; unit + e2e + smoke coverage added.
 **Model:** Opus for the fold/migration design and provenance semantics; Sonnet
 for the mechanical rename sweep and docs.
 **Theme:** One word and one committed artifact for "a named, full-workflow

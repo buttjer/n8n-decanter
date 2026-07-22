@@ -260,6 +260,20 @@ entries carry no priority field) — adjust freely.
       file+push guidance; plus the `mcp-route-check.mjs` config-drift hook.
       Differentiator: technical enforcement of the code-layer boundary no
       instruction file can guarantee.
+- [x] **Committed scenario library with schema-scaffolded gap fills (`scenario`
+      verb)** (shipped 2026-07-22, [Plan 37](OPEN-37-scenario-pin-sets.md)).
+      Folds the earlier `mock` namespace and per-node `fixtures/` into one
+      committed artifact, `scenarios/<slug>.json` — a named, full-workflow
+      pin-data set seeded from a real capture (`--execution`) and/or
+      scaffolded from the workflow's output schemas (`--scaffold`, via MCP's
+      read-only `prepare_test_pin_data`); each node's pins carry
+      `capture`/`authored`/`scaffolded` provenance, and `test`/`simulate`
+      label a run on any non-`capture` scenario "synthetic pins — proves
+      executability, not output correctness." Differentiator: the durable,
+      human-reviewed counterpart to the official n8n skills' ephemeral
+      in-session pin flow (schemas → agent-generated values → one-off
+      `test_workflow`, unpersisted) — decanter's scenarios are committed,
+      reused across runs, and diffed against real captured data.
 - [ ] **Decanter-native code-node authoring skill, distributed skills.sh-first**
       (2026-07-22, deferred out of [Plan 33](DONE-33-post-mcp-pivot-wave.md)).
       A small **original** skill (1–2 files, no n8n-io/skills fork — Plan 30's

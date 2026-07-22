@@ -673,6 +673,32 @@ export async function updateWorkflow(mcp: McpClient, id: string, operations: Mcp
 }
 
 /**
+ * `prepare_test_pin_data` result — a **schema oracle** for scenario scaffolding
+ * (Plan 37). Read-only/idempotent; the server returns **JSON Schemas, never
+ * data** (the caller authors realistic values). `nodeSchemasToGenerate` is keyed
+ * by node name; `nodesWithoutSchema` need pins but have no schema (empty
+ * defaults); `nodesSkipped` execute normally (no pin needed). Shape source-
+ * verified against n8n's prepare-workflow-pin-data.tool.ts (2026-07-22).
+ */
+export interface PinDataScaffold {
+  nodeSchemasToGenerate: Record<string, unknown>;
+  nodesWithoutSchema: string[];
+  nodesSkipped: string[];
+  coverage: {
+    withSchemaFromExecution: number;
+    withSchemaFromDefinition: number;
+    withoutSchema: number;
+    skipped: number;
+    total: number;
+  };
+}
+
+/** Ask n8n for the per-node output schemas of the nodes a test run must pin (read-only). */
+export async function prepareTestPinData(mcp: McpClient, id: string): Promise<PinDataScaffold> {
+  return mcp.callTool<PinDataScaffold>("prepare_test_pin_data", { workflowId: id });
+}
+
+/**
  * Take the draft live. n8n reports failure in-band (`success: false` with the
  * reason, e.g. the not-available refusal) — normalized to a throw here.
  */

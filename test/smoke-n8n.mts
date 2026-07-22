@@ -969,6 +969,31 @@ try {
     assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "non-TTY test mutated nothing");
   });
 
+  await step("scenario --scaffold: prepare_test_pin_data live-shape holds; a scaffolded scenario writes schemas, not data (Plan 37)", async () => {
+    // Assert the recorded prepare_test_pin_data response shape against the LIVE
+    // instance (the schema-oracle this feature depends on) — the version-fragile
+    // fact this step pins. Schemas only, never data.
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpRaw = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    const pin = await mcpRaw.callTool("prepare_test_pin_data", { workflowId: wfId }) as {
+      nodeSchemasToGenerate: Record<string, unknown>; nodesWithoutSchema: string[]; nodesSkipped: string[];
+      coverage: { withSchemaFromExecution: number; withSchemaFromDefinition: number; withoutSchema: number; skipped: number; total: number };
+    };
+    assert.ok(pin.nodeSchemasToGenerate && typeof pin.nodeSchemasToGenerate === "object", "nodeSchemasToGenerate is a node→schema map: " + JSON.stringify(pin).slice(0, 300));
+    assert.ok(Array.isArray(pin.nodesWithoutSchema) && Array.isArray(pin.nodesSkipped), "nodesWithoutSchema/nodesSkipped are arrays");
+    for (const k of ["withSchemaFromExecution", "withSchemaFromDefinition", "withoutSchema", "skipped", "total"] as const) {
+      assert.equal(typeof pin.coverage[k], "number", `coverage.${k} is a number`);
+    }
+    // and through the CLI: a bare --scaffold writes schema-annotated fills, no data
+    const r = await cli("scenario", "create", wfId, "scaffolded", "--scaffold");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /scaffold coverage/, r.out);
+    const scenario = JSON.parse(readFileSync(path.join(wfDir, "scenarios", "scaffolded.json"), "utf8"));
+    assert.equal(scenario._decanterScenario.source, "scaffold");
+    assert.deepEqual(scenario.data.resultData.runData, {}, "scaffold invents no runData");
+    rmSync(path.join(wfDir, "scenarios"), { recursive: true, force: true });
+  });
+
   await step("executions clean: fetched data is removed (offline)", async () => {
     assert.ok(existsSync(path.join(wfDir, "executions")), "executions dir present before clean");
     const r = await cli("executions", wfId, "clean");

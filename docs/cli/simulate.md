@@ -6,12 +6,12 @@ order: 15
 
 ```sh
 n8n-decanter simulate <workflow> --execution <id> [--network-none] [--json]
-n8n-decanter simulate <workflow> --mock <slug>       # replay a committed mock scenario
-n8n-decanter simulate <workflow> --pin <id>          # save a capture as committed fixtures
+n8n-decanter simulate <workflow> --scenario <slug>   # replay a committed scenario
 ```
 
-Replays a workflow through a **real n8n engine** using a captured execution as
-the mock — the confidence layer that [node run](/docs/cli/node-run/) (single node) and
+Replays a workflow through a **real n8n engine** using a captured execution (or
+a committed [scenario](/docs/cli/scenario/)) as the pinned input — the
+confidence layer that [node run](/docs/cli/node-run/) (single node) and
 [status](/docs/cli/status/) (sync only) don't cover. Side-effect-free nodes
 (Set, IF, Switch, Merge, Code, …) **execute for real** through the actual
 engine; every network/side-effectful node is **pinned** to the output it
@@ -62,8 +62,7 @@ runs, so they run for real (never pinned) to reproduce the loop — see
 | Flag | Meaning |
 | --- | --- |
 | `--execution <id>` | The captured execution to replay (optional — defaults to the newest capture in `executions/`) |
-| `--mock <slug>` | Replay a committed [mock scenario](/docs/cli/mock/) `mocks/<slug>.json` instead of a raw capture (mutually exclusive with `--execution`) |
-| `--pin <id>` | Instead of running, copy the capture's network-node outputs into committed `fixtures/` (offline) |
+| `--scenario <slug>` | Replay a committed [scenario](/docs/cli/scenario/) `scenarios/<slug>.json` instead of a raw capture (mutually exclusive with `--execution`) |
 | `--network-none` | Run the engine container with `--network none` — an enforced outbound cutoff on top of the structural guarantee |
 | `--json` | Emit the full report as JSON (for tooling) instead of the human summary |
 | `--n8n-version <tag>` | Override the engine version for this run (see below) |
@@ -76,6 +75,14 @@ regression check.
 
 Nodes with **nondeterministic** output (`$now`, `Math.random()`, `new Date()`)
 legitimately diverge — that's a real signal, not masked.
+
+**Synthetic pins are the exception.** A `--scenario` with any `authored`/
+`scaffolded` node (see [provenance](/docs/cli/scenario/#provenance-and-synthetic-pins))
+is reported "**synthetic pins — proves executability, not output
+correctness**": no per-node diff is asserted for those nodes, and `ok`
+reflects only that the engine ran clean. A capture-only run (`--execution`, or
+a scenario with no `fill` entries left) keeps the diff/exit-1 semantics above
+unchanged. `--json` adds `syntheticPins: boolean` and `provenance`.
 
 ## Engine version
 
@@ -111,18 +118,6 @@ open the run in n8n:  http://127.0.0.1:53737/workflow/decantersim0000/executions
   scripts and CI are unaffected (and leave no container behind).
 - The diff/exit-code is unchanged; the viewer is purely for eyeballing the run.
 
-## `simulate --pin`
-
-Captures under `executions/` are gitignored temp data. `--pin <id>` copies each
-network node's captured output into `workflows/<folder>/fixtures/<node>.json`,
-provenance-stamped (source, execution id, workflow version, date) so replays
-become **reproducible and committable**. Fixtures take precedence over captures
-on the next run.
-
-**Review before committing** — execution data can contain credentials and PII,
-which is why `executions/` is gitignored in the first place. `simulate` prints
-that warning on every pin.
-
 ## Not a replacement for `run`
 
 [node run](/docs/cli/node-run/) is the sub-second inner loop — one node, in-process, zero
@@ -137,14 +132,15 @@ generated/untrusted node code, `simulate` is the safer executor.)
 A **gap** is a network node reached in the replay with **no captured or pinned
 data** — a node added or reparametrized since the capture. `simulate` hard-errors
 on a gap rather than run half-real. To fill it, promote the capture to a
-committed, editable [execution mock](/docs/cli/mock/) scenario and add the node's
-data by hand (or with your IDE agent — the CLI never calls a model):
+committed, editable [scenario](/docs/cli/scenario/) and add the node's data by
+hand (or with your IDE agent — the CLI never calls a model), or scaffold its
+schema with `--scaffold`:
 
 ```sh
-n8n-decanter <workflow> mock create "<slug>" --execution <id>   # writes mocks/<slug>.json, flags the gaps
+n8n-decanter <workflow> scenario create "<slug>" --execution <id>   # writes scenarios/<slug>.json, flags the gaps
 # fill the flagged nodes' runData, then validate offline:
-n8n-decanter <workflow> mock check <slug>
-n8n-decanter <workflow> simulate --mock <slug>                  # replay the scenario
+n8n-decanter <workflow> scenario check <slug>
+n8n-decanter <workflow> simulate --scenario <slug>                  # replay the scenario
 ```
 
 ## Scope

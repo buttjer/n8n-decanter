@@ -1,5 +1,6 @@
-// Offline unit tests for lib/simulate.mts — the fixture loader + route-B
-// transform (Plan 7 task 2). No engine, no mock server: pure file-in/JSON-out.
+// Offline unit tests for lib/simulate.mts — the scenario/capture loader +
+// route-B transform (Plan 7 task 2, scenarios Plan 37). No engine, no mock
+// server: pure file-in/JSON-out.
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -8,21 +9,23 @@ import { afterEach, describe, it } from "node:test";
 import {
   assertDryRunSafe,
   buildSimulation,
-  checkMocks,
+  checkScenarios,
   detectGaps,
   diffItems,
   isPureNode,
-  listMockSlugs,
-  pinFixtures,
+  listScenarioSlugs,
   PURE_NODE_TYPES,
+  scenarioIsSynthetic,
+  scenarioProvenance,
   SIM_CAP_PREFIX,
   SIM_START_NODE,
   SimulationGapError,
   sourceFile,
-  validateMockRunData,
-  writeMock,
+  validateScenarioRunData,
+  writeScenario,
 } from "../../lib/simulate.mts";
-import { MOCKS_DIR, latestCaptureId } from "../../lib/executions.mts";
+import { assertNoLegacyFixtures, migrateScenariosDir, SCENARIOS_DIR, latestCaptureId } from "../../lib/executions.mts";
+import type { PinDataScaffold } from "../../lib/mcp.mts";
 import type { Log, Workflow, WorkflowNode } from "../../lib/types.mts";
 
 const warnings: string[] = [];
@@ -127,17 +130,6 @@ describe("buildSimulation — happy path", () => {
     const sim = await buildSimulation(scaffoldBase(), "1", log);
     for (const n of sim.workflow.nodes) assert.equal((n as any).credentials, undefined, n.name);
     assert.doesNotThrow(() => assertDryRunSafe(sim.workflow));
-  });
-});
-
-describe("buildSimulation — fixture precedence", () => {
-  it("prefers a committed fixture over the capture's runData", async () => {
-    const dir = scaffoldBase(undefined, {
-      "fixtures/fetch.json": JSON.stringify({ source: "capture", node: "Fetch", execId: 9, items: [item({ status: "pinned-override" })] }),
-    });
-    const sim = await buildSimulation(dir, "1", log);
-    assert.match(String(nodeNamed(sim.workflow, "Fetch").parameters.jsCode), /pinned-override/);
-    assert.deepEqual(sim.captured.get("Fetch"), [item({ status: "pinned-override" })]);
   });
 });
 
@@ -294,8 +286,8 @@ describe("latestCaptureId", () => {
     });
     assert.equal(latestCaptureId(dir), "17");
   });
-  it("does not count committed mocks (slug-named scenarios aren't 'latest'-ordered)", () => {
-    const dir = scaffold({ "executions/3.json": "{}", "mocks/happy-path.json": "{}" });
+  it("does not count committed scenarios (slug-named, not 'latest'-ordered)", () => {
+    const dir = scaffold({ "executions/3.json": "{}", "scenarios/happy-path.json": "{}" });
     assert.equal(latestCaptureId(dir), "3");
   });
   it("returns null when there are no captures", () => {
@@ -336,14 +328,14 @@ describe("gaps — SimulationGapError context", () => {
   });
 });
 
-describe("mock create (writeMock) + sourceFile resolution", () => {
-  it("sourceFile resolves mocks by slug and captures by id", () => {
-    const dir = scaffold({ "executions/1.json": "{}", "mocks/happy-path.json": "{}" });
-    assert.ok(sourceFile(dir, "happy-path", "mock")!.includes(`${MOCKS_DIR}/happy-path.json`));
+describe("scenario create (writeScenario) + sourceFile resolution", () => {
+  it("sourceFile resolves scenarios by slug and captures by id", () => {
+    const dir = scaffold({ "executions/1.json": "{}", "scenarios/happy-path.json": "{}" });
+    assert.ok(sourceFile(dir, "happy-path", "scenario")!.includes(`${SCENARIOS_DIR}/happy-path.json`));
     assert.ok(sourceFile(dir, "1", "capture")!.includes("executions/1.json"));
-    assert.equal(sourceFile(dir, "nope", "mock"), null);
-    // a mock ref is kebab-slugged on lookup
-    assert.ok(sourceFile(dir, "Happy Path", "mock")!.includes("happy-path.json"));
+    assert.equal(sourceFile(dir, "nope", "scenario"), null);
+    // a scenario ref is kebab-slugged on lookup
+    assert.ok(sourceFile(dir, "Happy Path", "scenario")!.includes("happy-path.json"));
   });
 
   const gapWorkflowDir = () => {
@@ -360,115 +352,213 @@ describe("mock create (writeMock) + sourceFile resolution", () => {
     });
   };
 
-  it("promotes a capture to a named mock scenario, flagging gap nodes to fill", async () => {
+  it("promotes a capture to a named scenario, flagging gap nodes to fill", async () => {
     const dir = gapWorkflowDir();
-    const result = await writeMock(dir, "1", "happy path", log); // slug kebab-slugged
+    const result = await writeScenario(dir, { execId: "1", slug: "happy path" }, log); // slug kebab-slugged
     assert.equal(result.slug, "happy-path");
     assert.deepEqual(result.gaps, ["Fetch2"]);
-    const mock = JSON.parse(readFileSync(path.join(dir, MOCKS_DIR, "happy-path.json"), "utf8"));
-    // the mock is a full copy of the capture (real runData preserved) + guidance block
-    assert.deepEqual(mock.data.resultData.runData.Fetch, run([item({ status: "ok" })]));
-    assert.equal(mock._decanterMock.sourceExecution, "1");
-    assert.equal(mock._decanterMock.fill.length, 1);
-    assert.equal(mock._decanterMock.fill[0].node, "Fetch2");
-    assert.deepEqual(mock._decanterMock.fill[0].inputSample, [{ status: "ok" }]);
+    const scenario = JSON.parse(readFileSync(path.join(dir, SCENARIOS_DIR, "happy-path.json"), "utf8"));
+    // the scenario is a full copy of the capture (real runData preserved) + guidance block
+    assert.deepEqual(scenario.data.resultData.runData.Fetch, run([item({ status: "ok" })]));
+    assert.equal(scenario._decanterScenario.source, "capture");
+    assert.equal(scenario._decanterScenario.sourceExecution, "1");
+    assert.equal(scenario._decanterScenario.fill.length, 1);
+    assert.equal(scenario._decanterScenario.fill[0].node, "Fetch2");
+    assert.equal(scenario._decanterScenario.fill[0].expectedSchema, undefined); // no --scaffold
+    assert.deepEqual(scenario._decanterScenario.fill[0].inputSample, [{ status: "ok" }]);
     assert.ok(warnings.some((w) => /credentials\/PII/.test(w)), warnings.join("|"));
-    // refuses to clobber an existing mock (protects hand-filled data)
-    await assert.rejects(writeMock(dir, "1", "happy path", log), /mock "happy-path" already exists/);
+    // refuses to clobber an existing scenario (protects hand-filled data)
+    await assert.rejects(writeScenario(dir, { execId: "1", slug: "happy path" }, log), /scenario "happy-path" already exists/);
   });
 
   it("defaults the slug to the execution id when none is given", async () => {
     const dir = gapWorkflowDir();
-    const result = await writeMock(dir, "1", "1", log);
+    const result = await writeScenario(dir, { execId: "1", slug: "1" }, log);
     assert.equal(result.slug, "1");
-    assert.ok(existsSync(path.join(dir, MOCKS_DIR, "1.json")));
+    assert.ok(existsSync(path.join(dir, SCENARIOS_DIR, "1.json")));
   });
 
-  it("strips the capture's embedded workflowData — a committed mock must not duplicate node source", async () => {
+  it("strips the capture's embedded workflowData — a committed scenario must not duplicate node source", async () => {
     const dir = gapWorkflowDir();
     const captureFile = path.join(dir, "executions", "1.json");
     const capture = JSON.parse(readFileSync(captureFile, "utf8"));
     capture.workflowData = { nodes: [{ name: "Compute", parameters: { jsCode: "return $input.all();" } }] };
     writeFileSync(captureFile, JSON.stringify(capture));
-    await writeMock(dir, "1", "no-inline", log);
-    const mock = JSON.parse(readFileSync(path.join(dir, MOCKS_DIR, "no-inline.json"), "utf8"));
-    assert.equal(mock.workflowData, undefined, "workflowData stripped from the committed mock");
-    assert.ok(mock.data.resultData.runData.Fetch, "runData survives the strip");
+    await writeScenario(dir, { execId: "1", slug: "no-inline" }, log);
+    const scenario = JSON.parse(readFileSync(path.join(dir, SCENARIOS_DIR, "no-inline.json"), "utf8"));
+    assert.equal(scenario.workflowData, undefined, "workflowData stripped from the committed scenario");
+    assert.ok(scenario.data.resultData.runData.Fetch, "runData survives the strip");
   });
 
-  it("validateMockRunData: no-op on a real capture (no _decanterMock marker)", () => {
+  // A prepare_test_pin_data result: Fetch2 gets a schema, and a from-scratch
+  // scaffold covers every pinnable node (Webhook + Fetch + Fetch2 here).
+  const scaffoldResult = (schemas: Record<string, unknown>, without: string[] = []): PinDataScaffold => ({
+    nodeSchemasToGenerate: schemas,
+    nodesWithoutSchema: without,
+    nodesSkipped: ["Compute", "Tag"],
+    coverage: { withSchemaFromExecution: 0, withSchemaFromDefinition: Object.keys(schemas).length, withoutSchema: without.length, skipped: 2, total: Object.keys(schemas).length + without.length + 2 },
+  });
+
+  it("--scaffold annotates each gap with its expectedSchema (provenance scaffolded), never inventing values", async () => {
+    const dir = gapWorkflowDir();
+    const schema = { type: "object", properties: { id: { type: "string" } } };
+    const result = await writeScenario(dir, { execId: "1", slug: "scaffolded", scaffold: scaffoldResult({ Fetch2: schema }) }, log);
+    assert.deepEqual(result.gaps, ["Fetch2"]);
+    assert.deepEqual(result.coverage, scaffoldResult({ Fetch2: schema }).coverage);
+    const scenario = JSON.parse(readFileSync(path.join(dir, SCENARIOS_DIR, "scaffolded.json"), "utf8"));
+    assert.equal(scenario._decanterScenario.source, "capture+scaffold");
+    assert.deepEqual(scenario._decanterScenario.fill[0].expectedSchema, schema);
+    // no value was invented — Fetch2 has no runData yet (still a gap to author)
+    assert.equal(scenario.data.resultData.runData.Fetch2, undefined);
+  });
+
+  it("a bare --scaffold with no --execution builds a from-scratch set: every pinnable node is a fill entry", async () => {
+    const dir = gapWorkflowDir();
+    const schemas = { Webhook: { type: "object" }, Fetch: { type: "object" }, Fetch2: { type: "object" } };
+    const result = await writeScenario(dir, { slug: "from-scratch", scaffold: scaffoldResult(schemas) }, log);
+    // Webhook, Fetch, Fetch2 are the pinnable (non-pure, enabled) nodes
+    assert.deepEqual(result.gaps.sort(), ["Fetch", "Fetch2", "Webhook"]);
+    const scenario = JSON.parse(readFileSync(path.join(dir, SCENARIOS_DIR, "from-scratch.json"), "utf8"));
+    assert.equal(scenario._decanterScenario.source, "scaffold");
+    assert.equal(scenario._decanterScenario.sourceExecution, undefined);
+    assert.equal(scenario._decanterScenario.fill.length, 3);
+    assert.deepEqual(scenario.data.resultData.runData, {}); // nothing captured or invented
+  });
+
+  it("refuses a from-scratch create without --scaffold (no capture, no schemas)", async () => {
+    const dir = gapWorkflowDir();
+    await assert.rejects(writeScenario(dir, { slug: "nope" }, log), /needs --scaffold/);
+  });
+
+  it("validateScenarioRunData: no-op on a real capture (no scenario marker)", () => {
     const capture = { id: 1, data: { resultData: { runData: { A: run([item({ x: 1 })]) } } } } as any;
-    assert.doesNotThrow(() => validateMockRunData(capture, "1"));
+    assert.doesNotThrow(() => validateScenarioRunData(capture, "1"));
   });
 
-  it("validateMockRunData: passes a well-formed filled mock", () => {
-    const mock = {
+  it("validateScenarioRunData: passes a well-formed filled scenario", () => {
+    const scenario = {
       id: 1, data: { resultData: { runData: { Enrich: run([item({ ok: true })]) } } },
-      _decanterMock: { sourceExecution: "1", fill: [{ node: "Enrich" }] },
+      _decanterScenario: { source: "capture", sourceExecution: "1", fill: [{ node: "Enrich" }] },
     } as any;
-    assert.doesNotThrow(() => validateMockRunData(mock, "1"));
+    assert.doesNotThrow(() => validateScenarioRunData(scenario, "1"));
   });
 
-  it("validateMockRunData: catches malformed runData shape with a node-named error", () => {
-    const badItem = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: [[42]] } }] } } }, _decanterMock: { fill: [] } } as any;
-    assert.throws(() => validateMockRunData(badItem, "1"), /Enrich run 0 item 0: each item must be an object/);
-    const badMain = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: "nope" } }] } } }, _decanterMock: { fill: [] } } as any;
-    assert.throws(() => validateMockRunData(badMain, "1"), /data\.main must be an array of outputs/);
-    const noJson = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: [[{ nope: 1 }]] } }] } } }, _decanterMock: { fill: [] } } as any;
-    assert.throws(() => validateMockRunData(noJson, "1"), /needs a "json" field/);
-  });
-
-  it("validateMockRunData: flags a fill node left without data (incomplete mock)", () => {
-    const mock = {
+  it("validateScenarioRunData: still reads the legacy _decanterMock marker (migrated files)", () => {
+    const legacy = {
       id: 1, data: { resultData: { runData: { A: run([item({})]) } } },
-      _decanterMock: { fill: [{ node: "Enrich" }] },
+      _decanterMock: { fill: [{ node: "Enrich" }] }, // Enrich unfilled → incomplete
     } as any;
-    assert.throws(() => validateMockRunData(mock, "1"), /incomplete: add runData for Enrich/);
+    assert.throws(() => validateScenarioRunData(legacy, "1"), /incomplete: add runData for Enrich/);
   });
 
-  it("a filled mock (source=mock) resolves the gap; an unfilled one still errors", async () => {
+  it("validateScenarioRunData: catches malformed runData shape with a node-named error", () => {
+    const badItem = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: [[42]] } }] } } }, _decanterScenario: { fill: [] } } as any;
+    assert.throws(() => validateScenarioRunData(badItem, "1"), /Enrich run 0 item 0: each item must be an object/);
+    const badMain = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: "nope" } }] } } }, _decanterScenario: { fill: [] } } as any;
+    assert.throws(() => validateScenarioRunData(badMain, "1"), /data\.main must be an array of outputs/);
+    const noJson = { id: 1, data: { resultData: { runData: { Enrich: [{ data: { main: [[{ nope: 1 }]] } }] } } }, _decanterScenario: { fill: [] } } as any;
+    assert.throws(() => validateScenarioRunData(noJson, "1"), /needs a "json" field/);
+  });
+
+  it("validateScenarioRunData: flags a fill node left without data (incomplete scenario)", () => {
+    const scenario = {
+      id: 1, data: { resultData: { runData: { A: run([item({})]) } } },
+      _decanterScenario: { fill: [{ node: "Enrich" }] },
+    } as any;
+    assert.throws(() => validateScenarioRunData(scenario, "1"), /incomplete: add runData for Enrich/);
+  });
+
+  it("a filled scenario (source=scenario) resolves the gap; an unfilled one still errors", async () => {
     const wf = baseWorkflow();
     wf.nodes.push({ id: "h2", name: "Fetch2", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [800, 0], parameters: {} } as WorkflowNode);
     (wf.connections as any).Fetch = { main: [[{ node: "Fetch2", type: "main", index: 0 }]] };
-    const base = { id: 1, workflowId: "wf1", workflowVersionId: "v1", _decanterMock: { fill: [{ node: "Fetch2" }] }, data: { resultData: { runData: {
+    const base = { id: 1, workflowId: "wf1", workflowVersionId: "v1", _decanterScenario: { source: "capture", fill: [{ node: "Fetch2" }] }, data: { resultData: { runData: {
       Webhook: run([item({})]), Compute: run([item({})]), Tag: run([item({})]), Fetch: run([item({ status: "ok" })]),
     } } } };
     const dir = scaffold({
       "workflow.json": JSON.stringify(wf),
       ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: { c: { file: "code/compute.js" } } }),
       "code/compute.js": "return [];\n",
-      // filled mock: Fetch2 now has runData
-      "mocks/happy-path.json": JSON.stringify({ ...base, data: { resultData: { runData: {
+      // filled scenario: Fetch2 now has runData
+      "scenarios/happy-path.json": JSON.stringify({ ...base, data: { resultData: { runData: {
         ...base.data.resultData.runData, Fetch2: run([item({ enriched: true })]),
       } } } }),
-      // unfilled mock: Fetch2 absent → validator flags it before the transform
-      "mocks/unfilled.json": JSON.stringify(base),
+      // unfilled scenario: Fetch2 absent → validator flags it before the transform
+      "scenarios/unfilled.json": JSON.stringify(base),
     });
-    const sim = await buildSimulation(dir, "happy-path", log, { source: "mock" });
-    assert.ok(sim.pinned.includes("Fetch2"), "Fetch2 should be pinned from the mock");
+    const sim = await buildSimulation(dir, "happy-path", log, { source: "scenario" });
+    assert.ok(sim.pinned.includes("Fetch2"), "Fetch2 should be pinned from the scenario");
     assert.match(String(nodeNamed(sim.workflow, "Fetch2").parameters.jsCode), /"enriched":true/);
-    await assert.rejects(buildSimulation(dir, "unfilled", log, { source: "mock" }), /incomplete: add runData for Fetch2/);
+    await assert.rejects(buildSimulation(dir, "unfilled", log, { source: "scenario" }), /incomplete: add runData for Fetch2/);
   });
 });
 
-describe("mock check (checkMocks) + listMockSlugs", () => {
-  const withMocks = (mocks: Record<string, unknown>) => scaffold(
-    Object.fromEntries(Object.entries(mocks).map(([slug, body]) => [`mocks/${slug}.json`, JSON.stringify(body)])),
-  );
-  const goodMock = { _decanterMock: { fill: [{ node: "Enrich" }] }, data: { resultData: { runData: { Enrich: run([item({ ok: true })]) } } } };
-  const badMock = { _decanterMock: { fill: [{ node: "Enrich" }] }, data: { resultData: { runData: {} } } }; // Enrich unfilled
-
-  it("listMockSlugs returns the sorted slugs", () => {
-    assert.deepEqual(listMockSlugs(withMocks({ "b-two": goodMock, "a-one": goodMock })), ["a-one", "b-two"]);
-    assert.deepEqual(listMockSlugs(scaffold({ "workflow.json": "{}" })), []);
+describe("scenario provenance", () => {
+  it("marks captured nodes 'capture' and fill nodes 'authored'/'scaffolded'", () => {
+    const exec = {
+      data: { resultData: { runData: { Compute: run([item({})]), Fetch: run([item({})]), Fetch2: run([item({})]) } } },
+      _decanterScenario: { source: "capture+scaffold", fill: [
+        { node: "Fetch", inputSample: [] },                              // no schema → authored
+        { node: "Fetch2", inputSample: [], expectedSchema: { type: "object" } }, // schema → scaffolded
+      ] },
+    } as any;
+    const prov = scenarioProvenance(exec);
+    assert.equal(prov.get("Compute"), "capture");
+    assert.equal(prov.get("Fetch"), "authored");
+    assert.equal(prov.get("Fetch2"), "scaffolded");
+    assert.equal(scenarioIsSynthetic(exec), true);
   });
 
-  it("checkMocks: 0 invalid for a good mock, >0 for a bad one, by slug or all", () => {
-    const dir = withMocks({ good: goodMock, bad: badMock });
-    assert.equal(checkMocks(dir, "good", log), 0);
-    assert.equal(checkMocks(dir, "bad", log), 1);
-    assert.equal(checkMocks(dir, undefined, log), 1); // all: one bad
-    assert.equal(checkMocks(scaffold({ "workflow.json": "{}" }), undefined, log), 0); // none → 0
+  it("a capture-only scenario (empty fill) is not synthetic; all nodes are 'capture'", () => {
+    const exec = { data: { resultData: { runData: { A: run([item({})]) } } }, _decanterScenario: { source: "capture", fill: [] } } as any;
+    assert.equal(scenarioIsSynthetic(exec), false);
+    assert.equal(scenarioProvenance(exec).get("A"), "capture");
+  });
+});
+
+describe("scenario check (checkScenarios) + listScenarioSlugs", () => {
+  const withScenarios = (scenarios: Record<string, unknown>) => scaffold(
+    Object.fromEntries(Object.entries(scenarios).map(([slug, body]) => [`scenarios/${slug}.json`, JSON.stringify(body)])),
+  );
+  const good = { _decanterScenario: { fill: [{ node: "Enrich" }] }, data: { resultData: { runData: { Enrich: run([item({ ok: true })]) } } } };
+  const bad = { _decanterScenario: { fill: [{ node: "Enrich" }] }, data: { resultData: { runData: {} } } }; // Enrich unfilled
+
+  it("listScenarioSlugs returns the sorted slugs", () => {
+    assert.deepEqual(listScenarioSlugs(withScenarios({ "b-two": good, "a-one": good })), ["a-one", "b-two"]);
+    assert.deepEqual(listScenarioSlugs(scaffold({ "workflow.json": "{}" })), []);
+  });
+
+  it("checkScenarios: 0 invalid for a good scenario, >0 for a bad one, by slug or all", () => {
+    const dir = withScenarios({ good, bad });
+    assert.equal(checkScenarios(dir, "good", log), 0);
+    assert.equal(checkScenarios(dir, "bad", log), 1);
+    assert.equal(checkScenarios(dir, undefined, log), 1); // all: one bad
+    assert.equal(checkScenarios(scaffold({ "workflow.json": "{}" }), undefined, log), 0); // none → 0
+  });
+});
+
+describe("migration + legacy fixtures guard", () => {
+  it("migrateScenariosDir renames a legacy mocks/ dir to scenarios/", () => {
+    const dir = scaffold({ "mocks/happy-path.json": "{}" });
+    migrateScenariosDir(dir, log);
+    assert.ok(!existsSync(path.join(dir, "mocks")), "legacy mocks/ removed");
+    assert.ok(existsSync(path.join(dir, SCENARIOS_DIR, "happy-path.json")), "moved to scenarios/");
+  });
+
+  it("migrateScenariosDir refuses when both mocks/ and scenarios/ exist", () => {
+    const dir = scaffold({ "mocks/a.json": "{}", "scenarios/b.json": "{}" });
+    assert.throws(() => migrateScenariosDir(dir, log), /both mocks\/ .* and scenarios\/ exist/);
+  });
+
+  it("migrateScenariosDir is a no-op with no legacy dir", () => {
+    const dir = scaffold({ "scenarios/a.json": "{}" });
+    assert.doesNotThrow(() => migrateScenariosDir(dir, log));
+  });
+
+  it("assertNoLegacyFixtures hard-errors on a fixtures/ dir with .json files", () => {
+    const dir = scaffold({ "fixtures/fetch.json": "{}" });
+    assert.throws(() => assertNoLegacyFixtures(dir), /fixtures\/ .* removed \(Plan 37\)/);
+    assert.doesNotThrow(() => assertNoLegacyFixtures(scaffold({ "scenarios/a.json": "{}" })));
   });
 });
 
@@ -479,23 +569,6 @@ describe("diffItems", () => {
   it("detects a differing value (the regression signal) and item count", () => {
     assert.equal(diffItems([{ json: { doubled: 42 } }], [{ json: { doubled: 43 } }]), false);
     assert.equal(diffItems([{ json: { x: 1 } }], [{ json: { x: 1 } }, { json: { x: 2 } }]), false);
-  });
-});
-
-describe("pinFixtures", () => {
-  it("writes provenance-stamped fixtures for network nodes only, with a PII warning", () => {
-    const dir = scaffoldBase();
-    pinFixtures(dir, "1", log);
-    // Webhook + Fetch are network -> pinned; Compute/Tag are pure -> skipped
-    const webhook = JSON.parse(readFileSync(path.join(dir, "fixtures", "webhook.json"), "utf8"));
-    assert.equal(webhook.source, "capture");
-    assert.equal(webhook.node, "Webhook");
-    assert.equal(webhook.execId, "1");
-    assert.equal(webhook.workflowVersionId, "v1");
-    assert.deepEqual(webhook.items, [item({ body: { n: 21 } })]);
-    assert.ok(existsSync(path.join(dir, "fixtures", "fetch.json")));
-    assert.ok(!existsSync(path.join(dir, "fixtures", "compute.json")));
-    assert.ok(warnings.some((w) => /credentials\/PII/.test(w)), warnings.join("|"));
   });
 });
 

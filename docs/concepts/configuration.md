@@ -61,4 +61,5 @@ workflow needs its **"Available in MCP"** flag (workflow card ⋯ menu, or
 workflow settings) — [list --remote](/docs/cli/list/) and the picker show
 which workflows still need it.
 
-`check`, `node run`, `mock`, and plain `list` need no credentials at all.
+`check`, `node run`, `scenario check`, and plain `list` need no credentials at
+all (`scenario create --scaffold` is the exception — it needs MCP).

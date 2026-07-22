@@ -29,10 +29,10 @@ n8n-decanter executions [workflow…] [--status=…] [--limit=N]
 n8n-decanter executions [workflow…] clean
 n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=col:asc|desc] [--limit=N] [--all]
 n8n-decanter data-tables [table…] clean
-n8n-decanter test <workflow> [--execution <execution-id> | --mock <slug>] [--trigger <node>] [--json]
-n8n-decanter simulate <workflow> [--execution <execution-id> | --mock <slug>] [--pin <execution-id>] [--network-none] [--json]
-n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]   # committed, gap-fillable mock scenario (offline)
-n8n-decanter mock check <workflow> ["<slug>"]                       # structurally validate a mock (offline)
+n8n-decanter test <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
+n8n-decanter simulate <workflow> [--execution <execution-id> | --scenario <slug>] [--network-none] [--json]
+n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold]   # committed, gap-fillable pin-data set (offline)
+n8n-decanter scenario check <workflow> ["<slug>"]                                    # structurally validate a scenario (offline)
 n8n-decanter list [--remote] [--json]
 
 # Node
@@ -57,7 +57,7 @@ first push seeds a node born empty.
 | `<workflow>` / `[workflow…]` | a workflow: **id · name · unique name-prefix · folder name** |
 | `<node-file>` | a path to a node source file (`node run`) |
 | `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
-| `<slug>` | a mock scenario name — `mock create`/`mock check`, `simulate --mock` (kebab-cased) |
+| `<slug>` | a scenario name — `scenario create`/`scenario check`, `simulate --scenario`/`test --scenario` (kebab-cased) |
 
 ## Interactive picker
 
@@ -97,7 +97,7 @@ errors with *unknown verb*. Flags may still appear in any position.
 
 | Verbs | Network |
 | --- | --- |
-| `check`, `node run`, `list`, `simulate`, `mock`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance) |
+| `check`, `node run`, `list`, `simulate`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
 | `status`, `list --remote`, `executions`, `data-tables` | Read the remote, never write |
 | `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |

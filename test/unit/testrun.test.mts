@@ -41,7 +41,7 @@ describe("buildTestPins", () => {
   it("aborts on a pin gap — a network node with no captured output", () => {
     const withHttp = wf();
     withHttp.nodes.push({ id: "f", name: "Fetch", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [400, 0], parameters: { url: "http://x" } } as any);
-    assert.throws(() => buildTestPins(withHttp, capture as any, "301", "capture"), /cannot pin "Fetch".*run for REAL.*mock create/s);
+    assert.throws(() => buildTestPins(withHttp, capture as any, "301", "capture"), /cannot pin "Fetch".*run for REAL.*scenario create/s);
   });
 
   it("skips a disabled network node (it won't execute)", () => {

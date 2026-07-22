@@ -151,18 +151,26 @@ describe("validateWorkflowDir", () => {
     ]);
   });
 
-  it("warns on a legacy mock embedding inline jsCode under workflowData; clean and placeholder mocks pass", () => {
+  it("warns on a scenario embedding inline jsCode under workflowData; clean and placeholder scenarios pass", () => {
     const dir = scaffold();
-    mkdirSync(path.join(dir, "mocks"), { recursive: true });
-    writeFileSync(path.join(dir, "mocks", "legacy.json"), JSON.stringify({ id: 1, workflowData: { nodes: [{ name: "Transform", parameters: { jsCode: "return $input.all();" } }] } }));
-    writeFileSync(path.join(dir, "mocks", "placeholdered.json"), JSON.stringify({ id: 2, workflowData: { nodes: [{ name: "Transform", parameters: { jsCode: "//@file:code/main.js" } }] } }));
-    writeFileSync(path.join(dir, "mocks", "clean.json"), JSON.stringify({ id: 3, data: { resultData: { runData: {} } } }));
-    writeFileSync(path.join(dir, "mocks", "corrupt.json"), "{nope");
+    mkdirSync(path.join(dir, "scenarios"), { recursive: true });
+    writeFileSync(path.join(dir, "scenarios", "legacy.json"), JSON.stringify({ id: 1, workflowData: { nodes: [{ name: "Transform", parameters: { jsCode: "return $input.all();" } }] } }));
+    writeFileSync(path.join(dir, "scenarios", "placeholdered.json"), JSON.stringify({ id: 2, workflowData: { nodes: [{ name: "Transform", parameters: { jsCode: "//@file:code/main.js" } }] } }));
+    writeFileSync(path.join(dir, "scenarios", "clean.json"), JSON.stringify({ id: 3, data: { resultData: { runData: {} } } }));
+    writeFileSync(path.join(dir, "scenarios", "corrupt.json"), "{nope");
     const { errors, warnings } = validateWorkflowDir(dir);
     assert.deepEqual(errors, []);
     assert.deepEqual(warnings, [
-      'mocks/legacy.json: embeds inline Code-node source under workflowData — committed mocks must not duplicate node code; delete the mock\'s "workflowData" block (freshly created mocks omit it)',
+      'scenarios/legacy.json: embeds inline Code-node source under workflowData — committed scenarios must not duplicate node code; delete the scenario\'s "workflowData" block (freshly created ones omit it)',
     ]);
+  });
+
+  it("hard-errors on a retired fixtures/ dir naming the replacement (Plan 37)", () => {
+    const dir = scaffold();
+    mkdirSync(path.join(dir, "fixtures"), { recursive: true });
+    writeFileSync(path.join(dir, "fixtures", "fetch.json"), JSON.stringify({ node: "Fetch", items: [] }));
+    const { errors } = validateWorkflowDir(dir);
+    assert.ok(errors.some((e) => /fixtures\/ dir is retired/.test(e)), errors.join("|"));
   });
 });
 

@@ -29,7 +29,7 @@ n8n-decanter/
                           #   init | pull | push | status | check | watch |
                           #   publish | unpublish | list | executions |
                           #   data-tables | test | simulate | completion +
-                          #   namespaces: node (run), mock (create|check),
+                          #   namespaces: node (run), scenario (create|check),
                           #   mcp (connect|serve)
   lib/                    # implementation: api, compile, config, datatables,
                           #   diff, engine, executions, git, init, lifecycle,
@@ -159,9 +159,9 @@ workflows/
     .decanter.json            # state, see below
     executions/               # optional: fetched run data (plans/3) — temp,
       <execId>.json           #   self-gitignored, never synced back
-    fixtures/                 # optional: committed pins (simulate --pin, plans/7)
-    mocks/                    # optional: committed, hand-fillable mock scenarios
-      <slug>.json             #   (mock create/check, plans/7) — tracked
+    scenarios/                # optional: committed, self-contained pin-data
+      <slug>.json             #   sets (scenario create/check, plans/7+37) —
+                              #   tracked; the ONLY committed pin artifact
 ```
 
 - Workflow **id** lives in `workflow.json` (and `.decanter.json`) → the folder
@@ -300,7 +300,7 @@ names the verb in its error) — only `executions` and `data-tables` need it
 ## Workflow refs & CLI output (plans/11)
 
 The grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`.
-`node run` lives under the **`node` namespace**, mocks under `mock`
+`node run` lives under the **`node` namespace**, scenarios under `scenario`
 (`create`/`check`), the agent guard under `mcp` (`connect`/`serve`). Flags may
 sit anywhere; `--publish` (Plan 32) joins `--force`/`--no-typecheck` on push.
 
@@ -532,6 +532,63 @@ transports:
   in the sync dir reaches an n8n `/mcp-server/http` endpoint that isn't
   loopback; `AGENTS.md.example` states the boundary proxy-first.
 
+## Scenarios — committed pin-data sets (`scenario`, plans/7 + 37)
+
+`lib/simulate.mts` (scenario read/write) + `lib/executions.mts` (dir consts,
+migration) — a **scenario** (`workflows/<folder>/scenarios/<slug>.json`) is a
+named, committed input set for a workflow — captured from a real run or
+scaffolded from its schemas — replayed and diffed by both
+`simulate --scenario <slug>` and `test --scenario <slug>`. It's the **one
+committed pin artifact** (Plan 37 folded the earlier `mock`/`fixtures` split
+into it):
+
+- **Self-contained, no precedence.** A scenario is execution-shaped
+  (verbatim capture + a `_decanterScenario` metadata block) — every
+  pinnable node's data lives in one file; there is no fixture-over-capture
+  layering to reason about (the earlier per-node `fixtures/` mechanism and
+  `simulate --pin` are removed outright). Chosen explicitly by slug, never a
+  "latest" default.
+- **Two composable seeds.** `scenario create --execution <id>` promotes a
+  gitignored capture, recording each node with captured output as
+  provenance `capture` and listing every remaining gap under
+  `_decanterScenario.fill`. `scenario create --scaffold` calls MCP
+  `prepare_test_pin_data` (read-only) and annotates each gap with its
+  output **JSON Schema** (`expectedSchema`), provenance `scaffolded` — the
+  tool returns schemas + coverage counts only, **no data**
+  (`readOnlyHint: true`; this corrects an earlier misread of the tool that
+  assumed server-generated synthetic data). A bare `--scaffold` with no
+  `--execution` builds a from-scratch set where every pinnable node is a
+  fill entry. Neither seed **invents** a value — filling stays a person's
+  or agent's authoring step, reviewed like any other scenario edit.
+- **Per-node provenance drives the report.** Each node's pins are
+  `capture` (real data — usable as a diff baseline), `authored`
+  (hand/agent-filled, no schema), or `scaffolded` (schema-guided). A run on
+  a scenario with **any** non-`capture` node is reported "synthetic pins —
+  proves executability, not output correctness": no per-node diff is
+  asserted for it, and divergence is informational, not a fail. A
+  capture-only scenario keeps the full per-node diff and
+  exit-1-on-divergence semantics unchanged. `--json` reports
+  (`simulate`/`test`) carry `syntheticPins: boolean` and
+  `provenance: Record<node, "capture" | "authored" | "scaffolded">`.
+- **Migration.** A pre-Plan-37 `mocks/` dir auto-migrates to `scenarios/`
+  the first time any verb (`simulate`/`test`/`scenario`) touches it (plain
+  `renameSync`, git-recorded); refuses when both dirs exist. A leftover
+  `fixtures/` dir is a **hard error** naming the replacement — no read
+  path, no silent fold (per-node fragments merging onto a gitignored
+  capture would commit data nobody reviewed). The legacy metadata key
+  `_decanterMock` is still read (as `_decanterScenario`) for scenarios
+  written before the rename.
+- **`scenario check`** validates one scenario or every scenario in the
+  folder, offline, against the exact runData shape `simulate` consumes
+  (n8n publishes no JSON Schema for execution data); `simulate --scenario`/
+  `test --scenario` run the same check on load.
+- **Relation to the official skills.** `n8n-workflow-lifecycle-official`
+  teaches the same `prepare_test_pin_data` tool for an **ephemeral**
+  in-session flow (schemas → agent-generated values → `test_workflow`,
+  per-execution, unpersisted). Scenarios are the durable counterpart:
+  committed, human-reviewed, reused across runs, and diffed against real
+  data when capture-seeded.
+
 ## Instance-side test runs (`test`, plans/33)
 
 `lib/testrun.mts` — the recommended runtime check, wrapping MCP
@@ -540,18 +597,12 @@ verb uses a dedicated client with a ≥320 s timeout):
 
 - **Pin split = `simulate`'s classification** (shared code): every enabled
   non-pure, non-loop-driver node — trigger/network/credentialed — is pinned
-  from the capture (`--execution`, default newest) or committed mock
-  (`--mock`); a node with no captured output is a hard **gap** error before
-  anything runs (an unpinned network node would hit the real world). Pure
-  nodes execute for real on the instance; `--trigger` → `triggerNodeName`.
-  `prepare_test_pin_data` was evaluated and **not** used for pin *values* —
-  correcting an earlier misread (2026-07-22, from the n8n source): the tool
-  returns per-node output **JSON Schemas + coverage counts, no data**
-  (`readOnlyHint: true`; the caller authors the values). Client-built pins
-  from local captures/mocks remain the source of truth — real captured values
-  double as the diff baseline, which schemas can't provide.
-  [Plan 37](plans/OPEN-37-scenario-pin-sets.md) adopts the tool as a **schema
-  oracle** for scaffolding gap fills (`scenario create --scaffold`).
+  from the capture (`--execution`, default newest) or a committed scenario
+  (`--scenario`, see above); a node with no pinned data is a hard **gap**
+  error before anything runs (an unpinned network node would hit the real
+  world). Pure nodes execute for real on the instance; `--trigger` →
+  `triggerNodeName`. Provenance/synthetic-pins labeling is shared with
+  `simulate` (above).
 - **Always the draft tip.** Pre-check read captures `versionId` +
   per-node byte-exact jsCode. Local ≠ draft on a TTY → the what-to-test
   prompt (local = drift-guarded draft-only push first; draft wording:
