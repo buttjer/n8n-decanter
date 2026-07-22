@@ -2,7 +2,11 @@
 
 **Priority:** P1 (small, offline, clearly right — and it shrinks every future
 PR's docs burden)
-**Status:** Not started — sizing decided (maintainer, 2026-07-22: 1a/2a/3a)
+**Status:** Done 2026-07-22 — README cut 473 → 186 lines (verb-index
+`## Commands` table, tightened feature bullets, compare table kept whole);
+delta audit found every candidate-cut fact already covered in `/docs` (no
+porting needed); AGENTS.md three-surfaces rule reworded to the verb-index
+contract.
 **Model:** Sonnet (editorial work against an existing docs corpus; Opus not
 needed once the decisions are made).
 **Theme:** The README has grown into a second manual (473 lines) that
