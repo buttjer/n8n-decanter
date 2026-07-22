@@ -67,6 +67,53 @@ Challenge and verdict, so the reasoning survives:
   pour, not the bottle."* Pre-1.0 was the rename window — this decision
   deliberately closes it.
 
+## Design decision — positioning kit (signed off 2026-07-22)
+
+Iterated to final form in the 2026-07-22 maintainer session:
+
+> **The toolkit for building code-heavy n8n workflows — agent-first,
+> MCP-native.**
+> *Code nodes as files* — TypeScript, shared types & helpers, code-level git
+> versioning, preflights.
+
+Plus the cash-in feature card (the hero *coins* "preflights"; the grid defines
+it):
+
+> **Preflights** — `check`, `simulate`, `test`: verify offline or on your
+> instance.
+
+The decisions behind the strings:
+
+- **"Preflight(s)" is the umbrella term** for the whole verification surface
+  (testing, checking, validating, simulating): the category frame in docs and
+  feature cards, with **"verify"** as the verb in running copy. It's coined as
+  a plural noun in the hero, so a nearby definition is **mandatory** wherever
+  the hero appears. The Plan 33 `test`-verb taxonomy table
+  (`check` = static/offline, `simulate` = local runtime, `test` = instance
+  runtime) should adopt "Preflights" as its heading — coordination note, not
+  an edit to Plan 33.
+- **Draft-first is deliberately NOT in the hero** (maintainer): expected
+  behavior isn't a feature — a sane tool doesn't celebrate
+  not-going-live-on-save; the public API's instant republish is the anomaly.
+  Draft-first lives in the compare table (against API-based tools it *is* a
+  differentiator) and a quiet docs line, never the tagline.
+- **"MCP-native" is a headline tag on purpose** (maintainer overruled the
+  no-plumbing-in-headlines rule): for this audience MCP is a
+  discovery/credibility signal, not plumbing. "-native" over "-first" — the
+  established idiom, and a structural claim (built on n8n's first-party
+  surface).
+- **Extension slots, by design:** "TypeScript" → "TypeScript & Python" when
+  [Plan 28](OPEN-28-python-code-nodes.md) lands; "preflights" absorbs the
+  `test` verb when Plan 33 ships it (until then the card lists
+  `check`/`simulate` and instance-side drift `status`); "code-level git
+  versioning" is scope-honest (code, not whole-workflow — exactly the
+  post-pivot promise) and never expires.
+- **Slot mapping:** headline alone = npm `description` + GitHub About;
+  headline + subline = README hero + website h1/p; the preflight card = both
+  feature grids. This one decision fills every Task 5 metadata slot.
+- **Boundary sentence** (unchanged): *"Structure and lifecycle belong to n8n —
+  editor, MCP, skills. The code inside belongs to decanter."*
+
 ## Source
 
 - This session (2026-07-22): maintainer's name challenge + "README and website
@@ -79,45 +126,18 @@ Challenge and verdict, so the reasoning survives:
 
 ## Tasks
 
-1. **Positioning kit — decide the canonical strings once, then propagate**
-   (maintainer sign-off required; may be drafted before the gate clears):
-   - **Tagline:** iterated with the maintainer (2026-07-22) from their draft
-     *"agentic driven mcp-first n8n code toolkit – create code heavy workflows
-     like real software"*. Distilled rules: **"toolkit"** and **"code-heavy
-     workflows"** are keepers (the right post-pivot noun; names the target
-     user); protocol plumbing (**"MCP"**) stays out of the headline —
-     translate it to its user-visible win (**draft-first**) and keep
-     "MCP-native" for the paragraph, npm keywords, and badges where it does
-     discovery work; *"built for AI coding agents"* beats "agentic[-driven]"
-     (concrete, names who it's for); abstractions ("like real software")
-     become the concrete goods (*typed, tested, in git*) — also "real
-     software" subtly disses n8n just as the positioning starts leaning on
-     n8n's own MCP. Second maintainer round: *"typed, tested, shipped
-     draft-first"* alone drops **shared code/imports** and the **local/offline
-     benefits** (simulate, `node run`, executions) — a one-liner can't hold
-     six features, so the kit is **two-tier**: a tight headline plus a
-     standing subline that always enumerates the **four pillars** — **typed**
-     (TS + typed globals), **shared** (imports/npm bundling, Cloud-safe),
-     **tested locally** (offline `check`/`node run`/`simulate` on real
-     executions), **draft-first** (the MCP ship path). Candidates for
-     sign-off:
-     1. Headline *"The agent-first n8n code toolkit"* + subline *"Code-heavy
-        workflows: typed TypeScript with shared libraries, tested offline
-        against real executions, shipped draft-first over n8n's MCP."*
-        (recommended — README bold line + paragraph, website h1 + p)
-     2. One-line variant where only one line fits (npm `description`):
-        *"The agent-first n8n code toolkit — typed nodes, shared libraries,
-        offline tests, draft-first shipping."*
-     3. *"n8n runs the workflow; decanter owns the code — a toolkit for
-        code-heavy workflows, built for AI coding agents."* (boundary-led
-        alternative headline)
-   - **Canonical paragraph** replacing the "syncs your instance … n8n API"
-     sentence: decanter extracts every Code node's source into its own
-     `.js`/`.ts` file — typed, testable, reviewable, in git — and syncs it
-     draft-first over n8n's MCP.
-   - **Boundary sentence** (used everywhere the scope is explained):
-     *"Structure and lifecycle belong to n8n — editor, MCP, skills. The code
-     inside belongs to decanter."*
+1. **Positioning kit — DONE 2026-07-22.** Signed off in the maintainer
+   session; final strings and the decisions behind them are recorded in
+   "Design decision — positioning kit" above. The iteration trail, kept
+   short: started from the maintainer's *"agentic driven mcp-first n8n code
+   toolkit – create code heavy workflows like real software"*; "toolkit" and
+   "code-heavy" survived every round; "building" absorbed
+   workflow-creation; "like real software" became concrete goods; a round of
+   verb-led pillar sublines was replaced by the maintainer's fragment + noun
+   list; "preflights" was coined to compress the verification surface; and
+   two early agent rules were maintainer-overruled (MCP *does* go in the
+   headline as a tag; draft-first does *not* — expected behavior isn't a
+   feature). Propagation happens in Tasks 2–5.
 2. **README positioning pass** (`README.md` — #97 already landed the accuracy
    baseline: intro paragraph, caveats, draft-first bullet):
    - Hero tagline + intro re-cast from the kit (Task 1's headline + subline).
@@ -137,10 +157,9 @@ Challenge and verdict, so the reasoning survives:
    still sell the whole-workflow drift-guard framing). Hero h1/p, the
    `features` array, choose-cards and the condensed compare table — the site
    mirrors the README; change both in lockstep. Check `BaseLayout` /
-   head metadata (title, description, OG) for the old sentence. If the
-   positioning kit isn't signed off yet, an accuracy-only hotfix of the hero
-   paragraph (mirroring #97's README intro) may ship first — don't let the
-   factual drift wait for copy polish.
+   head metadata (title, description, OG) for the old sentence. The kit is
+   signed off, so this ships the final hero copy directly (see Rollout) —
+   including the preflight feature card that defines the coined term.
 4. **Docs framing sweep** (positioning only — verb-page mechanics belong to
    Plan 32 Task 7 / Plan 33): `docs/getting-started/*` (OAuth-first init, API
    key optional), `docs/concepts/sync-layout.md` (snapshot semantics) and
@@ -154,6 +173,22 @@ Challenge and verdict, so the reasoning survives:
    (used by README *and* landing page) — re-record if they show a
    removed/renamed flow (e.g. `delete` in the picker, API-key init); keep if
    still representative.
+
+## Rollout
+
+Two waves, decided 2026-07-22 (Plan 33 was mid-execution at the time):
+
+- **Now — don't wait for Plan 33:** Task 3 (website landing: carries both the
+  live drift *and* the signed-off kit; `website/src/` is the one surface
+  Plan 33 doesn't touch, so no conflict risk) plus Task 5's instant slots
+  (GitHub About; npm `description` in `package.json`). The kit's only
+  forward-looking claim is absorbed by design: the preflight card lists
+  today's verbs until `test` ships.
+- **After Plan 33 merges:** Task 2 (the compare reframe cites `archive`,
+  `test`, and the guard-proxy), Task 4 (docs sweep — Plan 33's session is
+  actively editing README/docs; a parallel pass would manufacture merge
+  conflicts), Task 6 (GIFs — the picker's verb menu changes with
+  `archive`/`test`; record once).
 
 ## Acceptance / verification
 

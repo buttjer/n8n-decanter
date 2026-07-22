@@ -214,8 +214,10 @@ items not yet claimed by one. Recommended order:
     update. Proposed 2026-07-22.
 34. [Post-pivot identity & messaging](OPEN-34-post-pivot-identity-and-messaging.md) —
     retell the outward story for the Code-node-layer scope (#97 landed the
-    *accuracy* layer; this owns the *positioning* layer): tagline/positioning
-    kit for sign-off, README compare reframe, **website landing (P1 — the hero
+    *accuracy* layer; this owns the *positioning* layer): positioning kit
+    **signed off 2026-07-22** ("The toolkit for building code-heavy n8n
+    workflows — agent-first, MCP-native." + the coined **preflights** umbrella
+    for check/simulate/test), README compare reframe, **website landing (P1 — the hero
     still says "pushed back through the n8n API", contradicting shipped
     main)**, docs framing sweep, npm/GitHub metadata, demo-GIF currency;
     command copy follows Plan 33's `archive`/`test`. Records the name verdict:
