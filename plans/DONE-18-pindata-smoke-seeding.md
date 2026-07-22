@@ -58,7 +58,7 @@ Also established:
   `docker exec <container> n8n import:workflow` path was verified in source,
   but the check supports **n8n ≥ 2.30.7 only**, where the public API
   suffices — no fallback gets built or kept for regressions.
-- **Execution caveat (for [Plan 7](OPEN-7-engine-true-simulation-suite.md),
+- **Execution caveat (for [Plan 7](DONE-7-engine-true-simulation-suite.md),
   not this plan)**: docs say pinned data is honored only in *manual*
   executions, never production — storage vs. execution behavior are separate
   concerns, so the round-trip check is unaffected. It pre-answers Plan 7's

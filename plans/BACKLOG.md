@@ -246,12 +246,14 @@ entries carry no priority field) — adjust freely.
       workflow → [Plan 21](DONE-21-repo-authored-workflows.md) `duplicate`;
       both preserve pull-first. The data-model-inverting `push --create`
       variant was dropped by user decision. Both shipped 2026-07-20.)
-- [ ] **Engine-true simulation suite** — real e2e test or simulation suite: is
+- [x] **Engine-true simulation suite** — real e2e test or simulation suite: is
       there a way to really execute the workflow with the n8n engine using
       executions data as a mock/dry run? Also making sure nothing is really
       written through APIs or similar. Keep in mind executions data can be
       flawed or change in the future. (graduated to
-      [Plan 7](OPEN-7-engine-true-simulation-suite.md))
+      [Plan 7](DONE-7-engine-true-simulation-suite.md) — **done 2026-07-21**,
+      Docker backend; the dependency-free npx backend is split to
+      [Plan 26](OPEN-26-npx-engine-backend.md))
 
 ### Done
 

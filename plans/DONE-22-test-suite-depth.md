@@ -165,7 +165,7 @@ don't drift to the wrong layer:
   largest surface with zero CI coverage today.
 - **Ties in:** when [Plan 20](DONE-20-cli-publish-lifecycle.md)'s
   publish/unpublish verbs land, add their activate/deactivate assertions to the
-  smoke suite; [Plan 7](OPEN-7-engine-true-simulation-suite.md)'s `simulate`
+  smoke suite; [Plan 7](DONE-7-engine-true-simulation-suite.md)'s `simulate`
   keeps its own `test:sim` — don't fold it in here.
 
 ## Outcome (2026-07-20)

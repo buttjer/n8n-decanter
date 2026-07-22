@@ -35,7 +35,9 @@ n8n-decanter executions [workflow…] [--status=…] [--limit=N]
 n8n-decanter executions [workflow…] clean
 n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=col:asc|desc] [--limit=N] [--all]
 n8n-decanter data-tables [table…] clean
-n8n-decanter simulate <workflow> [--execution <execution-id>] [--pin <execution-id>] [--network-none] [--json]
+n8n-decanter simulate <workflow> [--execution <execution-id> | --mock <slug>] [--pin <execution-id>] [--network-none] [--json]
+n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]   # committed, gap-fillable mock scenario (offline)
+n8n-decanter mock check <workflow> ["<slug>"]                       # structurally validate a mock (offline)
 n8n-decanter list [--remote] [--json]
 
 # Node
@@ -52,6 +54,7 @@ n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node loc
 | `<node>` | a node **name** (`node create`, `node rename`) |
 | `<node-file>` | a path to a node source file (`node run`) |
 | `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
+| `<slug>` | a mock scenario name — `mock create`/`mock check`, `simulate --mock` (kebab-cased) |
 | `<name>` | a new literal name (`create`, `duplicate`, `rename`) |
 
 ## Interactive picker
