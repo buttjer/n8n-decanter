@@ -13,6 +13,22 @@ renders the **website's brand orange**, not ANSI red.
 `ForceableError` type, the TTY confirm test, and the truecolor/fallback logo
 color).
 
+> **Post-Plan-32 review (2026-07-22):** all three features survive the MCP
+> pivot; verified against the post-pivot code: `writeState` still rewrites
+> `.decanter.json` unconditionally on every pull/push (the mtime recency
+> signal holds — a no-op sync stays byte-identical, so no git churn), and the
+> per-node drift guard is still the only forceable gate
+> (`assertNoDrift`/`codeDrift` in `lib/push.mts` — throw the typed error
+> there). **New since the pivot:** the picker has a *third* state —
+> MCP-unavailable remotes (red `⊘`, sorted last, Plan 32 Task 8).
+> `sortByRecency` applies to the **local** list before `mergeRemote`, which
+> already appends available-then-unavailable remotes, so the three-group
+> order (pulled → available remote → unavailable remote) is preserved for
+> free — keep it that way; unavailable entries carry no `syncedAt`. The
+> unavailable-selection guidance path (`ENABLE_MCP_VERB`) is not an error and
+> must never trigger the force-retry prompt. Inline line refs predate the
+> Plan 32 rewrite — re-resolve at execution time.
+
 ## Why
 
 The interactive picker ([lib/picker.mts](../lib/picker.mts), Plan 19/23) lists

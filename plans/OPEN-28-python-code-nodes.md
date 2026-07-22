@@ -10,6 +10,19 @@ round-trip parity, mirroring today's JS/TS flow.
 spot is the `lib/util.mts` source-field abstraction; the rest is a mechanical
 repeat across the pipelines.
 
+> **Post-Plan-32 review (2026-07-22):** the design survives the MCP pivot —
+> the source-field abstraction lives in the util/file layer, and MCP's
+> `updateNodeParameters` **merge** semantics fit a `{pythonCode}`-only write
+> exactly as they fit `{jsCode}`. **Adapted:** push now emits MCP ops
+> (Task 3), `node create` is an MCP `addNode` + embedded pull (Task 8), the
+> `.remote.js` flow no longer exists (Task 2), and the verification recipe
+> targets the Plan 32 dual REST+MCP mock. Inline file/line refs predate the
+> Plan 32 rewrite of pull/push/status/watch — re-resolve at execution time.
+> Related: [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) Task 2 ships an
+> *interim* guard warning for inline `pythonCode` (snapshot-invariant
+> honesty); this plan supersedes that warning with full extraction — remove
+> it when landing.
+
 ## Why
 
 n8n's Code node runs **two** languages: JavaScript (`language: "javaScript"` or
@@ -74,23 +87,30 @@ narrowing.
 ## Tasks
 
 1. **util.mts + types** — add the helpers and types above.
-2. **[lib/pull.mts:74-124](../lib/pull.mts#L74-L124)** — loop guard →
-   `isCodeNode`. Branch on `codeSourceField`: `pythonCode` → ext `.py`, take the
-   plain-verbatim branch (mirror the `.js` `else` at
-   [pull.mts:118-120](../lib/pull.mts#L118-L120)); Python **never** enters the
-   `tsManaged`/marker/`.remote.js` branches. Placeholder into the correct field.
-3. **[lib/push.mts](../lib/push.mts)** — `buildNodeCode`
-   ([push.mts:30-38](../lib/push.mts#L30-L38)) already reads any non-`.ts`
-   verbatim, so **`.py` needs no change there**. Broaden the loop guards
-   ([:48](../lib/push.mts#L48), [:84](../lib/push.mts#L84),
-   [:99](../lib/push.mts#L99)) to `isCodeNode`; swap `node.parameters.jsCode` for
-   `readCodeSource`/`setCodeSource`. `splitMarker` on Python source is a no-op.
+2. **[lib/pull.mts](../lib/pull.mts)** — loop guard → `isCodeNode`. Branch on
+   `codeSourceField`: `pythonCode` → ext `.py`, take the plain-verbatim `.js`
+   branch in its post-Plan-32 shape (overwrite + "recover via git" warning on
+   unpushed local changes); Python **never** enters the `tsManaged`/marker
+   branches (the `.remote.js` flow is gone since Plan 32). Placeholder into
+   the correct field.
+3. **[lib/push.mts](../lib/push.mts)** (MCP-era, Plan 32) — `buildNodeCode`
+   already reads any non-`.ts` file verbatim, so **`.py` needs no change
+   there**. Broaden `collectOps`' guards (the `isJsCodeNode` check on the
+   remote node and the untracked-remote-node scan) to `isCodeNode`, swap
+   `node.parameters.jsCode` for `readCodeSource`, and emit the op with the
+   correct field: `{ type: "updateNodeParameters", nodeName, parameters:
+   { pythonCode } }` for a Python node — MCP merge semantics preserve
+   `language` and sibling params (spike-verified for `jsCode`; assert the
+   same for `pythonCode` in the smoke suite). `verifyRoundTrip`/`recordSync`
+   compare via `readCodeSource` on the post-write confirming read.
+   `splitMarker` on Python source is a no-op.
 4. **[lib/validate.mts](../lib/validate.mts)** — allow `.py` in the extension
-   gate ([:26](../lib/validate.mts#L26)); keep the `.js` marker-ban + import-scan
-   **JS-only**; broaden the node loop ([:141](../lib/validate.mts#L141)) to
-   `isCodeNode`; skip the real source field in `parameterStrings`
-   ([:165](../lib/validate.mts#L165) — use `codeSourceField`); widen the
-   orphan-scan regex ([:187](../lib/validate.mts#L187)) to `/\.(ts|js|py)$/`.
+   gate; keep the `.js` marker-ban + import-scan **JS-only**; broaden the node
+   loop to `isCodeNode`; skip the real source field in `parameterStrings`
+   (use `codeSourceField`); widen the orphan-scan regex to `/\.(ts|js|py)$/`.
+   If [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) Task 2's interim
+   "inline `pythonCode`, no placeholder" guard warning has landed by then,
+   this task replaces it (extraction makes it obsolete).
 5. **[lib/status.mts](../lib/status.mts)** — `localBody`/loop → `isCodeNode`;
    `.py` local body is verbatim; compare against the correct remote field.
 6. **[lib/watch.mts:161](../lib/watch.mts#L161)** — broaden the guard + the
@@ -99,13 +119,15 @@ narrowing.
 7. **[lib/lifecycle.mts:76](../lib/lifecycle.mts#L76)** &
    **[lib/simulate.mts:276](../lib/simulate.mts#L276)** — `isJsCodeNode` →
    `isCodeNode`, materialize/reconstitute via `setCodeSource`.
-8. **[lib/add.mts](../lib/add.mts)** — `--python` path: `ext = ".py"`,
-   `language: "python"`, placeholder into `pythonCode`, a Python `DEFAULT_SOURCE`
-   using n8n's Python idioms (`_input.all()`, item `.json`, `return`ing a list —
-   **verify against docs.n8n.io/code first**). Wire the flag in
-   [n8n-decanter.mts:152](../n8n-decanter.mts#L152) /
-   [:555-557](../n8n-decanter.mts#L555-L557); `--ts` and `--python` mutually
-   exclusive.
+8. **[lib/add.mts](../lib/add.mts)** (MCP-era: `node create` is an MCP
+   `addNode` + embedded pull since Plan 32) — `--python` path: the `addNode`
+   op carries `parameters: { mode: "runOnceForAllItems", language: "python",
+   pythonCode: <PY_DEFAULT_SOURCE> }` (a Python starter using n8n's Python
+   idioms — `_input.all()`, item `.json`, `return`ing a list — **verify
+   against docs.n8n.io/code first**); the embedded pull then lands
+   `code/<node>.py` directly — no in-place conversion à la `--ts`, the node
+   is born Python in n8n. Wire the flag in the dispatcher + `__complete`;
+   `--ts` and `--python` mutually exclusive.
 9. **[lib/run.mts:191](../lib/run.mts#L191)** — keep the `.js`/`.ts`-only gate;
    for `.py`, throw a clear message pointing to `simulate`.
 10. **[scripts/typecheck.mts:62](../scripts/typecheck.mts#L62)** — no change:
@@ -119,8 +141,9 @@ narrowing.
     e2e ([test/e2e.mts](../test/e2e.mts) round-trip → `.py`, no marker), opt-in
     smoke ([test/smoke-n8n.mts](../test/smoke-n8n.mts) real-n8n Python round-trip).
 13. **Docs (all surfaces, per AGENTS.md)** — README (feature bullet, `## Commands`
-    `add "<Node>" [--ts | --python]`, `code/` layout, comparison row 214),
-    `docs/cli/*` (`add`/`pull`/`push`/`status`/`check`/`overview`),
+    `node create <workflow> "<Node>" [--ts | --python]`, `code/` layout, the
+    Python comparison row), `docs/cli/*`
+    (`node-create`/`pull`/`push`/`status`/`check`/`overview`),
     `docs/concepts/sync-layout.md` (+ a Python note: verbatim, untyped, un-bundled,
     not offline-runnable), CHANGELOG `[Unreleased] > Added`, PLAN.md data model
     (source field language-dependent, `language` is the discriminator, `.py`
@@ -128,20 +151,24 @@ narrowing.
 
 ## Acceptance / verification
 
-Mock-n8n recipe (`/verify` skill): drive the real CLI against a `node:http` mock
-serving a workflow with a **Python** Code node (`type: "n8n-nodes-base.code"`,
+Mock-n8n recipe (`/verify` skill, Plan 32 shape): drive the real CLI against a
+`node:http` mock serving **both** surfaces — the MCP JSON-RPC endpoint and the
+`/api/v1` routes (`test/e2e.mts`'s mock is the reference) — with a workflow
+carrying a **Python** Code node (`type: "n8n-nodes-base.code"`,
 `typeVersion: 2`, `parameters.language: "python"`, `parameters.pythonCode`).
 
 1. `pull` → `code/<node>.py` = exact body; `workflow.json` placeholder in
    `pythonCode`; `.decanter.json` maps node → `.py`.
-2. Edit `.py`, `push` → mock's `pythonCode` updates; **no** `@ts-n8n` marker.
-3. `status` → clean after pull; push-pending after local edit; CONFLICT after a
-   mock-side (`PUT /__remote`) Python edit.
+2. Edit `.py`, `push` → the mock's draft `pythonCode` updates via a
+   `{pythonCode}`-only `updateNodeParameters` op; **no** `@ts-n8n` marker.
+3. `status` → clean after pull; push-pending after local edit; drift/CONFLICT
+   after mutating the mock's in-memory draft Python source.
 4. `check` → passes with a valid `.py`; a stray `code/foo.py` is flagged orphan.
-5. `add "Py Node" --python` → `code/py-node.py`, node `language: "python"`,
-   re-validates clean.
+5. `node create <wf> "Py Node" --python` → `addNode` op carries
+   `language: "python"` + `pythonCode`; the embedded pull lands
+   `code/py-node.py`; re-validates clean.
 6. `run code/<node>.py` → errors with the simulate-redirect message.
-7. `watch` (unsandboxed) → editing the `.py` triggers a single-node push.
+7. `watch` (unsandboxed) → editing the `.py` triggers a single-node draft push.
 
 Then `npm test` + `npm run typecheck` green; optionally `npm run test:smoke`.
 

@@ -96,6 +96,13 @@ either way — this is about *reach*, not correctness.**
 
 ## Notes
 
+- **Post-Plan-32 review (2026-07-22): unaffected by the MCP pivot** —
+  `simulate` boots its own throwaway engine and never touches the sync
+  backend. [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) Task 6 decided
+  `simulate` stays as a differentiator (the new instance-side `test` verb
+  becomes the recommended default), which *strengthens* this plan's case: npx
+  drops `simulate`'s one heavy dependency. This plan stays independent of the
+  Plan 33 wave.
 - **CHANGELOG:** the npx backend + backend-selection config/flag are
   user-facing — Added/Changed under `[Unreleased]` when they land.
 - Relationship: this unblocks Plan 7 closing on the Docker backend; Plan 7's
