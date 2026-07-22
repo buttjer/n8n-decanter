@@ -1,4 +1,5 @@
-// End-to-end test: mock n8n API + the real CLI as a subprocess.
+// End-to-end test: mock n8n (MCP server for the code path + REST for the
+// API-only verbs) + the real CLI as a subprocess.
 // Needs to bind a localhost port — sandboxed environments may block this.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
@@ -18,19 +19,196 @@ const TMP = path.join(os.tmpdir(), `n8n-decanter-e2e-${process.pid}`);
 const ROOT = path.join(TMP, "workflows");
 
 // ---------- mock n8n ----------
-const ALLOWED_PUT = ["name", "nodes", "connections", "settings", "staticData"];
+// One server, two surfaces (mirrors Plan 32's split): the MCP endpoint
+// (`POST /mcp-server/http`, bearer-authed JSON-RPC) serves the workflow code
+// path — search/details/update/publish/create; the REST endpoints keep
+// serving what MCP cannot: executions, data tables, duplicate's POST,
+// delete's DELETE. Workflows carry an `availableInMCP` flag exactly like a
+// real 2.x instance: search lists everything, details/update/publish refuse
+// unavailable ones.
+const MCP_TOKEN = "test-mcp-token";
+const UNAVAILABLE_TEXT = "Workflow is not available in MCP. Enable MCP access from the workflow card in the workflows list, or from the workflow settings.";
 const db = new Map<string, any>();
-let putCount = 0; // total PUTs served — watch steps assert deltas
-let slowPutMs = 0; // when > 0, PUT responses are delayed (queued-push test)
-const server = http.createServer((req, res) => {
-  if (req.headers["x-n8n-api-key"] !== "test-key") return void res.writeHead(401).end("unauthorized");
-  if (req.url === "/api/v1/workflows/wf-hang") return; // never responds (timeout step)
-  if (req.method === "GET" && req.url!.startsWith("/api/v1/workflows?")) {
-    return void res
-      .writeHead(200, { "content-type": "application/json" })
-      .end(JSON.stringify({ data: [...db.values()], nextCursor: null }));
+let updateCount = 0; // update_workflow calls served — watch steps assert deltas
+let slowUpdateMs = 0; // when > 0, update_workflow responses are delayed (queued-push test)
+let createCount = 0;
+const mkid = () => Math.random().toString(16).slice(2, 14).padEnd(12, "0");
+
+/** Rewrite literal $('Old') / $("Old") refs in a string (the mock's stand-in
+ * for n8n's server-side expression rewriting on rename). */
+const renameRefs = (text: string, oldName: string, newName: string): string =>
+  text.split(`$('${oldName}')`).join(`$('${newName}')`).split(`$("${oldName}")`).join(`$("${newName}")`);
+
+const renameRefsDeep = (value: any, oldName: string, newName: string): any => {
+  if (typeof value === "string") return renameRefs(value, oldName, newName);
+  if (Array.isArray(value)) return value.map((v) => renameRefsDeep(v, oldName, newName));
+  if (value && typeof value === "object") {
+    for (const k of Object.keys(value)) value[k] = renameRefsDeep(value[k], oldName, newName);
   }
-  // create: POST /api/v1/workflows (no id) — mirrors 2.x required-field order
+  return value;
+};
+
+/** Apply an update_workflow op batch, mirroring the verified 2.30.7 semantics:
+ * name-addressed, updateNodeParameters merges, renameNode keeps ids and
+ * rewrites connections + expression refs, addNode re-mints the id. */
+function applyOps(wf: any, operations: any[]): void {
+  for (const [i, op] of operations.entries()) {
+    if (op.type === "updateNodeParameters") {
+      const node = wf.nodes.find((n: any) => n.name === op.nodeName);
+      if (!node) throw new Error(`Operation ${i} failed: node '${op.nodeName}' not found`);
+      node.parameters = op.replace ? { ...op.parameters } : { ...node.parameters, ...op.parameters };
+    } else if (op.type === "renameNode") {
+      const node = wf.nodes.find((n: any) => n.name === op.oldName);
+      if (!node) throw new Error(`Operation ${i} failed: node '${op.oldName}' not found`);
+      node.name = op.newName;
+      if (Object.hasOwn(wf.connections ?? {}, op.oldName)) {
+        wf.connections[op.newName] = wf.connections[op.oldName];
+        delete wf.connections[op.oldName];
+      }
+      for (const byType of Object.values(wf.connections ?? {})) {
+        for (const groups of Object.values(byType as any)) {
+          for (const group of groups as any[]) {
+            for (const target of group) if (target.node === op.oldName) target.node = op.newName;
+          }
+        }
+      }
+      for (const n of wf.nodes) renameRefsDeep(n.parameters, op.oldName, op.newName);
+    } else if (op.type === "addNode") {
+      // the server mints the node id — deliberately adversarial for the CLI's
+      // by-name landing resolution
+      wf.nodes.push({ ...op.node, id: mkid() });
+    } else if (op.type === "setWorkflowMetadata") {
+      if (typeof op.name === "string") wf.name = op.name;
+    } else {
+      throw new Error(`Operation ${i} failed: unsupported op ${op.type}`);
+    }
+  }
+  wf.updatedAt = new Date().toISOString();
+}
+
+/** get_workflow_details payload: full nodes (byte-exact jsCode) + the derived
+ * noise pull must strip (activeVersion/shared/scopes/canExecute). */
+const detailsOf = (wf: any) => ({
+  workflow: {
+    id: wf.id, name: wf.name, active: wf.active, isArchived: false,
+    versionId: wf.versionId, activeVersionId: wf.activeVersionId ?? null,
+    createdAt: wf.createdAt, updatedAt: wf.updatedAt,
+    settings: wf.settings, connections: wf.connections, nodes: wf.nodes,
+    activeVersion: wf.activeVersion ?? null, shared: wf.shared,
+    scopes: ["workflow:read", "workflow:update"], canExecute: true,
+    tags: wf.tags ?? [], meta: null, parentFolderId: null,
+    pinData: wf.pinData,
+  },
+  triggerInfo: "",
+});
+
+const summaryOf = (wf: any) => ({
+  id: wf.id, name: wf.name, description: null, active: wf.active,
+  createdAt: wf.createdAt, updatedAt: wf.updatedAt, triggerCount: 0,
+  scopes: ["workflow:read"], canExecute: true,
+  availableInMCP: wf.availableInMCP !== false, tags: [],
+});
+
+/** One MCP tool call → its result envelope (or `null` to hang forever). */
+function callMcpTool(name: string, args: any): any | null {
+  const err = (text: string) => ({ content: [{ type: "text", text }], isError: true });
+  const ok = (payload: any) => ({ content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload });
+  const gate = (id: string): any | undefined => {
+    const wf = db.get(id);
+    if (!wf) return err("Workflow not found or you don't have permission to access it.");
+    if (wf.availableInMCP === false) return err(UNAVAILABLE_TEXT);
+    return undefined;
+  };
+  switch (name) {
+    case "search_workflows":
+      return ok({ data: [...db.values()].map(summaryOf), count: db.size });
+    case "get_workflow_details": {
+      if (args.workflowId === "wf-hang") return null; // timeout step: never respond
+      return gate(args.workflowId) ?? ok(detailsOf(db.get(args.workflowId)));
+    }
+    case "update_workflow": {
+      const gated = gate(args.workflowId);
+      if (gated) return gated;
+      const wf = db.get(args.workflowId);
+      try {
+        updateCount++;
+        applyOps(wf, args.operations);
+      } catch (e) {
+        return err(JSON.stringify({ error: (e as Error).message }));
+      }
+      return ok({ workflowId: wf.id, name: wf.name, nodeCount: wf.nodes.length, url: `http://mock/workflow/${wf.id}`, appliedOperations: args.operations.length, autoAssignedCredentials: [], validationWarnings: [] });
+    }
+    case "publish_workflow": {
+      const wf = db.get(args.workflowId);
+      if (!wf) return err("Workflow not found or you don't have permission to access it.");
+      if (wf.availableInMCP === false) return ok({ success: false, workflowId: args.workflowId, activeVersionId: null, error: UNAVAILABLE_TEXT });
+      wf.active = true;
+      wf.activeVersionId = wf.versionId;
+      return ok({ success: true, workflowId: wf.id, activeVersionId: wf.activeVersionId });
+    }
+    case "unpublish_workflow": {
+      const wf = db.get(args.workflowId);
+      if (!wf) return err("Workflow not found or you don't have permission to access it.");
+      wf.active = false;
+      wf.activeVersionId = null;
+      return ok({ success: true, workflowId: wf.id });
+    }
+    case "create_workflow_from_code": {
+      const m = String(args.code).match(/^workflow\("((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"\)$/);
+      if (!m) return err(JSON.stringify({ error: "Failed to parse generated workflow code" }));
+      const id = `wf-new-${createCount++}-${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      db.set(id, {
+        id, name: JSON.parse(`"${m[2]}"`), active: false, createdAt: now, updatedAt: now,
+        nodes: [], connections: {}, settings: {}, staticData: null, pinData: {}, tags: [],
+        versionId: `ver-${id}`, activeVersionId: null,
+        availableInMCP: true, // MCP-created workflows are born available (spike-verified)
+      });
+      return ok({ workflowId: id, name: db.get(id).name, warnings: [{ code: "NO_NODES", message: "Workflow has no nodes" }] });
+    }
+    default:
+      return err(`Unknown tool: ${name}`);
+  }
+}
+
+const server = http.createServer((req, res) => {
+  // ---- MCP endpoint (bearer-authed JSON-RPC over streamable HTTP) ----
+  if (req.url === "/mcp-server/http") {
+    if (req.headers.authorization !== `Bearer ${MCP_TOKEN}`) return void res.writeHead(401).end("unauthorized");
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      const msg = JSON.parse(body);
+      if (msg.method === "initialize") {
+        // plain-JSON response (tools/call answers as SSE — both parser branches covered)
+        return void res
+          .writeHead(200, { "content-type": "application/json", "mcp-session-id": "e2e-session" })
+          .end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "mock MCP", version: "0" } } }));
+      }
+      if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+      if (msg.method !== "tools/call") {
+        return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: `unknown method ${msg.method}` } }));
+      }
+      const result = callMcpTool(msg.params.name, msg.params.arguments ?? {});
+      if (result === null) return; // hang forever (timeout step)
+      const respond = () =>
+        void res
+          .writeHead(200, { "content-type": "text/event-stream", "mcp-session-id": "e2e-session" })
+          .end(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\n\n`);
+      if (slowUpdateMs > 0 && msg.params.name === "update_workflow") setTimeout(respond, slowUpdateMs);
+      else respond();
+    });
+    return;
+  }
+
+  // ---- REST endpoints (the API-only verbs) ----
+  if (req.headers["x-n8n-api-key"] !== "test-key") return void res.writeHead(401).end("unauthorized");
+  // init's API-key probe (GET /workflows?limit=1) — a shallow list suffices
+  if (req.method === "GET" && req.url!.startsWith("/api/v1/workflows?")) {
+    return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: [], nextCursor: null }));
+  }
+  // create: POST /api/v1/workflows (duplicate's lossless clone) — API-born
+  // workflows are NOT available in MCP, mirroring a real instance
   if (req.method === "POST" && req.url === "/api/v1/workflows") {
     let body = "";
     req.on("data", (c) => (body += c));
@@ -39,29 +217,19 @@ const server = http.createServer((req, res) => {
       for (const required of ["name", "nodes", "connections", "settings"]) {
         if (sent[required] === undefined) return void res.writeHead(400).end(`request/body must have required property '${required}'`);
       }
-      const id = `wf-new-${putCount}-${Math.random().toString(36).slice(2, 8)}`;
+      const id = `wf-new-${createCount++}-${Math.random().toString(36).slice(2, 8)}`;
       const now = new Date().toISOString();
       const created = {
         id, name: sent.name, active: false, createdAt: now, updatedAt: now,
         nodes: sent.nodes, connections: sent.connections, settings: sent.settings,
         staticData: null, pinData: {}, tags: [],
         versionId: `ver-${id}`, activeVersionId: null,
+        availableInMCP: false,
       };
       db.set(id, created);
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(created));
     });
     return;
-  }
-  // publish/unpublish: POST /api/v1/workflows/:id/(de)activate — idempotent, returns the workflow
-  const act = req.url!.match(/^\/api\/v1\/workflows\/([^/]+)\/(activate|deactivate)$/);
-  if (act) {
-    if (req.method !== "POST") return void res.writeHead(405).end("method not allowed");
-    const wf = db.get(act[1]);
-    if (!wf) return void res.writeHead(404).end("not found");
-    wf.active = act[2] === "activate";
-    wf.activeVersionId = wf.active ? wf.versionId : null;
-    wf.updatedAt = new Date().toISOString();
-    return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
   }
   if (req.method === "GET" && req.url!.startsWith("/api/v1/executions")) {
     const one = req.url!.match(/^\/api\/v1\/executions\/(\d+)\?/);
@@ -115,22 +283,7 @@ const server = http.createServer((req, res) => {
     db.delete(m[1]); // hard delete, even when published (matches 2.x)
     return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
   }
-  if (req.method === "PUT") {
-    let body = "";
-    req.on("data", (c) => (body += c));
-    req.on("end", () => {
-      const sent = JSON.parse(body);
-      const unknown = Object.keys(sent).filter((k) => !ALLOWED_PUT.includes(k));
-      if (unknown.length > 0) return void res.writeHead(400).end("request/body must NOT have additional properties: " + unknown.join(","));
-      putCount++;
-      const respond = () => {
-        Object.assign(wf, sent, { updatedAt: new Date().toISOString() });
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
-      };
-      if (slowPutMs > 0) setTimeout(respond, slowPutMs);
-      else respond();
-    });
-  }
+  res.writeHead(405).end("method not allowed");
 });
 
 // Shape mirrors the Plan 15 smoke-verified 2.x response: items under
@@ -204,6 +357,7 @@ db.set("wf123", {
   id: "wf123",
   name: "Order Sync",
   active: true,
+  availableInMCP: true,
   createdAt: "2026-07-01T00:00:00.000Z",
   updatedAt: "2026-07-01T00:00:00.000Z",
   nodes: [
@@ -250,6 +404,11 @@ const wfDir = (name: string) => path.join(ROOT, kebabCase(name));
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
 const state = (dir: string) => JSON.parse(read(dir, ".decanter.json"));
 const remoteNode = (id: string, nid: string) => db.get(id).nodes.find((n: any) => n.id === nid);
+/** In-process McpClient on the mock (bearer auth) for the watch/push steps. */
+async function mcpClient() {
+  const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib/mcp.mts")).href);
+  return new McpClient({ host: env.N8N_HOST!, auth: { kind: "bearer", token: MCP_TOKEN } });
+}
 const { step, passedCount, hasFailed } = createStepRunner({
   onFail: () => {
     console.error(`work dir kept: ${TMP}`);
@@ -264,7 +423,12 @@ mkdirSync(TMP, { recursive: true });
 writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf123"], commitOnPush: false, commitOnPull: false }, null, 2));
 
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-env = { ...process.env, N8N_HOST: `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`, N8N_API_KEY: "test-key" };
+env = {
+  ...process.env,
+  N8N_HOST: `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`,
+  N8N_API_KEY: "test-key",
+  N8N_MCP_TOKEN: MCP_TOKEN,
+};
 
 const dir1 = wfDir("Order Sync");
 
@@ -278,13 +442,15 @@ function listFilesRecursive(dir: string, base = dir): string[] {
   return files;
 }
 
-await step("init: writes .env, copies whole template, scaffolds config", async () => {
+await step("init: writes .env (MCP token + optional API key), copies whole template, scaffolds config", async () => {
   const target = path.join(TMP, "init-target");
+  // piped init prompts in order: host, MCP token (paste fallback — no TTY, no
+  // browser consent), optional API key
   const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
-  pending.child.stdin!.write(`${env.N8N_HOST}\ntest-key\n`);
+  pending.child.stdin!.write(`${env.N8N_HOST}\n${MCP_TOKEN}\ntest-key\n`);
   pending.child.stdin!.end();
   const { stdout, stderr } = await pending;
-  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
+  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`);
   // the ENTIRE template must be copied, whatever it contains; `X.example`
   // materializes as `X` (inert in the repo, live in the target)
   const templateDir = path.join(PROJECT, "template");
@@ -302,9 +468,12 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   assert.ok(existsSync(path.join(target, "workflows")), "workflows dir copied");
   assert.equal(JSON.parse(read(target, "decanter.config.json")).root, "./workflows");
   assert.match(read(target, ".gitignore"), /^\.env$/m);
+  assert.match(read(target, ".gitignore"), /^\.decanter-auth\.json$/m);
   assert.match(read(target, ".gitignore"), /^workflows\/\*\/executions\/$/m);
   assert.match(read(target, ".gitignore"), /^data-tables\/$/m);
-  assert.match(stdout + stderr, /credentials verified/);
+  // both credential probes ran against the mock
+  assert.match(stdout + stderr, /MCP connection verified — \d+ workflows? visible/);
+  assert.match(stdout + stderr, /API key verified/);
   // piped init prints a plain version line instead of the TTY logo
   assert.match(stdout + stderr, /n8n-decanter v\d+\.\d+\.\d+/);
   assert.ok(!(stdout + stderr).includes("\x1b"), "init must not emit ANSI when piped");
@@ -319,26 +488,25 @@ await step("init: writes .env, copies whole template, scaffolds config", async (
   const probe = materialize(templateFiles.find((f) => materialize(f) !== ".env")!);
   writeFileSync(path.join(target, probe), "user content\n");
   const again = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
-  again.child.stdin!.write("\n\n"); // keep existing host + key
-  again.child.stdin!.end();
+  again.child.stdin!.end(); // complete .env → nothing is asked
   const againResult = await again;
   assert.equal(read(target, probe), "user content\n");
-  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`);
+  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`);
+  assert.match(againResult.stdout + againResult.stderr, /using existing \.env host/);
+  assert.match(againResult.stdout + againResult.stderr, /using existing MCP token/);
   assert.ok((againResult.stdout + againResult.stderr).includes(`left unchanged (modified locally): ${probe}`), "re-init must report the modified file as drift");
   // init --force re-copies template files over existing ones (.env protected),
   // flagging the ones that had local changes
   const forced = execFile(process.execPath, [CLI, "init", target, "--force"], { encoding: "utf8" });
-  forced.child.stdin!.write("\n\n"); // keep existing host + key
   forced.child.stdin!.end();
   const forcedResult = await forced;
-  assert.match(forcedResult.stdout + forcedResult.stderr, /using existing \.env/, "re-init must not prompt when .env is complete");
   assert.ok((forcedResult.stdout + forcedResult.stderr).includes(`--force: overwrote ${probe} with the template version (had local changes)`), "--force must flag clobbered local edits");
   const probeTemplateRel = templateFiles.find((f) => materialize(f) === probe)!;
   assert.equal(read(target, probe), read(templateDir, probeTemplateRel), "--force must restore the template version");
-  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\n`, ".env must survive --force");
+  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`, ".env must survive --force");
 });
 
-await step("init: credential probe — non-2xx and unreachable outcomes get their own log lines", async () => {
+await step("init: credential probes — skipped MCP, non-2xx and unreachable API outcomes get their own log lines", async () => {
   // non-2xx: a real server that answers, but rejects
   const rejecting = http.createServer((_req, res) => void res.writeHead(403).end("nope"));
   await new Promise<void>((resolve) => rejecting.listen(0, "127.0.0.1", () => resolve()));
@@ -346,10 +514,11 @@ await step("init: credential probe — non-2xx and unreachable outcomes get thei
   try {
     const target = path.join(TMP, "init-target-probe-403");
     const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
-    pending.child.stdin!.write(`http://127.0.0.1:${rejectingPort}\nsome-key\n`);
+    pending.child.stdin!.write(`http://127.0.0.1:${rejectingPort}\n\nsome-key\n`); // blank MCP token = skip
     pending.child.stdin!.end();
     const { stdout, stderr } = await pending;
-    assert.match(stdout + stderr, /credential check failed \(403 Forbidden\) — \.env written anyway/);
+    assert.match(stdout + stderr, /no MCP credentials yet/);
+    assert.match(stdout + stderr, /API key check failed \(403 Forbidden\) — \.env written anyway/);
   } finally {
     rejecting.close();
   }
@@ -363,7 +532,7 @@ await step("init: credential probe — non-2xx and unreachable outcomes get thei
   await new Promise<void>((resolve) => probe.close(() => resolve()));
   const target = path.join(TMP, "init-target-probe-unreachable");
   const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
-  pending.child.stdin!.write(`http://127.0.0.1:${deadPort}\nsome-key\n`);
+  pending.child.stdin!.write(`http://127.0.0.1:${deadPort}\n\nsome-key\n`);
   pending.child.stdin!.end();
   const { stdout, stderr } = await pending;
   assert.match(stdout + stderr, /could not reach http:\/\/127\.0\.0\.1:\d+ \([^)]*\) — \.env written anyway/);
@@ -378,13 +547,15 @@ await step("bare invocation piped: usage, never the interactive picker", async (
   assert.ok(!r.out.includes("type to filter"), "picker UI leaked into piped output");
 });
 
-await step("pull: creates folder, kebab-case files in code/, placeholders, state", async () => {
+await step("pull: creates folder, kebab-case files in code/, placeholders, state (via MCP details)", async () => {
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  // 2.x derived fields stay out of workflow.json — the file holds the
+  // derived/permission fields stay out of workflow.json — the file holds the
   // workflow itself, code exists exactly once (in code/)
   assert.ok(!read(dir1, "workflow.json").includes("activeVersion"), "activeVersion stripped");
   assert.ok(!read(dir1, "workflow.json").includes('"shared"'), "shared stripped");
+  assert.ok(!read(dir1, "workflow.json").includes('"scopes"'), "scopes stripped");
+  assert.ok(!read(dir1, "workflow.json").includes('"canExecute"'), "canExecute stripped");
   assert.equal(read(dir1, "code", "transform.js"), JS_CODE);
   assert.equal(read(dir1, "code", "amazon-feed.js"), "return $input.all();\n");
   const wfJson = read(dir1, "workflow.json");
@@ -393,17 +564,36 @@ await step("pull: creates folder, kebab-case files in code/, placeholders, state
   const s = state(dir1);
   assert.equal(s.workflowId, "wf123");
   assert.equal(s.nodes.n2.file, "code/transform.js");
+  assert.equal(s.nodes.n2.name, "Transform", "node display name cached (Plan 32)");
   assert.match(s.nodes.n2.lastPushedHash, /^sha256:[0-9a-f]{64}$/);
-  assert.ok(s.lastPulledWorkflowHash);
+  assert.equal(s.lastPulledWorkflowHash, undefined, "structural hashing is gone (Plan 32)");
 });
 
-await step("push unchanged: byte-identical js round-trip", async () => {
+await step("push unchanged: no-op — code already in sync, remote untouched", async () => {
   const before = remoteNode("wf123", "n2").parameters.jsCode;
   const r = await cli("push");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /pushed "Order Sync" \(wf123\) — published: code is live now/);
+  assert.match(r.out, /"Order Sync" \(wf123\): code already in sync — nothing to push/);
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, before);
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, JS_CODE);
+});
+
+await step("push: a code edit lands on the DRAFT only; --publish takes it live", async () => {
+  const js = path.join(dir1, "code", "transform.js");
+  writeFileSync(js, JS_CODE + "// draft edit\n");
+  let r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /pushed "Order Sync" \(wf123\) — 1 node — draft updated; the live version is unchanged \(run "publish" to go live\)/);
+  assert.match(remoteNode("wf123", "n2").parameters.jsCode, /draft edit/);
+  // merge semantics: a {jsCode}-only write preserves sibling params
+  assert.equal(remoteNode("wf123", "n1").parameters.path, "orders", "untouched nodes stay untouched");
+  // restore and take it live in one go
+  writeFileSync(js, JS_CODE);
+  r = await cli("push", "--publish");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /pushed "Order Sync" \(wf123\)/);
+  assert.match(r.out, /published "Order Sync" \(wf123\) — code is live now/);
+  assert.equal(db.get("wf123").activeVersionId, db.get("wf123").versionId);
 });
 
 await step("pre-code/ layout migrates on pull; check flags it before", async () => {
@@ -429,7 +619,7 @@ await step("pre-code/ layout migrates on pull; check flags it before", async () 
 
 const TS_SOURCE = 'interface FeedRow { sku: string; qty: number }\nconst rows: FeedRow[] = $input.all().map((i) => ({ sku: String(i.json.sku), qty: Number(i.json.qty) }));\nreturn rows.map((r) => ({ json: { ...r } }));\n';
 
-await step("convert node to .ts + push: compiles, appends marker", async () => {
+await step("convert node to .ts + push: compiles, appends marker (placeholder re-point drives the file map)", async () => {
   unlinkSync(path.join(dir1, "code", "amazon-feed.js"));
   writeFileSync(path.join(dir1, "code", "amazon-feed.ts"), TS_SOURCE);
   writeFileSync(path.join(dir1, "workflow.json"), read(dir1, "workflow.json").replace("//@file:code/amazon-feed.js", "//@file:code/amazon-feed.ts"));
@@ -442,7 +632,7 @@ await step("convert node to .ts + push: compiles, appends marker", async () => {
   assert.equal(state(dir1).nodes.n3.file, "code/amazon-feed.ts");
 });
 
-await step("pull after ts push: in sync, .ts untouched, no .remote.js", async () => {
+await step("pull after ts push: in sync, .ts untouched, no .remote.js artifacts", async () => {
   const before = read(dir1, "code", "amazon-feed.ts");
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
@@ -451,7 +641,7 @@ await step("pull after ts push: in sync, .ts untouched, no .remote.js", async ()
   assert.match(read(dir1, "workflow.json"), /"\/\/@file:code\/amazon-feed\.ts"/);
 });
 
-await step("remote UI edit on ts node: push aborts, pull surfaces .remote.js", async () => {
+await step("remote UI edit on ts node: push aborts on code drift; pull warns (no .remote.js) and re-baselines", async () => {
   const node = remoteNode("wf123", "n3");
   node.parameters.jsCode = node.parameters.jsCode.replace("return rows.map", "// hotfix from UI\nreturn rows.map");
   let r = await cli("push");
@@ -460,8 +650,9 @@ await step("remote UI edit on ts node: push aborts, pull surfaces .remote.js", a
   assert.match(r.out, /pull first/);
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /edited in the n8n UI/);
-  assert.match(read(dir1, "code", "amazon-feed.remote.js"), /hotfix from UI/);
+  assert.match(r.out, /edited in the n8n UI since last push/);
+  assert.match(r.out, /status --diff/);
+  assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.remote.js")), "no conflict artifact since Plan 32");
   // after pull, push is allowed again and restores the TS-compiled version
   r = await cli("push");
   assert.equal(r.code, 0, r.out);
@@ -473,26 +664,30 @@ await step("marker removed remotely (rewrite in UI): .ts never clobbered", async
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /no @ts-n8n marker/);
-  assert.equal(read(dir1, "code", "amazon-feed.remote.js"), "return [];");
+  assert.match(r.out, /keeping your \.ts/);
   assert.equal(read(dir1, "code", "amazon-feed.ts"), TS_SOURCE);
+  assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.remote.js")), "no conflict artifact since Plan 32");
   const r2 = await cli("push");
   assert.equal(r2.code, 0, r2.out);
   assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/);
-  await cli("pull"); // resync, removes stale .remote.js
-  assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.remote.js")));
 });
 
-await step("structural remote edit: push aborts, pull resyncs", async () => {
+await step("structure changed remotely: never blocks push; status hints; pull refreshes the snapshot", async () => {
   const wf = db.get("wf123");
   wf.nodes.push({ id: "n4", name: "Set", type: "n8n-nodes-base.set", typeVersion: 3, position: [660, 0], parameters: {} });
-  let r = await cli("push");
-  assert.equal(r.code, 1);
-  assert.match(r.out, /workflow structure changed remotely/);
+  // structure is n8n's job (Plan 32): status only hints, exit stays 0
+  let r = await cli("status");
+  assert.equal(r.code, 0, "a structure-only remote change is not drift: " + r.out);
+  assert.match(r.out, /structure snapshot out of date — pull to refresh/);
+  // push proceeds — it writes jsCode only, structure is untouched
+  r = await cli("push");
+  assert.equal(r.code, 0, "push must not block on remote structure changes: " + r.out);
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(read(dir1, "workflow.json"), /"n4"/);
-  r = await cli("push");
+  r = await cli("status");
   assert.equal(r.code, 0, r.out);
+  assert.ok(!r.out.includes("snapshot out of date"), "refreshed snapshot clears the hint: " + r.out);
 });
 
 await step("status: reports pending local edit, then in sync", async () => {
@@ -507,7 +702,6 @@ await step("status: reports pending local edit, then in sync", async () => {
   assert.match(remoteNode("wf123", "n2").parameters.jsCode, /local tweak/);
   r = await cli("status");
   assert.match(r.out, /Transform: in sync/);
-  assert.match(r.out, /structure: in sync/);
 });
 
 await step("remote workflow rename: folder is sticky, name cached; node rename still renames the file", async () => {
@@ -523,21 +717,21 @@ await step("remote workflow rename: folder is sticky, name cached; node rename s
   assert.ok(existsSync(dir1), "sticky folder kept");
   assert.ok(!existsSync(wfDir("Order Sync v2")), "no renamed folder created");
   assert.equal(state(dir1).name, "Order Sync v2", ".decanter.json caches the current display name");
-  // node rename still renames the file (that machinery is unchanged)
+  // node rename still renames the file — the id-keyed map is the identity
+  // anchor (Plan 32 Task 3): ids survive renames, files follow names
   assert.ok(existsSync(path.join(dir1, "code", "transform-eu-us.js")), "file renamed with kebab-case name");
   assert.ok(!existsSync(path.join(dir1, "code", "transform.js")));
   assert.equal(state(dir1).nodes.n2.file, "code/transform-eu-us.js");
+  assert.equal(state(dir1).nodes.n2.name, "Transform: EU/US", "cached node name follows");
   assert.match(read(dir1, "workflow.json"), /"\/\/@file:code\/transform-eu-us\.js"/);
 });
 
-await step("watch path: pushSingleNode round-trip", async () => {
+await step("watch path: pushSingleNode round-trip (MCP, addressed by current remote name)", async () => {
   const { pushSingleNode } = await import(pathToFileURL(path.join(PROJECT, "lib/push.mts")).href);
-  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "return $input.all(); // watched\n");
-  const api = new N8nApi({ host: env.N8N_HOST, apiKey: "test-key" });
   const log = { info: () => {}, ok: () => {}, warn: () => {}, error: () => {} };
-  await pushSingleNode(api, dir2, "n2", {}, log);
+  await pushSingleNode(await mcpClient(), dir2, "n2", {}, log);
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, "return $input.all(); // watched\n");
 });
 
@@ -550,245 +744,99 @@ await step("watch: takes a workflow id, errors on an unknown one before watching
 await step("watch: debounce coalesces, queued save re-pushes, close() stops", async () => {
   // in-process (like the pushSingleNode step): the WatchHandle exists for this
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
-  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const js = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(dir2, "code", "transform-eu-us.js");
-  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
   const config = {
     configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
   };
   const logs: string[] = [];
   const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   // TMP is not a git repo yet at this point — watch skips the startup pull
-  const handle = await watchWorkflow(api, config, "wf123", {}, log);
-  const before = putCount;
+  const handle = await watchWorkflow(await mcpClient(), config, "wf123", {}, log);
+  const before = updateCount;
   try {
     // two rapid saves coalesce into a single push of the final content
     writeFileSync(js, "return $input.all(); // debounce-1\n");
     await sleep(30);
     writeFileSync(js, "return $input.all(); // debounce-2\n");
     await sleep(900);
-    assert.equal(putCount - before, 1, "rapid saves must coalesce into one push:\n" + logs.join("\n"));
+    assert.equal(updateCount - before, 1, "rapid saves must coalesce into one push:\n" + logs.join("\n"));
     assert.match(remoteNode("wf123", "n2").parameters.jsCode, /debounce-2/);
     // a save landing while a push is in flight is queued and re-pushed
-    slowPutMs = 300;
+    slowUpdateMs = 300;
     writeFileSync(js, "return $input.all(); // queued-1\n");
-    await sleep(320); // debounce fired, PUT held open
+    await sleep(320); // debounce fired, update held open
     writeFileSync(js, "return $input.all(); // queued-2\n");
     await sleep(1500);
-    slowPutMs = 0;
-    assert.equal(putCount - before, 3, "queued save must trigger a follow-up push:\n" + logs.join("\n"));
+    slowUpdateMs = 0;
+    assert.equal(updateCount - before, 3, "queued save must trigger a follow-up push:\n" + logs.join("\n"));
     assert.match(remoteNode("wf123", "n2").parameters.jsCode, /queued-2/);
     // restore the synced content through watch itself, then stop
     writeFileSync(js, original);
     await sleep(900);
-    assert.equal(putCount - before, 4, "restore push:\n" + logs.join("\n"));
+    assert.equal(updateCount - before, 4, "restore push:\n" + logs.join("\n"));
   } finally {
-    slowPutMs = 0;
+    slowUpdateMs = 0;
     await handle.close();
   }
   writeFileSync(js, original + "// after-close\n");
   await sleep(600);
-  assert.equal(putCount - before, 4, "no push after close()");
+  assert.equal(updateCount - before, 4, "no push after close()");
   writeFileSync(js, original); // silent restore — the watcher is closed
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, original);
 });
 
-// ---------- watch: structural conflict prompt (Plan 22 task 3) ----------
-// watchWorkflow's injectable promptFactory (default createPrompt) lets these
-// tests supply canned [m]/[l]/[r]/Enter answers without a real TTY — and,
-// since a factory is explicitly given, bypasses the `!process.stdin.isTTY`
-// skip that guards the *no one is there to answer* case.
-const cannedPrompt = (answer: string) => () => ({ question: async () => answer, close: () => {} });
-
-await step("watch: structural conflict — [l]ocal force-pushes workflow.json over the remote change", async () => {
+await step("watch: workflow.json is a read-only snapshot — a save warns once, pushes nothing", async () => {
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
-  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
-  await cli("pull"); // fresh, known baseline
-  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
+  const dir2 = dir1;
   const wfJsonPath = path.join(dir2, "workflow.json");
-  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
   const config = {
     configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
   };
   const logs: string[] = [];
   const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  // baseline (local, unmutated) n2 position — [l] must push exactly this,
-  // overwriting whatever the remote-only mutation below sets it to
-  const baselineN2Position = JSON.parse(read(wfJsonPath)).nodes.find((n: any) => n.id === "n2").position;
-  db.get("wf123").nodes.find((n: any) => n.id === "n2").position = [9999, 9999]; // remote structural change
-
-  const handle = await watchWorkflow(api, config, "wf123", { promptFactory: cannedPrompt("l") }, log);
+  const handle = await watchWorkflow(await mcpClient(), config, "wf123", {}, log);
+  const before = updateCount;
+  const savedJson = read(wfJsonPath);
   try {
-    // the local structural edit must land AFTER the watcher is armed — it's
-    // the fs event on workflow.json that triggers pushStructure()
-    const localWf = JSON.parse(read(wfJsonPath));
-    const localN3Position = [440, 888];
-    localWf.nodes.find((n: any) => n.id === "n3").position = localN3Position; // local structural change (different node)
-    writeFileSync(wfJsonPath, JSON.stringify(localWf, null, 2));
-    await sleep(500); // debounce (200ms) + conflict fetch + canned prompt round-trip
-    assert.ok(logs.some((m) => m.includes("structural conflict")), logs.join("\n"));
-    const remote = db.get("wf123");
-    assert.deepEqual(remote.nodes.find((n: any) => n.id === "n2").position, baselineN2Position, "[l] overwrites the remote's structural change with local");
-    assert.deepEqual(remote.nodes.find((n: any) => n.id === "n3").position, localN3Position, "[l] pushes the local structural change through");
-    assert.ok(!existsSync(path.join(dir2, "workflow.remote.json")), "[l] leaves no merge artifact");
-  } finally {
-    await handle.close();
-  }
-  await cli("pull"); // re-baseline for the next sub-scenario
-});
-
-await step("watch: structural conflict — [r]emote pulls over workflow.json, previous version stays in git-less local state", async () => {
-  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
-  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
-  await cli("pull");
-  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
-  const wfJsonPath = path.join(dir2, "workflow.json");
-  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
-  const config = {
-    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
-  };
-  const logs: string[] = [];
-  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  // baseline (remote, unmutated) n3 position — [r] must adopt exactly this,
-  // discarding whatever the local-only mutation below sets it to
-  const baselineN3Position = JSON.parse(read(wfJsonPath)).nodes.find((n: any) => n.id === "n3").position;
-  const remoteN2Position = [8888, 8888];
-  db.get("wf123").nodes.find((n: any) => n.id === "n2").position = remoteN2Position;
-
-  const handle = await watchWorkflow(api, config, "wf123", { promptFactory: cannedPrompt("r") }, log);
-  try {
-    const localWf = JSON.parse(read(wfJsonPath));
-    localWf.nodes.find((n: any) => n.id === "n3").position = [440, 666];
-    writeFileSync(wfJsonPath, JSON.stringify(localWf, null, 2)); // fs event fires only once the watcher is armed
-    await sleep(500);
-    assert.ok(logs.some((m) => m.includes("structural conflict")), logs.join("\n"));
-    assert.ok(logs.some((m) => m.includes("workflow.json overwritten with the remote version")), logs.join("\n"));
-    const local = JSON.parse(read(wfJsonPath));
-    assert.deepEqual(local.nodes.find((n: any) => n.id === "n2").position, remoteN2Position, "[r] pulls the remote structure over local");
-    assert.deepEqual(local.nodes.find((n: any) => n.id === "n3").position, baselineN3Position, "[r] discards the local structural edit, keeping remote's n3");
-  } finally {
-    await handle.close();
-  }
-  await cli("pull");
-});
-
-await step("watch: structural conflict — Enter skips for now and re-prompts on the next save", async () => {
-  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
-  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
-  await cli("pull");
-  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
-  const wfJsonPath = path.join(dir2, "workflow.json");
-  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
-  const config = {
-    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
-  };
-  const logs: string[] = [];
-  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  db.get("wf123").nodes.find((n: any) => n.id === "n2").position = [220, 555];
-
-  const handle = await watchWorkflow(api, config, "wf123", { promptFactory: cannedPrompt("") }, log);
-  try {
-    const localWf = JSON.parse(read(wfJsonPath));
-    localWf.nodes.find((n: any) => n.id === "n3").position = [440, 444];
-    writeFileSync(wfJsonPath, JSON.stringify(localWf, null, 2)); // fs event fires only once the watcher is armed
-    await sleep(500);
-    assert.ok(logs.some((m) => m.includes("structural conflict")), logs.join("\n"));
-    assert.ok(logs.some((m) => m.includes("skipped — the conflict prompt returns on the next")), logs.join("\n"));
-    assert.deepEqual(db.get("wf123").nodes.find((n: any) => n.id === "n2").position, [220, 555], "[Enter] leaves the remote untouched");
-    assert.deepEqual(JSON.parse(read(wfJsonPath)).nodes.find((n: any) => n.id === "n3").position, [440, 444], "[Enter] leaves workflow.json untouched");
-
-    // touching workflow.json again re-prompts (the skip doesn't advance the baseline)
-    logs.length = 0;
-    writeFileSync(wfJsonPath, read(wfJsonPath)); // same bytes, new fs event
-    await sleep(500);
-    assert.ok(logs.some((m) => m.includes("structural conflict")), "re-save must re-trigger the prompt:\n" + logs.join("\n"));
-  } finally {
-    await handle.close();
-  }
-  // resolve out-of-band so the next sub-scenario starts clean, like [r] would
-  await cli("pull");
-});
-
-await step("watch: structural conflict — [m]erge writes workflow.remote.json, placeholders only where remote code still matches last sync", async () => {
-  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
-  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
-  await cli("pull");
-  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
-  const wfJsonPath = path.join(dir2, "workflow.json");
-  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
-  const config = {
-    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
-  };
-  const logs: string[] = [];
-  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  // remote: n2's position moves (structural) but its code is untouched -> placeholder-eligible;
-  // n3's compiled code gets a UI hotfix ahead of its trailing @ts-n8n marker -> must stay inline
-  const wf = db.get("wf123");
-  wf.nodes.find((n: any) => n.id === "n2").position = [220, 333];
-  const n3remote = wf.nodes.find((n: any) => n.id === "n3");
-  n3remote.parameters.jsCode = n3remote.parameters.jsCode.replace(/(\n\/\/ @ts-n8n sha256:[0-9a-f]{64})\s*$/, "\n// remote hotfix$1");
-
-  const handle = await watchWorkflow(api, config, "wf123", { promptFactory: cannedPrompt("m") }, log);
-  try {
-    // local: a different structural change — must land after the watcher is armed
-    const localWf = JSON.parse(read(wfJsonPath));
-    localWf.nodes.find((n: any) => n.id === "n3").position = [440, 222];
+    assert.ok(logs.some((m) => m.includes('run "n8n-decanter publish" to take changes live')), "draft-only note at start:\n" + logs.join("\n"));
+    const localWf = JSON.parse(savedJson);
+    localWf.nodes.find((n: any) => n.id === "n2").position = [9999, 9999];
     writeFileSync(wfJsonPath, JSON.stringify(localWf, null, 2));
     await sleep(500);
-    assert.ok(logs.some((m) => m.includes("structural conflict")), logs.join("\n"));
-    assert.ok(logs.some((m) => m.includes("wrote workflow.remote.json")), logs.join("\n"));
-    const remoteFile = JSON.parse(read(dir2, "workflow.remote.json"));
-    const n2 = remoteFile.nodes.find((n: any) => n.id === "n2");
-    assert.equal(n2.parameters.jsCode, "//@file:code/transform-eu-us.js", "n2's remote code matches the last sync -> placeholder substituted");
-    assert.deepEqual(n2.position, [220, 333], "workflow.remote.json reflects the remote structure");
-    const n3 = remoteFile.nodes.find((n: any) => n.id === "n3");
-    assert.match(n3.parameters.jsCode, /remote hotfix/, "n3's remote code changed -> stays inline, not placeholder'd");
-    // [m] resolves nothing itself: both sides are still exactly as they were
-    assert.deepEqual(JSON.parse(read(wfJsonPath)).nodes.find((n: any) => n.id === "n3").position, [440, 222]);
-    assert.deepEqual(db.get("wf123").nodes.find((n: any) => n.id === "n2").position, [220, 333]);
+    assert.ok(logs.some((m) => m.includes("read-only structure snapshot")), "snapshot warning:\n" + logs.join("\n"));
+    assert.equal(updateCount, before, "a workflow.json save must never push");
+    assert.deepEqual(remoteNode("wf123", "n2").position, [220, 0], "remote structure untouched");
+    // only the first save warns
+    const warnings = logs.filter((m) => m.includes("read-only structure snapshot")).length;
+    writeFileSync(wfJsonPath, read(wfJsonPath));
+    await sleep(400);
+    assert.equal(logs.filter((m) => m.includes("read-only structure snapshot")).length, warnings, "warns once per session");
   } finally {
+    writeFileSync(wfJsonPath, savedJson);
     await handle.close();
   }
-  // clean up: resolve the ts drift and the merge artifact, restore the clean, in-sync tree
-  // that the following steps expect (pull surfaces the ts drift; push restores it)
-  await cli("pull");
-  await cli("push");
-  rmSync(path.join(dir2, "code", "amazon-feed.remote.js"), { force: true });
-  rmSync(path.join(dir2, "workflow.remote.json"), { force: true });
 });
 
 await step("watch<->proxy: single-node push broadcasts a 'pushed' SSE event through the dev-reload proxy", async () => {
   const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
-  const { N8nApi } = await import(pathToFileURL(path.join(PROJECT, "lib/api.mts")).href);
   await cli("pull"); // fresh baseline
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const js = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(js);
-  const api = new N8nApi({ host: env.N8N_HOST!, apiKey: "test-key" });
   const logs: string[] = [];
   const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
   const config = {
     configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "proxy" as const, proxyPort: 0, requestTimeoutMs: 30_000, host: env.N8N_HOST!, apiKey: "test-key",
+    browserReload: "proxy" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
   };
 
-  const handle = await watchWorkflow(api, config, "wf123", {}, log);
+  const handle = await watchWorkflow(await mcpClient(), config, "wf123", {}, log);
   try {
     // deep link must go through the proxy — a different port than the raw upstream
     const proxyUrlMatch = logs.join("\n").match(/http:\/\/127\.0\.0\.1:(\d+)\/workflow\/wf123/);
@@ -856,7 +904,7 @@ await step("guard: @ts-n8n marker inside a .js file blocks push", async () => {
   writeFileSync(file, original);
 });
 
-await step("guard: .remote.js leftovers warn but don't block", async () => {
+await step("guard: pre-Plan-32 .remote.js leftovers warn but don't block", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const leftover = path.join(dir2, "code", "transform-eu-us.remote.js");
   writeFileSync(leftover, "// leftover from a conflict\n");
@@ -969,7 +1017,7 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
 await step("verb-first grammar: verb is positional[0]; verb-last errors; a workflow named like a verb resolves", async () => {
   let r = await cli("status", "wf123");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /structure: in sync/);
+  assert.match(r.out, /: in sync/);
   // flags may sit anywhere among the arguments
   r = await cli("check", "--no-typecheck", "wf123");
   assert.equal(r.code, 0, r.out);
@@ -986,7 +1034,7 @@ await step("verb-first grammar: verb is positional[0]; verb-last errors; a workf
     assert.ok(existsSync(wfDir("push")), "pulled the workflow named push: " + r.out);
     r = await cli("status", "push"); // status on the workflow named push, not the verb
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /structure: in sync/);
+    assert.match(r.out, /: in sync/);
   } finally {
     rmSync(wfDir("push"), { recursive: true, force: true });
     db.delete("wfPush");
@@ -996,13 +1044,13 @@ await step("verb-first grammar: verb is positional[0]; verb-last errors; a workf
 await step("name refs: exact name and case-insensitive prefix resolve; unknown name lists candidates", async () => {
   let r = await cli("status", "Order Sync v2");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /structure: in sync/);
+  assert.match(r.out, /: in sync/);
   r = await cli("check", "order sy", "--no-typecheck"); // unique case-insensitive prefix
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Order Sync v2: OK/);
   r = await cli("push", "Order Sync v2", "--no-typecheck"); // name push ≡ id push
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /pushed "Order Sync v2" \(wf123\)/);
+  assert.match(r.out, /"Order Sync v2" \(wf123\): code already in sync/);
   // name-shaped ref with no match must error with the candidate list — no prompt
   r = await cli("status", "No Such Flow");
   assert.equal(r.code, 1);
@@ -1017,10 +1065,10 @@ await step("multi-workflow: one id fails, [i/n] progress shown, exit 1, the rest
   const r = await cli("push", "--no-typecheck", "wf-not-pulled", "wf123");
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /\[1\/2\] wf-not-pulled: workflow wf-not-pulled not found under .* — pull it first/);
-  assert.match(r.out, /\[2\/2\] pushed "Order Sync v2" \(wf123\)/, "the item after the failure must still be processed: " + r.out);
+  assert.match(r.out, /\[2\/2\].*code already in sync/, "the item after the failure must still be processed: " + r.out);
 });
 
-await step("resolveRef: pull resolves an unpulled remote workflow by name; a shared local prefix is ambiguous", async () => {
+await step("resolveRef: pull resolves an unpulled remote workflow by name (MCP search); a shared local prefix is ambiguous", async () => {
   db.set("wfZ1", { ...structuredClone(db.get("wf123")), id: "wfZ1", name: "Zeta Flow One" });
   db.set("wfZ2", { ...structuredClone(db.get("wf123")), id: "wfZ2", name: "Zeta Flow Two" });
   try {
@@ -1048,27 +1096,46 @@ await step("resolveRef: pull resolves an unpulled remote workflow by name; a sha
   }
 });
 
-await step("list: name, id, and folder per pulled workflow; --remote adds unpulled ones; --json", async () => {
+await step("list: pulled + --remote over MCP; unavailable workflows marked with guidance; --json carries mcpAvailable", async () => {
   let r = await cli("list");
   assert.equal(r.code, 0, r.out);
   // display name is the cached "Order Sync v2"; folder is the sticky order-sync slug
   assert.match(r.out, /Order Sync v2 {2}wf123 {2}workflows[/\\]order-sync/);
   db.set("wf777", { ...structuredClone(db.get("wf123")), id: "wf777", name: "Unpulled Flow" });
+  db.set("wf778", { ...structuredClone(db.get("wf123")), id: "wf778", name: "Gated Flow", availableInMCP: false });
   try {
     r = await cli("list", "--remote");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /Unpulled Flow {2}wf777 {2}\(not pulled\)/);
+    assert.match(r.out, /Gated Flow {2}wf778 {2}\(not available in MCP\)/);
+    assert.match(r.out, /enable MCP access from the workflow card/);
     assert.match(r.out, /Order Sync v2 {2}wf123/);
-    // --json: pulled rows carry a dir; remote-only rows are dir:null
+    // --json: pulled rows carry a dir; remote-only rows are dir:null + mcpAvailable
     r = await cli("list", "--remote", "--json");
     assert.equal(r.code, 0, r.out);
-    const rows = JSON.parse(r.out) as Array<{ name: string; id: string; dir: string | null }>;
+    const rows = JSON.parse(r.out) as Array<{ name: string; id: string; dir: string | null; mcpAvailable?: boolean }>;
     const pulled = rows.find((x) => x.id === "wf123");
     assert.ok(pulled && pulled.name === "Order Sync v2" && /order-sync/.test(pulled.dir ?? ""), "pulled row: " + r.out);
     const unpulled = rows.find((x) => x.id === "wf777");
-    assert.ok(unpulled && unpulled.dir === null, "remote-only row has dir:null: " + r.out);
+    assert.ok(unpulled && unpulled.dir === null && unpulled.mcpAvailable === true, "remote-only row has dir:null + mcpAvailable: " + r.out);
+    const gated = rows.find((x) => x.id === "wf778");
+    assert.ok(gated && gated.mcpAvailable === false, "gated row marked: " + r.out);
   } finally {
     db.delete("wf777");
+    db.delete("wf778");
+  }
+});
+
+await step("pull: an MCP-unavailable workflow errors with the server text + enable guidance", async () => {
+  db.set("wfGate", { ...structuredClone(db.get("wf123")), id: "wfGate", name: "Gate Keeper", availableInMCP: false });
+  try {
+    const r = await cli("pull", "wfGate");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /Workflow is not available in MCP/);
+    assert.match(r.out, /enable MCP access from the workflow card/);
+    assert.ok(!existsSync(wfDir("Gate Keeper")), "no folder for a refused pull");
+  } finally {
+    db.delete("wfGate");
   }
 });
 
@@ -1091,7 +1158,7 @@ await step("completion: prints shell scripts; __complete emits verbs, flags, nam
   r = await cli("__complete");
   assert.equal(r.code, 0, r.out);
   const words = r.out.trim().split("\n");
-  for (const w of ["pull", "push", "watch", "list", "node", "create", "rename", "run", "--force", "wf123", "Order Sync v2"]) {
+  for (const w of ["pull", "push", "watch", "list", "node", "create", "rename", "run", "--force", "--publish", "wf123", "Order Sync v2"]) {
     assert.ok(words.includes(w), `__complete must emit "${w}": ${r.out}`);
   }
   assert.ok(!words.includes("__complete"), "__complete must not advertise itself");
@@ -1100,7 +1167,7 @@ await step("completion: prints shell scripts; __complete emits verbs, flags, nam
   assert.ok(!words.includes("add"), "add moved to `node create`");
 });
 
-await step("api timeout: a hung instance aborts with a clear error", async () => {
+await step("mcp timeout: a hung instance aborts with a clear error", async () => {
   const cfg = read(TMP, "decanter.config.json");
   writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ ...JSON.parse(cfg), requestTimeoutMs: 300 }));
   try {
@@ -1139,7 +1206,7 @@ await step("run: executes a .ts node against a fixture (all-items)", async () =>
   writeFileSync(path.join(rd, "Gen.ts"),
     "interface Row { id: number }\nconst rows: Row[] = $input.all().map((i) => ({ id: Number(i.json.id) }));\nreturn rows.map((r) => ({ json: r }));\n");
   writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ input: [{ json: { id: 5 } }, { json: { id: 9 } }] }));
-  const r = await cli("node", "run",path.join("runtest", "Gen.ts"), path.join("runtest", "fx.json"));
+  const r = await cli("node", "run", path.join("runtest", "Gen.ts"), path.join("runtest", "fx.json"));
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /runOnceForAllItems/);
   assert.match(r.out, /returned 2 items/);
@@ -1155,7 +1222,7 @@ await step("run: each-item mode (from workflow.json) loops per input item", asyn
   }));
   writeFileSync(path.join(rd, "Dbl.js"), "return { json: { n: $json.n * 2, i: $itemIndex } };\n");
   writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ input: [{ json: { n: 2 } }, { json: { n: 5 } }] }));
-  const r = await cli("node", "run",path.join("runtest2", "Dbl.js"), path.join("runtest2", "fx.json"));
+  const r = await cli("node", "run", path.join("runtest2", "Dbl.js"), path.join("runtest2", "fx.json"));
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /runOnceForEachItem/);
   assert.deepEqual(runOutput(r.out), [{ json: { n: 4, i: 0 } }, { json: { n: 10, i: 1 } }]);
@@ -1163,7 +1230,7 @@ await step("run: each-item mode (from workflow.json) loops per input item", asyn
 
 await step("run: resolves workflow.json from the parent of code/", async () => {
   writeFileSync(path.join(TMP, "fx-run.json"), JSON.stringify({ input: [{ json: { a: 1 } }, { json: { a: 2 } }] }));
-  const r = await cli("node", "run",path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-run.json");
+  const r = await cli("node", "run", path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-run.json");
   assert.equal(r.code, 0, r.out);
   assert.ok(!r.out.includes("no workflow.json placeholder"), "must find the node via the parent workflow.json: " + r.out);
   assert.match(r.out, /returned 2 items/);
@@ -1179,12 +1246,12 @@ await step("run: $getWorkflowStaticData seeds from workflow.json, fixture overri
   }));
   writeFileSync(path.join(rd, "SD.js"),
     "const g = $getWorkflowStaticData('global');\nconst n = $getWorkflowStaticData('node');\nreturn [{ json: { counter: g.counter, seen: n.seen } }];\n");
-  let r = await cli("node", "run",path.join("runtest-static", "SD.js"));
+  let r = await cli("node", "run", path.join("runtest-static", "SD.js"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { counter: 41, seen: ["a"] } }]);
   // fixture overrides per slice; the untouched slice keeps the workflow seed
   writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ staticData: { global: { counter: 99 } } }));
-  r = await cli("node", "run",path.join("runtest-static", "SD.js"), path.join("runtest-static", "fx.json"));
+  r = await cli("node", "run", path.join("runtest-static", "SD.js"), path.join("runtest-static", "fx.json"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { counter: 99, seen: ["a"] } }]);
   // a bare file without workflow.json gets empty objects, not a ReferenceError
@@ -1192,12 +1259,12 @@ await step("run: $getWorkflowStaticData seeds from workflow.json, fixture overri
   mkdirSync(bare, { recursive: true });
   writeFileSync(path.join(bare, "bare.js"),
     "return [{ json: { empty: Object.keys($getWorkflowStaticData('global')).length === 0 } }];\n");
-  r = await cli("node", "run",path.join("runtest-bare", "bare.js"));
+  r = await cli("node", "run", path.join("runtest-bare", "bare.js"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { empty: true } }]);
   // invalid scope errors clearly
   writeFileSync(path.join(bare, "badscope.js"), "return $getWorkflowStaticData('nope');\n");
-  r = await cli("node", "run",path.join("runtest-bare", "badscope.js"));
+  r = await cli("node", "run", path.join("runtest-bare", "badscope.js"));
   assert.equal(r.code, 1);
   assert.match(r.out, /type must be "global" or "node"/);
 });
@@ -1206,7 +1273,7 @@ await step("run: missing $() fixture data errors clearly", async () => {
   const rd = path.join(TMP, "runtest3");
   mkdirSync(rd, { recursive: true });
   writeFileSync(path.join(rd, "Ref.js"), "return $('Up').all();\n");
-  const r = await cli("node", "run",path.join("runtest3", "Ref.js"));
+  const r = await cli("node", "run", path.join("runtest3", "Ref.js"));
   assert.equal(r.code, 1);
   assert.match(r.out, /node "Up" has no fixture data/);
 });
@@ -1216,16 +1283,16 @@ await step("run: $env is empty by default, inherits process.env only with --allo
   mkdirSync(rd, { recursive: true });
   writeFileSync(path.join(rd, "Env.js"), "return [{ json: { key: $env.N8N_API_KEY ?? null } }];\n");
   // default: $env is empty — host secrets (N8N_API_KEY lives in the CLI env) never leak
-  let r = await cli("node", "run",path.join("runtest-env", "Env.js"));
+  let r = await cli("node", "run", path.join("runtest-env", "Env.js"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { key: null } }]);
   // --allow-env opts back into the full process env
-  r = await cli("node", "run",path.join("runtest-env", "Env.js"), "--allow-env");
+  r = await cli("node", "run", path.join("runtest-env", "Env.js"), "--allow-env");
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { key: "test-key" } }]);
   // a fixture env wins regardless of the flag
   writeFileSync(path.join(rd, "fx.json"), JSON.stringify({ env: { N8N_API_KEY: "from-fixture" } }));
-  r = await cli("node", "run",path.join("runtest-env", "Env.js"), path.join("runtest-env", "fx.json"));
+  r = await cli("node", "run", path.join("runtest-env", "Env.js"), path.join("runtest-env", "fx.json"));
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { key: "from-fixture" } }]);
 });
@@ -1305,44 +1372,39 @@ await step("guard: dangling $('…') in code and parameters blocks check", async
   writeFileSync(path.join(dir2, "workflow.json"), wfJson);
 });
 
-await step("node rename: update spans connections, $('…') refs, params, file, state", async () => {
+await step("node rename: forwarded to n8n over MCP; refs and files follow via pull", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
-  // wire up everything that must follow the rename: a connection into the
-  // node, a $('…') ref in another node's code, an expression parameter, and
-  // a stale .remote.js sibling
-  const wfBefore = JSON.parse(read(dir2, "workflow.json"));
-  wfBefore.connections["Transform: EU/US"] = { main: [[{ node: "Amazon Feed", type: "main", index: 0 }]] };
-  wfBefore.nodes.find((n: any) => n.id === "n4").parameters = { value: "={{ $('Amazon Feed').first().json.sku }}" };
-  writeFileSync(path.join(dir2, "workflow.json"), JSON.stringify(wfBefore, null, 2));
-  writeFileSync(path.join(dir2, "code", "transform-eu-us.js"), "const feed = $('Amazon Feed').all();\nreturn feed;\n");
-  writeFileSync(path.join(dir2, "code", "amazon-feed.remote.js"), "// stale remote copy\n");
-
-  const r = await cli("node", "rename", "wf123", "Amazon Feed", "Amazon Export");
+  // remote-side wiring that must follow the rename: a connection targeting the
+  // node, a $('…') ref in another node's code, and an expression parameter —
+  // all rewritten SERVER-side (n8n's renameNode contract), mirrored by the mock
+  const wf = db.get("wf123");
+  wf.connections["Transform: EU/US"] = { main: [[{ node: "Amazon Feed", type: "main", index: 0 }]] };
+  wf.nodes.find((n: any) => n.id === "n4").parameters = { value: "={{ $('Amazon Feed').first().json.sku }}" };
+  wf.nodes.find((n: any) => n.id === "n2").parameters.jsCode = "const feed = $('Amazon Feed').all();\nreturn feed;\n";
+  let r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  const wf = JSON.parse(read(dir2, "workflow.json"));
-  assert.ok(wf.nodes.some((n: any) => n.name === "Amazon Export"), "node renamed");
+
+  r = await cli("node", "rename", "wf123", "Amazon Feed", "Amazon Export");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /renamed node "Amazon Feed" -> "Amazon Export" in n8n/);
+  // remote followed (name, connections, expression params, code refs) — and the id survived
+  assert.ok(wf.nodes.some((n: any) => n.name === "Amazon Export" && n.id === "n3"), "node renamed remotely, id stable");
   assert.equal(wf.connections["Transform: EU/US"].main[0][0].node, "Amazon Export", "connection target follows");
   assert.equal(wf.nodes.find((n: any) => n.id === "n4").parameters.value, "={{ $('Amazon Export').first().json.sku }}", "expression parameter follows");
+  // local followed via the rename's own pull: file renamed, refs arrive rewritten
   assert.match(read(dir2, "code", "transform-eu-us.js"), /\$\('Amazon Export'\)/);
   assert.ok(existsSync(path.join(dir2, "code", "amazon-export.ts")), "file renamed");
   assert.ok(!existsSync(path.join(dir2, "code", "amazon-feed.ts")), "old file gone");
-  assert.ok(existsSync(path.join(dir2, "code", "amazon-export.remote.js")), ".remote.js sibling follows");
   assert.equal(state(dir2).nodes.n3.file, "code/amazon-export.ts");
   assert.match(read(dir2, "workflow.json"), /"\/\/@file:code\/amazon-export\.ts"/);
-  unlinkSync(path.join(dir2, "code", "amazon-export.remote.js"));
 
   const rCheck = await cli("check", "--no-typecheck");
   assert.equal(rCheck.code, 0, rCheck.out);
   // the rewritten code still runs, with fixture data keyed by the NEW name
   writeFileSync(path.join(TMP, "fx-rename.json"), JSON.stringify({ nodes: { "Amazon Export": [{ json: { sku: "a-1" } }] } }));
-  const rRun = await cli("node", "run",path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-rename.json");
+  const rRun = await cli("node", "run", path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-rename.json");
   assert.equal(rRun.code, 0, rRun.out);
   assert.match(rRun.out, /returned 1 item/);
-  // push propagates name + connections to the remote
-  const rPush = await cli("push");
-  assert.equal(rPush.code, 0, rPush.out);
-  assert.equal(remoteNode("wf123", "n3").name, "Amazon Export");
-  assert.equal(db.get("wf123").connections["Transform: EU/US"].main[0][0].node, "Amazon Export");
 });
 
 await step("node rename: guards refuse unknown, colliding, and same names", async () => {
@@ -1360,15 +1422,14 @@ await step("node rename: guards refuse unknown, colliding, and same names", asyn
   assert.match(r.out, /old and new node name/);
 });
 
-await step("rename: workflow display name changes locally; folder stays put; push propagates; pull keeps the folder", async () => {
+await step("rename: workflow renamed in n8n immediately; folder stays put", async () => {
   const r = await cli("rename", "wf123", "Order Sync Final");
   assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /renamed workflow "Order Sync v2" -> "Order Sync Final" in n8n/);
+  assert.equal(db.get("wf123").name, "Order Sync Final", "remote renamed via MCP — no push needed");
   assert.equal(JSON.parse(read(dir1, "workflow.json")).name, "Order Sync Final");
   assert.equal(state(dir1).name, "Order Sync Final", "cached name updated by rename");
-  let r2 = await cli("push");
-  assert.equal(r2.code, 0, r2.out);
-  assert.equal(db.get("wf123").name, "Order Sync Final");
-  r2 = await cli("pull");
+  const r2 = await cli("pull");
   assert.equal(r2.code, 0, r2.out);
   assert.ok(existsSync(dir1), "folder unchanged by rename");
   assert.ok(!existsSync(wfDir("Order Sync Final")), "no renamed folder appears");
@@ -1376,7 +1437,7 @@ await step("rename: workflow display name changes locally; folder stays put; pus
 
 const dirF = dir1; // wf123's sticky folder; display name is now "Order Sync Final"
 
-await step("ts conflict: local .ts and remote both changed → CONFLICT + .remote.js", async () => {
+await step("ts conflict: both sides changed → warned (no .remote.js), .ts kept; push overwrites by design", async () => {
   const tsFile = path.join(dirF, "code", "amazon-export.ts");
   writeFileSync(tsFile, read(dirF, "code", "amazon-export.ts").replace("return rows.map", "const extra = 1;\nreturn rows.map"));
   const node = remoteNode("wf123", "n3");
@@ -1384,16 +1445,13 @@ await step("ts conflict: local .ts and remote both changed → CONFLICT + .remot
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /CONFLICT — both code\/amazon-export\.ts and the remote code changed since last sync/);
-  assert.match(read(dirF, "code", "amazon-export.remote.js"), /slice\(0, 1\)/);
+  assert.match(r.out, /status --diff/);
+  assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")), "no conflict artifact since Plan 32");
   assert.match(read(dirF, "code", "amazon-export.ts"), /const extra = 1/); // .ts never clobbered
   // pull re-baselined lastPushedHash: the next push overwrites the remote edit by design
-  let r2 = await cli("push");
+  const r2 = await cli("push");
   assert.equal(r2.code, 0, r2.out);
-  assert.match(r2.out, /unresolved remote copy/);
   assert.ok(!remoteNode("wf123", "n3").parameters.jsCode.includes("slice(0, 1)"), "push restored the TS-compiled version");
-  r2 = await cli("pull"); // resync removes the now-stale .remote.js
-  assert.equal(r2.code, 0, r2.out);
-  assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")));
 });
 
 await step("bundle: shared/ value import inlines on push, drifts on shared edit, runs offline", async () => {
@@ -1416,10 +1474,10 @@ await step("bundle: shared/ value import inlines on push, drifts on shared edit,
   assert.match(code, /function total/, "helper inlined into the pushed node");
   assert.match(code, /shared\/money\.ts/, "sync-root-relative module label");
   assert.match(code, /return __n8n_node\.default\(\);\n\/\/ @ts-n8n sha256:/, "re-enter footer + marker");
-  // pull: PUT-response hash matches the compiled local → in sync, no artifact
+  // pull: confirming-read hash matches the compiled local → in sync, no warnings
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")), "no conflict artifact");
+  assert.ok(!r.out.includes("CONFLICT"), "in sync after push: " + r.out);
   // shared edit → importing node drifts as push-pending; --diff shows the inlined change
   writeFileSync(path.join(TMP, "shared", "money.ts"),
     read(TMP, "shared", "money.ts").replace("s + l.qty * l.price", "s + l.qty * l.price + 1"));
@@ -1433,7 +1491,7 @@ await step("bundle: shared/ value import inlines on push, drifts on shared edit,
   // run executes the importing node offline: (2*10+1) + (1*5+1) = 27
   writeFileSync(path.join(TMP, "fx-bundle.json"),
     JSON.stringify({ input: [{ json: { qty: 2, price: 10 } }, { json: { qty: 1, price: 5 } }] }));
-  r = await cli("node", "run",path.join("workflows", "order-sync", "code", "amazon-export.ts"), "fx-bundle.json");
+  r = await cli("node", "run", path.join("workflows", "order-sync", "code", "amazon-export.ts"), "fx-bundle.json");
   assert.equal(r.code, 0, r.out);
   assert.deepEqual(runOutput(r.out), [{ json: { total: 27 } }]);
   // restore the import-free node for the steps that follow
@@ -1531,12 +1589,11 @@ await step("status --diff: line diffs for drifted nodes only", async () => {
   assert.ok(!r.out.includes("--- remote"), "no diff for in-sync nodes: " + r.out);
 });
 
-await step("push: aborts when a remote Code node is unknown locally", async () => {
+await step("push: an untracked remote Code node is an info line, not an abort (pull extracts it)", async () => {
   db.get("wf123").nodes.push({ id: "n5", name: "Report", type: "n8n-nodes-base.code", typeVersion: 2, position: [880, 0], parameters: { jsCode: "return $input.all();\n" } });
   let r = await cli("push");
-  assert.equal(r.code, 1, "push must abort on an unknown remote Code node: " + r.out);
-  assert.match(r.out, /node "Report" exists remotely but is unknown locally/);
-  assert.match(r.out, /pull first/);
+  assert.equal(r.code, 0, "an untracked remote node must not abort a code push: " + r.out);
+  assert.match(r.out, /remote Code node "Report" isn't tracked locally — pull to extract it/);
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.equal(read(dirF, "code", "report.js"), "return $input.all();\n");
@@ -1552,20 +1609,19 @@ await step("pull: kebab-name collision gets the -<id8> suffix", async () => {
   assert.match(read(dirF, "workflow.json"), /"\/\/@file:code\/report-n6collid\.js"/);
 });
 
-await step("node rename: kebab collision falls back to -<id8>; .remote.js content untouched", async () => {
+await step("node rename: kebab collision falls back to -<id8>; freed bases are re-claimed deterministically", async () => {
   // "Transform EU US" kebabs to the same base as "Transform: EU/US" (n2's file)
-  writeFileSync(path.join(dirF, "code", "report.remote.js"), "const x = $('Report');\n");
   const r = await cli("node", "rename", "wf123", "Report", "Transform EU US");
   assert.equal(r.code, 0, r.out);
+  assert.equal(remoteNode("wf123", "n5").name, "Transform EU US", "renamed in n8n");
   assert.ok(existsSync(path.join(dirF, "code", "transform-eu-us-n5.js")), "collision suffix used");
-  assert.ok(!existsSync(path.join(dirF, "code", "report.js")), "old file gone");
   assert.equal(state(dirF).nodes.n5.file, "code/transform-eu-us-n5.js");
-  // the sibling followed the rename, but its content is a remote snapshot — never rewritten
-  assert.equal(read(dirF, "code", "transform-eu-us-n5.remote.js"), "const x = $('Report');\n");
-  unlinkSync(path.join(dirF, "code", "transform-eu-us-n5.remote.js"));
-  const rPush = await cli("push");
-  assert.equal(rPush.code, 0, rPush.out);
-  assert.equal(remoteNode("wf123", "n5").name, "Transform EU US");
+  // with n5 off the "report" base, the rename's pull re-slugs n6collide
+  // ("Report!") onto the now-free plain base — per-pull collision handling
+  // is deterministic, not sticky
+  assert.equal(state(dirF).nodes.n6collide.file, "code/report.js");
+  assert.ok(existsSync(path.join(dirF, "code", "report.js")), "freed base re-claimed");
+  assert.ok(!existsSync(path.join(dirF, "code", "report-n6collid.js")), "suffixed file renamed away");
 });
 
 await step("node deleted remotely: status warns, pull drops state, file kept", async () => {
@@ -1573,17 +1629,17 @@ await step("node deleted remotely: status warns, pull drops state, file kept", a
   wf.nodes = wf.nodes.filter((n: any) => n.id !== "n6collide");
   let r = await cli("status");
   assert.equal(r.code, 1, "remotely deleted node counts as remote drift: " + r.out);
-  assert.match(r.out, /code\/report-n6collid\.js: node n6collide deleted remotely/);
+  assert.match(r.out, /code\/report\.js: node n6collide deleted remotely/);
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /node n6collide \("code\/report-n6collid\.js"\) no longer exists remotely — removing from state/);
-  assert.ok(existsSync(path.join(dirF, "code", "report-n6collid.js")), "file kept — git is the safety net");
+  assert.match(r.out, /node n6collide \("code\/report\.js"\) no longer exists remotely — removing from state/);
+  assert.ok(existsSync(path.join(dirF, "code", "report.js")), "file kept — git is the safety net");
   assert.equal(state(dirF).nodes.n6collide, undefined);
   // the kept file is an orphan now; the guard flags it until it's removed
   r = await cli("check", "--no-typecheck");
   assert.equal(r.code, 1);
-  assert.match(r.out, /orphan code file code\/report-n6collid\.js/);
-  unlinkSync(path.join(dirF, "code", "report-n6collid.js"));
+  assert.match(r.out, /orphan code file code\/report\.js/);
+  unlinkSync(path.join(dirF, "code", "report.js"));
 });
 
 await step("pull: two new workflows kebabbing to the same slug get <slug> and <slug>-<id8> + warn (Plan 27)", async () => {
@@ -1600,7 +1656,7 @@ await step("pull: two new workflows kebabbing to the same slug get <slug> and <s
     // both still resolve as refs
     r = await cli("status", "wfC2");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /structure: in sync/);
+    assert.match(r.out, /: in sync/);
   } finally {
     rmSync(path.join(ROOT, "sync-report"), { recursive: true, force: true });
     rmSync(path.join(ROOT, "sync-report-wfC2"), { recursive: true, force: true });
@@ -1693,6 +1749,7 @@ await step("mock create/check: named scenario into committed mocks/, validated o
   env = { ...savedEnv };
   delete env.N8N_HOST;
   delete env.N8N_API_KEY;
+  delete env.N8N_MCP_TOKEN;
   try {
     // slug is a positional; kebab-slugged on disk
     let r = await cli("mock", "create", "wf123", "Happy Path", "--execution", "201");
@@ -1733,6 +1790,7 @@ await step("executions clean: removes the dirs, credentials-free", async () => {
   env = { ...savedEnv };
   delete env.N8N_HOST;
   delete env.N8N_API_KEY;
+  delete env.N8N_MCP_TOKEN;
   try {
     let r = await cli("executions", "clean", "order sync final"); // name ref, case-insensitive
     assert.equal(r.code, 0, r.out);
@@ -1821,6 +1879,7 @@ await step("data-tables clean: removes the dir, credentials-free", async () => {
   env = { ...savedEnv };
   delete env.N8N_HOST;
   delete env.N8N_API_KEY;
+  delete env.N8N_MCP_TOKEN;
   try {
     let r = await cli("data-tables", "clean");
     assert.equal(r.code, 0, r.out);
@@ -1851,13 +1910,14 @@ await step('data-tables: "dataTables": false refuses the fetch but still cleans'
   }
 });
 
-await step("create: blank workflow born unpublished on the server, then pulled into the layout", async () => {
+await step("create: blank workflow born in n8n over MCP (auto-available), then pulled into the layout", async () => {
   let r = await cli("create", "Fresh Flow");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /created "Fresh Flow" \(wf-new-[^)]+\) on the server — unpublished draft/);
   const created = [...db.values()].find((w) => w.name === "Fresh Flow");
   assert.ok(created, "workflow created in the mock db");
   assert.equal(created.active, false, "born unpublished");
+  assert.equal(created.availableInMCP, true, "MCP-created workflows are born available");
   const dir = wfDir("Fresh Flow");
   assert.ok(existsSync(path.join(dir, ".decanter.json")), "pulled: state file exists");
   assert.ok(existsSync(path.join(dir, "workflow.json")), "pulled: workflow.json exists");
@@ -1869,7 +1929,7 @@ await step("create: blank workflow born unpublished on the server, then pulled i
   assert.match(r.out, /create needs exactly one name/);
 });
 
-await step("publish/unpublish: toggle live state; already-in-state is a no-op note", async () => {
+await step("publish/unpublish: toggle live state over MCP; already-in-state is a no-op note", async () => {
   const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
   let r = await cli("publish", id);
   assert.equal(r.code, 0, r.out);
@@ -1897,6 +1957,27 @@ await step("publish/unpublish: toggle live state; already-in-state is a no-op no
   assert.match(r.out, /published "Fresh Flow"/);
 });
 
+await step("publish: a diverged draft publishes (not a no-op); the gate error surfaces in-band", async () => {
+  const created = [...db.values()].find((w) => w.name === "Fresh Flow")!;
+  const prevVersion = created.versionId;
+  created.versionId = "draft-ahead"; // draft newer than the live version
+  try {
+    let r = await cli("publish", created.id);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /published "Fresh Flow"/, "diverged draft must re-publish, not no-op: " + r.out);
+    assert.equal(created.activeVersionId, "draft-ahead");
+    // publish of an MCP-unavailable workflow → the in-band success:false error
+    created.availableInMCP = false;
+    r = await cli("publish", created.id);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /not available in MCP/i);
+  } finally {
+    created.availableInMCP = true;
+    created.versionId = prevVersion;
+    created.activeVersionId = prevVersion;
+  }
+});
+
 await step("status: version-aware — a live version older than the draft prints the lag note", async () => {
   const created = [...db.values()].find((w) => w.name === "Fresh Flow")!;
   const prevVersion = created.versionId;
@@ -1904,7 +1985,7 @@ await step("status: version-aware — a live version older than the draft prints
   try {
     let r = await cli("status", created.id);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /published — live version is older than the draft \(push or "publish" to go live\)/);
+    assert.match(r.out, /published — live version is older than the draft \("publish" to go live\)/);
     // an in-sync published workflow stays plain (wf123: activeVersionId == versionId)
     r = await cli("status", "wf123");
     assert.equal(r.code, 0, r.out);
@@ -1934,7 +2015,7 @@ await step("executions: warns when a captured run's version differs from the loc
   }
 });
 
-await step("delete: refuses without --force non-interactively; --force deletes, local folder kept", async () => {
+await step("delete: refuses without --force non-interactively; --force deletes via the REST API, local folder kept", async () => {
   const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
   const dir = wfDir("Fresh Flow");
   // non-interactive without --force → refuse, remote intact
@@ -1956,7 +2037,7 @@ await step("delete: refuses without --force non-interactively; --force deletes, 
   assert.ok(existsSync(path.join(dir, ".decanter.json")), "local folder kept as the git-tracked record");
 });
 
-await step("node create: scaffold a disconnected Code node offline; check + push send it", async () => {
+await step("node create: Code node born in n8n over MCP (addNode), landed by pull; --ts converts in place", async () => {
   // self-contained: a fresh workflow so the authoring steps don't perturb others
   let r = await cli("create", "Authoring Demo");
   assert.equal(r.code, 0, r.out);
@@ -1966,16 +2047,20 @@ await step("node create: scaffold a disconnected Code node offline; check + push
 
   r = await cli("node", "create", id, "Parse Order");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /added Code node "Parse Order" \([0-9a-f-]{36}\) -> code[/\\]parse-order\.js — disconnected/);
+  assert.match(r.out, /added Code node "Parse Order" \([0-9a-f]+\) -> code[/\\]parse-order\.js — disconnected; wire it in the n8n editor/);
+  // the node was born REMOTELY (the mock even re-mints the id) and landed via pull
+  const remote = db.get(id).nodes.find((n: any) => n.name === "Parse Order");
+  assert.ok(remote, "node exists in n8n");
+  assert.equal(remote.type, "n8n-nodes-base.code");
+  assert.equal(remote.parameters.mode, "runOnceForAllItems");
+  assert.match(remote.parameters.jsCode, /New Code node/, "starter source on the server");
   const wf = JSON.parse(read(dir, "workflow.json"));
-  assert.equal(wf.nodes.length, before + 1, "node appended");
+  assert.equal(wf.nodes.length, before + 1, "node landed in the snapshot");
   const node = wf.nodes.find((n: any) => n.name === "Parse Order");
-  assert.equal(node.type, "n8n-nodes-base.code");
-  assert.equal(node.parameters.mode, "runOnceForAllItems");
   assert.equal(node.parameters.jsCode, "//@file:code/parse-order.js");
-  assert.match(node.id, /^[0-9a-f-]{36}$/, "v4 uuid node id");
-  assert.ok(existsSync(path.join(dir, "code", "parse-order.js")), "source file created");
-  assert.equal(state(dir).nodes[node.id].file, "code/parse-order.js", "registered in state");
+  assert.equal(node.id, remote.id, "snapshot carries the server-minted id");
+  assert.ok(existsSync(path.join(dir, "code", "parse-order.js")), "source file extracted");
+  assert.equal(state(dir).nodes[remote.id].file, "code/parse-order.js", "registered in state under the server id");
   assert.ok(!wf.connections["Parse Order"], "lands disconnected");
 
   r = await cli("check", id);
@@ -1987,11 +2072,16 @@ await step("node create: scaffold a disconnected Code node offline; check + push
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /-> code[/\\]parse-order-[0-9a-f]{8}\.js/);
 
-  // --ts scaffolds a .ts source
+  // --ts converts the pulled .js to .ts in place; the marker lands on first push
   r = await cli("node", "create", id, "Typed Step", "--ts");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /-> code[/\\]typed-step\.ts/);
   assert.ok(existsSync(path.join(dir, "code", "typed-step.ts")));
+  assert.match(read(dir, "workflow.json"), /"\/\/@file:code\/typed-step\.ts"/);
+  r = await cli("push", id);
+  assert.equal(r.code, 0, r.out);
+  const typedRemote = db.get(id).nodes.find((n: any) => n.name === "Typed Step");
+  assert.match(typedRemote.parameters.jsCode, /\/\/ @ts-n8n sha256:/, "first push TS-marks the node");
 
   // duplicate node name refused
   r = await cli("node", "create", id, "Parse Order");
@@ -2002,33 +2092,38 @@ await step("node create: scaffold a disconnected Code node offline; check + push
   assert.equal(r.code, 1);
   assert.match(r.out, /node create needs exactly one node name/);
 
-  // push sends the three scaffolded code nodes
-  r = await cli("push", id);
-  assert.equal(r.code, 0, r.out);
-  assert.equal(db.get(id).nodes.filter((n: any) => n.type === "n8n-nodes-base.code").length, 3, "three code nodes pushed");
+  assert.equal(db.get(id).nodes.filter((n: any) => n.type === "n8n-nodes-base.code").length, 3, "three code nodes live in n8n");
 });
 
-await step("duplicate: clones a workflow into a new remote one via POST, landed by pull", async () => {
+await step("duplicate: API-born clone (lossless POST); MCP pull gated until enabled in n8n", async () => {
   const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
   const sourceNodeCount = db.get(id).nodes.length;
 
   let r = await cli("duplicate", id, "Authoring Clone");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /duplicated "Authoring Demo" -> "Authoring Clone" \(wf-new-[^)]+\) on the server — unpublished draft/);
+  assert.match(r.out, /not yet available in MCP/, "API-born clone is MCP-gated: " + r.out);
   const clone = [...db.values()].find((w) => w.name === "Authoring Clone");
   assert.ok(clone, "clone created in the mock db");
   assert.equal(clone.active, false, "born unpublished");
+  assert.equal(clone.availableInMCP, false, "API-born → not available in MCP");
   assert.notEqual(clone.id, id, "distinct new id");
   assert.equal(clone.nodes.length, sourceNodeCount, "carries the source's nodes");
+  assert.ok(!existsSync(wfDir("Authoring Clone")), "no folder while the pull is gated");
+  // source folder + remote left untouched
+  assert.ok(db.has(id), "source remote intact");
+  assert.equal(db.get(id).name, "Authoring Demo", "source name unchanged");
+  assert.ok(existsSync(path.join(wfDir("Authoring Demo"), ".decanter.json")), "source folder intact");
+
+  // enable MCP access (the user's n8n-side act) → pull lands the clone
+  clone.availableInMCP = true;
+  r = await cli("pull", clone.id);
+  assert.equal(r.code, 0, r.out);
   const cloneDir = wfDir("Authoring Clone");
   assert.ok(existsSync(path.join(cloneDir, ".decanter.json")), "clone pulled into a folder");
   assert.equal(state(cloneDir).workflowId, clone.id, "state points at the new id");
   // the plain .js node round-trips byte-clean into the clone
   assert.equal(read(cloneDir, "code", "parse-order.js"), read(wfDir("Authoring Demo"), "code", "parse-order.js"));
-  // source folder + remote left untouched
-  assert.ok(db.has(id), "source remote intact");
-  assert.equal(db.get(id).name, "Authoring Demo", "source name unchanged");
-  assert.ok(existsSync(path.join(wfDir("Authoring Demo"), ".decanter.json")), "source folder intact");
 
   // no name → "<name> (copy)"
   r = await cli("duplicate", id);

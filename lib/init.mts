@@ -12,7 +12,7 @@ import {
   searchWorkflows,
   writeAuthFile,
 } from "./mcp.mts";
-import { createPrompt } from "./prompt.mts";
+import { createPrompt, type Prompt } from "./prompt.mts";
 import { style } from "./style.mts";
 import { classifyTemplateFile, MANIFEST_FILE, readManifest, writeManifest, type TemplateOutcome } from "./template.mts";
 import type { Log } from "./types.mts";
@@ -247,56 +247,55 @@ export async function init(targetDir: string | undefined, { force = false }: { f
   let apiKey = existing.N8N_API_KEY ?? "";
   let mcpToken = existing.N8N_MCP_TOKEN ?? "";
   const interactive = process.stdin.isTTY === true;
-
-  // --- host
-  if (host !== "") {
-    log.info(`using existing .env host (${host})`);
-  } else {
-    if (!interactive) throw new Error("N8N_HOST is not set and this session is non-interactive — write .env yourself or run init in a terminal");
-    const rl = createPrompt();
-    try {
-      host = (await rl.question("n8n host: ")).trim();
-    } finally {
-      rl.close();
+  // ONE shared prompt session for every question: a second createPrompt()
+  // would lose piped answers the first one already buffered, so the session
+  // opens lazily on the first question and closes once at the end.
+  let rl: Prompt | undefined;
+  const ask = async (q: string): Promise<string> => {
+    rl ??= createPrompt();
+    return (await rl.question(q)).trim();
+  };
+  try {
+    // --- host (prompted over stdin even when piped — init stays scriptable)
+    if (host !== "") {
+      log.info(`using existing .env host (${host})`);
+    } else {
+      host = await ask("n8n host: ");
+      if (!host) throw new Error("host is required");
+      if (!/^https?:\/\//.test(host)) host = "https://" + host;
+      host = host.replace(/\/+$/, "");
     }
-    if (!host) throw new Error("host is required");
-    if (!/^https?:\/\//.test(host)) host = "https://" + host;
-    host = host.replace(/\/+$/, "");
-  }
 
-  // --- MCP credentials (the sync backend): existing → OAuth consent → bearer fallback
-  const auth = readAuthFileTolerant(dir, log);
-  if (mcpToken !== "") {
-    log.info("using existing MCP token from .env (N8N_MCP_TOKEN)");
-  } else if (auth !== null && auth.host === host) {
-    log.info(`using existing MCP OAuth credentials (${AUTH_FILE})`);
-  } else if (interactive) {
-    try {
-      const { clientId, tokens } = await runOAuthConsent(host, { log, openBrowser: openBrowserCommand });
-      writeAuthFile(dir, { host, clientId, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessTokenExpiresAt: tokens.accessTokenExpiresAt });
-      log.ok(`connected to ${host} via OAuth — credentials in ${AUTH_FILE} (gitignored)`);
-    } catch (err) {
-      log.warn(`OAuth consent did not complete (${(err as Error).message})`);
-      const rl = createPrompt();
+    // --- MCP credentials (the sync backend): existing → OAuth consent (TTY) →
+    // paste-a-token fallback. Only the browser consent itself is TTY-gated;
+    // piped runs go straight to the token prompt so init stays scriptable.
+    const auth = readAuthFileTolerant(dir, log);
+    if (mcpToken !== "") {
+      log.info("using existing MCP token from .env (N8N_MCP_TOKEN)");
+    } else if (auth !== null && auth.host === host) {
+      log.info(`using existing MCP OAuth credentials (${AUTH_FILE})`);
+    } else if (interactive) {
       try {
-        mcpToken = (await rl.question("paste an MCP token instead (n8n → Settings → MCP → API key) [Enter to skip]: ")).trim();
-      } finally {
-        rl.close();
+        const { clientId, tokens } = await runOAuthConsent(host, { log, openBrowser: openBrowserCommand });
+        writeAuthFile(dir, { host, clientId, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessTokenExpiresAt: tokens.accessTokenExpiresAt });
+        log.ok(`connected to ${host} via OAuth — credentials in ${AUTH_FILE} (gitignored)`);
+      } catch (err) {
+        log.warn(`OAuth consent did not complete (${(err as Error).message})`);
+        mcpToken = await ask("paste an n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
       }
-      if (mcpToken === "") log.warn("no MCP credentials yet — sync verbs (pull/push/watch/…) will not work until you re-run init or set N8N_MCP_TOKEN");
+    } else {
+      mcpToken = await ask("n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
     }
-  } else {
-    log.warn("no MCP credentials and no terminal for the OAuth consent — set N8N_MCP_TOKEN, or run init interactively");
-  }
+    if (mcpToken === "" && !(auth !== null && auth.host === host)) {
+      log.warn("no MCP credentials yet — sync verbs (pull/push/watch/…) will not work until you re-run init or set N8N_MCP_TOKEN");
+    }
 
-  // --- optional public API key (the REST-only surfaces)
-  if (apiKey === "" && interactive) {
-    const rl = createPrompt();
-    try {
-      apiKey = (await rl.question("n8n public API key (optional — executions/data-tables/duplicate/delete) [Enter to skip]: ")).trim();
-    } finally {
-      rl.close();
+    // --- optional public API key (the REST-only surfaces)
+    if (apiKey === "") {
+      apiKey = await ask("n8n public API key (optional — executions/data-tables/duplicate/delete) [Enter to skip]: ");
     }
+  } finally {
+    rl?.close();
   }
 
   // Rewrite .env preserving any other keys the user added (comments are not preserved).

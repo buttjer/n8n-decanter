@@ -1,35 +1,40 @@
-// Unit tests for the publish/unpublish/delete branch logic (lib/lifecycle.mts),
-// with a stubbed N8nApi and a capturing log — no HTTP server, no fs watchers.
+// Unit tests for the lifecycle branch logic (lib/lifecycle.mts, Plan 32):
+// publish/unpublish/create ride a stubbed McpClient, delete a stubbed N8nApi,
+// duplicate both — no HTTP server, no fs watchers.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { N8nApi } from "../../lib/api.mts";
-import { deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "../../lib/lifecycle.mts";
+import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "../../lib/lifecycle.mts";
+import { McpToolError, type McpClient } from "../../lib/mcp.mts";
 import type { DecanterConfig, Log, Workflow, WorkflowPut } from "../../lib/types.mts";
 
 const wf = (over: Partial<Workflow> = {}): Workflow => ({ id: "wf1", name: "Demo", nodes: [], connections: {}, ...over });
 
-/** A stub N8nApi that records which lifecycle calls fired. */
-function stubApi(remote: Workflow) {
+/** A stub McpClient that serves one workflow and records lifecycle tool calls. */
+function stubMcp(remote: Workflow) {
   const calls: string[] = [];
-  const api = {
-    getWorkflow: async () => remote,
-    activateWorkflow: async () => {
-      calls.push("activate");
-      return { ...remote, active: true };
+  const mcp = {
+    callTool: async (name: string, _args: any) => {
+      if (name === "get_workflow_details") return { workflow: structuredClone(remote) };
+      if (name === "publish_workflow") {
+        calls.push("publish");
+        remote.active = true;
+        remote.activeVersionId = remote.versionId;
+        return { success: true, workflowId: remote.id, activeVersionId: remote.activeVersionId };
+      }
+      if (name === "unpublish_workflow") {
+        calls.push("unpublish");
+        remote.active = false;
+        remote.activeVersionId = null;
+        return { success: true, workflowId: remote.id };
+      }
+      throw new Error("unexpected tool " + name);
     },
-    deactivateWorkflow: async () => {
-      calls.push("deactivate");
-      return { ...remote, active: false };
-    },
-    deleteWorkflow: async () => {
-      calls.push("delete");
-      return remote;
-    },
-  } as unknown as N8nApi;
-  return { api, calls };
+  } as unknown as McpClient;
+  return { mcp, calls };
 }
 
 function capturingLog(): { log: Log; lines: string[] } {
@@ -44,36 +49,73 @@ const baseConfig = (root: string, workflows: string[] = []): DecanterConfig => (
 });
 
 describe("publishWorkflow", () => {
-  it("activates an unpublished workflow and reports it live", async () => {
-    const { api, calls } = stubApi(wf({ active: false }));
+  it("publishes an unpublished workflow and reports it live", async () => {
+    const { mcp, calls } = stubMcp(wf({ active: false, versionId: "v2", activeVersionId: null }));
     const { log, lines } = capturingLog();
-    await publishWorkflow(api, "wf1", log);
-    assert.deepEqual(calls, ["activate"]);
+    await publishWorkflow(mcp, "wf1", log);
+    assert.deepEqual(calls, ["publish"]);
     assert.match(lines.join("\n"), /^ok published "Demo" \(wf1\) — code is live now/m);
   });
-  it("is a no-op-with-a-note on an already-published workflow", async () => {
-    const { api, calls } = stubApi(wf({ active: true }));
+  it("is a no-op-with-a-note when the live version already equals the draft", async () => {
+    const { mcp, calls } = stubMcp(wf({ active: true, versionId: "v2", activeVersionId: "v2" }));
     const { log, lines } = capturingLog();
-    await publishWorkflow(api, "wf1", log);
-    assert.deepEqual(calls, [], "must not re-activate");
+    await publishWorkflow(mcp, "wf1", log);
+    assert.deepEqual(calls, [], "must not re-publish");
     assert.match(lines.join("\n"), /is already published/);
+  });
+  it("publishes a DIVERGED draft on a published workflow (pushes are draft-only now)", async () => {
+    const { mcp, calls } = stubMcp(wf({ active: true, versionId: "v3", activeVersionId: "v2" }));
+    const { log, lines } = capturingLog();
+    await publishWorkflow(mcp, "wf1", log);
+    assert.deepEqual(calls, ["publish"], "a lagging live version must be re-published");
+    assert.match(lines.join("\n"), /published "Demo"/);
   });
 });
 
 describe("unpublishWorkflow", () => {
-  it("deactivates a published workflow", async () => {
-    const { api, calls } = stubApi(wf({ active: true }));
+  it("unpublishes a published workflow", async () => {
+    const { mcp, calls } = stubMcp(wf({ active: true, versionId: "v1", activeVersionId: "v1" }));
     const { log, lines } = capturingLog();
-    await unpublishWorkflow(api, "wf1", log);
-    assert.deepEqual(calls, ["deactivate"]);
+    await unpublishWorkflow(mcp, "wf1", log);
+    assert.deepEqual(calls, ["unpublish"]);
     assert.match(lines.join("\n"), /^ok unpublished "Demo" \(wf1\) — draft only/m);
   });
   it("is a no-op-with-a-note on an already-unpublished workflow", async () => {
-    const { api, calls } = stubApi(wf({ active: false }));
+    const { mcp, calls } = stubMcp(wf({ active: false }));
     const { log, lines } = capturingLog();
-    await unpublishWorkflow(api, "wf1", log);
+    await unpublishWorkflow(mcp, "wf1", log);
     assert.deepEqual(calls, []);
     assert.match(lines.join("\n"), /is already unpublished/);
+  });
+});
+
+describe("createWorkflow", () => {
+  let tmp: string | undefined;
+  afterEach(() => {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    tmp = undefined;
+  });
+
+  it("creates via SDK code over MCP and pulls the newborn (auto-available)", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-create-"));
+    let sentCode: string | undefined;
+    const created = wf({ id: "new1", name: "Fresh Flow", active: false, versionId: "v1", activeVersionId: null, settings: {} });
+    const mcp = {
+      callTool: async (name: string, args: any) => {
+        if (name === "create_workflow_from_code") {
+          sentCode = args.code;
+          return { workflowId: "new1", name: "Fresh Flow", warnings: [] };
+        }
+        if (name === "get_workflow_details") return { workflow: structuredClone(created) };
+        throw new Error("unexpected tool " + name);
+      },
+    } as unknown as McpClient;
+    const { log, lines } = capturingLog();
+    const { id } = await createWorkflow(mcp, baseConfig(tmp), "Fresh Flow", log);
+    assert.equal(id, "new1");
+    assert.equal(sentCode, 'workflow("fresh-flow", "Fresh Flow")', "minimal SDK expression, kebab slug");
+    assert.match(lines.join("\n"), /created "Fresh Flow" \(new1\) on the server — unpublished draft/);
+    assert.equal(JSON.parse(readFileSync(path.join(tmp, "fresh-flow", ".decanter.json"), "utf8")).workflowId, "new1");
   });
 });
 
@@ -84,6 +126,19 @@ describe("deleteWorkflow", () => {
     tmp = undefined;
   });
   const withTmp = () => (tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-lc-")));
+
+  /** A stub N8nApi that records delete calls. */
+  function stubApi(remote: Workflow) {
+    const calls: string[] = [];
+    const api = {
+      getWorkflow: async () => remote,
+      deleteWorkflow: async () => {
+        calls.push("delete");
+        return remote;
+      },
+    } as unknown as N8nApi;
+    return { api, calls };
+  }
 
   it("deletes with --force without prompting", async () => {
     const { api, calls } = stubApi(wf({ active: true }));
@@ -137,8 +192,8 @@ describe("duplicateWorkflow", () => {
     }, null, 2));
   }
 
-  /** Stub whose createWorkflow records the POSTed body and getWorkflow serves the clone. */
-  function stubDup() {
+  /** REST stub whose createWorkflow records the POSTed body; MCP stub serves the clone (or the gate). */
+  function stubDup({ available = true }: { available?: boolean } = {}) {
     let posted: WorkflowPut | undefined;
     let createdId = "clone1";
     const api = {
@@ -146,17 +201,25 @@ describe("duplicateWorkflow", () => {
         posted = body;
         return { id: createdId, name: body.name, active: false, nodes: body.nodes, connections: body.connections, settings: body.settings, versionId: "v1" };
       },
-      getWorkflow: async (id: string) => ({ id, name: posted!.name, active: false, nodes: posted!.nodes, connections: posted!.connections, settings: posted!.settings, versionId: "v1" }),
     } as unknown as N8nApi;
-    return { api, body: () => posted, setId: (id: string) => (createdId = id) };
+    const mcp = {
+      callTool: async (name: string) => {
+        if (name === "get_workflow_details") {
+          if (!available) throw new McpToolError("get_workflow_details", "Workflow is not available in MCP. Enable MCP access from the workflow card in the workflows list, or from the workflow settings.");
+          return { workflow: { id: createdId, name: posted!.name, active: false, nodes: structuredClone(posted!.nodes), connections: posted!.connections, settings: posted!.settings, versionId: "v1" } };
+        }
+        throw new Error("unexpected tool " + name);
+      },
+    } as unknown as McpClient;
+    return { api, mcp, body: () => posted, setId: (id: string) => (createdId = id) };
   }
 
-  it("posts the source's assembled body under a new name and pulls the clone", async () => {
+  it("posts the source's assembled body under a new name and pulls the clone (when MCP-available)", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-dup-"));
     seedSource(tmp);
-    const { api, body } = stubDup();
+    const { api, mcp, body } = stubDup();
     const { log, lines } = capturingLog();
-    const { id } = await duplicateWorkflow(api, baseConfig(tmp), "src1", "My Clone", log);
+    const { id } = await duplicateWorkflow(api, mcp, baseConfig(tmp), "src1", "My Clone", log);
     assert.equal(id, "clone1");
     // POSTed body carries the reconstituted code (placeholder replaced) under the new name
     assert.equal(body()!.name, "My Clone");
@@ -168,21 +231,34 @@ describe("duplicateWorkflow", () => {
     assert.equal(JSON.parse(readFileSync(path.join(tmp!, "Source", "workflow.json"), "utf8")).name, "Source");
   });
 
+  it("turns the not-available refusal into guidance instead of an error (API-born clones are gated)", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-dup-"));
+    seedSource(tmp);
+    const { api, mcp } = stubDup({ available: false });
+    const { log, lines } = capturingLog();
+    const { dir, id } = await duplicateWorkflow(api, mcp, baseConfig(tmp), "src1", "Gated Clone", log);
+    assert.equal(id, "clone1", "the clone exists — only the pull is gated");
+    assert.equal(dir, null, "no folder while gated");
+    assert.match(lines.join("\n"), /not yet available in MCP/);
+    assert.match(lines.join("\n"), /n8n-decanter pull clone1/);
+    assert.ok(!existsSync(path.join(tmp!, "gated-clone")), "no folder created");
+  });
+
   it("defaults the name to \"<name> (copy)\" when none is given", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-dup-"));
     seedSource(tmp);
-    const { api, body, setId } = stubDup();
+    const { api, mcp, body, setId } = stubDup();
     setId("clone2");
     const { log } = capturingLog();
-    await duplicateWorkflow(api, baseConfig(tmp), "src1", undefined, log);
+    await duplicateWorkflow(api, mcp, baseConfig(tmp), "src1", undefined, log);
     assert.equal(body()!.name, "Source (copy)");
   });
 
   it("throws for an unknown workflow id", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-dup-"));
     seedSource(tmp);
-    const { api } = stubDup();
+    const { api, mcp } = stubDup();
     const { log } = capturingLog();
-    await assert.rejects(duplicateWorkflow(api, baseConfig(tmp), "nope", "X", log), /workflow nope not found/);
+    await assert.rejects(duplicateWorkflow(api, mcp, baseConfig(tmp), "nope", "X", log), /workflow nope not found/);
   });
 });

@@ -6,7 +6,7 @@ import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow,
 import { notifyPushed } from "./proxy.mts";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
-import { isJsCodeNode, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
+import { isJsCodeNode, placeholderFile, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
 import { validateNodeFile, validateWorkflowDir, type ValidationResult } from "./validate.mts";
 
 /** Layout-compliance gate: warnings pass through, errors abort the push. */
@@ -137,6 +137,20 @@ export async function pushWorkflow(
   if (!dir) throw new Error(`workflow ${id} not found under ${root} — pull it first`);
   assertCompliant(validateWorkflowDir(dir), log, `"${path.basename(dir)}"`);
   const state = readState(dir)!;
+
+  // The snapshot's //@file: placeholders stay the human-visible file map:
+  // re-pointing one (e.g. .js → .ts conversion) updates the id-keyed state
+  // here, exactly as the API-era push did.
+  try {
+    const snapshot = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as Workflow;
+    for (const node of snapshot.nodes ?? []) {
+      if (!isJsCodeNode(node)) continue;
+      const file = placeholderFile(node);
+      if (file !== null && state.nodes[node.id] !== undefined) state.nodes[node.id].file = file;
+    }
+  } catch {
+    // unreadable snapshot — the compliance guard above already reported it
+  }
 
   const remote = await getWorkflowDetails(mcp, id);
   const { ops, problems } = await collectOps(dir, state, remote, null, log);
