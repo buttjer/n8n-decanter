@@ -79,10 +79,24 @@ Challenge and verdict, so the reasoning survives:
 
 1. **Positioning kit — decide the canonical strings once, then propagate**
    (maintainer sign-off required; may be drafted before the gate clears):
-   - **Tagline:** keep or sharpen *"Work on n8n like a codebase — built for AI
-     coding agents."* Post-pivot it narrows honestly to the code inside
-     (candidate direction: *"The code inside your n8n workflows, as a real
-     codebase — typed, tested, in git."*).
+   - **Tagline:** iterated with the maintainer (2026-07-22) from their draft
+     *"agentic driven mcp-first n8n code toolkit – create code heavy workflows
+     like real software"*. Distilled rules: **"toolkit"** and **"code-heavy
+     workflows"** are keepers (the right post-pivot noun; names the target
+     user); protocol plumbing (**"MCP"**) stays out of the headline —
+     translate it to its user-visible win (**draft-first**) and keep
+     "MCP-native" for the paragraph, npm keywords, and badges where it does
+     discovery work; *"built for AI coding agents"* beats "agentic[-driven]"
+     (concrete, names who it's for); abstractions ("like real software")
+     become the concrete goods (*typed, tested, in git*) — also "real
+     software" subtly disses n8n just as the positioning starts leaning on
+     n8n's own MCP. Candidates for sign-off:
+     1. *"The agent-first n8n code toolkit — code-heavy workflows, typed,
+        tested, shipped draft-first."* (recommended)
+     2. *"Work on the code inside n8n like a real codebase — built for AI
+        coding agents."* (minimal evolution, keeps current equity)
+     3. *"n8n runs the workflow; decanter owns the code — a toolkit for
+        code-heavy workflows, built for AI coding agents."* (boundary-led)
    - **Canonical paragraph** replacing the "syncs your instance … n8n API"
      sentence: decanter extracts every Code node's source into its own
      `.js`/`.ts` file — typed, testable, reviewable, in git — and syncs it
