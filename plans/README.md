@@ -213,6 +213,19 @@ items not yet claimed by one. Recommended order:
     template override), `simulate` kept as a differentiator with `test` as the
     recommended default (decided 2026-07-22), and the AGENTS.md MCP-facts
     update. Proposed 2026-07-22.
+34. [Post-pivot identity & messaging](OPEN-34-post-pivot-identity-and-messaging.md) —
+    retell the outward story for the Code-node-layer scope (#97 landed the
+    *accuracy* layer; this owns the *positioning* layer): positioning kit
+    **signed off 2026-07-22** ("The toolkit for building code-heavy n8n
+    workflows — agent-first, MCP-native." + the coined **preflights** umbrella
+    for check/simulate/test), README compare reframe, **website landing (P1 — the hero
+    still says "pushed back through the n8n API", contradicting shipped
+    main)**, docs framing sweep, npm/GitHub metadata, demo-GIF currency;
+    fully unblocked 2026-07-22 (Plans 32 + 33 both merged). Records the name verdict:
+    the challenge (2026-07-22) concluded **`n8n-decanter` stays** — the pivot
+    sharpens the decanting metaphor (the code is the pour; structure stays in
+    the bottle), and a rename would stack breaking churn on the pivot for zero
+    capability. Proposed 2026-07-22.
 
 ## Conventions
 
