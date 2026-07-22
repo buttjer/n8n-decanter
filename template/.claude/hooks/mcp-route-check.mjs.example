@@ -1,0 +1,71 @@
+#!/usr/bin/env node
+// SessionStart config-drift detector (Plan 33): warn when an agent MCP config
+// in this sync dir points at an n8n instance MCP endpoint DIRECTLY instead of
+// the decanter guard-proxy. Deliberately slim — it inspects config files, not
+// tool calls (the proxy itself enforces the jsCode boundary). Exit 0 always:
+// this is guidance, not a gate. Harness-agnostic: any agent hook system (or a
+// shell profile) can run `node .claude/hooks/mcp-route-check.mjs`.
+import { existsSync, readFileSync } from "node:fs";
+
+/** The agent MCP config files this checks (harness variety, n8n-io/skills style). */
+const CONFIG_FILES = [".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", "opencode.json"];
+
+/** The running guard-proxy's endpoint, when `n8n-decanter mcp serve` is up. */
+function proxyUrl() {
+  try {
+    return JSON.parse(readFileSync(".decanter-proxy.json", "utf8")).url ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isLoopback(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
+/** Collect every MCP server entry (name → config object) across known shapes. */
+function serverEntries(config) {
+  const bags = [config.mcpServers, config.mcp?.servers, config.servers];
+  const entries = [];
+  for (const bag of bags) {
+    if (bag && typeof bag === "object") entries.push(...Object.entries(bag));
+  }
+  return entries;
+}
+
+const proxy = proxyUrl();
+const offenders = [];
+for (const file of CONFIG_FILES) {
+  if (!existsSync(file)) continue;
+  let config;
+  try {
+    config = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    continue; // unparseable config is some other tool's problem
+  }
+  for (const [name, server] of serverEntries(config)) {
+    const text = JSON.stringify(server);
+    // the built-in n8n MCP server's path is the giveaway; a loopback URL is
+    // the guard-proxy (or a local tunnel the user chose) — leave those alone
+    if (!text.includes("/mcp-server/http")) continue;
+    const url = typeof server.url === "string" ? server.url : "";
+    if (url !== "" && isLoopback(url)) continue;
+    offenders.push({ file, name, url });
+  }
+}
+
+if (offenders.length > 0) {
+  const target = proxy ?? "http://127.0.0.1:5680/mcp-server/http (start it: n8n-decanter mcp serve)";
+  console.log(
+    `n8n MCP routing check: ${offenders.map((o) => `"${o.name}" in ${o.file}`).join(", ")} ` +
+      `points at an n8n instance MCP endpoint directly. Route it through the decanter guard-proxy instead — ` +
+      `set its url to ${target} with the Authorization secret \`mcp serve\` prints. ` +
+      `The proxy forwards everything except Code-node (jsCode) writes, which belong to the file + \`n8n-decanter push\` flow.`,
+  );
+}
+process.exit(0);

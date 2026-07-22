@@ -1,10 +1,10 @@
-import type { DataTable, DataTableColumn, DataTableRow, Execution, Workflow, WorkflowPut } from "./types.mts";
+import type { DataTable, DataTableColumn, DataTableRow, Execution } from "./types.mts";
 
 /**
- * n8n public REST API client — since Plan 32 only the surfaces MCP cannot
- * serve: executions (no MCP read of full run data), data-table rows (MCP is
- * add-only), `duplicate`'s lossless create, and `delete`'s hard delete.
- * The workflow code path (pull/push/watch/status/publish) lives in lib/mcp.mts.
+ * n8n public REST API client — since Plan 33 only the surfaces MCP cannot
+ * serve: executions (no MCP read of full run data) and data-table rows (MCP
+ * is add-only). The workflow code path and lifecycle (pull/push/watch/status/
+ * publish/create/archive) live in lib/mcp.mts.
  */
 export class N8nApi {
   #host: string;
@@ -15,10 +15,6 @@ export class N8nApi {
     this.#host = host;
     this.#apiKey = apiKey;
     this.#timeoutMs = requestTimeoutMs;
-  }
-
-  async getWorkflow(id: string): Promise<Workflow> {
-    return this.#request("GET", `/api/v1/workflows/${encodeURIComponent(id)}`) as Promise<Workflow>;
   }
 
   /**
@@ -89,26 +85,6 @@ export class N8nApi {
       ...(sortBy !== undefined && { sortBy }),
     });
     return (await this.#request("GET", `/api/v1/data-tables/${encodeURIComponent(id)}/rows?${query}`)) as { data: DataTableRow[]; nextCursor?: string | null };
-  }
-
-  /**
-   * Create a workflow on the server (n8n 2.x `POST /workflows`). The required
-   * fields are name + nodes/connections/settings (verified against 2.30.7 —
-   * name-only is rejected). Since Plan 32 only `duplicate` uses this — the
-   * lossless clone MCP's code-based creation cannot express. Born
-   * **unpublished** (`active:false`).
-   */
-  async createWorkflow(body: WorkflowPut): Promise<Workflow> {
-    return this.#request("POST", "/api/v1/workflows", body) as Promise<Workflow>;
-  }
-
-  /**
-   * Hard-delete a workflow (n8n 2.x `DELETE /workflows/:id`). Verified to delete
-   * even a *published* workflow outright (no refusal, no archive), so the CLI's
-   * confirmation gate is the only guard. Returns the deleted workflow.
-   */
-  async deleteWorkflow(id: string): Promise<Workflow | undefined> {
-    return this.#request("DELETE", `/api/v1/workflows/${encodeURIComponent(id)}`) as Promise<Workflow | undefined>;
   }
 
   async #request(method: string, pathname: string, body?: unknown): Promise<unknown> {

@@ -24,8 +24,7 @@ n8n-decanter unpublish [workflow…]  # back to draft-only
 
 # Workflow lifecycle
 n8n-decanter create "<name>"                     # blank workflow in n8n, then pull
-n8n-decanter duplicate <workflow> ["<name>"]     # clone via the API (enable MCP to pull the copy)
-n8n-decanter delete <workflow> [--force]         # delete from the server (API)
+n8n-decanter archive <workflow> [--force]        # archive in n8n (restore/delete via the n8n UI)
 n8n-decanter rename <workflow> "<new name>"      # rename the workflow in n8n
 
 # Inspect & test
@@ -35,6 +34,7 @@ n8n-decanter executions [workflow…] [--status=…] [--limit=N]
 n8n-decanter executions [workflow…] clean
 n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=col:asc|desc] [--limit=N] [--all]
 n8n-decanter data-tables [table…] clean
+n8n-decanter test <workflow> [--execution <execution-id> | --mock <slug>] [--trigger <node>] [--json]
 n8n-decanter simulate <workflow> [--execution <execution-id> | --mock <slug>] [--pin <execution-id>] [--network-none] [--json]
 n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]   # committed, gap-fillable mock scenario (offline)
 n8n-decanter mock check <workflow> ["<slug>"]                       # structurally validate a mock (offline)
@@ -44,6 +44,9 @@ n8n-decanter list [--remote] [--json]
 n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node in n8n
 n8n-decanter node rename <workflow> "<old node>" "<new node>"   # rename in n8n; local files follow
 n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node locally (offline)
+
+# Agent guard
+n8n-decanter mcp serve [--port N]   # localhost MCP guard-proxy: forwards to n8n, blocks jsCode writes
 ```
 
 ## Placeholder vocabulary
@@ -55,7 +58,7 @@ n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node loc
 | `<node-file>` | a path to a node source file (`node run`) |
 | `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
 | `<slug>` | a mock scenario name — `mock create`/`mock check`, `simulate --mock` (kebab-cased) |
-| `<name>` | a new literal name (`create`, `duplicate`, `rename`) |
+| `<name>` | a new literal name (`create`, `rename`) |
 
 ## Interactive picker
 
@@ -97,15 +100,17 @@ errors with *unknown verb*. Flags may still appear in any position.
 | --- | --- |
 | `check`, `node run`, `list`, `simulate`, `mock`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance) |
 | `status`, `list --remote`, `executions`, `data-tables` | Read the remote, never write |
-| `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish`, `delete`, `rename`, `node create`, `node rename` | Read/write the live instance (pushes and structure acts land on the **draft**) |
+| `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
+| `pull`, `push`, `watch`, `create`, `publish`, `unpublish`, `rename`, `node create`, `node rename` | Read/write the live instance (pushes and structure acts land on the **draft**) |
+| `archive` | Read/write the live instance (not a draft act — it retires the whole workflow, unpublishing it first when live) |
+| `mcp serve` | Long-running localhost proxy — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward
 from the current directory) or the environment. `N8N_HOST` plus **MCP
 credentials** (OAuth minted by [`init`](/docs/cli/init/) into
-`.decanter-auth.json`, or an `N8N_MCP_TOKEN`) power the sync verbs; the
-**public API key** (`N8N_API_KEY`, optional) powers only `executions`,
-`data-tables`, `duplicate`, and `delete` — the surfaces n8n's MCP server
-doesn't cover.
+`.decanter-auth.json`, or an `N8N_MCP_TOKEN`) power the sync and lifecycle
+verbs; the **public API key** (`N8N_API_KEY`, optional) powers only
+`executions` and `data-tables` — the surfaces n8n's MCP server doesn't cover.
 
 ## Output and scripting
 

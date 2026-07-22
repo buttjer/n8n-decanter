@@ -16,8 +16,7 @@ Interactive setup for a new (or existing) sync dir:
   or piped run? Paste an **MCP token** instead (minted in n8n → Settings →
   MCP → API key; stored as `N8N_MCP_TOKEN` in `.env`).
 - Offers the **optional public API key** (`N8N_API_KEY`) — only needed for
-  [executions](/docs/cli/executions/), [data-tables](/docs/cli/data-tables/),
-  [duplicate](/docs/cli/duplicate/), and [delete](/docs/cli/delete/).
+  [executions](/docs/cli/executions/) and [data-tables](/docs/cli/data-tables/).
 - When credentials already exist they are reused — edit or delete `.env` /
   `.decanter-auth.json` to change them. A best-effort connection check runs
   at the end (it also reports how many workflows are already

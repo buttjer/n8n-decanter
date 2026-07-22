@@ -7,7 +7,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`test` — instance-side pinned test runs (the recommended runtime
+  check).** `n8n-decanter test <workflow>` runs the workflow on your
+  instance via MCP `test_workflow`: the trigger and network/credentialed
+  nodes are pinned from a capture (`--execution`, default newest) or a
+  committed mock (`--mock`), logic nodes execute for real on the
+  instance-exact engine, and each node's output is diffed against the
+  capture (exit 1 on divergence; `--trigger` picks the start node,
+  `--json` emits the report). The run targets the **draft** — the live
+  version is never affected. On a terminal, when local code differs from
+  the draft, `test` offers to push it first (drift-guarded, draft-only)
+  and afterwards to keep or restore the pre-test draft (n8n version
+  history when available, byte-exact write-back below n8n 2.29);
+  non-interactive runs never mutate and say when they tested the draft
+  instead of local code. `simulate` stays the offline sibling —
+  pre-push/CI/isolation/version-rehearsal — and its docs now recommend
+  `test` first.
+- **`mcp serve` — an MCP guard-proxy for coding agents.** A localhost
+  endpoint speaking n8n's MCP protocol: decanter holds the credentials (the
+  agent gets a per-session secret instead), every read and structure
+  operation forwards untouched (SSE included), and exactly one thing is
+  blocked — `update_workflow` calls that write Code-node source, via either
+  a `jsCode` key or a `setNodeParameter` op whose path targets `jsCode`,
+  which get an instructive "edit the file + push" tool error. Fail-closed on unparseable
+  bodies, 127.0.0.1-only, body-size cap; the running endpoint + secret land
+  in a gitignored `.decanter-proxy.json`. The template gains a
+  `mcp-route-check.mjs` session hook that nudges agents whose MCP config
+  still points at the instance directly, and the sync-dir `AGENTS.md`
+  contract is now proxy-first.
+
+- **`archive` verb** — archive a workflow on the server over MCP
+  (`archive_workflow`): the workflow moves to n8n's Archived filter
+  (reversible there; a published one is unpublished first), with the same
+  consent gate the old `delete` had (TTY `y/N` naming workflow + id;
+  non-interactive runs need `--force`). The local folder is never touched and
+  a stale `decanter.config.json` entry is flagged. Permanent deletion is
+  deliberately not a decanter surface — the n8n UI owns it.
+
+### Removed
+
+- **Breaking: the `delete` verb is gone** — replaced by `archive`. Decanter
+  no longer offers a hard delete; permanently removing a workflow is an
+  n8n-UI act (archive it first, then delete it there).
+- **Breaking: the `duplicate` verb is gone.** MCP has no lossless full-JSON
+  create, so a faithful clone required the public API — rather than keep the
+  API dependency or ship a lossy SDK-code re-expression, the verb was
+  dropped. Duplicate workflows from the n8n UI and `pull` the copy.
+
+### Fixed
+
+- **Refresh-token race (OAuth):** two concurrent MCP calls — or `watch` plus
+  a manual `push` sharing `.decanter-auth.json` — could both redeem the
+  single-use refresh token, killing the session for the loser ("re-run
+  init"). Concurrent calls now share one redemption, a lost cross-process
+  race recovers by re-reading the winner's rotated auth file, and auth-file
+  writes are atomic.
+- **MCP client hardening:** a transient handshake failure no longer poisons
+  every later call in the same run; a 200-with-HTML answer (captive
+  portal/reverse proxy) gets a named error instead of a raw `SyntaxError`;
+  body-read timeouts use the friendly timeout message; a rate-limit
+  `Retry-After` is honored up to n8n's verified 5-minute window (with a
+  visible "waiting Ns" warning) and capped there against bogus-huge
+  headers; a dropped MCP session (404 with a session id) re-handshakes once
+  transparently; a token-refresh response without a
+  rotated refresh token keeps the old one; workflow lists that hit the
+  200-row page cap warn about truncation.
+- **`node create` / `node rename` no longer overwrite unpushed `.js` edits:**
+  both verbs pull the workflow after the structure act, which silently
+  replaced locally edited `.js` files with the remote body — they now refuse
+  up front, naming the dirty files ("push first").
+- **`rename`, `node create`, `node rename`, and `archive` now append the
+  enable-MCP guidance** to the per-workflow "not available in MCP" refusal,
+  matching pull/push/status.
+- **`init` appends `.decanter-auth.json` to a pre-existing `.gitignore`**
+  instead of only warning — the file holds the MCP refresh token.
+- **Push verifies `.ts` nodes after the write** (marker hash vs. remote
+  body — catches server-side normalization), and watch's single-node pushes
+  run the same post-push verification as full pushes.
+
 ### Changed
+
+- **`create` validates before creating** — the generated Workflow-SDK
+  expression now passes the server's `validate_workflow` gate before
+  `create_workflow_from_code`, surfacing the server's errors and hint
+  verbatim when rejected.
+- **A body-equal push now re-registers a missing `@ts-n8n` marker** — when a
+  `.ts` node's compiled code already matches the remote but the marker is
+  gone (e.g. rewritten in the UI), push writes the node anyway so it is
+  recognized as TS-managed again (previously skipped as "in sync").
+- **Converting a `.ts` node back to `.js` is now supported symmetrically:**
+  replace the file, re-point its `//@file:` placeholder, and push — the
+  push clears the remote `@ts-n8n` marker even when the code is otherwise
+  identical, so the node stops being TS-managed (previously the stale
+  marker made the next pull resurrect the node as `.ts`).
+- **`mock create` strips the capture's embedded `workflowData`** — committed
+  mocks no longer duplicate every Code node's source in git; the compliance
+  guard warns about legacy mocks that still embed it, and it now also flags
+  Python Code nodes honestly (their `pythonCode` stays inline in
+  `workflow.json`; extraction is a planned feature).
+- **Template refresh (from the MCP pivot):** the sync-dir `AGENTS.md`
+  contract was rewritten around the MCP boundary (Code-node source = files +
+  decanter push; structure = n8n/MCP; knowledge skills recommended) with
+  matching `.cursor` rules, and `.env.example` is OAuth-first (MCP
+  credentials primary, the API key optional with a minimal scope list).
+- **`N8N_API_KEY` now powers only `executions` and `data-tables`** — the last
+  lifecycle verbs left the REST API, so the recommended key scopes shrink to
+  `workflow:list`, `execution:read`, `execution:list`, and the `dataTable:*`
+  read scopes (`template/.env.example` was rewritten OAuth-first to match).
 
 - **Breaking: the workflow code path now syncs over n8n's built-in MCP server —
   decanter is the Code-node code layer, n8n owns structure (Plan 32).**

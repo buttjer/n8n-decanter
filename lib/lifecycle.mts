@@ -1,22 +1,17 @@
-import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { N8nApi } from "./api.mts";
 import {
+  archiveWorkflowMcp,
   createWorkflowFromCode,
-  ENABLE_MCP_HINT,
   getWorkflowDetails,
-  isUnavailableInMcp,
   type McpClient,
   publishWorkflowMcp,
   unpublishWorkflowMcp,
 } from "./mcp.mts";
 import { createPrompt } from "./prompt.mts";
 import { pullWorkflow } from "./pull.mts";
-import { assertCompliant, buildNodeCode } from "./push.mts";
 import { findWorkflowDir } from "./state.mts";
-import type { DecanterConfig, Log, Workflow } from "./types.mts";
-import { isJsCodeNode, kebabCase, placeholderFile, publicationState, sanitizeForPut } from "./util.mts";
-import { validateWorkflowDir } from "./validate.mts";
+import type { DecanterConfig, Log } from "./types.mts";
+import { kebabCase, publicationState } from "./util.mts";
 
 /**
  * `publish` — take the draft live (MCP `publish_workflow`, Plan 32). Since
@@ -67,79 +62,41 @@ export async function createWorkflow(mcp: McpClient, config: DecanterConfig, nam
 }
 
 /**
- * `<ref> duplicate ["<new name>"]` — clone an already-pulled workflow into a
- * brand-new remote one. This verb stays on the public REST API (Plan 32
- * decision): MCP's only creation path is Workflow-SDK *code*, and
- * re-expressing an arbitrary pulled JSON graph as SDK code is exactly the
- * lossy transformation the decanter refuses to own — `POST /workflows` with
- * the assembled body is lossless. The body comes from the **local** folder
- * exactly as the old API push did (placeholders reconstituted from `code/`,
- * `.ts` nodes compiled), so the clone carries the repo's current content.
- * The copy is API-born and therefore NOT `availableInMCP` — the follow-up
- * pull is attempted and, when refused, turns into guidance instead of an
- * error. Default name `"<name> (copy)"` (matching the n8n UI); born
- * unpublished; source folder and remote stay untouched.
+ * `archive <ref>` — archive a workflow on the server (MCP `archive_workflow`,
+ * Plan 33). Replaces the API-era hard `delete` (maintainer decision
+ * 2026-07-22): archiving hides the workflow under the n8n workflows list's
+ * "Archived" filter and is reversible there; restoring and **permanent
+ * deletion are deliberately out of decanter's surface** — both live in the
+ * n8n UI. Archiving a published workflow unpublishes it first (server-side),
+ * so consent stays explicit: on a TTY a `y/N` prompt naming the workflow
+ * (and warning when it is live); non-interactive runs require `--force` and
+ * abort without it. The **local folder is never touched** — it stays as the
+ * git-tracked record — and a stale `decanter.config.json` `workflows` entry
+ * is flagged. One workflow per call.
  */
-export async function duplicateWorkflow(api: N8nApi, mcp: McpClient, config: DecanterConfig, id: string, newName: string | undefined, log: Log): Promise<{ dir: string | null; id: string }> {
-  const dir = findWorkflowDir(config.root, id, log);
-  if (!dir) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
-  assertCompliant(validateWorkflowDir(dir), log, `"${path.basename(dir)}"`);
-  const wf = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as Workflow;
-  const sourceName = wf.name;
-  for (const node of wf.nodes) {
-    if (!isJsCodeNode(node)) continue;
-    const file = placeholderFile(node);
-    if (file === null) continue;
-    node.parameters.jsCode = (await buildNodeCode(dir, file, log)).jsCode;
-  }
-  const body = sanitizeForPut(wf);
-  body.name = newName?.trim() || `${sourceName} (copy)`;
-  const created = await api.createWorkflow(body);
-  log.ok(`duplicated "${sourceName}" -> "${body.name}" (${created.id}) on the server — unpublished draft`);
-  try {
-    const { dir: newDir } = await pullWorkflow(mcp, config.root, created.id, { commitOnPull: config.commitOnPull }, log);
-    log.info(`edit code/, push, then "publish" to go live`);
-    return { dir: newDir, id: created.id };
-  } catch (err) {
-    if (!isUnavailableInMcp(err)) throw err;
-    // API-born workflows aren't opted into MCP — the copy exists, only the pull is gated
-    log.warn(`the copy is not yet available in MCP — ${ENABLE_MCP_HINT}, then: n8n-decanter pull ${created.id}`);
-    return { dir: null, id: created.id };
-  }
-}
-
-/**
- * `<ref> delete` — hard-delete a workflow from the server, deliberately.
- * Stays on the public REST API (Plan 32 decision): MCP offers only
- * `archive_workflow`, and this verb's contract is the real
- * `DELETE /workflows/:id` (which removes even a published workflow
- * outright). Destructive and outward-facing, so consent is explicit: on a
- * TTY a `y/N` prompt naming the workflow; non-interactive runs require
- * `--force` and abort without it. The **local folder is never touched** —
- * it stays as the git-tracked record — and a stale `decanter.config.json`
- * `workflows` entry is flagged. One workflow per call.
- */
-export async function deleteWorkflow(api: N8nApi, config: DecanterConfig, id: string, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
-  const remote = await api.getWorkflow(id); // authoritative name + proof it exists
-  const name = remote.name;
+export async function archiveWorkflow(mcp: McpClient, config: DecanterConfig, id: string, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
+  const before = await getWorkflowDetails(mcp, id); // authoritative name + proof it exists (and isn't already archived)
+  const name = before.name;
+  const live = publicationState(before) === "published";
   if (!force) {
     if (!process.stdin.isTTY) {
-      throw new Error(`refusing to delete "${name}" (${id}) without confirmation — re-run with --force to delete in a non-interactive session`);
+      throw new Error(`refusing to archive "${name}" (${id}) without confirmation — re-run with --force to archive in a non-interactive session`);
     }
     const rl = createPrompt();
     let answer: string;
     try {
-      answer = (await rl.question(`Delete workflow "${name}" (${id}) from the n8n server? This cannot be undone. [y/N] `)).trim().toLowerCase();
+      const liveNote = live ? " It is currently published — archiving takes it offline." : "";
+      answer = (await rl.question(`Archive workflow "${name}" (${id}) on the n8n server?${liveNote} It moves to the workflows list's Archived filter (restore it there). [y/N] `)).trim().toLowerCase();
     } finally {
       rl.close();
     }
     if (answer !== "y" && answer !== "yes") {
-      log.info("aborted — nothing deleted");
+      log.info("aborted — nothing archived");
       return;
     }
   }
-  await api.deleteWorkflow(id);
-  log.ok(`deleted "${name}" (${id}) from the server`);
+  await archiveWorkflowMcp(mcp, id);
+  log.ok(`archived "${name}" (${id})${live ? " — it was published and is now offline" : ""} — restore or permanently delete it from the n8n UI`);
   const dir = findWorkflowDir(config.root, id, log);
   if (dir) {
     log.info(`local folder ${path.relative(process.cwd(), dir) || "."} left untouched — it's your git-tracked record`);

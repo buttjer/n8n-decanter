@@ -35,6 +35,13 @@ To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
 its `//@file:` placeholder in `workflow.json` — the tool picks up the new
 extension on the next push.
 
+The reverse works the same way: replace the `.ts` with a `code/<node>.js`
+(plain JavaScript — the file is pushed verbatim) and re-point the
+placeholder. The next push clears the remote `@ts-n8n` marker even when the
+code is otherwise identical, so the node stops being TS-managed. **Push
+before you pull again**: until that push lands, a pull still sees the remote
+marker and treats the node as TS-managed (renaming the file back to `.ts`).
+
 ## Shared code and npm packages
 
 `.ts` nodes can import from `shared/*.ts` (values *and* types) and from npm

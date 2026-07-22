@@ -29,10 +29,10 @@
       "Bash(n8n-decanter push --force:*)",
       "Bash(node n8n-decanter.mts push --force)",
       "Bash(node n8n-decanter.mts push --force:*)",
-      "Bash(n8n-decanter delete --force)",
-      "Bash(n8n-decanter delete --force:*)",
-      "Bash(node n8n-decanter.mts delete --force)",
-      "Bash(node n8n-decanter.mts delete --force:*)"
+      "Bash(n8n-decanter archive --force)",
+      "Bash(n8n-decanter archive --force:*)",
+      "Bash(node n8n-decanter.mts archive --force)",
+      "Bash(node n8n-decanter.mts archive --force:*)"
     ]
   },
   "hooks": {
@@ -41,6 +41,13 @@
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           { "type": "command", "command": "node .claude/hooks/verify.mjs" }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/mcp-route-check.mjs" }
         ]
       }
     ]

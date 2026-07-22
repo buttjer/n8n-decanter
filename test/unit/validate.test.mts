@@ -134,6 +134,36 @@ describe("validateWorkflowDir", () => {
     assert.deepEqual(errors, []);
     assert.deepEqual(warnings, ["unresolved structural conflict workflow.remote.json — reconcile into workflow.json, then delete it"]);
   });
+
+  it("flags a Python Code node's inline pythonCode honestly (warning, not error)", () => {
+    const dir = scaffold({
+      workflow: {
+        nodes: [
+          codeNode("n2", "Main", "//@file:code/main.js"),
+          { id: "n9", name: "Py Step", type: "n8n-nodes-base.code", parameters: { language: "python", pythonCode: "return items" } } as any,
+        ],
+      },
+    });
+    const { errors, warnings } = validateWorkflowDir(dir);
+    assert.deepEqual(errors, [], "python inline source is a warning, not a push-blocking error");
+    assert.deepEqual(warnings, [
+      'node "Py Step": Python Code node — its pythonCode stays inline in workflow.json (decanter extracts JS/TS only; Python extraction is a planned feature)',
+    ]);
+  });
+
+  it("warns on a legacy mock embedding inline jsCode under workflowData; clean and placeholder mocks pass", () => {
+    const dir = scaffold();
+    mkdirSync(path.join(dir, "mocks"), { recursive: true });
+    writeFileSync(path.join(dir, "mocks", "legacy.json"), JSON.stringify({ id: 1, workflowData: { nodes: [{ name: "Transform", parameters: { jsCode: "return $input.all();" } }] } }));
+    writeFileSync(path.join(dir, "mocks", "placeholdered.json"), JSON.stringify({ id: 2, workflowData: { nodes: [{ name: "Transform", parameters: { jsCode: "//@file:code/main.js" } }] } }));
+    writeFileSync(path.join(dir, "mocks", "clean.json"), JSON.stringify({ id: 3, data: { resultData: { runData: {} } } }));
+    writeFileSync(path.join(dir, "mocks", "corrupt.json"), "{nope");
+    const { errors, warnings } = validateWorkflowDir(dir);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warnings, [
+      'mocks/legacy.json: embeds inline Code-node source under workflowData — committed mocks must not duplicate node code; delete the mock\'s "workflowData" block (freshly created mocks omit it)',
+    ]);
+  });
 });
 
 describe("validateNodeFile", () => {

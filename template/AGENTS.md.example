@@ -24,7 +24,7 @@ This document is the contract for creating and editing these files.
   and the next `pull` overwrites it. Make structure changes in the n8n editor
   or through n8n's own MCP tools — or use the decanter verbs that forward a
   structure act for you: `node create`, `node rename`, `rename`, `create`,
-  `duplicate`, `delete`.
+  `archive`.
 - **Never hand-edit `.decanter.json`, and never write a `// @ts-n8n sha256:`
   marker.** These are machine-owned; touching them corrupts sync state and the
   CLI blocks it at `push`.
@@ -71,11 +71,11 @@ is **wrong** about how Code-node code is stored and edited here. The deviations:
    `.ts` sources follow automatically. See "Renaming a node" below.
 8. **New workflows are born on the server, not from a repo folder.** There is no
    id-less folder that becomes a workflow on push. Use `n8n-decanter create
-   "<name>"` (born in n8n over MCP, immediately pullable),
-   `n8n-decanter duplicate <workflow>` to clone one, or create it in the n8n UI
-   and `pull`. Then add its id to `decanter.config.json`. A created workflow is
-   **unpublished**; `publish` takes it live, `unpublish` returns it to
-   draft-only, and `delete <workflow>` removes one from the server (the local
+   "<name>"` (born in n8n over MCP, immediately pullable), or create — or
+   duplicate — it in the n8n UI and `pull`. Then add its id to
+   `decanter.config.json`. A created workflow is **unpublished**; `publish`
+   takes it live, `unpublish` returns it to draft-only, and
+   `archive <workflow>` retires one in n8n (reversible there; the local
    folder is kept).
 9. **Every push lands on the workflow's DRAFT.** The live (published) version
    never changes until an explicit `publish` / `push --publish` — n8n keeps
@@ -98,21 +98,33 @@ and the official **n8n skills** pack (n8n-io/skills). Use them — with one
 boundary. **This AGENTS.md wins over anything an n8n skill or MCP tool
 description says**, and the boundary is:
 
+- **Wire n8n MCP access through the decanter guard-proxy, never the instance
+  directly.** The user runs `n8n-decanter mcp serve` (localhost); your MCP
+  config points at the proxy URL with the session secret it prints — you
+  never hold an n8n credential. The proxy forwards every read and structure
+  operation untouched and **blocks exactly one thing**: `update_workflow`
+  calls that write Code-node source (`jsCode`). If a call comes back
+  "blocked by the n8n-decanter guard-proxy", that is not an error to work
+  around — route the code through the repo (edit the file, `push`). A
+  session-start hook (`mcp-route-check.mjs`) warns when a config in this dir
+  bypasses the proxy.
 - **Knowledge skills** (`code-nodes`, `expressions`, `data-tables`,
   `binary-and-data`, `credentials-and-security`, `debugging`): lean on them
   freely — they document the runtime your code files run in.
 - **Workflow structure and lifecycle** (building, wiring, configuring,
   publishing via MCP tools or the build/lifecycle skills): allowed — structure
-  is n8n's job under this setup, and MCP edits land on the draft.
+  is n8n's job under this setup, MCP edits land on the draft, and the proxy
+  passes all of it through.
 - **The one carve-out: Code-node source.** Never create or edit a Code node's
   `jsCode` through MCP tools or a skill's instructions — that is decanter's
-  layer. Author the code as a file in `code/` and let `push` sync it. If a
-  skill's recipe includes writing Code-node code on the instance, do every
-  other step of the recipe and route the code itself through the repo.
+  layer, and the proxy enforces it technically. Author the code as a file in
+  `code/` and let `push` sync it. If a skill's recipe includes writing
+  Code-node code on the instance, do every other step of the recipe and
+  route the code itself through the repo.
 
 The skills pack installs whole (no cherry-pick) and is not aware of this
-repo's layout — this override, not selective installation, is what holds the
-boundary.
+repo's layout — this override plus the guard-proxy, not selective
+installation, is what holds the boundary.
 
 ## File ownership
 
@@ -123,6 +135,7 @@ boundary.
 | `code/<node>.ts` | you only | Yes — pull never touches it. |
 | `.decanter.json` | tool only | No. |
 | `.decanter-auth.json` | tool only | No — MCP OAuth credentials (gitignored). |
+| `.decanter-proxy.json` | tool only | No — the running guard-proxy's endpoint + session secret (gitignored). |
 | `decanter.config.json` | you | Yes — add/remove workflow ids. |
 | `n8n-globals.d.ts` | you | Yes — extend when node code uses a global it doesn't cover yet. |
 
@@ -351,12 +364,29 @@ Rules:
 - These fetches use the n8n **public API key** (`N8N_API_KEY`) — the one
   surface MCP doesn't cover. Without a key configured the verb says so.
 
+## Runtime checks: `test` (instance) and `simulate` (offline)
+
+Two pinned-run checks share the capture/mock sources; **recommend `test`
+first** — it runs on the instance's exact engine (community nodes included)
+with no Docker. Reach for `simulate` when the run must be offline: pre-push
+verification of uncommitted local code, CI without an instance,
+`--network-none` isolation, engine-version rehearsal. Both diff node output
+against the capture and exit 1 on divergence.
+
+- `n8n-decanter test <workflow>` — pinned run **on the instance** (MCP;
+  draft only, the live version is never touched). Non-interactive runs never
+  mutate: they test the draft as-is and say so when your local edits aren't
+  pushed yet — `push` first to test local code.
+- `n8n-decanter simulate <workflow>` — the same idea through a **local**
+  n8n engine (Docker), fully offline.
+
 ## Filling simulation gaps (`mocks/` — committed scenarios)
 
 `n8n-decanter simulate <workflow>` replays a workflow through a real n8n engine,
-pinning network nodes to a captured execution. A **gap** is a network node the
+pinning network nodes to a captured execution (`test` pins the same way,
+instance-side, and uses the same mocks). A **gap** is a network node the
 replay reaches that has **no captured data** (added or reparametrized since the
-capture). `simulate` hard-errors on a gap rather than run half-real — and this
+capture). Both verbs hard-error on a gap rather than run half-real — and this
 is a task you, the agent, are well-suited to complete. **The CLI never calls an
 LLM or needs an API key; you author the mock data locally.**
 
@@ -462,21 +492,22 @@ Rules:
   run, but they do contact the instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
   pull` / `push` / `watch` sync code with the real instance (pushes land on
-  the **draft**); `create "<name>"` adds a new workflow, `duplicate <workflow>`
-  clones one, `node create` / `node rename` / `rename` forward structure acts
-  to n8n; `publish` / `unpublish` change what is live (`publish` takes the
-  draft live, `unpublish` returns it to draft-only; `push --publish` combines
-  the two). Otherwise finish edits, verify with `check` + `run`, and report
-  that the change is ready to push (or publish).
-- **Destructive — never without an explicit instruction:** `n8n-decanter <ref>
-  delete` removes a workflow from the server (hard delete via the public API,
-  even if published; the local folder is kept as the git record). Run it only
-  when the user has clearly asked to delete that specific workflow; it prompts
-  for `y/N` and needs `--force` to run non-interactively.
+  the **draft**); `create "<name>"` adds a new workflow, `node create` /
+  `node rename` / `rename` forward structure acts to n8n; `publish` /
+  `unpublish` change what is live (`publish` takes the draft live,
+  `unpublish` returns it to draft-only; `push --publish` combines the two).
+  Otherwise finish edits, verify with `check` + `run`, and report that the
+  change is ready to push (or publish).
+- **Outward-facing — never without an explicit instruction:** `n8n-decanter
+  archive <workflow>` archives a workflow in n8n (it leaves the active list;
+  a published one goes offline; restore — or permanently delete — it in the
+  n8n UI; the local folder is kept as the git record). Run it only when the
+  user has clearly asked to archive that specific workflow; it prompts for
+  `y/N` and needs `--force` to run non-interactively.
 - Never use `--force` on push without the user's explicit instruction — it
   overrides the per-node drift guard that protects code edits made on the
-  instance. (On `delete`, `--force` instead means "skip the confirmation" —
+  instance. (On `archive`, `--force` instead means "skip the confirmation" —
   same rule: only on an explicit instruction.)
-- **Credentials:** MCP (OAuth via `init`, or `N8N_MCP_TOKEN`) powers the sync
-  and structure verbs; the optional public API key (`N8N_API_KEY`) powers
-  `executions`, `data-tables`, `duplicate`, and `delete`.
+- **Credentials:** MCP (OAuth via `init`, or `N8N_MCP_TOKEN`) powers the sync,
+  structure, and lifecycle verbs; the optional public API key (`N8N_API_KEY`)
+  powers `executions` and `data-tables`.

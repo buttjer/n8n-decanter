@@ -6,8 +6,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, nodeFileContextDir, readState, renameNodeFilePair, writeState } from "../../lib/state.mts";
+import { dirtyJsFiles, findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, nodeFileContextDir, readState, renameNodeFilePair, writeState } from "../../lib/state.mts";
 import type { Log } from "../../lib/types.mts";
+import { sha256 } from "../../lib/util.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-state-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -185,5 +186,35 @@ describe("listWorkflowDirs", () => {
 
   it("returns [] for a missing root", () => {
     assert.deepEqual(listWorkflowDirs(path.join(TMP, "nope")), []);
+  });
+});
+
+describe("dirtyJsFiles", () => {
+  it("lists tracked .js files whose content moved off the last-sync hash; .ts and in-sync files stay out", () => {
+    const dir = path.join(TMP, "dirty-check");
+    mkdirSync(path.join(dir, "code"), { recursive: true });
+    const clean = "return [];\n";
+    const edited = "return [1];\n";
+    writeFileSync(path.join(dir, "code", "clean.js"), clean);
+    writeFileSync(path.join(dir, "code", "edited.js"), edited);
+    writeFileSync(path.join(dir, "code", "typed.ts"), "export {};\n");
+    writeFileSync(path.join(dir, ".decanter.json"), JSON.stringify({
+      workflowId: "wf1",
+      nodes: {
+        a: { file: "code/clean.js", lastPushedHash: sha256(clean) },
+        b: { file: "code/edited.js", lastPushedHash: sha256(clean) }, // remote-baseline differs from disk
+        c: { file: "code/typed.ts", lastPushedHash: sha256("whatever") }, // .ts never listed — pull won't touch it
+        d: { file: "code/missing.js", lastPushedHash: sha256(clean) }, // missing file — nothing to overwrite
+        e: { file: "code/unbaselined.js" }, // no lastPushedHash — no baseline to compare
+      },
+    }));
+    writeFileSync(path.join(dir, "code", "unbaselined.js"), edited);
+    assert.deepEqual(dirtyJsFiles(dir), ["code/edited.js"]);
+  });
+
+  it("returns [] without a state file", () => {
+    const dir = path.join(TMP, "dirty-nostate");
+    mkdirSync(dir, { recursive: true });
+    assert.deepEqual(dirtyJsFiles(dir), []);
   });
 });

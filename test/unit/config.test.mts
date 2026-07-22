@@ -162,7 +162,7 @@ describe("loadConfig", () => {
     const dir = configDir({}, "N8N_HOST=http://n8n.local\n");
     const cfg = loadConfig(dir);
     assert.throws(() => requireApiKey(cfg, "executions"), /`executions` uses the n8n public REST API/);
-    assert.throws(() => requireApiKey(cfg, "duplicate"), /N8N_API_KEY/);
+    assert.throws(() => requireApiKey(cfg, "data-tables"), /N8N_API_KEY/);
     const withKey = { ...cfg, apiKey: "k" };
     assert.equal(requireApiKey(withKey, "executions"), withKey, "passes the config through when the key exists");
   });

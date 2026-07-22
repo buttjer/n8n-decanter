@@ -8,11 +8,13 @@ import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
 import { checkMocks, listMockSlugs, pinFixtures, runSimulation, writeMock, type SimulationReport } from "./lib/simulate.mts";
-import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
+import { archiveWorkflow, createWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, searchWorkflows } from "./lib/mcp.mts";
+import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
+import { printTestReport, runTest } from "./lib/testrun.mts";
 import { renameNode, renameWorkflow } from "./lib/rename.mts";
 import { runNode } from "./lib/run.mts";
 import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, readState } from "./lib/state.mts";
@@ -62,8 +64,7 @@ ${b("Sync")} ${d("(over n8n's MCP server — Code-node source only; structure li
 
 ${b("Workflow lifecycle")}
   ${b("create")} "<name>"                         ${d("create a blank workflow in n8n, then pull it")}
-  ${b("duplicate")} <workflow> ["<name>"]         ${d("clone a workflow into a new one (needs the API key)")}
-  ${b("delete")} <workflow> [--force]             ${d("delete a workflow from the server (y/N; needs the API key)")}
+  ${b("archive")} <workflow> [--force]            ${d("archive a workflow in n8n (y/N; restore/delete via the n8n UI)")}
   ${b("rename")} <workflow> "<new name>"          ${d("rename the workflow in n8n")}
 
 ${b("Inspect & test")}
@@ -73,8 +74,10 @@ ${b("Inspect & test")}
   ${b("executions")} [workflow…] clean            ${d("delete fetched execution data (offline)")}
   ${b("data-tables")} [table…] [--filter=… --search=… --sort=… --limit=N --all]   ${d("fetch data-table schema + rows (read-only)")}
   ${b("data-tables")} [table…] clean              ${d("delete fetched data-table data (offline)")}
+  ${b("test")} <workflow> [--execution <execution-id> | --mock <slug>] [--trigger <node>] [--json]
+  ${d("                                            pinned run on the INSTANCE (draft; recommended); exits 1 on divergence")}
   ${b("simulate")} <workflow> [--execution <execution-id> | --mock <slug>] [--network-none] [--json]
-  ${d("                                            replay through a real n8n engine (Docker); exits 1 on divergence")}
+  ${d("                                            replay through a LOCAL n8n engine (Docker, offline); exits 1 on divergence")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
 
 ${b("Mock")} ${d("(fill simulate gaps offline — no engine, no API)")}
@@ -86,24 +89,29 @@ ${b("Node")}
   ${b("node rename")} <workflow> "<old node>" "<new node>"   ${d("rename a node in n8n; local files follow")}
   ${b("node run")} <node-file> [fixture.json] [--allow-env]  ${d("run a node locally (offline)")}
 
+${b("Agent guard")}
+  ${b("mcp serve")} [--port N]                    ${d("localhost MCP guard-proxy for agents: forwards to n8n, blocks jsCode writes")}
+
 A ${b("<workflow>")} is its id, name, unique name-prefix, or folder name (case-insensitive;
 ambiguity is an error). A ref verb with no ${b("<workflow>")} on a terminal opens the picker.
 An ${b("<execution-id>")} is an n8n execution id (numeric).
 
 Config: decanter.config.json (searched upward from cwd). Credentials: N8N_HOST +
 MCP (OAuth via ${b("init")}, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional)
-powers executions, data-tables, duplicate, and delete.`;
+powers executions and data-tables.`;
 };
 
 // Verb-first grammar (Plan 27): the command is positional[0]. `add`/`run` and
 // the node-rename overload moved under the `node` namespace (node create/rename/run).
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "duplicate", "watch", "list", "executions", "data-tables", "simulate", "mock", "publish", "unpublish", "create", "delete", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "list", "executions", "data-tables", "simulate", "test", "mock", "mcp", "publish", "unpublish", "create", "archive", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["create", "rename", "run"]);
 /** Sub-verbs of the `mock` namespace; dispatched as internal `mock:<sub>` commands. */
 const MOCK_VERBS = new Set(["create", "check"]);
+/** Sub-verbs of the `mcp` namespace; dispatched as internal `mcp:<sub>` commands. */
+const MCP_VERBS = new Set(["serve"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "publish", "unpublish", "delete"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "test", "publish", "unpublish", "archive"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -140,7 +148,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version|mock|filter|search|sort)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version|mock|filter|search|sort|port|trigger)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -190,6 +198,14 @@ async function main() {
     }
     command = `mock:${sub}`;
     rest = positional.slice(2);
+  } else if (command === "mcp") {
+    const sub = positional[1];
+    if (sub === undefined || !MCP_VERBS.has(sub)) {
+      console.log(usage());
+      throw new Error(`unknown mcp command: ${sub ?? "(none)"} — try: n8n-decanter mcp serve`);
+    }
+    command = `mcp:${sub}`;
+    rest = positional.slice(2);
   }
 
   // Bare invocation on a TTY in an inited project → interactive picker
@@ -216,7 +232,7 @@ async function main() {
   // Verb-first: slot 0 must be a known verb (a workflow named like a verb is now
   // just an argument, so the old "address it by id" caveat is gone). `node:<sub>`
   // is internal and already validated above.
-  if (!command.startsWith("node:") && !command.startsWith("mock:") && !VERBS.has(command)) {
+  if (!command.startsWith("node:") && !command.startsWith("mock:") && !command.startsWith("mcp:") && !VERBS.has(command)) {
     console.log(usage());
     throw new Error(`unknown verb: ${command}`);
   }
@@ -246,8 +262,8 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push(...NODE_VERBS, ...MOCK_VERBS); // sub-verbs after `node` / `mock`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--help");
+    words.push(...NODE_VERBS, ...MOCK_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `mock` / `mcp`
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -293,7 +309,7 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
   let remotePending: Promise<Array<{ id: string; name: string; available: boolean }>> | undefined;
   try {
     const mcp = createMcpClient(config);
-    remotePending = searchWorkflows(mcp).then((ws) => ws.map((w) => ({ id: w.id, name: w.name ?? w.id, available: w.availableInMCP })));
+    remotePending = searchWorkflows(mcp, log).then((ws) => ws.map((w) => ({ id: w.id, name: w.name ?? w.id, available: w.availableInMCP })));
   } catch (err) {
     remoteNotice = `remote list unavailable (${(err as Error).message.split("\n")[0]})`;
   }
@@ -393,8 +409,8 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   // simulate reads local captures + drives a throwaway engine — it never calls
   // n8n, so no credentials are required. Since Plan 32 the sync verbs (and the
   // rename/node namespace, which forward structure acts to n8n) go over MCP;
-  // only executions/data-tables fetches, duplicate, and delete still use the
-  // REST API (requireApiKey at the verb).
+  // only the executions/data-tables fetches still use the REST API
+  // (requireApiKey at the verb).
   const offline = command === "check" || command === "simulate"
     || command === "mock:create" || command === "mock:check"
     || (command === "list" && !remoteFlag)
@@ -423,7 +439,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     if (local) return local.id;
     if (command === "pull") {
       try {
-        const remote = await searchWorkflows(mcp());
+        const remote = await searchWorkflows(mcp(), log);
         const hit = matchWorkflowRef(remote.map((w) => ({ id: w.id, names: [w.name ?? ""] })), ref);
         if (hit) return hit.id;
       } catch (err) {
@@ -435,11 +451,27 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     throw new Error(`no workflow matches "${ref}"${known.length > 0 ? ` — pulled workflows: ${known.join(", ")}` : " — nothing pulled yet"}`);
   };
 
+  /**
+   * One-shot MCP verbs (archive/rename/node …): append the enable-MCP
+   * guidance to the per-workflow refusal, the same way the pull/push/status
+   * loop does (Plan 33 — previously these verbs surfaced only n8n's raw text).
+   */
+  const withEnableHint = async (fn: () => Promise<unknown>): Promise<void> => {
+    try {
+      await fn();
+    } catch (err) {
+      if (!isUnavailableInMcp(err)) throw err;
+      log.error((err as Error).message);
+      log.info(`  ${ENABLE_MCP_HINT}`);
+      process.exitCode = 1;
+    }
+  };
+
   let refs = rest;
   if (REF_VERBS.has(command)) {
     refs = [];
     for (const r of rest) refs.push(await resolveRef(r));
-  } else if ((command === "rename" || command === "node:create" || command === "node:rename" || command === "duplicate"
+  } else if ((command === "rename" || command === "node:create" || command === "node:rename"
       || command === "mock:create" || command === "mock:check") && rest.length > 0) {
     // ref-plus-literals verbs: only the first argument is a workflow ref;
     // the rest are names (node names, a new workflow name, a mock slug) — not resolved.
@@ -506,7 +538,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       const known = new Set(pulled.map((r) => r.id));
       // --remote lists over MCP: search_workflows sees EVERY workflow, but only
       // availableInMCP ones are pullable — the rest get the enable guidance.
-      const remote = remoteFlag ? (await searchWorkflows(mcp())).filter((w) => !known.has(w.id)) : [];
+      const remote = remoteFlag ? (await searchWorkflows(mcp(), log)).filter((w) => !known.has(w.id)) : [];
       if (jsonFlag) {
         // agent-friendly: pulled workflows carry a dir; remote-only ones dir: null
         const rows: Array<{ name: string; id: string; dir: string | null; mcpAvailable?: boolean }> = [
@@ -683,6 +715,29 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (!report.ok) process.exitCode = 1;
       break;
     }
+    case "test": {
+      if (refs.length !== 1) throw new Error("test needs exactly one workflow ref: n8n-decanter test <workflow> [--execution <id> | --mock <slug>] [--trigger <node>]");
+      const dir = findWorkflowDir(config.root, refs[0], log);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      const mockSlug = valueFlags.get("mock");
+      if (mockSlug !== undefined && valueFlags.get("execution") !== undefined) {
+        throw new Error("pass either --mock <slug> or --execution <id>, not both");
+      }
+      const source = mockSlug !== undefined ? "mock" as const : "capture" as const;
+      const ref = mockSlug ?? valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
+      if (ref === undefined) throw new Error(`no execution to pin from: pass --execution <id> (or --mock <slug>), or fetch one with \`n8n-decanter executions ${refs[0]}\``);
+      if (source === "capture" && valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution/--mock given; using the latest capture ${ref}`));
+      // test_workflow is synchronous with a 5-minute server-side cap — this
+      // call needs a client whose timeout outlives it
+      const testMcp = createMcpClient({ ...config, requestTimeoutMs: Math.max(config.requestTimeoutMs, 320_000) }, log);
+      await withEnableHint(async () => {
+        const report = await runTest(testMcp, config, dir, refs[0], { ref, source, trigger: valueFlags.get("trigger") }, log);
+        if (jsonFlag) console.log(JSON.stringify(report, null, 2));
+        else printTestReport(report, log);
+        if (!report.ok) process.exitCode = 1;
+      });
+      break;
+    }
     case "mock:create": {
       if (refs.length < 1) throw new Error('mock create needs a workflow ref: n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]');
       const dir = findWorkflowDir(config.root, refs[0], log);
@@ -740,46 +795,55 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       await createWorkflow(mcp(), config, rest[0], log);
       break;
     }
-    case "delete": {
+    case "archive": {
       // Deliberately never falls back to config.workflows — a ref is required,
       // one workflow per call (no cascade, too much blast radius for a default).
-      if (refs.length === 0) throw new Error("delete needs a workflow ref: n8n-decanter <ref> delete");
-      if (refs.length > 1) throw new Error("delete takes exactly one workflow — delete them one at a time");
-      await deleteWorkflow(api("delete"), config, refs[0], { force }, log);
+      if (refs.length === 0) throw new Error("archive needs a workflow ref: n8n-decanter archive <workflow>");
+      if (refs.length > 1) throw new Error("archive takes exactly one workflow — archive them one at a time");
+      await withEnableHint(() => archiveWorkflow(mcp(), config, refs[0], { force }, log));
       break;
     }
     case "rename": {
       const [id, ...names] = refs;
       if (!id) throw new Error('rename needs a workflow and a new name: n8n-decanter rename <workflow> "<new name>"');
       if (names.length !== 1) throw new Error('rename needs exactly one new name: n8n-decanter rename <workflow> "<new name>"');
-      await renameWorkflow(mcp(), config.root, id, names[0], log);
+      await withEnableHint(() => renameWorkflow(mcp(), config.root, id, names[0], log));
       break;
     }
     case "node:create": {
       const [id, ...names] = refs;
       if (!id) throw new Error('node create needs a workflow and a node name: n8n-decanter node create <workflow> "<Node name>" [--ts]');
       if (names.length !== 1) throw new Error('node create needs exactly one node name: n8n-decanter node create <workflow> "<Node name>" [--ts]');
-      await addCodeNode(mcp(), config, id, names[0], { ts: tsFlag }, log);
+      await withEnableHint(() => addCodeNode(mcp(), config, id, names[0], { ts: tsFlag }, log));
       break;
     }
     case "node:rename": {
       const [id, ...names] = refs;
       if (!id) throw new Error('node rename needs a workflow and two node names: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
       if (names.length !== 2) throw new Error('node rename needs the old and new node name: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
-      await renameNode(mcp(), config, id, names[0], names[1], log);
-      break;
-    }
-    case "duplicate": {
-      const [id, ...names] = refs;
-      if (!id) throw new Error('duplicate needs a workflow ref: n8n-decanter <ref> duplicate ["<new name>"]');
-      if (names.length > 1) throw new Error('duplicate takes at most one new name: n8n-decanter <ref> duplicate ["<new name>"]');
-      await duplicateWorkflow(api("duplicate"), mcp(), config, id, names[0], log);
+      await withEnableHint(() => renameNode(mcp(), config, id, names[0], names[1], log));
       break;
     }
     case "watch": {
       if (ids.length !== 1) throw new Error("watch needs exactly one workflow id (pass it, or list a single workflow in decanter.config.json)");
       // the returned handle exists for tests; the CLI watches until Ctrl-C
       await watchWorkflow(mcp(), config, ids[0], { force }, log);
+      await new Promise(() => {});
+      break;
+    }
+    case "mcp:serve": {
+      const portRaw = valueFlags.get("port");
+      const port = portRaw !== undefined ? Number(portRaw) : DEFAULT_GUARD_PORT;
+      if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("--port must be a port number (0 for ephemeral)");
+      const handle = await startGuardProxy({ mcp: mcp(), host: config.host, configDir: config.configDir, port, log });
+      log.ok(`MCP guard-proxy listening on ${handle.url}`);
+      log.info(`  forwards to ${config.host} with decanter's credentials — the agent never sees them`);
+      log.info(`  blocks: update_workflow calls carrying jsCode (Code-node source is files + \`n8n-decanter push\`)`);
+      log.info("");
+      log.info("point your agent's MCP config at it (session secret rotates per run):");
+      log.info(style.dim(JSON.stringify({ mcpServers: { "n8n-instance": { type: "http", url: handle.url, headers: { Authorization: `Bearer ${handle.secret}` } } } }, null, 2)));
+      log.info("");
+      log.info(style.dim("Ctrl-C stops the proxy (decanter's own sync never routes through it)"));
       await new Promise(() => {});
       break;
     }
