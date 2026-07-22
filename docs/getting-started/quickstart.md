@@ -24,15 +24,17 @@ settings).
 ## 2. Pull a workflow
 
 Workflows are born in n8n — create one there (even empty) and switch on
-**"Available in MCP"** (step 1); only opted-in workflows can be pulled. Then
-pull it by id or name:
+**"Available in MCP"** (step 1); only opted-in workflows can be pulled. Then,
+on a terminal, run the bare picker and pick one to pull:
 
 ```sh
-n8n-decanter pull <workflow-id>   # or run bare `n8n-decanter` to pick from a list
+n8n-decanter                      # interactive picker: pick a workflow → it pulls
+n8n-decanter pull <id-or-name>    # …or pull directly (scriptable, no TTY needed)
 ```
 
-`pull` resolves refs it doesn't know locally against your instance, so you
-don't have to pre-list ids. Each workflow lands as a folder under
+The picker lists your n8n workflows (remote ones too); `pull <ref>` resolves
+refs it doesn't know locally against your instance, so you don't have to
+pre-list ids. Each workflow lands as a folder under
 `workflows/`: a read-only `workflow.json` structure snapshot plus one source
 file per Code node in a `code/` subdir — see
 [Sync layout](/docs/concepts/sync-layout/). After every successful pull and

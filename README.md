@@ -61,14 +61,15 @@ workflow you want to sync — **only opted-in workflows can be pulled**.
 
 ```sh
 npm install -g n8n-decanter
-n8n-decanter init [dir]           # OAuth in your browser (or a pasted MCP token)
-n8n-decanter pull <workflow-id>   # or run bare `n8n-decanter` to pick from a list
+n8n-decanter init [dir]   # OAuth in your browser (or a pasted MCP token)
+n8n-decanter              # interactive picker: pick a workflow → it pulls
 ```
 
-`pull` resolves the id (or name) against your instance and lands the workflow
-in `workflows/<slug>/` — no need to pre-list ids. (`decanter.config.json`'s
-optional `"workflows"` array just sets the default set a bare
-`pull`/`push`/`status` acts on.)
+On a terminal, bare `n8n-decanter` lists your n8n workflows — pick one and it
+pulls into `workflows/<slug>/`. Prefer a direct, scriptable pull?
+`n8n-decanter pull <id-or-name>` resolves the ref against your instance — no
+need to pre-list ids. (`decanter.config.json`'s optional `"workflows"` array
+just sets the default set a bare `pull`/`push`/`status` acts on.)
 
 **Credentials:** OAuth by default (via `init`); `N8N_MCP_TOKEN` for
 headless/CI; `N8N_API_KEY` is optional, needed only for `executions` and
