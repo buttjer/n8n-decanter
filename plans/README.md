@@ -262,6 +262,13 @@ items not yet claimed by one. Recommended order:
     stay primary (the diff baseline); synthetic-pin runs are labeled
     "executability only". Breaking (verb/flag/dir renames). Proposed
     2026-07-22.
+38. [README overhaul: shop window](OPEN-38-readme-slim.md) — cut the 473-line
+    README to the document a first-time GitHub/npm visitor actually reads:
+    deep sections and the 69-line flag reference move to `/docs` behind a
+    strict no-information-loss delta audit; sizing decisions (target depth,
+    verb-index vs full Commands block, compare-table fate) pending in the
+    plan's menu. Best sequenced before Plans 36/37 execute (both would churn
+    the long README again). Proposed 2026-07-22.
 
 ## Conventions
 
