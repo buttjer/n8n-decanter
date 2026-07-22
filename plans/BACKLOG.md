@@ -36,6 +36,14 @@ entries carry no priority field) — adjust freely.
 
 ### Open — medium (valuable, more scope/design)
 
+- [ ] **Scenario layering over a fresh capture** (deferred 2026-07-22 from
+      [Plan 37](OPEN-37-scenario-pin-sets.md) Decision 2) — an optional hybrid
+      source: `simulate`/`test` `--scenario <slug> --execution <id>` overlays a
+      scenario's per-node pins on a fresh capture — the capability the retired
+      `simulate --pin` fixtures provided (pin one flaky network node, keep the
+      rest live-fresh). Rejected for Plan 37 v1 to keep one precedence rule
+      (a run pins from a named scenario *or* a capture, never a mix); revisit
+      if the flaky-node workflow is missed in practice.
 - [x] **Modification-aware template refresh** — conffile-style: record
       copy-time hashes of template files in a manifest at init; on re-init
       update pristine files (after confirm), never touch user-modified ones,

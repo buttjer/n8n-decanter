@@ -287,3 +287,14 @@ Concretely:
 - **Relation to [Plan 30](OPEN-30-agent-llm-working-ergonomics.md):** the
   agent research-ladder docs should name `preflight --json` as the one gate
   once shipped — coordination note, not a dependency.
+- **Relation to [Plan 37](OPEN-37-scenario-pin-sets.md):** Plan 37 renames
+  `mock` → `scenario` (`--mock` → `--scenario`, `mocks/` → `scenarios/`,
+  `fixtures/` folded in) and adds `scenario create --scaffold`. Wherever this
+  plan says mock/`--mock`/"committed mocks/fixtures" (the `capture` check, the
+  `--offline` profile, passthrough flags, skip-message examples), the
+  post-37 spelling is `scenario`/`--scenario`, and the `capture` check's
+  unlock should name **both** paths: a real capture (`executions`) or
+  `scenario create --scaffold`. A runtime pass pinned from a scenario with
+  non-`capture` provenance is labeled/scored "executability only", never full
+  runtime green. Independent — either plan can land first; the second one
+  sweeps the wording.

@@ -249,6 +249,28 @@ items not yet claimed by one. Recommended order:
     `--json` for agents, CI-gateable exits. Strictly non-mutating (never the
     push-local prompt; reads + pinned draft run only); captures auto-fetched as
     the ground truth. Proposed 2026-07-22.
+37. [`scenario` verb — committed pin-data sets](OPEN-37-scenario-pin-sets.md) —
+    one word and one committed artifact for "a named, full-workflow pin-data
+    set": rename `mock` → `scenario` (`scenarios/<slug>.json`, auto-migrated),
+    **fold the shipped per-node `fixtures/` mechanism into it** (`simulate
+    --pin` retired; per-node provenance `capture`/`authored`/`scaffolded`
+    replaces the fixture-precedence hybrid), and adopt MCP
+    `prepare_test_pin_data` as a **schema oracle** for gap fills
+    (`scenario create --scaffold` — schemas only, values stay authored and
+    reviewed; the tool's real shape was source-verified 2026-07-22, correcting
+    the stale "server-generated synthetic data" rationale). Captures/real data
+    stay primary (the diff baseline); synthetic-pin runs are labeled
+    "executability only". Breaking (verb/flag/dir renames). Proposed
+    2026-07-22.
+38. [README overhaul: shop window](OPEN-38-readme-slim.md) — cut the 473-line
+    README to the document a first-time GitHub/npm visitor actually reads:
+    deep sections and the 69-line flag reference move to `/docs` behind a
+    strict no-information-loss delta audit; sizing decisions (target depth,
+    verb-index vs full Commands block, compare-table fate) decided 2026-07-22:
+    ~150-line shop window, verb index (three-surfaces rule relaxed to
+    verb + one-liner), compare table kept whole. Best sequenced before
+    Plans 36/37 execute (both would churn the long README again). Proposed
+    2026-07-22.
 
 ## Conventions
 

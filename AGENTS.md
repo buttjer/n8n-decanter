@@ -540,9 +540,11 @@ the same traps:
   `get_workflow_version` / `restore_workflow_version` (n8n ≥ 2.29;
   restore re-applies a past version **as the draft**, new history entry, live
   untouched); execution reads `get_execution` (`includeData`/`nodeNames`/
-  `truncateData`) and `search_executions`; `prepare_test_pin_data` (server-side
-  pin scaffolding for `test_workflow` — decanter builds pins client-side
-  instead); and `publish_workflow(versionId)` publishes a **past** version
+  `truncateData`) and `search_executions`; `prepare_test_pin_data` (returns
+  per-node output **JSON Schemas + coverage, no data** — read-only, the caller
+  authors the values; decanter builds pin values client-side from captures,
+  and Plan 37 adopts the schemas for scenario gap scaffolding); and
+  `publish_workflow(versionId)` publishes a **past** version
   straight to live (a future `publish --version`?). `test_workflow` =
   synchronous/draft/pinData/5-min cap; `execute_workflow` = async/production →
   read back via `get_execution`.
