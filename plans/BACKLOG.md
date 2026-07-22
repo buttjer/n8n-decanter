@@ -171,9 +171,13 @@ entries carry no priority field) — adjust freely.
       entry. Severity: low (deferred until `add` ships).
       (done 2026-07-20, alongside Plan 21's `add`: verb + docs + agent template
       + e2e step removed; `add` now mints the id. Breaking → v0.4.0.)
-- [ ] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
+- [x] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
       templates. Low priority for a solo project, but cheap and conventional if
       contributions are wanted (CONTRIBUTING.md already invites them).
+      (done 2026-07-22: `.github/CODEOWNERS` (`* @buttjer`),
+      `PULL_REQUEST_TEMPLATE.md` (mirrors the CONTRIBUTING/AGENTS acceptance
+      criteria), and `ISSUE_TEMPLATE/` bug + feature templates with a
+      `config.yml` pointing security reports at the existing SECURITY.md flow.)
 - [ ] **Cross-PR docs-drift guardrail in CI** (2026-07-20). The `/docs` pages
       can fall behind the CLI when a behavior change and its docs live in
       *separate* PRs: v0.3.0 (#29 — `--allow-env` + `executions` in the picker)
