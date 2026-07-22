@@ -612,7 +612,9 @@ Unchanged by Plan 32 (the file layer is decanter's layer):
 1. ✅ Scaffold + pull, single workflow (API era — validated the data model).
 2. ✅ push — reassembly, compile+marker, drift guard (API era).
 3. ✅ multi-workflow loop + rename handling by id.
-4. ⬜ n8n folder hierarchy — still blocked on API exposure
+4. ⬜ n8n folder hierarchy — rescoped 2026-07-22 to **read-only "Local
+   Overview"** (pull mirrors n8n placement as local dir nesting; decanter
+   never writes folders/placement); blocked on one upstream MCP read fix
    ([Plan 8](plans/BLOCKED-8-folder-hierarchy-in-sync-layout.md)).
 5. ✅ QoL: `watch`, `status`.
 6. ✅ `init`; 7. ✅ compliance guard + `check`; 8. ✅ structural validation +
@@ -710,9 +712,17 @@ API-era build that still hold are kept; superseded ones are marked.
 ## Open questions (verify against a live instance)
 
 - ~~Folder placement on the API GET~~ — answered no (2026-07-19/20, Plan 8
-  blocked on upstream exposure). MCP note: `get_workflow_details` carries a
+  blocked on upstream exposure). ~~MCP note: `get_workflow_details` carries a
   `parentFolderId` field (null in tests) — re-check Plan 8 against the MCP
-  surface when it matters.
+  surface when it matters.~~ Re-checked 2026-07-22 from n8n source (master +
+  2.30.7): the field is in the output contract but the handler never loads the
+  `parentFolder` relation (`includeParentFolder` defaults false at the call
+  site), so it is **always null** — an upstream one-line wiring gap, not a
+  design stance. The folder *tree* is readable (`search_folders`), but MCP has
+  no move op and no folder create; only `create_workflow_from_code` takes a
+  `folderId`. Plan 8 stays blocked (and was rescoped 2026-07-22 to read-only
+  local mirroring — "Local Overview"); full findings in its "MCP re-check"
+  section.
 - ~~Filename sanitization; PUT round-trip preservation of tags/pinData;
   activate/deactivate shapes; create body; DELETE on published~~ — all
   answered in the API era (see git history of this file); the still-relevant
