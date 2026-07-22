@@ -12,6 +12,7 @@ import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, p
 import { runStdioGuard } from "./lib/mcpconnect.mts";
 import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
+import { ALL_CHECK_IDS, type CheckId, exitCodeOf, formatCheckLine, type Palette, type Profile, renderPreflightSummary, runPreflight } from "./lib/preflight.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { printTestReport, runTest } from "./lib/testrun.mts";
@@ -72,6 +73,8 @@ ${b("Inspect & test")}
   ${d("                                            pinned run on the INSTANCE (draft; recommended); exits 1 on divergence")}
   ${b("simulate")} <workflow> [--execution <execution-id> | --scenario <slug>] [--network-none] [--json]
   ${d("                                            replay through a LOCAL n8n engine (Docker, offline); exits 1 on divergence")}
+  ${b("preflight")} [workflow…] [--quick|--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]
+  ${d("                                            the whole verification ladder as one scored, read-only gate (never mutates)")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
 
 ${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-scaffolded)")}
@@ -98,7 +101,7 @@ powers executions and data-tables.`;
 // lifecycle verbs (rename, create, archive, node create, node rename) are
 // retired — those acts go through n8n's MCP (guarded via `mcp connect`/
 // `mcp serve`) and `pull` reconciles the local mirror.
-const VERBS = new Set(["init", "pull", "push", "status", "check", "watch", "list", "executions", "data-tables", "simulate", "test", "scenario", "mcp", "publish", "unpublish", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "watch", "list", "executions", "data-tables", "simulate", "test", "preflight", "scenario", "mcp", "publish", "unpublish", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["run"]);
 /** Sub-verbs of the `scenario` namespace; dispatched as internal `scenario:<sub>` commands. */
@@ -106,7 +109,7 @@ const SCENARIO_VERBS = new Set(["create", "check"]);
 /** Sub-verbs of the `mcp` namespace; dispatched as internal `mcp:<sub>` commands. */
 const MCP_VERBS = new Set(["serve", "connect"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "test", "publish", "unpublish"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "test", "preflight", "publish", "unpublish"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -143,7 +146,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -177,6 +180,11 @@ async function main() {
   const jsonFlag = args.includes("--json");
   const networkNoneFlag = args.includes("--network-none");
   const allFlag = args.includes("--all");
+  const quickFlag = args.includes("--quick");
+  const fullFlag = args.includes("--full");
+  const offlineFlag = args.includes("--offline");
+  const failFastFlag = args.includes("--fail-fast");
+  const noFetchFlag = args.includes("--no-fetch");
   const positional = args.filter((a) => !a.startsWith("--"));
   // Verb-first grammar (Plan 27): the command is the first positional; flags may
   // still sit anywhere. `node <sub> …` is the one exception — a contained
@@ -268,7 +276,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--help");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -279,7 +287,7 @@ async function main() {
     return;
   }
 
-  await dispatch(command, rest, { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, diffFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags });
+  await dispatch(command, rest, { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, diffFlag, jsonFlag, networkNoneFlag, allFlag, quickFlag, fullFlag, offlineFlag, failFastFlag, noFetchFlag, valueFlags });
 }
 
 interface Flags {
@@ -292,11 +300,16 @@ interface Flags {
   jsonFlag: boolean;
   networkNoneFlag: boolean;
   allFlag: boolean;
+  quickFlag: boolean;
+  fullFlag: boolean;
+  offlineFlag: boolean;
+  failFastFlag: boolean;
+  noFetchFlag: boolean;
   valueFlags: Map<string, string>;
 }
 
 /** Flag defaults for picker-launched verbs (no CLI flags in play). */
-const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, scaffoldFlag: false, remoteFlag: false, diffFlag: false, jsonFlag: false, networkNoneFlag: false, allFlag: false, valueFlags: new Map() };
+const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, scaffoldFlag: false, remoteFlag: false, diffFlag: false, jsonFlag: false, networkNoneFlag: false, allFlag: false, quickFlag: false, fullFlag: false, offlineFlag: false, failFastFlag: false, noFetchFlag: false, valueFlags: new Map() };
 
 /**
  * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
@@ -413,7 +426,7 @@ function printSimulationReport(r: SimulationReport, log: Log): void {
 
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
 async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
-  const { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, diffFlag, jsonFlag, networkNoneFlag, allFlag, valueFlags } = flags;
+  const { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, diffFlag, jsonFlag, networkNoneFlag, allFlag, quickFlag, fullFlag, offlineFlag, failFastFlag, noFetchFlag, valueFlags } = flags;
   // simulate reads local captures + drives a throwaway engine — it never calls
   // n8n, so no credentials are required. Since Plan 32 the sync verbs (and the
   // rename/node namespace, which forward structure acts to n8n) go over MCP;
@@ -421,6 +434,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   // (requireApiKey at the verb).
   const offline = command === "check" || command === "simulate"
     || command === "scenario:check" || (command === "scenario:create" && !scaffoldFlag)
+    || (command === "preflight" && offlineFlag)
     || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"))
     || (command === "data-tables" && rest.includes("clean"));
@@ -742,6 +756,74 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         else printTestReport(report, log);
         if (!report.ok) process.exitCode = 1;
       });
+      break;
+    }
+    case "preflight": {
+      if (ids.length === 0) {
+        throw new Error('no workflow ids: pass them as arguments or list them in decanter.config.json "workflows"');
+      }
+      // Profiles are deterministic and distinct — no magic escalation (Plan 36).
+      if ([quickFlag, fullFlag, offlineFlag].filter(Boolean).length > 1) {
+        throw new Error("--quick, --full and --offline are distinct profiles — pass at most one");
+      }
+      const profile: Profile = offlineFlag ? "offline" : fullFlag ? "full" : quickFlag ? "quick" : "default";
+      const failOn = valueFlags.get("fail-on");
+      if (failOn !== undefined && failOn !== "warn") throw new Error('--fail-on only accepts "warn" (e.g. --fail-on=warn)');
+      const failOnWarn = failOn === "warn";
+      const requireIds: CheckId[] = [];
+      for (const r of (valueFlags.get("require") ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
+        if (!ALL_CHECK_IDS.includes(r as CheckId)) throw new Error(`--require: unknown check "${r}" — valid ids: ${ALL_CHECK_IDS.join(", ")}`);
+        requireIds.push(r as CheckId);
+      }
+      const scenarioSlug = valueFlags.get("scenario");
+      if (scenarioSlug !== undefined && valueFlags.get("execution") !== undefined) {
+        throw new Error("pass either --scenario <slug> or --execution <id>, not both");
+      }
+      const simVersion = valueFlags.get("n8n-version") ?? config.n8nVersion ?? DEFAULT_N8N_VERSION;
+      const hasApiKey = config.apiKey !== "";
+      const palette: Palette = { green: style.green, yellow: style.yellow, red: style.red, dim: style.dim, bold: style.bold };
+      // test_workflow is synchronous with a 5-min server cap — its client's timeout must outlive it
+      let testMcpClient: McpClient | undefined;
+      const testMcp = (): McpClient => (testMcpClient ??= createMcpClient({ ...config, requestTimeoutMs: Math.max(config.requestTimeoutMs, 320_000) }, log));
+      // read-only REST client (auto-fetch + history fallback) — only invoked when hasApiKey, so it never needs requireApiKey
+      const restApi = (): N8nApi => new N8nApi({ host: config.host, apiKey: config.apiKey, requestTimeoutMs: config.requestTimeoutMs });
+
+      const reports: Awaited<ReturnType<typeof runPreflight>>[] = [];
+      let failed = false;
+      const total = ids.length;
+      for (const [i, id] of ids.entries()) {
+        const dir = findWorkflowDir(config.root, id, log);
+        if (!dir) {
+          failed = true;
+          log.error(`${id}: not found under ${config.root} — pull it first`);
+          continue;
+        }
+        let name = id;
+        try {
+          name = readState(dir)?.name ?? id;
+        } catch {
+          // corrupt state — the layout check surfaces it; keep the id as the label
+        }
+        if (!jsonFlag) {
+          const prefix = total > 1 ? style.dim(`[${i + 1}/${total}] `) : "";
+          log.info(`${prefix}${style.bold(`preflight: ${name}`)} ${style.dim(`· ${profile} profile`)}`);
+        }
+        const report = await runPreflight({
+          config, dir, id, name, profile,
+          scenarioSlug, executionId: valueFlags.get("execution"), trigger: valueFlags.get("trigger"),
+          noFetch: noFetchFlag, failFast: failFastFlag, requireIds, simVersion, hasApiKey,
+          mcp, testMcp, api: restApi, dockerAvailable,
+          onCheck: jsonFlag ? undefined : (f) => log.info(formatCheckLine(f, palette)),
+        });
+        reports.push(report);
+        if (!jsonFlag) {
+          renderPreflightSummary(report, log, palette);
+          if (total > 1) log.info("");
+        }
+        if (exitCodeOf(report.verdict, { failOnWarn }) === 1) failed = true;
+      }
+      if (jsonFlag) console.log(JSON.stringify(reports.length === 1 ? reports[0] : reports, null, 2));
+      if (failed) process.exitCode = 1;
       break;
     }
     case "scenario:create": {

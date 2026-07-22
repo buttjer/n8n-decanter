@@ -239,7 +239,7 @@ items not yet claimed by one. Recommended order:
     ranked report for maintainer triage — no product fixes in-plan. Also
     produces the proxy-log evidence the Plan 0 authoring-skill entry waits on.
     Proposed 2026-07-22.
-36. [`preflight` verb — the verification ladder as one scored gate](OPEN-36-preflight-verb.md) —
+36. [`preflight` verb — the verification ladder as one scored gate](DONE-36-preflight-verb.md) —
     reify Plan 34's coined "preflights" vocabulary into a real verb (unparking
     the DECISIONS-NEEDED item, maintainer go 2026-07-22): one command runs every
     safe check fast→slow — static (`check`), instance read-only (auth, drift,

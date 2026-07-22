@@ -2,7 +2,7 @@
 
 **Priority:** P2 (flagship differentiator; real design surface — orchestration,
 scoring semantics, and a safety contract worth getting exactly right)
-**Status:** Not started
+**Status:** Done (shipped 2026-07-23)
 **Model:** Opus (safety contract + scoring/verdict semantics; the docs
 propagation tasks can drop to Sonnet)
 **Theme:** One command that runs **every safe check there is** — local static →

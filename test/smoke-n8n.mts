@@ -969,6 +969,41 @@ try {
     assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "non-TTY test mutated nothing");
   });
 
+  await step("preflight: the scored ladder against the REAL instance; search_executions live-shape holds (Plan 36)", async () => {
+    // Task 3 spike: assert the recorded search_executions response shape against
+    // the LIVE instance (the `history` health signal depends on it) — metadata
+    // only, no run data. Version-fragile fact, pinned here.
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpRaw = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    const res = await mcpRaw.callTool("search_executions", { workflowId: wfId, limit: 5 }) as {
+      data: Array<{ id: string; workflowId: string; status: string; mode: string; startedAt: string | null; stoppedAt: string | null }>;
+      count: number; estimated: boolean;
+    };
+    assert.ok(Array.isArray(res.data), "search_executions returns data[]: " + JSON.stringify(res).slice(0, 300));
+    assert.equal(typeof res.count, "number", "count is a number");
+    assert.equal(typeof res.estimated, "boolean", "estimated is a boolean");
+    if (res.data.length > 0) {
+      const row = res.data[0];
+      assert.equal(typeof row.id, "string", "row.id is a string");
+      assert.equal(typeof row.status, "string", "row.status is a string");
+      assert.equal(String(row.workflowId), String(wfId), "workflowId filter applied server-side");
+      assert.ok("startedAt" in row && "stoppedAt" in row, "rows carry startedAt/stoppedAt timing");
+    }
+
+    // the verb itself: default profile (static + sync + test) against the real
+    // instance, as JSON. Read-only — the draft version must not move.
+    const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
+    const r = await cli("preflight", wfId, "--json");
+    assert.equal(r.code, 0, r.out);
+    const report = JSON.parse(r.out.slice(r.out.indexOf("{")));
+    assert.equal(report.profile, "default");
+    assert.ok(["ready", "caution"].includes(report.verdict), "a healthy in-sync workflow is ready/caution: " + report.verdict);
+    for (const id of ["connect", "access", "parity", "test"]) {
+      assert.ok(report.checks.find((c: any) => c.id === id && c.status === "pass"), `${id} passed: ` + JSON.stringify(report.checks.find((c: any) => c.id === id)));
+    }
+    assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "preflight mutated nothing");
+  });
+
   await step("scenario --scaffold: prepare_test_pin_data live-shape holds; a scaffolded scenario writes schemas, not data (Plan 37)", async () => {
     // Assert the recorded prepare_test_pin_data response shape against the LIVE
     // instance (the schema-oracle this feature depends on) — the version-fragile

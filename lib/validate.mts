@@ -228,13 +228,22 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   return { errors, warnings };
 }
 
+/** Outcome of a typecheck run as a fact (no logging, no throw). */
+export interface TypecheckResult {
+  status: "ok" | "skipped" | "failed";
+  /** `tsc` diagnostics on failure, or the reason on a skip. */
+  output?: string;
+}
+
 /**
  * Run scripts/typecheck.mts against the nearest tsconfig.json at or above
- * startDir. Missing tsconfig (e.g. an init'ed sync dir without one) is an
- * info-level skip, not an error. Throws on type errors. `scopeDirs` limits
- * which files' diagnostics are reported (the whole project still compiles).
+ * startDir and RETURN the outcome instead of logging/throwing. Missing tsconfig
+ * (e.g. an init'ed sync dir without one) is a `skipped` result. `scopeDirs`
+ * limits which files' diagnostics are reported (the whole project still
+ * compiles). This is the quiet fact seam `preflight` consumes; `runTypecheck`
+ * below wraps it to keep `check`/`push`'s console behavior byte-identical.
  */
-export async function runTypecheck(startDir: string, log: Log, scopeDirs?: string[]): Promise<void> {
+export async function runTypecheckResult(startDir: string, scopeDirs?: string[]): Promise<TypecheckResult> {
   let dir = path.resolve(startDir);
   let tsconfigDir: string | null = null;
   for (;;) {
@@ -246,10 +255,7 @@ export async function runTypecheck(startDir: string, log: Log, scopeDirs?: strin
     if (parent === dir) break;
     dir = parent;
   }
-  if (!tsconfigDir) {
-    log.info("no tsconfig.json found — skipping typecheck");
-    return;
-  }
+  if (!tsconfigDir) return { status: "skipped", output: "no tsconfig.json found" };
   // dev runs the .mts sources directly; the published package ships compiled
   // .mjs (Node won't type-strip under node_modules), so mirror our own extension
   const ext = import.meta.url.endsWith(".mjs") ? ".mjs" : ".mts";
@@ -258,10 +264,28 @@ export async function runTypecheck(startDir: string, log: Log, scopeDirs?: strin
   const scopeArgs = (scopeDirs ?? []).map((d) => path.resolve(d));
   try {
     await execFile(process.execPath, [script, ...scopeArgs], { cwd: tsconfigDir, encoding: "utf8" });
-    log.ok("typecheck OK");
+    return { status: "ok" };
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
     const output = ((e.stdout ?? "") + (e.stderr ?? "")).trim();
-    throw new Error(`typecheck failed:\n${output}`);
+    return { status: "failed", output };
   }
+}
+
+/**
+ * Thin logging/throwing wrapper over `runTypecheckResult`: missing tsconfig is
+ * an info-level skip, a pass logs `typecheck OK`, and type errors throw. Used by
+ * `check`/`push`; behavior is unchanged from before the seam extraction.
+ */
+export async function runTypecheck(startDir: string, log: Log, scopeDirs?: string[]): Promise<void> {
+  const result = await runTypecheckResult(startDir, scopeDirs);
+  if (result.status === "skipped") {
+    log.info("no tsconfig.json found — skipping typecheck");
+    return;
+  }
+  if (result.status === "ok") {
+    log.ok("typecheck OK");
+    return;
+  }
+  throw new Error(`typecheck failed:\n${result.output ?? ""}`);
 }

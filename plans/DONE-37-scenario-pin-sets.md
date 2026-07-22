@@ -53,7 +53,7 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
 - Maintainer decisions in the 2026-07-22 design session: name is `scenario`
   (user understandability as the deciding criterion); **fold `fixtures/` into
   it**; captures/real data stay primary; scaffolding is a secondary source.
-- Coordination: [Plan 36](OPEN-36-preflight-verb.md)'s `capture` check unlock
+- Coordination: [Plan 36](DONE-36-preflight-verb.md)'s `capture` check unlock
   wording (see its "Relation to Plan 37" note).
 
 ## Design decisions
@@ -145,7 +145,7 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
    (`pinnedProvenance`, `syntheticPins: true/false`); diff exit semantics
    unchanged for capture-provenance scenarios, "executability only" wording
    (no per-node diff asserted) for synthetic ones.
-6. **Preflight tie-in ([Plan 36](OPEN-36-preflight-verb.md)).** The `capture`
+6. **Preflight tie-in ([Plan 36](DONE-36-preflight-verb.md)).** The `capture`
    check's unlock names both paths (`executions` capture or
    `scenario create --scaffold`); scaffolded-only runtime coverage is scored
    as partial and labeled. (Wording coordinated via Plan 36's relation note;
@@ -209,6 +209,6 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
   recommends exactly that lifecycle skill) gets the one-line pointer to
   scenarios as the durable counterpart. decanter's own `--scaffold` uses its
   own MCP client (`.decanter-auth.json`), not the guard — no coupling.
-- **Relation to [Plan 36](OPEN-36-preflight-verb.md):** independent — either
+- **Relation to [Plan 36](DONE-36-preflight-verb.md):** independent — either
   can land first; the losing side sweeps the other's wording (tracked in both
   plans' relation notes).

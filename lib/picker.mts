@@ -38,7 +38,7 @@ export interface PickerKey {
 // deliberately absent (deviation from how `executions` was added, Plan 25):
 // data tables are project-scoped, not owned by a workflow, so they have no
 // place in a per-workflow menu.
-export const PICKER_VERBS = ["status", "pull", "push", "watch", "check", "executions", "simulate"] as const;
+export const PICKER_VERBS = ["status", "pull", "push", "watch", "check", "preflight", "executions", "simulate"] as const;
 
 export interface PickerState {
   stage: "workflow" | "verb";
