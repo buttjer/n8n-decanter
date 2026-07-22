@@ -227,8 +227,22 @@ entries carry no priority field) — adjust freely.
 
 ### Open — distinctive features (differentiators, tracked as their own class)
 
+- [x] **Instance-side pinned test runs (`test` verb)** (shipped 2026-07-22,
+      [Plan 33](DONE-33-post-mcp-pivot-wave.md) Task 5). Pinned run on
+      the instance's own engine over MCP `test_workflow` — trigger/network
+      nodes pinned from captures/mocks, logic nodes real, client-side diff,
+      draft-only with a keep/restore flow. Differentiator: neither n8n nor
+      generic git-sync offers a capture-pinned, diffed, CI-gateable runtime
+      check; pairs with `simulate` (the offline half, itself in this class).
+- [x] **MCP guard-proxy for agents (`mcp serve`)** (shipped 2026-07-22,
+      [Plan 33](DONE-33-post-mcp-pivot-wave.md) Task 4). Localhost
+      proxy: decanter holds the n8n credential, agents get a session secret,
+      structure ops pass, Code-node (`jsCode`) writes are blocked with
+      file+push guidance; plus the `mcp-route-check.mjs` config-drift hook.
+      Differentiator: technical enforcement of the code-layer boundary no
+      instruction file can guarantee.
 - [ ] **Decanter-native code-node authoring skill, distributed skills.sh-first**
-      (2026-07-22, deferred out of [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md)).
+      (2026-07-22, deferred out of [Plan 33](DONE-33-post-mcp-pivot-wave.md)).
       A small **original** skill (1–2 files, no n8n-io/skills fork — Plan 30's
       "override, not fork" stands) teaching agents the decanter authoring loop:
       *Code nodes are authored as files under `code/` and synced via decanter

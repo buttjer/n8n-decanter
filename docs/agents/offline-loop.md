@@ -26,6 +26,8 @@ A typical agent iteration:
 n8n-decanter node run workflows/order-sync/code/parse-order.ts fixture.json
 n8n-decanter check
 # both green -> report "ready to push" to the user
+# (the runtime checks — instance-side `test`, offline `simulate` — come after
+#  a push / with the user's go-ahead; see the taxonomy in docs/cli/test)
 ```
 
 Adding a Code node from scratch: run

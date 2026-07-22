@@ -25,6 +25,16 @@ edited Code nodes.
 Needs a captured execution ([executions](/docs/cli/executions/)) and a running
 **Docker** daemon (the engine backend).
 
+**Reach for [test](/docs/cli/test/) first** — the instance-side sibling: same
+pin-and-diff idea, but on your instance's exact engine (community nodes
+included) with no Docker. `simulate` is the differentiated offline half, and
+stays the right tool when you need what an instance run can't give you:
+**pre-push verification of uncommitted local code** (`test` can only run
+what's on the draft), **CI without an instance** or credentials or the
+per-workflow MCP opt-in, **`--network-none` isolation**, and
+**engine-version rehearsal** (`--n8n-version` — try the upgrade before the
+instance does).
+
 Without `--execution`, `simulate` uses the **newest capture** in the workflow's
 `executions/` dir — so `n8n-decanter simulate <workflow>` just works after an
 `executions` fetch, and the [interactive picker](/docs/cli/overview/) can offer

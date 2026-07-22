@@ -87,7 +87,11 @@ export interface DataTableColumn {
 /** One data-table row: a flat column-name → value object (+ system id/timestamps). */
 export type DataTableRow = Record<string, unknown>;
 
-/** The subset of a workflow the PUT endpoint accepts (see sanitizeForPut). */
+/**
+ * The API-era PUT subset of a workflow (see sanitizeForPut). No verb writes
+ * it anymore (Plan 33) — it survives as the code-stripped canonical shape
+ * behind `workflowStructureHash` (status's snapshot-stale hint).
+ */
 export interface WorkflowPut {
   name: string;
   nodes: WorkflowNode[];
@@ -154,8 +158,9 @@ export interface DecanterConfig {
   /**
    * n8n public API key — OPTIONAL since Plan 32: the workflow code path syncs
    * over MCP; only the surfaces MCP cannot serve still use the REST API
-   * (executions and data-table reads, `duplicate`'s create, `delete`).
-   * Empty string when unset; those verbs check and fail with guidance.
+   * (executions and data-table reads — Plan 33 moved the last lifecycle
+   * verbs off it). Empty string when unset; those verbs check and fail with
+   * guidance.
    */
   apiKey: string;
 }

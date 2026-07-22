@@ -6,7 +6,7 @@
 // lifecycle, the remote-promise repaint, resume, and EOF/interrupt exits.
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
-import { runPicker, type PickerEntry } from "../lib/picker.mts";
+import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerEntry } from "../lib/picker.mts";
 import { createStepRunner } from "./harness.mts";
 
 const { step, passedCount } = createStepRunner();
@@ -216,6 +216,20 @@ await step("notice option renders as a dim one-liner", async () => {
   assert.match(io.text(), /remote list unavailable \(boom\)/);
   await sendEscape(io);
   await result;
+});
+
+await step("MCP-unavailable entry: red ⊘ row sorts last; Enter resolves to the enable-mcp sentinel, no verb menu", async () => {
+  const io = makeIo();
+  const withGated = mergeRemote(ENTRIES, [{ id: "ddd444", name: "Gated Flow", available: false }]);
+  assert.equal(withGated[withGated.length - 1].id, "ddd444", "unavailable rows sort last");
+  const result = runPicker(withGated, undefined, { input: io.input, output: io.output });
+  await tick();
+  assert.match(io.text(), /⊘.*Gated Flow/, "shape-based glyph marks the unavailable row");
+  await sendKey(io, "gated"); // narrow to the gated entry
+  await sendKey(io, "\r");
+  // Enter never opens a verb menu for a gated workflow — it resolves to the
+  // sentinel, and the CLI (pickerLoop) prints the enable-MCP guidance
+  assert.deepEqual(await result, { verb: ENABLE_MCP_VERB, id: "ddd444", name: "Gated Flow" });
 });
 
 console.log(`\n${passedCount()} interactive checks passed`);

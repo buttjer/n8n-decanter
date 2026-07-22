@@ -15,7 +15,9 @@ import {
   McpToolError,
   oauthDiscovery,
   readAuthFile,
+  refreshAccessToken,
   resolveMcpAuth,
+  runOAuthConsent,
   writeAuthFile,
 } from "../../lib/mcp.mts";
 import type { Log } from "../../lib/types.mts";
@@ -260,6 +262,571 @@ describe("OAuth refresh rotation", () => {
       writeAuthFile(dir, { host: srv.host, clientId: "c1", refreshToken: "used-up" });
       const mcp = new McpClient({ host: srv.host, auth: resolveMcpAuth(dir, srv.host)! });
       await assert.rejects(mcp.callTool("probe", {}), /MCP session expired.*invalid_grant.*n8n-decanter init/s);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+/** OAuth discovery + token endpoint scaffold for the race/backoff suites. */
+function oauthEndpoints(handleToken: (params: URLSearchParams, res: http.ServerResponse) => void) {
+  return (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
+    if (req.url === "/.well-known/oauth-authorization-server") {
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+        authorization_endpoint: "http://x/mcp-oauth/authorize",
+        token_endpoint: "http://x/mcp-oauth/token",
+        registration_endpoint: "http://x/mcp-oauth/register",
+      }));
+      return true;
+    }
+    if (req.url === "/mcp-oauth/token") {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => handleToken(new URLSearchParams(body), res));
+      return true;
+    }
+    return false;
+  };
+}
+
+const grant = (res: http.ServerResponse, accessToken: string, refreshToken?: string): void =>
+  void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+    access_token: accessToken, token_type: "Bearer", expires_in: 3600,
+    ...(refreshToken !== undefined && { refresh_token: refreshToken }),
+  }));
+
+const denyGrant = (res: http.ServerResponse): void =>
+  void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
+
+describe("refresh-token race (Plan 33 HIGH fix)", () => {
+  it("two callTool()s racing a refresh AFTER the shared handshake share ONE redemption (pins #refreshInFlight)", async () => {
+    // The trap the old version fell into: both callers serialize through the
+    // shared #ensureInitialized() handshake, so a refresh triggered while
+    // handshaking happens once, serially — the test then passes even with the
+    // mutex removed. To exercise the IN-PROCESS mutex specifically, the two
+    // tools/call requests must both need a fresh token while genuinely in
+    // flight together. This bespoke server accepts the stale cached token for
+    // `initialize` (so the handshake completes without a refresh) but 401s it
+    // for `tools/call`, accepting only the refreshed one — so both concurrent
+    // tools/call hit forceRefresh at the same instant. Without the mutex, both
+    // #refresh run to the token fetch with the same r1 and the second
+    // double-spends it (invalid_grant) → tokenCalls reaches 2.
+    let tokenCalls = 0;
+    const server = http.createServer((req, res) => {
+      if (req.url === "/.well-known/oauth-authorization-server") {
+        return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+          authorization_endpoint: "http://x/mcp-oauth/authorize", token_endpoint: "http://x/mcp-oauth/token", registration_endpoint: "http://x/mcp-oauth/register",
+        }));
+      }
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        if (req.url === "/mcp-oauth/token") {
+          tokenCalls++;
+          const params = new URLSearchParams(body);
+          if (params.get("refresh_token") !== "r1" || tokenCalls > 1) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
+          return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ access_token: "refreshed", token_type: "Bearer", expires_in: 3600, refresh_token: "r2" }));
+        }
+        const msg = JSON.parse(body);
+        if (msg.method === "initialize") {
+          // handshake succeeds with WHATEVER token — no refresh triggered here
+          return void res.writeHead(200, { "content-type": "application/json", "mcp-session-id": "s1" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+        }
+        if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+        // tools/call: only the refreshed token is accepted — the stale cached one 401s
+        if (req.headers.authorization !== "Bearer refreshed") return void res.writeHead(401).end("stale");
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: '{"ok":true}' }] } }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const host = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    const dir = path.join(TMP, "race-post-handshake");
+    mkdirSync(dir, { recursive: true });
+    try {
+      // cached token valid by timestamp → the handshake reuses it (no refresh)
+      writeAuthFile(dir, {
+        host, clientId: "c1", refreshToken: "r1",
+        accessToken: "stale-but-timestamp-valid", accessTokenExpiresAt: new Date(Date.now() + 3_000_000).toISOString(),
+      });
+      const mcp = new McpClient({ host, auth: resolveMcpAuth(dir, host)! });
+      const [a, b] = await Promise.all([mcp.callTool<{ ok: boolean }>("one", {}), mcp.callTool<{ ok: boolean }>("two", {})]);
+      assert.equal(a.ok, true);
+      assert.equal(b.ok, true);
+      assert.equal(tokenCalls, 1, "concurrent post-handshake refreshers must join ONE redemption");
+      assert.equal(readAuthFile(dir)!.refreshToken, "r2", "rotation persisted");
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("a lost cross-process race (invalid_grant) recovers by re-reading the winner's auth file", async () => {
+    // The "winner" (another decanter process) redeemed r1 first: when OUR
+    // redeem of r1 arrives, the server rewrites the auth file with the
+    // winner's fresh state (r2 + valid access token), then answers
+    // invalid_grant — exactly the race timing.
+    const dir = path.join(TMP, "race-lost");
+    mkdirSync(dir, { recursive: true });
+    let tokenCalls = 0;
+    const srv = await mcpServer({
+      token: "winner-access",
+      tool: () => ({ content: [{ type: "text", text: '{"ok":true}' }] }),
+      onRequest: oauthEndpoints((_params, res) => {
+        tokenCalls++;
+        writeAuthFile(dir, {
+          host: srvHost, clientId: "c1", refreshToken: "r2",
+          accessToken: "winner-access", accessTokenExpiresAt: new Date(Date.now() + 3_000_000).toISOString(),
+        });
+        denyGrant(res);
+      }),
+    });
+    const srvHost = srv.host;
+    try {
+      writeAuthFile(dir, { host: srv.host, clientId: "c1", refreshToken: "r1" });
+      const mcp = new McpClient({ host: srv.host, auth: resolveMcpAuth(dir, srv.host)! });
+      const out = await mcp.callTool<{ ok: boolean }>("probe", {});
+      assert.equal(out.ok, true, "recovered with the winner's access token");
+      assert.equal(tokenCalls, 1, "no second redemption needed — the winner's cached token was adopted");
+      assert.equal(readAuthFile(dir)!.refreshToken, "r2", "the winner's rotation survives");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("401 on a timestamp-valid cached token forces exactly one refresh, then succeeds", async () => {
+    let tokenCalls = 0;
+    const srv = await mcpServer({
+      token: "fresh-access", // the server only accepts the refreshed token — the cached one 401s
+      tool: () => ({ content: [{ type: "text", text: '{"ok":true}' }] }),
+      onRequest: oauthEndpoints((params, res) => {
+        tokenCalls++;
+        assert.equal(params.get("refresh_token"), "r1");
+        grant(res, "fresh-access", "r2");
+      }),
+    });
+    const dir = path.join(TMP, "force-refresh");
+    mkdirSync(dir, { recursive: true });
+    try {
+      writeAuthFile(dir, {
+        host: srv.host, clientId: "c1", refreshToken: "r1",
+        accessToken: "stale-but-timestamp-valid", accessTokenExpiresAt: new Date(Date.now() + 3_000_000).toISOString(),
+      });
+      const mcp = new McpClient({ host: srv.host, auth: resolveMcpAuth(dir, srv.host)! });
+      const out = await mcp.callTool<{ ok: boolean }>("probe", {});
+      assert.equal(out.ok, true);
+      assert.equal(tokenCalls, 1, "exactly one refresh after the 401");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("a refresh response WITHOUT a rotated refresh_token keeps the old one instead of persisting 'undefined'", async () => {
+    const srv = await mcpServer({
+      onRequest: oauthEndpoints((_params, res) => grant(res, "acc-1")), // no refresh_token in the response
+    });
+    try {
+      const tokens = await refreshAccessToken(srv.host, "c1", "keep-me", 5000);
+      assert.equal(tokens.refreshToken, "keep-me", "old token kept, not String(undefined)");
+      assert.equal(tokens.accessToken, "acc-1");
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("429 backoff", () => {
+  it("honors Retry-After (capped at 30s), falls back to exponential delays, and gives up after 5 retries", async () => {
+    let attempts = 0;
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") {
+            res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+            return;
+          }
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          attempts++;
+          if (attempts === 1) return void res.writeHead(429, { "retry-after": "7200" }).end("later"); // bogus-huge header → capped at n8n's real 5-min window
+          if (attempts <= 6) return void res.writeHead(429).end("later"); // no header → exponential
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "{}" }] } }));
+        });
+        return true;
+      },
+    });
+    const delays: number[] = [];
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" }, sleep: async (ms) => void delays.push(ms) });
+      // 5 retries after the first 429 → attempts 2..6 are still 429 → the 6th response ends the loop as an error
+      await assert.rejects(mcp.callTool("probe", {}), /MCP tools\/call failed: 429/);
+      assert.equal(attempts, 6, "1 initial + 5 retries");
+      assert.deepEqual(delays, [310_000, 2000, 4000, 8000, 8000], "Retry-After capped at n8n's verified 5-min window (+margin), then exponential over the TOTAL retry count (capped at 8s)");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("a single 429 then 200 retries transparently", async () => {
+    let attempts = 0;
+    const srv = await mcpServer({
+      tool: () => {
+        attempts++;
+        return { content: [{ type: "text", text: '{"ok":true}' }] };
+      },
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http" || attempts > 0) return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method !== "tools/call") {
+            // let the handshake through untouched
+            if (msg.method === "initialize") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+            return void res.writeHead(202).end();
+          }
+          attempts++;
+          res.writeHead(429, { "retry-after": "1" }).end("busy");
+        });
+        return true;
+      },
+    });
+    const delays: number[] = [];
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" }, sleep: async (ms) => void delays.push(ms) });
+      const out = await mcp.callTool<{ ok: boolean }>("probe", {});
+      assert.equal(out.ok, true);
+      assert.deepEqual(delays, [1000], "one Retry-After-driven delay");
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("client resilience", () => {
+  it("a failed handshake does not poison later calls (initialized reset on rejection)", async () => {
+    let initTries = 0;
+    const srv = await mcpServer({
+      tool: () => ({ content: [{ type: "text", text: '{"ok":true}' }] }),
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize" && ++initTries === 1) {
+            return void res.writeHead(500).end("transient");
+          }
+          if (msg.method === "initialize") {
+            return void res.writeHead(200, { "content-type": "application/json", "mcp-session-id": "sess-2" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          }
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: '{"ok":true}' }] } }));
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      await assert.rejects(mcp.callTool("probe", {}), /MCP initialize failed: 500/);
+      const out = await mcp.callTool<{ ok: boolean }>("probe", {});
+      assert.equal(out.ok, true, "the second call re-attempts the handshake");
+      assert.equal(initTries, 2);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("names the captive-portal case: 200 with non-JSON body", async () => {
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          res.writeHead(200, { "content-type": "text/html" }).end("<html>Hotel WiFi Login</html>");
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      await assert.rejects(mcp.callTool("probe", {}), /non-JSON content.*Hotel WiFi Login.*really your n8n instance/s);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("re-initializes once when the server dropped the session (404 with a session id)", async () => {
+    let dropped = false;
+    let session = "sess-1";
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") {
+            return void res.writeHead(200, { "content-type": "application/json", "mcp-session-id": session }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          }
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          // a dropped session: the server 404s the stale session id once
+          if (dropped && req.headers["mcp-session-id"] === "sess-1") {
+            return void res.writeHead(404).end("session not found");
+          }
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: '{"ok":true}' }] } }));
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      await mcp.callTool("probe", {}); // establishes sess-1
+      dropped = true;
+      session = "sess-2"; // the re-handshake mints a new session
+      const out = await mcp.callTool<{ ok: boolean }>("probe", {});
+      assert.equal(out.ok, true, "one transparent re-initialize instead of the 404 error");
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("#rpc edge branches", () => {
+  it("skips malformed data: SSE lines and still finds the matching message", async () => {
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          res.writeHead(200, { "content-type": "text/event-stream" }).end(
+            `data: {broken json\n` +
+            `data: ${JSON.stringify({ jsonrpc: "2.0", id: 999999, result: { content: [{ type: "text", text: '{"wrong":true}' }] } })}\n` +
+            `data: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: '{"ok":true}' }] } })}\n\n`,
+          );
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      assert.deepEqual(await mcp.callTool("probe", {}), { ok: true }, "malformed + wrong-id lines skipped");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("surfaces a JSON-RPC error member and the no-response-message case", async () => {
+    let mode: "error" | "empty" = "error";
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          if (mode === "error") {
+            return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32000, message: "tool exploded" } }));
+          }
+          res.writeHead(200, { "content-type": "text/event-stream" }).end(": nothing but a comment\n\n");
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      await assert.rejects(mcp.callTool("probe", {}), /MCP tools\/call error: tool exploded/);
+      mode = "empty";
+      await assert.rejects(mcp.callTool("probe", {}), /MCP tools\/call: no response message/);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("maps a non-401/404/429 status to the generic failure with the body excerpt", async () => {
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          res.writeHead(500).end("boom from n8n");
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      await assert.rejects(mcp.callTool("probe", {}), /MCP tools\/call failed: 500[\s\S]*boom from n8n/);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("runOAuthConsent (init's browser flow)", () => {
+  /**
+   * A scripted OAuth server: register mints a client id; the token endpoint
+   * verifies code+PKCE-verifier presence and answers a full token pair. The
+   * TEST plays the browser via the injectable `openBrowser` hook — it parses
+   * the authorize URL and drives the CLI's localhost callback.
+   */
+  async function consentServer(opts: { tokenOk?: boolean } = {}) {
+    const seen: { register?: Record<string, unknown>; token?: URLSearchParams } = {};
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url === "/.well-known/oauth-authorization-server") {
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+            authorization_endpoint: "http://internal/mcp-oauth/authorize",
+            token_endpoint: "http://internal/mcp-oauth/token",
+            registration_endpoint: "http://internal/mcp-oauth/register",
+          }));
+          return true;
+        }
+        if (req.url === "/mcp-oauth/register") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            seen.register = JSON.parse(body);
+            res.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify({ client_id: "client-1" }));
+          });
+          return true;
+        }
+        if (req.url === "/mcp-oauth/token") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            seen.token = new URLSearchParams(body);
+            if (opts.tokenOk === false) {
+              res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
+              return;
+            }
+            res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+              access_token: "acc-1", token_type: "Bearer", expires_in: 3600, refresh_token: "ref-1",
+            }));
+          });
+          return true;
+        }
+        return false;
+      },
+    });
+    return { srv, seen };
+  }
+
+  const silentLog: Log = { info() {}, ok() {}, warn() {}, error() {} };
+
+  it("happy path: register → browser consent → callback → PKCE token exchange", async () => {
+    const { srv, seen } = await consentServer();
+    try {
+      const { clientId, tokens } = await runOAuthConsent(srv.host, {
+        log: silentLog,
+        openBrowser: (url) => {
+          const u = new URL(url);
+          assert.equal(u.searchParams.get("client_id"), "client-1");
+          assert.equal(u.searchParams.get("code_challenge_method"), "S256");
+          const redirect = new URL(u.searchParams.get("redirect_uri")!);
+          redirect.searchParams.set("code", "auth-code-1");
+          redirect.searchParams.set("state", u.searchParams.get("state")!);
+          void fetch(redirect); // the browser "approving" consent
+        },
+      });
+      assert.equal(clientId, "client-1");
+      assert.equal(tokens.accessToken, "acc-1");
+      assert.equal(tokens.refreshToken, "ref-1");
+      assert.equal(seen.token!.get("grant_type"), "authorization_code");
+      assert.equal(seen.token!.get("code"), "auth-code-1");
+      assert.ok((seen.token!.get("code_verifier") ?? "").length >= 40, "PKCE verifier sent");
+      assert.deepEqual(seen.register!.grant_types, ["authorization_code", "refresh_token"], "refresh grant registered");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("rejects a state mismatch (CSRF) without exchanging the code", async () => {
+    const { srv, seen } = await consentServer();
+    try {
+      await assert.rejects(
+        runOAuthConsent(srv.host, {
+          log: silentLog,
+          openBrowser: (url) => {
+            const u = new URL(url);
+            const redirect = new URL(u.searchParams.get("redirect_uri")!);
+            redirect.searchParams.set("code", "auth-code-1");
+            redirect.searchParams.set("state", "attacker-state");
+            void fetch(redirect);
+          },
+        }),
+        /browser consent failed \(state mismatch\)/,
+      );
+      assert.equal(seen.token, undefined, "no token exchange on a bad state");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("surfaces an error redirect (user denied consent)", async () => {
+    const { srv } = await consentServer();
+    try {
+      await assert.rejects(
+        runOAuthConsent(srv.host, {
+          log: silentLog,
+          openBrowser: (url) => {
+            const u = new URL(url);
+            const redirect = new URL(u.searchParams.get("redirect_uri")!);
+            redirect.searchParams.set("error", "access_denied");
+            redirect.searchParams.set("state", u.searchParams.get("state")!);
+            void fetch(redirect);
+          },
+        }),
+        /browser consent failed \(access_denied\)/,
+      );
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("times out when the browser consent never arrives", async () => {
+    const { srv } = await consentServer();
+    try {
+      await assert.rejects(
+        runOAuthConsent(srv.host, { log: silentLog, openBrowser: () => {}, consentTimeoutMs: 80 }),
+        /timed out waiting for the browser consent.*N8N_MCP_TOKEN/s,
+      );
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("propagates a failed token exchange after a good consent", async () => {
+    const { srv } = await consentServer({ tokenOk: false });
+    try {
+      await assert.rejects(
+        runOAuthConsent(srv.host, {
+          log: silentLog,
+          openBrowser: (url) => {
+            const u = new URL(url);
+            const redirect = new URL(u.searchParams.get("redirect_uri")!);
+            redirect.searchParams.set("code", "auth-code-1");
+            redirect.searchParams.set("state", u.searchParams.get("state")!);
+            void fetch(redirect);
+          },
+        }),
+        /OAuth token exchange failed \(invalid_grant\)/,
+      );
     } finally {
       await srv.close();
     }

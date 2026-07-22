@@ -500,7 +500,8 @@ the same traps:
   full content / edit opted-in workflows. Toggle headlessly with
   `PATCH /rest/mcp/workflows/toggle-access {"availableInMCP":true,"workflowIds":[id]}`.
   Creating is code-based: `create_workflow_from_code` (n8n Workflow SDK code, must
-  pass `validate_workflow` first).
+  pass `validate_workflow` first — a client discipline the server doesn't force;
+  decanter's `create` enforces it since Plan 33).
 - **Node source fidelity is exact:** `get_workflow_details` returns full
   nodes/connections/settings with Code-node `jsCode` **byte-exact** (the
   "sanitized/credentials-stripped" caveat strips credentials, *not* node params),
@@ -520,6 +521,19 @@ the same traps:
   path to it). Data-table tools are **add-only** (create/rename/add rows+columns;
   `search_data_tables` returns schema, never row values); `create_data_table`
   requires a `projectId` (get it from `search_projects`).
+- **The docs-site tool reference is NOT exhaustive** (it lists ~33 of the 41+
+  tools on 2.30.7) — n8n-io/skills' SKILL.md and a live `tools/list` are better
+  inventories. Undocumented-but-real (re-verified 2026-07-22, from the n8n
+  source): the version-history trio `get_workflow_history` /
+  `get_workflow_version` / `restore_workflow_version` (n8n ≥ 2.29;
+  restore re-applies a past version **as the draft**, new history entry, live
+  untouched); execution reads `get_execution` (`includeData`/`nodeNames`/
+  `truncateData`) and `search_executions`; `prepare_test_pin_data` (server-side
+  pin scaffolding for `test_workflow` — decanter builds pins client-side
+  instead); and `publish_workflow(versionId)` publishes a **past** version
+  straight to live (a future `publish --version`?). `test_workflow` =
+  synchronous/draft/pinData/5-min cap; `execute_workflow` = async/production →
+  read back via `get_execution`.
 - **Two auth methods, and workflow visibility is the same under both:**
   `search_workflows` lists **all** workflows regardless of auth; the
   `availableInMCP` gate only limits `get_workflow_details`/edit. Auth is

@@ -4,7 +4,7 @@
 // token (N8N_MCP_TOKEN) or OAuth (client id + refresh token minted by `init`,
 // stored in .decanter-auth.json). All shapes verified against n8n 2.30.7
 // (plans/OPEN-32 spike).
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Log, Workflow } from "./types.mts";
 
@@ -94,8 +94,19 @@ export function readAuthFile(configDir: string): McpAuthFile | null {
   }
 }
 
+/**
+ * Atomic auth-file persist (`.tmp` + rename): a concurrent reader (watch vs.
+ * a manual push) never sees a half-written file — with single-use refresh
+ * tokens, a torn read would cost the whole session.
+ */
+function persistAuthFile(file: string, data: McpAuthFile): void {
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+  renameSync(tmp, file);
+}
+
 export function writeAuthFile(configDir: string, data: McpAuthFile): void {
-  writeFileSync(authFilePath(configDir), JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+  persistAuthFile(authFilePath(configDir), data);
 }
 
 /**
@@ -157,11 +168,34 @@ export interface OAuthTokens {
   accessTokenExpiresAt: string;
 }
 
-function tokensFromResponse(body: Record<string, unknown>): OAuthTokens {
+/**
+ * A failed token-grant call, carrying the server's OAuth error code so the
+ * client can tell a lost refresh race (`invalid_grant` — recoverable by
+ * re-reading the rotated auth file) from a genuinely dead session.
+ */
+export class TokenRefreshError extends Error {
+  reason: string;
+  constructor(reason: string) {
+    super(`MCP session expired (token refresh failed: ${reason}) — re-run: n8n-decanter init`);
+    this.name = "TokenRefreshError";
+    this.reason = reason;
+  }
+}
+
+/**
+ * `fallbackRefreshToken` covers a server that answers a refresh grant without
+ * rotating (no `refresh_token` in the body) — keep using the old one instead
+ * of persisting the literal string "undefined" (the pre-Plan-33 failure).
+ */
+function tokensFromResponse(body: Record<string, unknown>, fallbackRefreshToken?: string): OAuthTokens {
   const expiresIn = typeof body.expires_in === "number" ? body.expires_in : 3600;
+  const refreshToken = typeof body.refresh_token === "string" ? body.refresh_token : fallbackRefreshToken;
+  if (typeof body.access_token !== "string" || refreshToken === undefined) {
+    throw new TokenRefreshError("malformed token response");
+  }
   return {
-    accessToken: String(body.access_token),
-    refreshToken: String(body.refresh_token),
+    accessToken: body.access_token,
+    refreshToken,
     // 60s safety margin so a token never expires mid-request
     accessTokenExpiresAt: new Date(Date.now() + (expiresIn - 60) * 1000).toISOString(),
   };
@@ -171,7 +205,8 @@ function tokensFromResponse(body: Record<string, unknown>): OAuthTokens {
  * Redeem the refresh token. n8n ROTATES it — the old token is invalid the
  * moment this succeeds, so the caller must persist the returned one before
  * doing anything else. An `invalid_grant` means the stored token was already
- * used (or revoked): only a fresh `init` consent can recover.
+ * used (or revoked) — the client treats that as a possibly-lost refresh race
+ * (see `#refresh`) before surfacing the re-init guidance.
  */
 export async function refreshAccessToken(host: string, clientId: string, refreshToken: string, timeoutMs: number): Promise<OAuthTokens> {
   const { token_endpoint } = await oauthDiscovery(host, timeoutMs);
@@ -184,9 +219,9 @@ export async function refreshAccessToken(host: string, clientId: string, refresh
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok || typeof body.access_token !== "string") {
     const reason = typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
-    throw new Error(`MCP session expired (token refresh failed: ${reason}) — re-run: n8n-decanter init`);
+    throw new TokenRefreshError(reason);
   }
-  return tokensFromResponse(body);
+  return tokensFromResponse(body, refreshToken);
 }
 
 /** Exchange an authorization code (init's consent flow) for the first token pair. */
@@ -207,7 +242,11 @@ export async function exchangeAuthorizationCode(
     const reason = typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
     throw new Error(`OAuth token exchange failed (${reason})`);
   }
-  return tokensFromResponse(body);
+  try {
+    return tokensFromResponse(body);
+  } catch {
+    throw new Error("OAuth token exchange failed (no refresh token in the response)");
+  }
 }
 
 /** RFC 7591 dynamic client registration (public client, PKCE-only). */
@@ -316,12 +355,16 @@ export class McpClient {
   #sessionId: string | undefined;
   #rpcId = 0;
   #initialized: Promise<void> | undefined;
+  #refreshInFlight: Promise<string> | undefined;
+  #sleep: (ms: number) => Promise<void>;
 
-  constructor({ host, auth, requestTimeoutMs = 30_000, log }: { host: string; auth: McpAuth; requestTimeoutMs?: number; log?: Log }) {
+  constructor({ host, auth, requestTimeoutMs = 30_000, log, sleep }: { host: string; auth: McpAuth; requestTimeoutMs?: number; log?: Log; sleep?: (ms: number) => Promise<void> }) {
     this.#host = host;
     this.#auth = auth;
     this.#timeoutMs = requestTimeoutMs;
     this.#log = log;
+    // injectable for tests only — the 429 backoff would otherwise take real seconds
+    this.#sleep = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   }
 
   /**
@@ -363,24 +406,95 @@ export class McpClient {
         clientInfo: { name: "n8n-decanter", version: "0" },
       });
       await this.#rpc("notifications/initialized");
-    })();
+    })().catch((err) => {
+      // a transient handshake failure must not poison every later call
+      // (multi-ref runs, long-lived watch) — let the next caller retry
+      this.#initialized = undefined;
+      throw err;
+    });
     return this.#initialized;
   }
 
   /** Current bearer: the static token, or a cached/refreshed OAuth access token. */
   async #accessToken(forceRefresh = false): Promise<string> {
     if (this.#auth.kind === "bearer") return this.#auth.token;
-    const { data, file } = this.#auth;
-    if (!forceRefresh && data.accessToken !== undefined && data.accessTokenExpiresAt !== undefined && new Date(data.accessTokenExpiresAt).getTime() > Date.now()) {
-      return data.accessToken;
+    const { data } = this.#auth;
+    if (!forceRefresh && this.#cacheValid(data)) return data.accessToken!;
+    // one refresh at a time in-process: concurrent callTool()s join the same
+    // redemption instead of double-spending the single-use refresh token
+    this.#refreshInFlight ??= this.#refresh().finally(() => {
+      this.#refreshInFlight = undefined;
+    });
+    return this.#refreshInFlight;
+  }
+
+  /**
+   * The upstream bearer for the guard proxy (Plan 33): the static token, or a
+   * cached/refreshed OAuth access token — same path `callTool` uses, so the
+   * proxy inherits the refresh-race coordination. `forceRefresh` after an
+   * upstream 401.
+   */
+  bearerToken(forceRefresh = false): Promise<string> {
+    return this.#accessToken(forceRefresh);
+  }
+
+  #cacheValid(data: McpAuthFile): boolean {
+    return data.accessToken !== undefined && data.accessTokenExpiresAt !== undefined && new Date(data.accessTokenExpiresAt).getTime() > Date.now();
+  }
+
+  /** Best-effort re-read of the auth file — another process may have rotated it. */
+  #reReadAuth(file: string): McpAuthFile | null {
+    try {
+      return JSON.parse(readFileSync(file, "utf8")) as McpAuthFile;
+    } catch {
+      return null;
     }
+  }
+
+  /**
+   * Redeem the (single-use, rotating) refresh token, coordinating with other
+   * decanter processes sharing the auth file (watch + a manual push):
+   *
+   * - **Fast path:** another process already minted a *valid cached access
+   *   token* on disk — reuse it, no redemption at all.
+   * - Otherwise redeem OUR in-memory refresh token. We deliberately do NOT
+   *   proactively adopt a *differing* on-disk refresh token here: after a
+   *   failed persist (warned, non-fatal) our in-memory token is the newer,
+   *   valid one and the on-disk token is the stale pre-rotation string —
+   *   adopting it would redeem a spent token and strand a session that would
+   *   otherwise keep working.
+   * - Only an **`invalid_grant`** tells us our token is genuinely spent (a
+   *   lost cross-process race): re-read once and, if disk now holds a newer
+   *   token, retry with the winner's — else surface the re-init guidance.
+   */
+  async #refresh(): Promise<string> {
+    const { data, file } = this.#auth as Extract<McpAuth, { kind: "oauth" }>;
+    const onDisk = this.#reReadAuth(file);
+    if (onDisk !== null && this.#cacheValid(onDisk) && onDisk.accessToken !== data.accessToken) {
+      Object.assign(data, onDisk); // another process already refreshed — reuse its token
+      return onDisk.accessToken!;
+    }
+    try {
+      return await this.#redeemAndPersist(data, file);
+    } catch (err) {
+      if (!(err instanceof TokenRefreshError) || err.reason !== "invalid_grant") throw err;
+      // our token was spent: a lost race means the winner rotated + persisted
+      const latest = this.#reReadAuth(file);
+      if (latest === null || latest.refreshToken === data.refreshToken) throw err; // no newer state — genuinely dead
+      Object.assign(data, latest);
+      if (this.#cacheValid(data)) return data.accessToken!;
+      return this.#redeemAndPersist(data, file);
+    }
+  }
+
+  async #redeemAndPersist(data: McpAuthFile, file: string): Promise<string> {
     const tokens = await refreshAccessToken(this.#host, data.clientId, data.refreshToken, this.#timeoutMs);
     // the refresh token ROTATED — persist before anything can interrupt us
     data.refreshToken = tokens.refreshToken;
     data.accessToken = tokens.accessToken;
     data.accessTokenExpiresAt = tokens.accessTokenExpiresAt;
     try {
-      writeFileSync(file, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+      persistAuthFile(file, data);
     } catch (err) {
       this.#log?.warn(`could not persist the rotated MCP refresh token to ${file} (${(err as Error).message}) — the next run may need a fresh \`init\``);
     }
@@ -393,9 +507,12 @@ export class McpClient {
     const isNotification = method.startsWith("notifications/");
     if (!isNotification) body.id = ++this.#rpcId;
 
+    const timeoutError = () =>
+      new Error(`MCP ${method} timed out after ${this.#timeoutMs / 1000}s — n8n did not respond (raise "requestTimeoutMs" in decanter.config.json for a slow instance)`);
     let res: Response;
     let refreshed = false;
     let rateRetries = 0;
+    let sessionRetried = false;
     for (;;) {
       const token = await this.#accessToken(refreshed);
       try {
@@ -412,24 +529,37 @@ export class McpClient {
         });
       } catch (err) {
         const name = (err as Error).name;
-        if (name === "TimeoutError" || name === "AbortError") {
-          throw new Error(`MCP ${method} timed out after ${this.#timeoutMs / 1000}s — n8n did not respond (raise "requestTimeoutMs" in decanter.config.json for a slow instance)`);
-        }
+        if (name === "TimeoutError" || name === "AbortError") throw timeoutError();
         throw err;
       }
       if (res.status === 401 && this.#auth.kind === "oauth" && !refreshed) {
         refreshed = true; // access token may have just expired — refresh once
         continue;
       }
-      // n8n rate-limits the MCP endpoint (verified live: 429 under bursts of
-      // CLI runs) — a rejected request was NOT applied, so retrying is safe
-      // for every method, including update_workflow. Honor Retry-After.
+      // n8n rate-limits the MCP endpoint (verified: 100 requests per IP per
+      // 5 MINUTES on 2.30.7 — mcp.config.ts, N8N_MCP_SERVER_RATE_LIMIT) — a
+      // rejected request was NOT applied, so retrying is safe for every
+      // method, including update_workflow. Honor Retry-After up to that
+      // verified window (a bogus header must not stall longer); the cap must
+      // NOT be shorter than the window, or a burst-heavy run gives up inside
+      // it (smoke-proven regression).
       if (res.status === 429 && rateRetries < 5) {
         rateRetries++;
         const retryAfter = Number(res.headers.get("retry-after"));
-        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(1000 * 2 ** (rateRetries - 1), 8000);
+        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 310_000) : Math.min(1000 * 2 ** (rateRetries - 1), 8000);
+        if (delayMs > 5000) this.#log?.warn(`n8n rate-limited the MCP endpoint (429) — waiting ${Math.round(delayMs / 1000)}s before retrying (n8n allows 100 requests / 5 min by default)`);
         await res.text().catch(() => {}); // drain before the retry
-        await new Promise((r) => setTimeout(r, delayMs));
+        await this.#sleep(delayMs);
+        continue;
+      }
+      // 404 *with* a session id usually means the server dropped our MCP
+      // session (restart/expiry), not a missing endpoint — re-handshake once
+      if (res.status === 404 && this.#sessionId !== undefined && !sessionRetried && method === "tools/call") {
+        sessionRetried = true;
+        this.#sessionId = undefined;
+        this.#initialized = undefined;
+        await res.text().catch(() => {});
+        await this.#ensureInitialized();
         continue;
       }
       break;
@@ -437,7 +567,16 @@ export class McpClient {
 
     const sid = res.headers.get("mcp-session-id");
     if (sid !== null) this.#sessionId = sid;
-    const text = await res.text();
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      // the AbortSignal also covers body consumption — map it to the same
+      // friendly message instead of a bare TimeoutError
+      const name = (err as Error).name;
+      if (name === "TimeoutError" || name === "AbortError") throw timeoutError();
+      throw err;
+    }
     if (res.status === 401) {
       throw new Error(this.#auth.kind === "bearer"
         ? "the MCP token was rejected (401) — mint a fresh one in n8n (Settings → MCP) and update N8N_MCP_TOKEN (the public API key is not a valid MCP token)"
@@ -461,7 +600,13 @@ export class McpClient {
         }
       }
     } else if (text !== "") {
-      message = JSON.parse(text) as typeof message;
+      try {
+        message = JSON.parse(text) as typeof message;
+      } catch {
+        // a captive portal / reverse proxy answering 200 with HTML — name the
+        // problem instead of leaking a raw SyntaxError
+        throw new Error(`MCP ${method}: the server answered 200 with non-JSON content (${JSON.stringify(text.slice(0, 120))}) — is ${this.#host} really your n8n instance (captive portal, proxy)?`);
+      }
     }
     if (message?.error) throw new Error(`MCP ${method} error: ${message.error.message ?? JSON.stringify(message.error)}`);
     if (message === undefined) throw new Error(`MCP ${method}: no response message in ${JSON.stringify(text.slice(0, 200))}`);
@@ -487,10 +632,17 @@ export function createMcpClient(config: { host: string; configDir: string; reque
 
 // ---------- typed tool wrappers ----------
 
+/** The page size `searchWorkflows` requests — a full page means "probably truncated". */
+const SEARCH_LIMIT = 200;
+
 /** All workflows on the instance (opted-in or not); `availableInMCP` gates detail/edit. */
-export async function searchWorkflows(mcp: McpClient): Promise<McpWorkflowSummary[]> {
-  const res = await mcp.callTool<{ data: McpWorkflowSummary[] }>("search_workflows", { limit: 200 });
-  return res.data ?? [];
+export async function searchWorkflows(mcp: McpClient, log?: Log): Promise<McpWorkflowSummary[]> {
+  const res = await mcp.callTool<{ data: McpWorkflowSummary[] }>("search_workflows", { limit: SEARCH_LIMIT });
+  const rows = res.data ?? [];
+  if (rows.length === SEARCH_LIMIT) {
+    log?.warn(`the instance returned exactly ${SEARCH_LIMIT} workflows (the page cap) — the list is probably truncated; workflows beyond it are invisible to name resolution and the picker`);
+  }
+  return rows;
 }
 
 /**
@@ -525,11 +677,46 @@ export async function unpublishWorkflowMcp(mcp: McpClient, id: string): Promise<
 }
 
 /**
+ * Archive a workflow (MCP `archive_workflow`, Plan 33 — the replacement for
+ * the API-era hard delete). Reversible: n8n keeps it under the workflows
+ * list's "Archived" filter; restoring and permanent deletion live in the n8n
+ * UI. Refuses workflows not opted into MCP, and already-archived ones
+ * ("archived and cannot be accessed"). Verified shape (n8n 2.30.7):
+ * `{workflowId}` in, `{archived, workflowId, name}` out, errors in-band.
+ */
+export async function archiveWorkflowMcp(mcp: McpClient, id: string): Promise<{ archived: boolean; workflowId: string; name: string }> {
+  return mcp.callTool<{ archived: boolean; workflowId: string; name: string }>("archive_workflow", { workflowId: id });
+}
+
+/** `validate_workflow`'s result shape (n8n 2.30.7) — warnings name the node + parameter path. */
+export interface McpValidationResult {
+  valid: boolean;
+  nodeCount?: number;
+  warnings?: Array<{ code: string; message: string; nodeName?: string; parameterPath?: string }>;
+  errors?: string[];
+  /** Server-provided recovery hint — surface it verbatim when present. */
+  hint?: string;
+}
+
+/** Validate n8n Workflow SDK code server-side (read-only, no workflow touched). */
+export async function validateWorkflowCode(mcp: McpClient, code: string): Promise<McpValidationResult> {
+  return mcp.callTool<McpValidationResult>("validate_workflow", { code });
+}
+
+/**
  * Create a workflow from n8n Workflow SDK code. The decanter only ever sends
  * the minimal `workflow('<slug>', '<name>')` expression (a blank workflow) —
  * MCP-created workflows are born `availableInMCP`, so the follow-up pull works.
+ * The code passes the server's `validate_workflow` gate first (Plan 33): a
+ * rejected expression never reaches `create_workflow_from_code`, and the
+ * server's errors + hint surface verbatim.
  */
 export async function createWorkflowFromCode(mcp: McpClient, name: string, slug: string): Promise<{ workflowId: string; name: string }> {
   const code = `workflow(${JSON.stringify(slug)}, ${JSON.stringify(name)})`;
+  const v = await validateWorkflowCode(mcp, code);
+  if (v.valid !== true) {
+    const reasons = (v.errors ?? []).join("; ") || "invalid workflow code";
+    throw new McpToolError("validate_workflow", `${reasons}${v.hint ? ` — ${v.hint}` : ""}`);
+  }
   return mcp.callTool<{ workflowId: string; name: string }>("create_workflow_from_code", { code });
 }
