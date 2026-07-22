@@ -2,10 +2,11 @@
 
 **Priority:** P1 (website landing — live factual drift since the pivot merged) /
 P2 (the positioning layer)
-**Status:** Open — the former hard gate cleared 2026-07-22:
-[Plan 32](DONE-32-mcp-native-code-layer.md) executed and merged (PR #97).
-Coordinate command-facing copy with [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md)'s
-lifecycle work (`delete`→`archive`, the `test` verb) so it's written once.
+**Status:** Open — fully unblocked. Both gates cleared 2026-07-22:
+[Plan 32](DONE-32-mcp-native-code-layer.md) executed and merged (PR #97), and
+[Plan 33](DONE-33-post-mcp-pivot-wave.md) executed and merged (PR #101 —
+`archive`, `test`, `mcp serve`; `duplicate` dropped). Nothing left to wait
+for; see Rollout for ordering.
 **Theme:** The outward identity — name verdict, taglines, README, website
 landing, docs framing, npm/GitHub metadata, comparison positioning — retold for
 the Code-node-layer scope. **The name `n8n-decanter` stays** (decision recorded
@@ -105,9 +106,9 @@ The decisions behind the strings:
   established idiom, and a structural claim (built on n8n's first-party
   surface).
 - **Extension slots, by design:** "TypeScript" → "TypeScript & Python" when
-  [Plan 28](OPEN-28-python-code-nodes.md) lands; "preflights" absorbs the
-  `test` verb when Plan 33 ships it (until then the card lists
-  `check`/`simulate` and instance-side drift `status`); "code-level git
+  [Plan 28](OPEN-28-python-code-nodes.md) lands; "preflights" was designed to
+  absorb the `test` verb — Plan 33 shipped it 2026-07-22, so the card carries
+  its full `check`/`simulate`/`test` form from day one; "code-level git
   versioning" is scope-honest (code, not whole-workflow — exactly the
   post-pivot promise) and never expires.
 - **Slot mapping:** headline alone = npm `description` + GitHub About;
@@ -123,8 +124,10 @@ The decisions behind the strings:
 - [Plan 32](DONE-32-mcp-native-code-layer.md) Task 7 — the docs/changelog/
   PLAN.md **accuracy** overhaul (landed with PR #97). This plan is the
   **positioning** layer on top; the boundary is drawn in Non-goals.
-- [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) — verb renames, `test` verb,
-  verb-taxonomy docs; command-facing copy here follows its outcomes.
+- [Plan 33](DONE-33-post-mcp-pivot-wave.md) — verb renames, `test` verb,
+  guard-proxy; executed and merged 2026-07-22 (PR #101), so command-facing
+  copy here builds on its shipped outcomes (incl. the unplanned **Breaking:
+  `duplicate` dropped**).
 
 ## Tasks
 
@@ -152,10 +155,13 @@ The decisions behind the strings:
      instead. Re-examine every row ("Versioning" becomes code-first +
      read-only snapshot); the **"Agentic workflow creation" row upgrades to
      ✅** ("your agent builds structure over n8n's MCP, guard-proxied;
-     decanter owns the code") — **verify at execution time** that Plan 33's
-     `create`/`duplicate` + guard-proxy actually landed before claiming it,
-     and fix the stale *"planned (`node create` + `push --create`)"* cell
-     either way. Add rows for the new differentiators — **draft-first
+     decanter owns the code") — **verified 2026-07-22 against merged main:**
+     `create` gates SDK code through `validate_workflow` before
+     `create_workflow_from_code`, `mcp serve` (guard-proxy) and `test`
+     shipped (PR #101). One correction the table must carry: **`duplicate`
+     was dropped entirely** (Breaking, not re-expressed over MCP) — no row or
+     cell may reference it. Fix the stale *"planned (`node create` +
+     `push --create`)"* cell. Add rows for the new differentiators — **draft-first
      edits/deliberate publish** (API-based tools can't) and **instance-side
      pinned tests with diff** (`test`). The **"Choose X if you…" cards stay**
      (decided), refreshed to the kit; update the bottom line.
@@ -185,19 +191,16 @@ The decisions behind the strings:
 
 ## Rollout
 
-Two waves, decided 2026-07-22 (Plan 33 was mid-execution at the time):
+Originally split into two waves because Plan 33 was mid-execution; **Plan 33
+merged 2026-07-22 (PR #101), so the split is moot** — every task is
+executable now, in one pass or as small PRs. Residual ordering only:
 
-- **Now — don't wait for Plan 33:** Task 3 (website landing: carries both the
-  live drift *and* the signed-off kit; `website/src/` is the one surface
-  Plan 33 doesn't touch, so no conflict risk) plus Task 5's instant slots
-  (GitHub About; npm `description` in `package.json`). The kit's only
-  forward-looking claim is absorbed by design: the preflight card lists
-  today's verbs until `test` ships.
-- **After Plan 33 merges:** Task 2 (the compare reframe cites `archive`,
-  `test`, and the guard-proxy), Task 4 (docs sweep — Plan 33's session is
-  actively editing README/docs; a parallel pass would manufacture merge
-  conflicts), Task 6 (GIFs — the picker's verb menu changes with
-  `archive`/`test`; record once).
+- **First:** Task 3 (website landing — it carries the live factual drift, now
+  even staler since #101 also renamed verbs) together with Task 5's instant
+  slots (GitHub About; npm `description` + keywords).
+- **Then:** Task 2 (compare reframe — cites the shipped `archive`, `test`,
+  `mcp serve`; no `duplicate`), Task 4 (docs framing sweep), Task 6 (GIFs —
+  the picker's verb menu changed with #101, so record once, now).
 
 ## Acceptance / verification
 

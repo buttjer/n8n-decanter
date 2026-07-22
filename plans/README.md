@@ -221,7 +221,7 @@ items not yet claimed by one. Recommended order:
     for check/simulate/test), README compare reframe, **website landing (P1 — the hero
     still says "pushed back through the n8n API", contradicting shipped
     main)**, docs framing sweep, npm/GitHub metadata, demo-GIF currency;
-    command copy follows Plan 33's `archive`/`test`. Records the name verdict:
+    fully unblocked 2026-07-22 (Plans 32 + 33 both merged). Records the name verdict:
     the challenge (2026-07-22) concluded **`n8n-decanter` stays** — the pivot
     sharpens the decanting metaphor (the code is the pour; structure stays in
     the bottle), and a rename would stack breaking churn on the pivot for zero
