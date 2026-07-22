@@ -108,9 +108,10 @@ description says**, and the boundary is:
   around — route the code through the repo (edit the file, `push`). A
   session-start hook (`mcp-route-check.mjs`) warns when a config in this dir
   bypasses the proxy.
-- **Knowledge skills** (`code-nodes`, `expressions`, `data-tables`,
-  `binary-and-data`, `credentials-and-security`, `debugging`): lean on them
-  freely — they document the runtime your code files run in.
+- **Knowledge skills** (`code-nodes`, `expressions`, `loops`,
+  `error-handling`, `credentials-and-security`, `binary-and-data`,
+  `data-tables`, `debugging`): lean on them freely — they document the
+  runtime your code files run in.
 - **Workflow structure and lifecycle** (building, wiring, configuring,
   publishing via MCP tools or the build/lifecycle skills): allowed — structure
   is n8n's job under this setup, MCP edits land on the draft, and the proxy
@@ -125,6 +126,12 @@ description says**, and the boundary is:
 The skills pack installs whole (no cherry-pick) and is not aware of this
 repo's layout — this override plus the guard-proxy, not selective
 installation, is what holds the boundary.
+
+Not installed yet? It's a plugin (not an npm dependency): Claude Code
+`/plugin marketplace add n8n-io/skills` then `/plugin install n8n-skills@n8n-io`;
+Codex `codex plugin marketplace add n8n-io/skills` then
+`codex plugin add n8n-skills@n8n-io`; other agents `npx skills add n8n-io/skills`
+(skills.sh, support varies).
 
 ## File ownership
 
