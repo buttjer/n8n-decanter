@@ -162,6 +162,14 @@ items not yet claimed by one. Recommended order:
     compile, marker, bundling, or `.remote` flow — so it funnels through one new
     source-field abstraction in `lib/util.mts`. Offline `run` stays JS-only.
     Proposed 2026-07-21.
+30. [Agent/LLM working ergonomics in a sync dir](OPEN-30-agent-llm-working-ergonomics.md) —
+    optimize how a coding agent works in a synced dir: codify session-start
+    orientation (read-only `status` is the "pull-first" check; recommend a pull
+    only when it shows drift, keeping pull user-gated), promote the grounding
+    tools beyond n8n-mcp (`executions`/`data-tables`/`simulate` + version-matched
+    docs) into an explicit research ladder, and add a canonical loop picture +
+    allowlist audit. Docs-first (P1) with small decision-gated tooling (P2).
+    Distinctive-features group (agent-native tooling). Proposed 2026-07-21.
 29. [Picker polish + brand-orange CLI logo](OPEN-29-picker-recency-sort-and-force-retry.md) —
     three CLI polish wins: list picker workflows **newest-synced first** (recency
     from `.decanter.json` mtime — no schema change); offer a special
