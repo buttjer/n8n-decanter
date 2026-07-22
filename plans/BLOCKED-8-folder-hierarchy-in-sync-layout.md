@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P2 (design settled by upstream research; needs a live spike before code) |
-| **Status** | **Blocked** — task 1 spike done (2026-07-20); needs a licensed/registered instance (`feat:folders`) for the actual-move proof. New finding reshapes the probe/gating design (see Spike results). Code not started. |
+| **Status** | **Blocked** — task 1 spike done (2026-07-20); needs a licensed/registered instance (`feat:folders`) for the actual-move proof. New finding reshapes the probe/gating design (see Spike results). MCP re-check done (2026-07-22, post-Plan-32): read path exists in the MCP contract but is unwired upstream (always `null`); MCP has **no** move/folder-create write path, and the REST `PUT` fallback is now draft-hostile — see "MCP re-check". Plan still blocked; task list needs a Plan-32-era rewrite before execution. Code not started. |
 | **Theme** | Let the local directory tree between `root` and a workflow folder act as the workflow's n8n folder path, pushed one-way to n8n via the public folders API — because the API can *write* folder placement but cannot *read* it. Pull-side mirroring is built in behind feature detection, so it activates by itself on any instance whose API exposes placement on read (none do today). |
 | **Model** | **Sonnet** for the bulk — the design is unusually settled (upstream source research done, tasks carry file:line anchors and concrete mock modes), so this is broad-but-specified implementation across many files. Reach for **Opus** on the live-instance spike (task 1) and the feature-detection/drift semantics (task 6), where judgment beats a checklist. |
 
@@ -244,6 +244,83 @@ licensed instance is available.**
    Docker smoke instance is unregistered, so it will 403 on every folder call.
    The mock modes stay the offline oracle; smoke coverage of the *real* folders
    path needs a licensed instance (skip/guard it otherwise).
+
+## MCP re-check (2026-07-22 — post-Plan-32, n8n source: master + `n8n@2.30.7` tag)
+
+Plan 32 moved the workflow write path to n8n's MCP server; PLAN.md flagged that
+`get_workflow_details` carries a `parentFolderId` field ("null in tests") and
+asked to re-check this plan against the MCP surface. Done — from n8n source
+(both current master and the released `n8n@2.30.7` the Plan 32 spike ran
+against). **Verdict: still blocked, but the blocker changed shape — it is now
+upstream MCP wiring + the unchanged license gate, and the plan's task list is
+stale (written against the API-era push path Plan 32 removed).**
+
+**Read path — in the MCP contract, but a dud today (always `null`):**
+
+- `get_workflow_details` declares `parentFolderId` in its output schema and the
+  handler maps `workflow.parentFolder?.id ?? null` — but it fetches the
+  workflow with only `{ includeActiveVersion, includeTags }`; the repository
+  (`SharedWorkflowRepository.findWorkflowWithOptions`) defaults
+  `includeParentFolder = false`, so the relation is **never loaded** and the
+  field is **always `null`** — for foldered workflows too. Identical wiring on
+  2.30.7 and master. So the spike's "null in tests" was this unwired read, not
+  "workflow at project root".
+- `search_workflows` hardcodes `includeFolders: false` into
+  `workflowService.getMany` (the service supports it — it's the UI list path).
+- The folder **tree** IS readable over MCP: `search_folders` (added with
+  `search_projects` + `folderId`-on-create in n8n PR #27248, merged 2026-03-19;
+  present in 2.30.7) returns `{id, name, parentFolderId}` per folder. Needs a
+  `projectId` from `search_projects`; rides the `project:read` OAuth scope; a
+  builder tool (same `N8N_MCP_BUILDER_ENABLED` gate as `update_workflow`).
+- **Consequence for task 6's feature detection: field-presence is no longer a
+  valid signal.** Over MCP the field is always present and always `null` —
+  presence-detection would read "every workflow at root" and, in read-write
+  mode, move local dirs to root / flag phantom drift. Detection must be
+  value-based: only a **non-null** `parentFolderId` proves the read path;
+  `null` is ambiguous (root vs. unwired) and must never trigger a local move.
+
+**Write path — got *worse* under MCP:**
+
+- `update_workflow`'s op set (17 ops verified on master) has **no folder/move
+  op**, and there are **no folder CRUD tools** (`search_folders` is read-only).
+  An existing workflow cannot be moved over MCP, and folders can't be created.
+- Only `create_workflow_from_code` accepts a `folderId` (requires `projectId`;
+  the folder must already exist) — placement at **creation** only.
+- The REST write path (folders CRUD + `PUT` with `parentFolderId`) still
+  exists but is now **draft-hostile**: n8n 2.x's public `PUT` hardcodes
+  `publishIfActive: true` + `forceSave: true` and takes a full body (PLAN.md,
+  2026-07-18) — using it to move a workflow would publish the draft and clobber
+  MCP-managed structure. Post-Plan-32, push-placement cannot ride the REST PUT
+  without breaking the draft-first model. (Task 4 as written — `parentFolderId`
+  in the PUT body via `sanitizeForPut` — targets a push path that no longer
+  exists; pushes are `update_workflow` batches now.)
+
+**License gate — unchanged by MCP:** folders remain `feat:folders`-gated
+server-side regardless of transport (registered community = free unlock). MCP
+adds **no license signal**: `search_folders` on an unlicensed instance returns
+empty (no 403 — the tool checks the `folder:list` scope, not the license), so
+the REST probe's 403-classification stays the only license detector, and the
+live-move proof still needs a registered instance.
+
+**What would actually unblock (reshapes task 10 into an MCP-targeted ask):**
+
+1. Upstream **bug report/PR**: wire `includeParentFolder: true` in
+   `getWorkflowDetails` (one line — the schema already advertises the field the
+   handler can never populate). Optionally flip `includeFolders` in
+   `search_workflows`. This is "finish a shipped field", far likelier to land
+   than the old "add the relation to the public API GET" ask.
+2. Upstream **feature ask**: a move op in `update_workflow` (or a dedicated
+   placement tool) + folder create over MCP. Without it, the only decanter-side
+   v1 that works today is **placement-on-create** (pass `folderId` when a new
+   workflow dir is nested — needs `search_projects`/`search_folders` in
+   `lib/mcp.mts`, and the folder must pre-exist since MCP can't create one) —
+   a halfway feature, probably not worth shipping alone.
+3. The licensed-instance spike (unchanged prerequisite).
+
+Before execution, the task list needs a rewrite pass against the Plan-32
+architecture (tasks 2/4 reference `lib/api.mts` PUT / `sanitizeForPut`; probe
+task 3 splits into an MCP tool-presence check (version signal) + REST 403
+check (license signal)).
 
 ## Acceptance / verification
 

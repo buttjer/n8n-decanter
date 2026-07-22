@@ -627,9 +627,16 @@ API-era build that still hold are kept; superseded ones are marked.
 ## Open questions (verify against a live instance)
 
 - ~~Folder placement on the API GET~~ — answered no (2026-07-19/20, Plan 8
-  blocked on upstream exposure). MCP note: `get_workflow_details` carries a
+  blocked on upstream exposure). ~~MCP note: `get_workflow_details` carries a
   `parentFolderId` field (null in tests) — re-check Plan 8 against the MCP
-  surface when it matters.
+  surface when it matters.~~ Re-checked 2026-07-22 from n8n source (master +
+  2.30.7): the field is in the output contract but the handler never loads the
+  `parentFolder` relation (`includeParentFolder` defaults false at the call
+  site), so it is **always null** — an upstream one-line wiring gap, not a
+  design stance. The folder *tree* is readable (`search_folders`), but MCP has
+  no move op and no folder create; only `create_workflow_from_code` takes a
+  `folderId`. Plan 8 stays blocked; full findings in its "MCP re-check"
+  section.
 - ~~Filename sanitization; PUT round-trip preservation of tags/pinData;
   activate/deactivate shapes; create body; DELETE on published~~ — all
   answered in the API era (see git history of this file); the still-relevant
