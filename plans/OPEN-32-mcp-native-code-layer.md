@@ -110,6 +110,19 @@ Decided with the user (this session):
 6. **Read-only structure snapshot** (nice-to-have, last): if MCP yields clean structure JSON,
    write it to git read-only for review; else skip.
 7. **Docs/changelog/PLAN.md** overhaul — the sync model changes fundamentally (Breaking).
+8. **Picker: third state for MCP-unavailable workflows + pull guidance.** MCP's
+   `search_workflows` lists **all** workflows, but only `availableInMCP` ones are readable
+   (Q3 gate), so the picker can now show workflows it cannot yet pull. Extend the picker
+   (Plan 19/[DONE-23](DONE-23-picker-visual-refinements.md)) beyond today's two states —
+   pulled (green `●`), unpulled-but-available remote (yellow `○`) — with a **third: MCP-
+   unavailable remote workflows in red**, sorted **third** (below green + yellow). Selecting a
+   red one doesn't error: surface **guidance** — "this workflow isn't available in MCP; enable
+   it from the workflow card or workflow settings," and offer to **toggle `availableInMCP` +
+   pull** (via UI guidance by default; optional cookie-gated automation via
+   `PATCH /rest/mcp/workflows/toggle-access` where creds allow — the fragile-internal-endpoint
+   caveat from Task 5 applies). Non-TTY/piped invocations print the same guidance line-oriented.
+   The availability signal comes from `search_workflows` / the `availableInMCP` flag, not a
+   failed detail read.
 
 ## Acceptance / verification
 
