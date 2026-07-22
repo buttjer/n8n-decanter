@@ -10,6 +10,17 @@ being forced to rename the file to `.ts`.
 **Model:** Opus for the core (marker/round-trip correctness, the pull clobber
 edge); Sonnet for the docs + test tasks.
 
+> **Post-Plan-32 review (2026-07-22):** the design survives the MCP pivot
+> unchanged — its choke points (`buildNodeCode`, `compileTs`, `splitMarker`,
+> the validate rules) live in the file layer and were carried over verbatim;
+> the bundled body simply rides the same `{jsCode}`-only
+> `updateNodeParameters` op as every push. **Adapted:** the pull clobber guard
+> (Task 4), the e2e task, and one acceptance line — Plan 32 deleted the
+> `.remote.js` conflict flow wholesale, so the guard now mirrors the current
+> keep-local-and-warn branch instead of writing `.remote.js` artifacts. The
+> e2e mock is now the dual REST+MCP one. Re-resolve inline file/line refs at
+> execution time (pull/push/PLAN.md were rewritten in Plan 32).
+
 ## Why
 
 - User ask: *"allow import/shared code also for js nodes."* Today an `import`
@@ -54,11 +65,11 @@ gives no-import `.ts` nodes).
   bundling for `.js` nodes — lossless round-trip is their contract" is the line
   this plan deliberately revises (imports opt a `.js` node *out* of the
   lossless contract; no-import `.js` keeps it).
-- **PLAN.md** implementation note (~lines 707–735, "`shared/` code in `.ts`
-  nodes is bundled on push") — currently states "`.js` nodes never bundle
-  (lossless tier)". This plan updates that note to the two-tier `.js` split
-  above (raise with the user per CLAUDE.md — done via the promotion-trigger
-  decision).
+- **PLAN.md** (rewritten in Plan 32) — the guard rules still list "imports in
+  `.js` nodes" as a violation, and the shared-bundling note still scopes
+  bundling to `.ts` nodes (plans/14). This plan updates both to the two-tier
+  `.js` split above (raise with the user per CLAUDE.md — done via the
+  promotion-trigger decision).
 
 ## Design decision — reuse Plan 14, add a second marker
 
@@ -103,21 +114,25 @@ a fresh pull (no local sources) must recreate the correct file *extension* from
 3. **`lib/push.mts` `buildNodeCode`** — for `.js`, scan imports:
    - none → today's verbatim path, byte-identical (`{ jsCode: source, hash }`);
    - some → `withMarker(await compile(filePath, log), "js")`.
-   `.ts` becomes `withMarker(await compile(filePath, log), "ts")`. `driftProblems`
-   / `recordSync` already `splitMarker(...).body` — correct for both markers
-   and for markerless (verbatim) JS.
+   `.ts` becomes `withMarker(await compile(filePath, log), "ts")`. The drift
+   check (`codeDrift` via `collectOps`) and `recordSync` already hash
+   `splitMarker(...).body` — correct for both markers and for markerless
+   (verbatim) JS.
 4. **`lib/pull.mts`** — the managed branch handles both kinds:
    - Replace `tsManaged` with `managed = markerHash !== null` and derive
      `ext` from `kind` (`"js"` → `.js`, `"ts"` → `.ts`); the compile-and-compare
      in the managed branch calls `compile(filePath)` (loader from the *local*
      extension).
-   - **New clobber guard (symmetric to the existing `.ts` branch):** a local
-     `.js` that *has imports* is managed; if the remote carries **no** marker,
-     pull must **not** overwrite it via the verbatim branch — save the remote to
-     `code/<node>.remote.js` and warn, exactly as the "local `.ts` exists but
-     remote has no marker" branch does today. Detect managed-JS by scanning the
-     local file's imports (pull already reads local sources in the managed
-     branch).
+   - **New clobber guard (symmetric to the existing `.ts` branch, in its
+     post-Plan-32 shape):** a local `.js` that *has imports* is managed; if
+     the remote carries **no** marker, pull must **not** overwrite it via the
+     verbatim branch — keep the local file, warn ("local `<file>` has imports
+     but the remote code has no `@js-n8n` marker — keeping your source; the
+     next push overwrites the remote code") and re-baseline `lastPushedHash`,
+     exactly as the "local `.ts` exists but remote has no marker" branch does
+     today. (Plan 32 removed the `.remote.js` artifact flow — git is the
+     recovery net.) Detect managed-JS by scanning the local file's imports
+     (pull already reads local sources in the managed branch).
 5. **`lib/validate.mts`** — `.js` node files:
    - Remove the hard "`.js` has an import → convert to `.ts`" error; instead run
      the **same** lexical import rules as `.ts` (`checkNodeImports` via
@@ -172,12 +187,14 @@ a fresh pull (no local sources) must recreate the correct file *extension* from
      `validate` accepts a legal `.js` import and rejects the illegal set
      (mid-file import, bare specifier without opt-in, `node:` builtin,
      sync-dir escape) with the same messages as `.ts`.
-   - e2e: add an `import` from `shared/` to a `.js` node → `push` → mock remote
-     contains the inlined helper + `@js-n8n` marker; `pull` → in sync, **file
-     stays `.js`**, no `.remote.js`; edit the shared file → `status` flags the
-     importer, `status --diff` shows the inlined change; the markerless-remote
-     clobber guard writes `.remote.js` instead of overwriting; `run` executes
-     the importing `.js` node offline.
+   - e2e (against the Plan 32 dual REST+MCP mock — assert the
+     `update_workflow` op payload, not a PUT body): add an `import` from
+     `shared/` to a `.js` node → `push` → the mock's draft contains the
+     inlined helper + `@js-n8n` marker; `pull` → in sync, **file stays
+     `.js`**; edit the shared file → `status` flags the importer,
+     `status --diff` shows the inlined change; the markerless-remote clobber
+     guard keeps the local file and warns instead of overwriting; `run`
+     executes the importing `.js` node offline.
    - Live smoke (`test/smoke-n8n.mts`, opt-in): a bundled `.js` node executes
      in the real task-runner sandbox — the same getter-neutering trap Plan 14
      hit (`__copyProps` / no-`export` entry) applies identically here, so this
@@ -194,7 +211,8 @@ a fresh pull (no local sources) must recreate the correct file *extension* from
 - Editing a shared helper marks every importing `.js` node push-pending with a
   readable `--diff`; pushing re-syncs them.
 - A local `.js`-with-imports is **never** clobbered by a markerless remote pull
-  — the remote lands in `.remote.js`.
+  — pull keeps the file and warns (no `.remote.js` artifacts since Plan 32;
+  the next push overwrites the remote).
 - Mid-file imports, un-opted-in bare specifiers, builtins, and sync-dir escapes
   fail with the same named-file/named-specifier errors as `.ts`; `check`
   catches the lexical subset offline and announces the two-way→one-way flip.

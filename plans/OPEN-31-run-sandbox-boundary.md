@@ -59,7 +59,7 @@ implementations + two test suites, not a small switch (user decision
   cleanly. Pure-JS, no new dep, no flag on the Node binary. Accepted trade-offs:
   worker startup cost per run; care needed that no capability leaks through the
   global set; it raises the bar sharply but is **not** a hard VM/container jail
-  — that stays `simulate`'s Docker `--network none` job ([Plan 7](OPEN-7-engine-true-simulation-suite.md)).
+  — that stays `simulate`'s Docker `--network none` job ([Plan 7](DONE-7-engine-true-simulation-suite.md)).
 - **B — Node permission model (`--permission`/`--allow-fs-read` etc.).** Not
   chosen. Re-spawn `run` as a child `node` with `--permission` denying fs/net —
   engine-enforced and stronger, but process-level (constrains the *whole*
@@ -115,13 +115,19 @@ implementations + two test suites, not a small switch (user decision
 
 - A hard container/VM jail. Option A raises the bar, not an impenetrable wall;
   enforced network/fs isolation stays `simulate`'s Docker `--network none` job
-  ([Plan 7](OPEN-7-engine-true-simulation-suite.md)).
+  ([Plan 7](DONE-7-engine-true-simulation-suite.md)).
 - Sandboxing anything but `run` — `push`/`watch` don't execute node bodies.
 - Changing the emulated-global *surface* (that's the `$jmespath`/fidelity
   backlog item); this plan only changes *where* the body runs.
 
 ## Notes
 
+- **Post-Plan-32 review (2026-07-22): unaffected by the MCP pivot** —
+  `node run` is fully offline/local and never touches the sync backend. The
+  upcoming instance-side `test` verb
+  ([Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) Task 5) runs code in n8n's
+  own sandbox and doesn't change this plan's scope: `run` remains the local
+  fast path, and *that* is the one needing a boundary.
 - **Breaking:** the default flips from "full host access" to "sandboxed," so a
   node relying on host `process`/`fetch` now needs `--unsafe`. While 0.x, a
   breaking change is a minor bump per AGENTS.md.
