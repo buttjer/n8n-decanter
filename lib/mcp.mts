@@ -394,9 +394,10 @@ export class McpClient {
     if (!isNotification) body.id = ++this.#rpcId;
 
     let res: Response;
-    let retried = false;
+    let refreshed = false;
+    let rateRetries = 0;
     for (;;) {
-      const token = await this.#accessToken(retried);
+      const token = await this.#accessToken(refreshed);
       try {
         res = await fetch(this.#host + MCP_PATH, {
           method: "POST",
@@ -416,8 +417,19 @@ export class McpClient {
         }
         throw err;
       }
-      if (res.status === 401 && this.#auth.kind === "oauth" && !retried) {
-        retried = true; // access token may have just expired — refresh once
+      if (res.status === 401 && this.#auth.kind === "oauth" && !refreshed) {
+        refreshed = true; // access token may have just expired — refresh once
+        continue;
+      }
+      // n8n rate-limits the MCP endpoint (verified live: 429 under bursts of
+      // CLI runs) — a rejected request was NOT applied, so retrying is safe
+      // for every method, including update_workflow. Honor Retry-After.
+      if (res.status === 429 && rateRetries < 5) {
+        rateRetries++;
+        const retryAfter = Number(res.headers.get("retry-after"));
+        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(1000 * 2 ** (rateRetries - 1), 8000);
+        await res.text().catch(() => {}); // drain before the retry
+        await new Promise((r) => setTimeout(r, delayMs));
         continue;
       }
       break;
