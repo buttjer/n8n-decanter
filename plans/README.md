@@ -184,6 +184,15 @@ items not yet claimed by one. Recommended order:
     doc-only "narrow `run`" backlog item with enforcement. Mechanism decided:
     `worker_threads` scrubbed context (option A), no A/B config toggle. Breaking
     (default execution semantics change). Proposed 2026-07-22.
+32. [MCP-native code layer](OPEN-32-mcp-native-code-layer.md) — strategy shift:
+    stop owning canonical workflow sync via the public API; narrow decanter to the
+    **Code-node source layer** (js/ts, shared code, TS, local run) and delegate
+    workflow structure + lifecycle to n8n's built-in **MCP server + skills**. The
+    invariant is Code-node source staying in git (lives in the file layer, survives
+    the switch); structure-in-git drops to a read-only nice-to-have. Spike done
+    (2026-07-22, n8n 2.30.7): byte-exact jsCode read/write, draft-first edits, and
+    OAuth-first auth with refresh tokens all confirmed — the API can be dropped for
+    the code path. Breaking; awaiting go/no-go. Proposed 2026-07-22.
 
 ## Conventions
 

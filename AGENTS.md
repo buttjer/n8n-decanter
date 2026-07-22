@@ -430,6 +430,97 @@ functions; the CLI process is the surface users touch.
 - CLI output contains ANSI codes even when piped (known, Plan 11) — match
   with regexes, not exact strings.
 
+## Driving a real n8n in Docker (smoke boot + MCP internals)
+
+Hard-won facts for standing up a throwaway n8n container and driving it (used by
+`test/smoke-n8n.mts` and Plan 32's MCP spike). Booting one by hand keeps biting on
+the same traps:
+
+- **`/healthz` goes green BEFORE the REST API mounts.** A healthy `/healthz` still
+  serves `n8n is starting up. Please wait` for `/rest/*` and 404s `/rest/login`.
+  **Gate readiness on `GET /rest/settings` returning JSON**, *then* do
+  `POST /rest/owner/setup`. Skipping this makes setup "200" against a not-ready
+  server and every later call fails confusingly.
+- **Owner password needs a special char**, not just length+digit+uppercase. n8n's
+  rule rejects `Decanter123`; `Sm0ke-Test-Pass!` (or `Sp1ke-Test-Pass!`) passes.
+- **`POST /rest/owner/setup` issues the `n8n-auth` cookie itself** (once REST is
+  ready) via `Set-Cookie` — read it with `res.headers.getSetCookie()` (fetch
+  special-cases it; `headers.get('set-cookie')` won't see it), matching
+  `n8n-auth=[^;]+`. `POST /rest/login` is **rate-limited (5/window**, see
+  `x-ratelimit-*` headers) — don't spam it; prefer the setup cookie.
+- **Public API key** (for `/api/v1/*`, header `X-N8N-API-KEY`) is minted at
+  `POST /rest/api-keys` with the owner cookie (scopes list in `smoke-n8n.mts`).
+
+### MCP server (built-in, n8n ≥ ~2.13; verified on 2.30.7)
+
+- **Endpoint:** `POST /mcp-server/http` (Streamable HTTP JSON-RPC). Probe with no
+  token → **401** when live, **404** when disabled/too-old. Responses may be
+  `text/event-stream` — parse `data:` lines. Send `accept: application/json,
+  text/event-stream`; carry the `mcp-session-id` response header on later calls.
+- **Enabling and the token are BOTH headless via the owner cookie** (no UI needed):
+  the `N8N_MCP_ACCESS_ENABLED=true` env did **not** flip the DB flag on 2.30.7 —
+  instead `PATCH /rest/mcp/settings {"mcpAccessEnabled":true}` (scope `mcp:manage`)
+  turns it on, and `POST /rest/mcp/api-key/rotate` returns a **fresh raw** MCP
+  token (`{data:{apiKey}}`). `GET /rest/mcp/api-key` is get-or-create but **redacts**
+  the key after first creation (`******1D3Y`), so use *rotate* to get a usable
+  token. Auth to the MCP endpoint is `Authorization: Bearer <that token>` — the
+  **public API key is NOT accepted** (401). If `N8N_MCP_MANAGED_BY_ENV=true` the
+  PATCH is forbidden (env-locked).
+- **Per-workflow opt-in (list vs. detail split):** `search_workflows` lists **all**
+  workflows instance-wide (create/read/discover), but `get_workflow_details` and the
+  edit tools **refuse** a workflow ("Workflow is not available in MCP") until its
+  `availableInMCP` flag is on. So MCP can enumerate everything but can only read
+  full content / edit opted-in workflows. Toggle headlessly with
+  `PATCH /rest/mcp/workflows/toggle-access {"availableInMCP":true,"workflowIds":[id]}`.
+  Creating is code-based: `create_workflow_from_code` (n8n Workflow SDK code, must
+  pass `validate_workflow` first).
+- **Node source fidelity is exact:** `get_workflow_details` returns full
+  nodes/connections/settings with Code-node `jsCode` **byte-exact** (the
+  "sanitized/credentials-stripped" caveat strips credentials, *not* node params),
+  plus `versionId`/`activeVersionId`. Writes go through `update_workflow` as an
+  ordered batch of ops (`updateNodeParameters`/`setNodeParameter`/`addNode`/
+  `renameNode` (`oldName`+`newName`)/`addConnection` (`source`+`target`)/…) that
+  **address nodes by name**; there is no full-JSON-replace tool. An
+  `updateNodeParameters` write lands on the **draft only** (bumps `versionId`,
+  leaves `activeVersionId` untouched — an active workflow keeps running the
+  published version); `publish_workflow` activates it. This is the
+  API-inaccessible draft-first capability.
+- **More verified write/read semantics (2.30.7):** `updateNodeParameters`
+  **merges** into existing params (a `{jsCode}`-only write preserves `mode`/
+  `language`); **node ids survive `renameNode`**; reads are **draft-only** —
+  `get_workflow_version` returns metadata without node params, so published
+  content can't be read back over MCP (`restore_workflow_version` is the only
+  path to it). Data-table tools are **add-only** (create/rename/add rows+columns;
+  `search_data_tables` returns schema, never row values); `create_data_table`
+  requires a `projectId` (get it from `search_projects`).
+- **Two auth methods, and workflow visibility is the same under both:**
+  `search_workflows` lists **all** workflows regardless of auth; the
+  `availableInMCP` gate only limits `get_workflow_details`/edit. Auth is
+  orthogonal to visibility.
+  - **OAuth2 (standard, browser consent — the real-client path).** Discover at
+    `GET /.well-known/oauth-authorization-server` (advertises
+    `authorization_endpoint` `/mcp-oauth/authorize`, `token_endpoint`
+    `/mcp-oauth/token`, `registration_endpoint` `/mcp-oauth/register`,
+    `grant_types_supported` incl. **`refresh_token`**, PKCE `S256`,
+    `token_endpoint_auth_method: none`). Flow: RFC 7591 `POST /mcp-oauth/register`
+    (→ `client_id`) → `GET /mcp-oauth/authorize?...&code_challenge=...` (302s to a
+    **browser consent** page) → token exchange `POST /mcp-oauth/token` returns
+    `access_token`+`refresh_token` (`expires_in: 3600`); the `refresh_token` grant
+    silently renews with no browser. A real client (or decanter's `init`) opens the
+    authorize URL in a browser and catches the code at a localhost callback — it
+    does **not** call `/rest/*`. *(To drive consent headlessly in a spike only:
+    capture the OAuth session cookie from the authorize 302, then
+    `POST /rest/consent/approve {"approved":true}` with owner+session cookies to
+    get the redirect `?code=`.)*
+  - **Rotatable Bearer token** (headless, no browser) — the `/rest/mcp/api-key/*`
+    path above; good for CI/provisioning where no browser exists at setup time.
+- **What a real app needs vs. spike-only:** production clients use the standard
+  `/mcp-oauth/*` + `/mcp-server/http` endpoints. The internal `/rest/*` calls here
+  (`/rest/mcp/settings` enable, `/rest/mcp/workflows/toggle-access` opt-in,
+  `/rest/consent/approve`) are **undocumented and version-fragile** — use them to
+  script a throwaway instance, but in a shipped tool prefer guiding the user through
+  the n8n UI over depending on them.
+
 ## Housekeeping routine
 
 A periodic maintenance pass over the repo — run it on demand (Claude Code:
