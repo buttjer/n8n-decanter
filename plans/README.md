@@ -162,6 +162,13 @@ items not yet claimed by one. Recommended order:
     compile, marker, bundling, or `.remote` flow — so it funnels through one new
     source-field abstraction in `lib/util.mts`. Offline `run` stays JS-only.
     Proposed 2026-07-21.
+29. [Picker polish + brand-orange CLI logo](OPEN-29-picker-recency-sort-and-force-retry.md) —
+    three CLI polish wins: list picker workflows **newest-synced first** (recency
+    from `.decanter.json` mtime — no schema change); offer a special
+    **retry-with-`--force`** confirm (default No) when a picker-run verb fails the
+    drift guard; and render the banner logo in the **website's brand orange**
+    (truecolor `#E18428`, graceful 256/16-color fallback) instead of red.
+    Proposed 2026-07-21.
 31. [Sandbox `run` for untrusted node code](OPEN-31-run-sandbox-boundary.md) —
     give `node run` an actual execution boundary so agent-generated code is
     **safe by default** (no host `process`/`fetch`/`import()`), with `--unsafe`

@@ -1052,13 +1052,13 @@ await step("list: name, id, and folder per pulled workflow; --remote adds unpull
   let r = await cli("list");
   assert.equal(r.code, 0, r.out);
   // display name is the cached "Order Sync v2"; folder is the sticky order-sync slug
-  assert.match(r.out, /Order Sync v2  wf123  workflows[/\\]order-sync/);
+  assert.match(r.out, /Order Sync v2 {2}wf123 {2}workflows[/\\]order-sync/);
   db.set("wf777", { ...structuredClone(db.get("wf123")), id: "wf777", name: "Unpulled Flow" });
   try {
     r = await cli("list", "--remote");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /Unpulled Flow  wf777  \(not pulled\)/);
-    assert.match(r.out, /Order Sync v2  wf123/);
+    assert.match(r.out, /Unpulled Flow {2}wf777 {2}\(not pulled\)/);
+    assert.match(r.out, /Order Sync v2 {2}wf123/);
     // --json: pulled rows carry a dir; remote-only rows are dir:null
     r = await cli("list", "--remote", "--json");
     assert.equal(r.code, 0, r.out);
@@ -1114,7 +1114,7 @@ await step("api timeout: a hung instance aborts with a clear error", async () =>
 });
 
 await step("DEBUG=1 prints the stack trace on errors", async () => {
-  let r = await cli("definitely-not-a-verb");
+  const r = await cli("definitely-not-a-verb");
   assert.equal(r.code, 1);
   assert.ok(!r.out.includes("    at "), "no stack without DEBUG: " + r.out);
   try {
@@ -1122,7 +1122,7 @@ await step("DEBUG=1 prints the stack trace on errors", async () => {
     assert.fail("must exit non-zero");
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
-    assert.match((e.stdout ?? "") + (e.stderr ?? ""), /    at /, "DEBUG=1 must include the stack");
+    assert.match((e.stdout ?? "") + (e.stderr ?? ""), / {4}at /, "DEBUG=1 must include the stack");
   }
 });
 
@@ -1908,7 +1908,7 @@ await step("status: version-aware — a live version older than the draft prints
     // an in-sync published workflow stays plain (wf123: activeVersionId == versionId)
     r = await cli("status", "wf123");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /\]  published/);
+    assert.match(r.out, /\] {2}published/);
     assert.ok(!r.out.includes("older than the draft"), "in-sync published stays plain: " + r.out);
   } finally {
     created.versionId = prevVersion;

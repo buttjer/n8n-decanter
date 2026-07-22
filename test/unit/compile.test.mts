@@ -11,7 +11,7 @@ import { checkNodeImports, compileTs, findBundleContext, scanNodeImports } from 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-compile-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
 
 /** A minimal sync dir: config + shared helper + one workflow code dir. */
 function makeSyncDir(name: string, config: object = {}): { root: string; codeDir: string } {

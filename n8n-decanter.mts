@@ -143,8 +143,16 @@ async function main() {
         args.push(raw[i]);
         continue;
       }
-      const value = m[2] ?? raw[++i];
-      if (value === undefined || value === "") throw new Error(`--${m[1]} needs a value (e.g. --${m[1]}=${m[1] === "limit" ? "5" : m[1] === "status" ? "success" : "123"})`);
+      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : "123";
+      let value = m[2];
+      if (value === undefined) {
+        // Space-separated form (`--limit 5`): consume the next token — but not
+        // if it's another flag or a known verb, so `n8n-decanter --status pull`
+        // reports "needs a value" instead of silently eating the `pull` verb.
+        const next = raw[i + 1];
+        if (next !== undefined && !next.startsWith("-") && !VERBS.has(next)) value = raw[++i];
+      }
+      if (value === undefined || value === "") throw new Error(`--${m[1]} needs a value (e.g. --${m[1]}=${example})`);
       valueFlags.set(m[1], value);
     }
   }
@@ -185,7 +193,7 @@ async function main() {
   // (Plan 19). Piped runs and config-less directories fall through to
   // usage() unchanged — scripts and LLM harnesses never see the picker.
   if (command === undefined && args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
-    let pickerConfig;
+    let pickerConfig: ReturnType<typeof loadConfig> | undefined;
     try {
       pickerConfig = loadConfig(process.cwd(), { requireCredentials: false });
     } catch {

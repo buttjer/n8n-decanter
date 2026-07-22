@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   / `--json` / `--network-none` runs (scripts, CI) still hard-error, so an exit
   code is never mistaken for a verified pass.
 
+### Fixed
+
+- **Value-taking flags no longer swallow a following verb.** Writing a
+  value flag in its space-separated form without a value — e.g.
+  `n8n-decanter --status pull` — used to consume the `pull` verb as the
+  flag's value and then fail with a confusing "no verb" error. Such flags
+  (`--status`, `--limit`, `--execution`, `--pin`, `--n8n-version`, `--mock`,
+  `--filter`, `--search`, `--sort`) now refuse to eat a known verb and report
+  `--status needs a value (e.g. --status=success)` instead.
+
 ## [0.5.0] - 2026-07-21
 
 ### Changed

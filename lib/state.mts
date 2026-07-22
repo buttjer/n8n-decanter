@@ -64,7 +64,7 @@ export function listWorkflowDirs(root: string): string[] {
   const stack = [root];
   while (stack.length > 0) {
     const dir = stack.pop()!;
-    let entries;
+    let entries: import("node:fs").Dirent[];
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch {

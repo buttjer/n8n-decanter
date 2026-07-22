@@ -8,7 +8,9 @@ export function parseEnvFile(file: string): Record<string, string> {
   if (!existsSync(file)) return values;
   for (const line of readFileSync(file, "utf8").split("\n")) {
     const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
-    if (!m || m[0].trimStart().startsWith("#")) continue;
+    // Comment/blank lines can't match the key pattern, so a null `m` already
+    // filters them — no separate `#` guard needed.
+    if (!m) continue;
     values[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
   }
   return values;

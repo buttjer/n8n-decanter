@@ -126,10 +126,12 @@ await step("raw mode is entered once and restored on exit; cursor hidden then sh
   const result = runPicker(ENTRIES, undefined, { input: io.input, output: io.output });
   await tick();
   assert.deepEqual(rawModeCalls, [true], "raw mode entered on start");
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting on the literal ANSI cursor-hide escape.
   assert.match(io.text(), /\x1b\[\?25l/, "cursor hidden on start");
   await sendEscape(io); // quit
   assert.equal(await result, "quit");
   assert.deepEqual(rawModeCalls, [true, false], "raw mode restored on exit");
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting on the literal ANSI cursor-show escape.
   assert.match(io.text(), /\x1b\[\?25h/, "cursor shown again on exit");
 });
 
