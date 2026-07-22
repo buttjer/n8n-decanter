@@ -19,19 +19,25 @@ const TMP = path.join(os.tmpdir(), `n8n-decanter-e2e-${process.pid}`);
 const ROOT = path.join(TMP, "workflows");
 
 // ---------- mock n8n ----------
-// One server, two surfaces (mirrors Plan 32's split): the MCP endpoint
+// One server, two surfaces (mirrors the Plan 32/33 split): the MCP endpoint
 // (`POST /mcp-server/http`, bearer-authed JSON-RPC) serves the workflow code
-// path — search/details/update/publish/create; the REST endpoints keep
-// serving what MCP cannot: executions, data tables, duplicate's POST,
-// delete's DELETE. Workflows carry an `availableInMCP` flag exactly like a
-// real 2.x instance: search lists everything, details/update/publish refuse
-// unavailable ones.
+// path and lifecycle — search/details/update/publish/create/archive (create
+// gated by validate_workflow); the REST endpoints keep serving what MCP
+// cannot: executions and data tables. Workflows carry `availableInMCP` and
+// `isArchived` flags exactly like a real 2.x instance: search lists
+// everything, details/update/publish/archive refuse unavailable or archived
+// ones (archived-first, the verified gate order).
 const MCP_TOKEN = "test-mcp-token";
 const UNAVAILABLE_TEXT = "Workflow is not available in MCP. Enable MCP access from the workflow card in the workflows list, or from the workflow settings.";
 const db = new Map<string, any>();
 let updateCount = 0; // update_workflow calls served — watch steps assert deltas
 let slowUpdateMs = 0; // when > 0, update_workflow responses are delayed (queued-push test)
 let createCount = 0;
+// ---- test_workflow scripting (the `test` verb steps) ----
+let lastTestCall: { workflowId: string; pinData: Record<string, unknown[]>; triggerNodeName?: string } | undefined;
+let testRunData: Record<string, unknown> = {}; // runData get_execution serves back
+let testRunOutcome: { status: string; error?: string; executionId?: string | null } = { status: "success" };
+let testExecCount = 0;
 const mkid = () => Math.random().toString(16).slice(2, 14).padEnd(12, "0");
 
 /** Rewrite literal $('Old') / $("Old") refs in a string (the mock's stand-in
@@ -90,7 +96,7 @@ function applyOps(wf: any, operations: any[]): void {
  * noise pull must strip (activeVersion/shared/scopes/canExecute). */
 const detailsOf = (wf: any) => ({
   workflow: {
-    id: wf.id, name: wf.name, active: wf.active, isArchived: false,
+    id: wf.id, name: wf.name, active: wf.active, isArchived: wf.isArchived === true,
     versionId: wf.versionId, activeVersionId: wf.activeVersionId ?? null,
     createdAt: wf.createdAt, updatedAt: wf.updatedAt,
     settings: wf.settings, connections: wf.connections, nodes: wf.nodes,
@@ -116,6 +122,8 @@ function callMcpTool(name: string, args: any): any | null {
   const gate = (id: string): any | undefined => {
     const wf = db.get(id);
     if (!wf) return err("Workflow not found or you don't have permission to access it.");
+    // archived-first, then availability — the verified 2.30.7 getMcpWorkflow order
+    if (wf.isArchived === true) return err(`Workflow '${id}' is archived and cannot be accessed.`);
     if (wf.availableInMCP === false) return err(UNAVAILABLE_TEXT);
     return undefined;
   };
@@ -152,6 +160,45 @@ function callMcpTool(name: string, args: any): any | null {
       wf.active = false;
       wf.activeVersionId = null;
       return ok({ success: true, workflowId: wf.id });
+    }
+    case "test_workflow": {
+      const gated = gate(args.workflowId);
+      if (gated) return gated;
+      const wf = db.get(args.workflowId);
+      const names = new Set(wf.nodes.map((n: any) => n.name));
+      const unknown = Object.keys(args.pinData ?? {}).filter((k) => !names.has(k));
+      if (unknown.length > 0) return err(JSON.stringify({ error: `Pin data contains unknown node names: ${unknown.join(", ")}. Check for typos — node names must match exactly.` }));
+      lastTestCall = { workflowId: args.workflowId, pinData: args.pinData, triggerNodeName: args.triggerNodeName };
+      if (testRunOutcome.status !== "success") {
+        return ok({ executionId: testRunOutcome.executionId ?? null, status: testRunOutcome.status, error: testRunOutcome.error });
+      }
+      return ok({ executionId: `test-exec-${++testExecCount}`, status: "success" });
+    }
+    case "get_execution": {
+      const gated = gate(args.workflowId);
+      if (gated) return gated;
+      return ok({
+        execution: { id: args.executionId, workflowId: args.workflowId, mode: "manual", status: "success", startedAt: null, stoppedAt: null },
+        ...(args.includeData === true && { data: { resultData: { runData: testRunData } } }),
+      });
+    }
+    case "archive_workflow": {
+      const gated = gate(args.workflowId);
+      if (gated) return gated;
+      const wf = db.get(args.workflowId);
+      // 2.30.7 semantics: archiving a published workflow unpublishes it first
+      wf.isArchived = true;
+      wf.active = false;
+      wf.activeVersionId = null;
+      return ok({ archived: true, workflowId: wf.id, name: wf.name });
+    }
+    case "validate_workflow": {
+      // the CLI's pre-create gate (Plan 33): accept the minimal expression,
+      // reject anything else with the server's errors+hint shape
+      const valid = /^workflow\("((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"\)$/.test(String(args.code));
+      return valid
+        ? ok({ valid: true, nodeCount: 0, warnings: [] })
+        : ok({ valid: false, errors: ["Failed to parse workflow code"], hint: "Call get_sdk_reference to read the Workflow SDK reference." });
     }
     case "create_workflow_from_code": {
       const m = String(args.code).match(/^workflow\("((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"\)$/);
@@ -207,30 +254,6 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url!.startsWith("/api/v1/workflows?")) {
     return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: [], nextCursor: null }));
   }
-  // create: POST /api/v1/workflows (duplicate's lossless clone) — API-born
-  // workflows are NOT available in MCP, mirroring a real instance
-  if (req.method === "POST" && req.url === "/api/v1/workflows") {
-    let body = "";
-    req.on("data", (c) => (body += c));
-    req.on("end", () => {
-      const sent = JSON.parse(body);
-      for (const required of ["name", "nodes", "connections", "settings"]) {
-        if (sent[required] === undefined) return void res.writeHead(400).end(`request/body must have required property '${required}'`);
-      }
-      const id = `wf-new-${createCount++}-${Math.random().toString(36).slice(2, 8)}`;
-      const now = new Date().toISOString();
-      const created = {
-        id, name: sent.name, active: false, createdAt: now, updatedAt: now,
-        nodes: sent.nodes, connections: sent.connections, settings: sent.settings,
-        staticData: null, pinData: {}, tags: [],
-        versionId: `ver-${id}`, activeVersionId: null,
-        availableInMCP: false,
-      };
-      db.set(id, created);
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(created));
-    });
-    return;
-  }
   if (req.method === "GET" && req.url!.startsWith("/api/v1/executions")) {
     const one = req.url!.match(/^\/api\/v1\/executions\/(\d+)\?/);
     if (one) {
@@ -272,18 +295,7 @@ const server = http.createServer((req, res) => {
       .writeHead(200, { "content-type": "application/json" })
       .end(JSON.stringify({ data: DATA_TABLES.map((d) => ({ id: d.id, name: d.name, projectId: d.projectId })), nextCursor: null }));
   }
-  const m = req.url!.match(/^\/api\/v1\/workflows\/([^/]+)$/);
-  if (!m) return void res.writeHead(404).end("nope");
-  const wf = db.get(m[1]);
-  if (!wf) return void res.writeHead(404).end("not found");
-  if (req.method === "GET") {
-    return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
-  }
-  if (req.method === "DELETE") {
-    db.delete(m[1]); // hard delete, even when published (matches 2.x)
-    return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(wf));
-  }
-  res.writeHead(405).end("method not allowed");
+  res.writeHead(404).end("nope");
 });
 
 // Shape mirrors the Plan 15 smoke-verified 2.x response: items under
@@ -670,6 +682,18 @@ await step("marker removed remotely (rewrite in UI): .ts never clobbered", async
   const r2 = await cli("push");
   assert.equal(r2.code, 0, r2.out);
   assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/);
+
+  // body-equal but marker stripped (say, a UI copy-paste of the identical
+  // compiled code): push must still send the node so the marker re-registers
+  // TS management (PLAN.md's body-equal-no-marker contract, Plan 33)
+  const marked = remoteNode("wf123", "n3").parameters.jsCode;
+  // strip only the marker line, keeping the body byte-exact (incl. its trailing \n)
+  remoteNode("wf123", "n3").parameters.jsCode = marked.replace(/\/\/ @ts-n8n sha256:[0-9a-f]+\s*$/, "");
+  assert.ok(!/@ts-n8n/.test(remoteNode("wf123", "n3").parameters.jsCode), "marker stripped for the scenario");
+  const r3 = await cli("push");
+  assert.equal(r3.code, 0, r3.out);
+  assert.match(r3.out, /pushed/, "a body-equal no-marker node is still written: " + r3.out);
+  assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/, "marker re-registered");
 });
 
 await step("structure changed remotely: never blocks push; status hints; pull refreshes the snapshot", async () => {
@@ -1803,6 +1827,25 @@ await step("executions clean: removes the dirs, credentials-free", async () => {
   }
 });
 
+await step("requireApiKey at the CLI surface: an API-only verb without N8N_API_KEY exits 1, naming the verb", async () => {
+  const savedEnv = env;
+  env = { ...savedEnv };
+  delete env.N8N_API_KEY; // MCP credentials stay — only the REST key is absent
+  try {
+    let r = await cli("executions", "wf123");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /`executions` uses the n8n public REST API \(MCP does not cover it\) — set N8N_API_KEY/);
+    r = await cli("data-tables");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /`data-tables` uses the n8n public REST API/);
+    // the MCP-only path is untouched by the missing key
+    r = await cli("status", "wf123");
+    assert.equal(r.code, 0, "MCP verbs run without an API key: " + r.out);
+  } finally {
+    env = savedEnv;
+  }
+});
+
 const dtDir = path.join(TMP, "data-tables");
 
 await step("data-tables: fetches schema + rows into a self-gitignored top-level dir; filters narrow server-side", async () => {
@@ -2015,26 +2058,108 @@ await step("executions: warns when a captured run's version differs from the loc
   }
 });
 
-await step("delete: refuses without --force non-interactively; --force deletes via the REST API, local folder kept", async () => {
+await step("test: instance-side pinned run — pin split, diff, non-TTY read-only, failure + gap surfacing", async () => {
+  // dedicated workflow (clean node names) + a capture to pin from
+  db.set("wfT1", {
+    id: "wfT1", name: "Instance Test Flow", active: false, availableInMCP: true,
+    createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-02T00:00:00.000Z",
+    nodes: [
+      { id: "t1", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { path: "t" } },
+      { id: "t2", name: "Compute", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { jsCode: "return [{ json: { doubled: 2 } }];\n" } },
+    ],
+    connections: { Hook: { main: [[{ node: "Compute", type: "main", index: 0 }]] } },
+    settings: {}, staticData: null, pinData: {}, tags: [], versionId: "tv1", activeVersionId: null,
+  });
+  (EXECUTIONS as any[]).push({
+    id: 301, status: "success", mode: "webhook", workflowId: "wfT1", workflowVersionId: "tv1",
+    startedAt: "2026-07-19T11:00:00.000Z", stoppedAt: "2026-07-19T11:00:01.000Z",
+    data: { resultData: { runData: {
+      Hook: [{ data: { main: [[{ json: { n: 1 }, pairedItem: { item: 0 } }]] } }],
+      Compute: [{ data: { main: [[{ json: { doubled: 2 }, pairedItem: { item: 0 } }]] } }],
+    } } },
+  });
+  let r = await cli("pull", "wfT1");
+  assert.equal(r.code, 0, r.out);
+  r = await cli("executions", "wfT1");
+  assert.equal(r.code, 0, r.out);
+
+  // in-sync, non-TTY: pins the trigger, runs, diffs clean, never mutates
+  const updatesBefore = updateCount;
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /no --execution\/--mock given; using the latest capture 301/);
+  assert.match(r.out, /1 node\(s\) pinned from capture 301/);
+  assert.match(r.out, /Compute: matches capture/);
+  assert.match(r.out, /instance test matches the capture/);
+  assert.match(r.out, /live \(published\) version was never affected/);
+  assert.equal(updateCount, updatesBefore, "non-TTY test never mutates the draft");
+  assert.deepEqual(Object.keys(lastTestCall!.pinData), ["Hook"], "trigger pinned, pure nodes run for real");
+
+  // local edit, non-TTY: tests the DRAFT as-is and says so; still read-only
+  const computeFile = path.join(wfDir("Instance Test Flow"), "code", "compute.js");
+  const originalCompute = read(wfDir("Instance Test Flow"), "code", "compute.js");
+  writeFileSync(computeFile, "return [{ json: { doubled: 3 } }];\n");
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /local code differs from the draft — this tested the draft, NOT your local code; run `n8n-decanter push` first/);
+  assert.equal(updateCount, updatesBefore, "still no mutation with local edits pending");
+  writeFileSync(computeFile, originalCompute);
+
+  // divergence → exit 1 with the per-node diff
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 999 } }]] } }] };
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /Compute: diverged from capture/);
+  assert.match(r.out, /instance test diverged: Compute/);
+
+  // instance-side failure (the 5-min timeout wording) surfaces verbatim
+  testRunOutcome = { status: "error", error: "Workflow execution timed out after 300 seconds", executionId: null };
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /instance test run failed: Workflow execution timed out after 300 seconds/);
+  testRunOutcome = { status: "success" };
+
+  // gap: a network node with no captured output must abort BEFORE anything runs
+  db.get("wfT1").nodes.push({ id: "t3", name: "Fetch Prices", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [440, 0], parameters: { url: "http://x" } });
+  r = await cli("test", "wfT1");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /cannot pin "Fetch Prices"[\s\S]*mock create/);
+  db.get("wfT1").nodes.pop();
+});
+
+await step("archive: refuses without --force non-interactively; --force archives over MCP, local folder kept", async () => {
   const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
   const dir = wfDir("Fresh Flow");
+  // make it published so the offline note is exercised too
+  db.get(id).active = true;
+  db.get(id).activeVersionId = db.get(id).versionId;
   // non-interactive without --force → refuse, remote intact
-  let r = await cli("delete", id);
+  let r = await cli("archive", id);
   assert.equal(r.code, 1, r.out);
-  assert.match(r.out, /refusing to delete "Fresh Flow" \([^)]+\) without confirmation — re-run with --force/);
-  assert.ok(db.has(id), "workflow not deleted without consent");
+  assert.match(r.out, /refusing to archive "Fresh Flow" \([^)]+\) without confirmation — re-run with --force/);
+  assert.ok(db.get(id).isArchived !== true, "workflow not archived without consent");
   // no ref (non-TTY) → error, never falls back to config.workflows or the picker
-  r = await cli("delete");
+  r = await cli("archive");
   assert.equal(r.code, 1);
-  assert.match(r.out, /delete needs a workflow ref/);
-  assert.ok(db.has("wf123"), "config workflow untouched by a ref-less delete");
-  // --force deletes even a published workflow; the local folder is left as the git record
-  r = await cli("delete", id, "--force");
+  assert.match(r.out, /archive needs a workflow ref/);
+  assert.ok(db.get("wf123").isArchived !== true, "config workflow untouched by a ref-less archive");
+  // --force archives (a published workflow goes offline); the local folder is left as the git record
+  r = await cli("archive", id, "--force");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /deleted "Fresh Flow" \([^)]+\) from the server/);
+  assert.match(r.out, /archived "Fresh Flow" \([^)]+\) — it was published and is now offline — restore or permanently delete it from the n8n UI/);
   assert.match(r.out, /left untouched/);
-  assert.ok(!db.has(id), "workflow gone from the server");
+  assert.equal(db.get(id).isArchived, true, "archived on the server, not deleted");
+  assert.equal(db.get(id).active, false, "archiving unpublished it");
   assert.ok(existsSync(path.join(dir, ".decanter.json")), "local folder kept as the git-tracked record");
+  // archived workflows refuse MCP access (the server's archived-first gate) — a second archive says so
+  r = await cli("archive", id, "--force");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /is archived and cannot be accessed/);
+  // pull refuses the same way
+  r = await cli("pull", id);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /is archived and cannot be accessed/);
 });
 
 await step("node create: Code node born in n8n over MCP (addNode), landed by pull; --ts converts in place", async () => {
@@ -2095,46 +2220,42 @@ await step("node create: Code node born in n8n over MCP (addNode), landed by pul
   assert.equal(db.get(id).nodes.filter((n: any) => n.type === "n8n-nodes-base.code").length, 3, "three code nodes live in n8n");
 });
 
-await step("duplicate: API-born clone (lossless POST); MCP pull gated until enabled in n8n", async () => {
+await step("convert a .ts node back to .js: re-point + body-equal push clears the remote marker (Plan 33)", async () => {
   const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
-  const sourceNodeCount = db.get(id).nodes.length;
-
-  let r = await cli("duplicate", id, "Authoring Clone");
+  const dir = wfDir("Authoring Demo");
+  const remoteJs = () => db.get(id).nodes.find((n: any) => n.name === "Typed Step").parameters.jsCode as string;
+  assert.match(remoteJs(), /\/\/ @ts-n8n sha256:/, "precondition: TS-managed remotely");
+  // the sharpest case: the new .js is byte-identical to the remote compiled
+  // body — only the marker state differs, and push must STILL write to clear it
+  const body = remoteJs().replace(/\/\/ @ts-n8n sha256:[0-9a-f]+\s*$/, "");
+  rmSync(path.join(dir, "code", "typed-step.ts"));
+  writeFileSync(path.join(dir, "code", "typed-step.js"), body);
+  const wf = JSON.parse(read(dir, "workflow.json"));
+  wf.nodes.find((n: any) => n.name === "Typed Step").parameters.jsCode = "//@file:code/typed-step.js";
+  writeFileSync(path.join(dir, "workflow.json"), JSON.stringify(wf, null, 2));
+  let r = await cli("push", id);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /duplicated "Authoring Demo" -> "Authoring Clone" \(wf-new-[^)]+\) on the server — unpublished draft/);
-  assert.match(r.out, /not yet available in MCP/, "API-born clone is MCP-gated: " + r.out);
-  const clone = [...db.values()].find((w) => w.name === "Authoring Clone");
-  assert.ok(clone, "clone created in the mock db");
-  assert.equal(clone.active, false, "born unpublished");
-  assert.equal(clone.availableInMCP, false, "API-born → not available in MCP");
-  assert.notEqual(clone.id, id, "distinct new id");
-  assert.equal(clone.nodes.length, sourceNodeCount, "carries the source's nodes");
-  assert.ok(!existsSync(wfDir("Authoring Clone")), "no folder while the pull is gated");
-  // source folder + remote left untouched
-  assert.ok(db.has(id), "source remote intact");
-  assert.equal(db.get(id).name, "Authoring Demo", "source name unchanged");
-  assert.ok(existsSync(path.join(wfDir("Authoring Demo"), ".decanter.json")), "source folder intact");
-
-  // enable MCP access (the user's n8n-side act) → pull lands the clone
-  clone.availableInMCP = true;
-  r = await cli("pull", clone.id);
+  assert.match(r.out, /pushed/, "body-equal stray-marker node is still written: " + r.out);
+  assert.equal(remoteJs(), body, "marker cleared, body verbatim");
+  // pull keeps the .js — no .ts resurrection once the marker is gone
+  r = await cli("pull", id);
   assert.equal(r.code, 0, r.out);
-  const cloneDir = wfDir("Authoring Clone");
-  assert.ok(existsSync(path.join(cloneDir, ".decanter.json")), "clone pulled into a folder");
-  assert.equal(state(cloneDir).workflowId, clone.id, "state points at the new id");
-  // the plain .js node round-trips byte-clean into the clone
-  assert.equal(read(cloneDir, "code", "parse-order.js"), read(wfDir("Authoring Demo"), "code", "parse-order.js"));
+  assert.ok(existsSync(path.join(dir, "code", "typed-step.js")), ".js survives the pull");
+  assert.ok(!existsSync(path.join(dir, "code", "typed-step.ts")), "no .ts resurrected");
+  r = await cli("check", id);
+  assert.equal(r.code, 0, "converted layout stays compliant: " + r.out);
+});
 
-  // no name → "<name> (copy)"
-  r = await cli("duplicate", id);
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /-> "Authoring Demo \(copy\)"/);
-  assert.ok([...db.values()].find((w) => w.name === "Authoring Demo (copy)"), "default copy-named clone");
-
-  // duplicate needs a ref
-  r = await cli("duplicate");
+await step("removed verbs: delete and duplicate are gone (Plan 33) — unknown-verb error, remote untouched", async () => {
+  const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
+  let r = await cli("delete", id, "--force");
   assert.equal(r.code, 1);
-  assert.match(r.out, /duplicate needs a workflow ref/);
+  assert.match(r.out, /unknown verb: delete/);
+  assert.ok(db.has(id), "delete is gone — nothing removed");
+  r = await cli("duplicate", id, "Clone");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /unknown verb: duplicate/);
+  assert.ok(![...db.values()].some((w) => w.name === "Clone"), "duplicate is gone — nothing created");
 });
 
 if (!hasFailed()) {

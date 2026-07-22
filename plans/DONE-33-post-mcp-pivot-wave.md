@@ -1,14 +1,22 @@
 # Plan 33 — Post-MCP-pivot wave: PR #97 review results, triage ratification, `test` verb, guard-proxy stack
 
-**Priority:** P2 (Tasks 1–3 become P1 the moment PR #97 merges)
-**Status:** Blocked — gate: **PR #97** (`feat/plan-32-mcp-native-code-layer`, the
-Plan 32 execution) merged to main. The execution **review is DONE** (2026-07-22,
+**Priority:** P1 (Tasks 1–3) / P2 (Tasks 4–7)
+**Status:** Done (executed 2026-07-22) — all seven tasks implemented, tested
+(269 unit / 76 e2e / 10 proxy / 11 guard-proxy / 14 interactive green; 29/29
+smoke on real n8n 2.30.7), documented, and folded through a 91-agent
+adversarial branch review (9 findings fixed — see Notes → Execution review).
+One named debt remains open: Task 3 item 1's init fall-back-to-paste branch
+(needs a prompt-injection seam in `init`). Unblocked 2026-07-22: the gate
+(**PR #97**, `feat/plan-32-mcp-native-code-layer`, the Plan 32 execution)
+merged to main as `3c77f2a`. The gate **review is DONE** (2026-07-22,
 16-agent audit+verify pass over the PR diff — see Notes → Review method); its
-results are folded into the tasks below. Plan 32 / DONE-32 itself stays
-untouched.
+results are folded into
+the tasks below. Plan 32 / [DONE-32](DONE-32-mcp-native-code-layer.md) itself
+stays untouched.
 **Theme:** Everything queued behind the MCP pivot, now grounded in the *actual*
 execution: re-express the lifecycle verbs the execution kept on REST
-(**decided**: `archive` replaces `delete`, `duplicate` goes MCP), fix the
+(**decided**: `archive` replaces `delete`; `duplicate` dropped — revised
+2026-07-22 from "goes MCP"), fix the
 defects and close the test debts the review found, then ship the follow-up
 wave — the `test` verb, the guard-proxy stack, and the `simulate` keep/drop
 decision.
@@ -22,7 +30,7 @@ the diff (each finding adversarially re-verified) answered the review-gate
 questions this plan originally carried, so the gate is replaced by its
 **outcome** (below). What remains is: the maintainer's override of the two
 places the execution stayed on REST (decided 2026-07-22: MCP `archive`
-replaces `delete`, `duplicate` moves to the SDK-code path — Task 1), a set of
+replaces `delete`; `duplicate` dropped — Task 1), a set of
 verified defects/debts, and the follow-up features that only make sense on
 the MCP foundation.
 
@@ -30,9 +38,8 @@ the MCP foundation.
 
 - Session 2026-07-22 (Plan 32 review with the maintainer; memory note
   `plan32-execution-review-checklist` — superseded by this file).
-- **PR #97** — the Plan 32 execution under review
-  ([DONE-32](DONE-32-mcp-native-code-layer.md) once merged; `OPEN-32` on main
-  until then).
+- **PR #97** — the Plan 32 execution under review (merged 2026-07-22 →
+  [DONE-32](DONE-32-mcp-native-code-layer.md)).
 - [Plan 30](OPEN-30-agent-llm-working-ergonomics.md) — precedence-override
   lineage (Task 4 rewrites it proxy-first) and "override, not fork".
 - [Plan 0](BACKLOG.md) — decanter-native code-node authoring skill (deferred,
@@ -94,7 +101,8 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 
 1. **Re-express lifecycle on MCP — DECIDED (maintainer 2026-07-22, overriding
    the execution's counter-rationales): `archive` replaces `delete`; `duplicate`
-   moves to the MCP SDK-code path. No hard delete in decanter.**
+   ~~moves to the MCP SDK-code path~~ **dropped** (revised mid-execution, see
+   its bullet). No hard delete in decanter.** *(Done 2026-07-22.)*
    - **`archive` replaces `delete` (Breaking: verb removed).** Drop the REST
      hard-delete verb entirely; new `archive` verb on MCP `archive_workflow`
      (same confirmation gate: TTY y/N naming workflow+id, non-TTY refuses
@@ -108,24 +116,26 @@ Task 1 (MCP re-expression; no hard delete in decanter).
      PLAN.md decision update. Side effect: the `docs/cli/overview.md`
      draft-acts grouping nit resolves itself (`archive` genuinely isn't a
      draft act either — give it its own annotation).
-   - **`duplicate` re-based on MCP:** local folder (incl. unpushed edits —
-     keep the executed property) → **generate n8n Workflow SDK code** (lean on
-     `get_sdk_reference`/`get_node_types`) → **`validate_workflow`
-     iterate-on-errors loop** (its `valid`/`warnings` (node name + parameter
-     path)/`errors`/`hint` output is shaped for exactly this) →
-     `create_workflow_from_code`. The executor's lossiness concern is
-     accepted as a *risk to manage, not a blocker*: anything the SDK bridge
-     cannot express fails loudly in the validate loop rather than cloning
-     silently wrong, and **fidelity is an acceptance criterion** (see
-     Acceptance: pull the clone back, compare code-stripped canonical
-     structure + byte-exact jsCode against the source folder). Wins: the copy
-     is **born `availableInMCP`** (the whole enable-MCP-on-the-copy guidance
-     flow disappears), and `duplicate` stops needing the API key — the
-     API-only surface shrinks to `executions` + `data-tables` fetches.
-   - **Route `create` through the same `validate_workflow` loop** once it
-     exists (cheap; makes AGENTS.md's "must pass validate_workflow first"
-     spike claim true instead of needing softening — adjust Task 7
-     accordingly).
+   - **`duplicate`: DROPPED entirely (decision revised mid-execution,
+     maintainer 2026-07-22).** The original re-base plan (generate SDK code →
+     `validate_workflow` loop → `create_workflow_from_code`, fidelity gate on
+     pull-back) hit a fork at execution time: the only faithful generator is
+     n8n's own `@n8n/workflow-sdk` npm package (`generateWorkflowCode`,
+     verified working) — but it is Sustainable-Use-licensed and drags a
+     ~20 MB dependency tree (incl. `n8n-workflow`) into the MIT CLI for one
+     verb, while a hand-rolled emitter risks silently-wrong wiring (the
+     restricted DSL has no documented explicit-connection syntax). Since a
+     **full JSON copy is impossible over MCP** (no full-JSON create tool),
+     the maintainer chose to drop the verb rather than keep the API
+     dependency or accept either bridge. The n8n UI duplicates natively;
+     decanter pulls the copy. Same win stands: the API-only surface shrinks
+     to `executions` + `data-tables` fetches.
+   - **Route `create` through `validate_workflow`** — done standalone (the
+     duplicate loop it was meant to reuse no longer exists): the minimal
+     `workflow('<slug>','<name>')` expression passes the server gate before
+     `create_workflow_from_code`; errors + `hint` surface verbatim. Makes
+     AGENTS.md's "must pass validate_workflow first" spike claim true —
+     adjust Task 7 accordingly.
 2. **Hardening fixes from the review** (each verified in the diff;
    file:line refs are PR-head):
    - **HIGH — refresh-token race (single-use rotation):** no in-process mutex
@@ -178,12 +188,17 @@ Task 1 (MCP re-expression; no hard delete in decanter).
    release, with named debts* — three sound layers: unit client coverage, 73
    e2e steps over a faithful dual REST+MCP mock incl. both SSE and plain-JSON
    parser branches, 28 smoke steps on the real container). Priority order:
+   *(Items 1–8 done 2026-07-22 except the one sub-item noted in 1; item 9
+   decided + implemented — see below.)*
    1. **OAuth consent flow** — the headline TTY auth path ships on **zero
       coverage** (`runOAuthConsent` referenced only by `init`); scripted
       `/mcp-oauth/register|authorize|token` server + the injectable
       `openBrowser` hook (built for tests, used by none): success,
       state-mismatch, error-redirect, consent-timeout, init's
-      fall-back-to-paste branch.
+      fall-back-to-paste branch. *(Done except the init fall-back-to-paste
+      branch: `createPrompt` binds `process.stdin` directly, so that 4-line
+      catch needs a prompt-injection seam in init — deferred as the one
+      remaining Task 3 debt rather than refactoring init mid-plan.)*
    2. **429 backoff unit test** — with/without Retry-After then 200; retry
       count, delay source, 5-retry cap. No test at any level sends a 429; the
       code ships on a "verified live" comment.
@@ -205,12 +220,21 @@ Task 1 (MCP re-expression; no hard delete in decanter).
       level (only the warning text is asserted; the no-push half lives in e2e).
    9. Decide + pin the ts→js reverse re-pointing story (js→ts is tested twice;
       the reverse is neither tested nor documented — support it or refuse it
-      in the guard). Optional: drive the OAuth kind once against the real
+      in the guard). *(Decided 2026-07-22: SUPPORTED symmetrically — a
+      body-equal push with a stray remote marker still writes, clearing the
+      marker; e2e-tested + documented with a "push before pulling again"
+      caveat.)* Optional: drive the OAuth kind once against the real
       container via the spike's headless consent, or record bearer-only smoke
-      as the accepted contract.
+      as the accepted contract. *(Optional half not taken: bearer-only smoke
+      remains the accepted contract.)*
 4. **Guard-proxy stack** — technical enforcement of the Code-node boundary
    (decided 2026-07-22; the landed contract is instructions-only). Three
-   layers, shipped together:
+   layers, shipped together: *(Done 2026-07-22 — hosted as a dedicated
+   `mcp serve` verb rather than inside `watch` (single-purpose long-running
+   process; watch users run both); per-session secret + gitignored
+   `.decanter-proxy.json` discovery file; 10-check `test/guardproxy.mts`
+   suite. Smoke coverage on the pinned container is still owed — see
+   Acceptance.)*
    - **(a) Local MCP guard-proxy** — decanter as sole token holder; agent MCP
      config points at a localhost proxy forwarding JSON-RPC to
      `POST /mcp-server/http`. Parse **requests only** (`tools/call` →
@@ -234,7 +258,14 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 5. **`test` verb** — instance-side pinned-data run (decided 2026-07-22):
    `n8n-decanter test [workflow…]` wrapping MCP `test_workflow` (synchronous,
    draft, 5-min timeout; trigger/credentialed/HTTP nodes pinned via `pinData`,
-   logic nodes run for real).
+   logic nodes run for real). *(Done 2026-07-22 — `lib/testrun.mts` +
+   e2e scenario. Deviations: exactly ONE workflow ref per run (simulate
+   parity; the selector flags are per-workflow anyway);
+   `prepare_test_pin_data` evaluated and NOT used — client-built pins from
+   local captures/mocks are reproducible/reviewable, server-generated
+   synthetic data is neither; `fixtures/` overrides not consulted (captures
+   and mocks only, per this task's own source list). Smoke coverage on the
+   real container still owed — see Acceptance.)*
    - **Interface mirrors `simulate`:** pinData from captures
      (`--execution <id>`, default newest) or committed mocks
      (`--mock <slug>`); `--trigger <node>` → `triggerNodeName`. Client-side
@@ -266,7 +297,10 @@ Task 1 (MCP re-expression; no hard delete in decanter).
      `simulate` = local/offline runtime (pre-push/CI/isolation/
      version-rehearsal). Requirements: MCP-backed (OAuth, `availableInMCP`,
      version floor). Docs trio + backlog distinctive-features entry.
-6. **`simulate`/Docker: KEEP — DECIDED (maintainer 2026-07-22). `test` becomes
+6. *(Done 2026-07-22 — the split is documented everywhere simulate appears:
+   taxonomy table in docs/cli/test.md, simulate docs + README recommend
+   `test` first, template AGENTS.md gained the runtime-checks section.)*
+   **`simulate`/Docker: KEEP — DECIDED (maintainer 2026-07-22). `test` becomes
    the primary/recommended way; `simulate` stays as a differentiator
    (potential USP).** The functional case that carried it (legacy ruled out as
    a reason): pre-push verification of uncommitted local state (`test` can
@@ -280,7 +314,11 @@ Task 1 (MCP re-expression; no hard delete in decanter).
    `AGENTS.md` loop guidance. Keeping it as a USP strengthens the case for
    [Plan 26](OPEN-26-npx-engine-backend.md) (npx backend — drops `simulate`'s
    Docker dependency), which stays independent.
-7. **AGENTS.md MCP-facts + docs update pass:** the `validate_workflow` spike
+7. *(Done 2026-07-22 — validate_workflow wording verified TRUE and annotated;
+   the re-verified tooling facts folded into AGENTS.md's MCP section; the
+   three docs nits fixed — overview's archive annotation, README's
+   `--no-typecheck` + `init [dir] [--force]`.)*
+   **AGENTS.md MCP-facts + docs update pass:** the `validate_workflow` spike
    claim ("must pass validate_workflow first") becomes TRUE once Task 1 routes
    create/duplicate through the loop — verify the wording then, instead of
    softening it; fold in the re-verified
@@ -290,9 +328,9 @@ Task 1 (MCP re-expression; no hard delete in decanter).
    execution reads `get_execution`/`search_executions`;
    `prepare_test_pin_data`; `publish_workflow(versionId)` = publish a past
    version straight to live — future `publish --version`?; docs count 41 vs.
-   the spike's 33). Post-merge link hygiene: this file's OPEN-32 references →
-   DONE-32; `plans/README.md` entry 32's "awaiting go/no-go" clause is stale
-   once #97 merges. Minor docs nits from the review: `docs/cli/overview.md`
+   the spike's 33). *(Post-merge link hygiene — this file's OPEN-32 refs →
+   DONE-32, `plans/README.md` entry 32's stale "awaiting go/no-go" clause —
+   done 2026-07-22 with the unblock.)* Minor docs nits from the review: `docs/cli/overview.md`
    groups `delete` under the draft-acts annotation (it's a hard remove);
    README's `check` line lacks `[--no-typecheck]`; `init [dir]` vs
    `init [dir] [--force]` asymmetry.
@@ -300,13 +338,11 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 ## Acceptance / verification
 
 - Task 1: `delete` gone, `archive` present (MCP `archive_workflow`), both with
-  **Breaking:** changelog entries and the full docs trio; `duplicate` runs the
-  SDK-code path with the `validate_workflow` loop and **passes the fidelity
-  check** — clone pulled back and compared against the source folder:
-  code-stripped canonical structure equal, every Code node's jsCode
-  byte-exact; `duplicate` no longer requires `N8N_API_KEY` (API-only surface
-  = `executions` + `data-tables` fetches); no surface (code, README, docs,
-  PLAN.md, template) left contradicting the decision.
+  **Breaking:** changelog entries and the full docs trio; `duplicate` gone
+  (**revised decision** — dropped entirely, Breaking changelog entry, docs
+  page removed); the API-only surface = `executions` + `data-tables` fetches;
+  `create` gated by `validate_workflow`; no surface (code, README, docs,
+  PLAN.md, template) left contradicting the decisions.
 - Task 2 HIGH fix verified by the Task 3.3 concurrent-refresh test; the
   remaining hardening items each land with a unit/e2e assertion where
   testable.
@@ -334,6 +370,35 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 
 ## Notes
 
+- **Execution review (2026-07-22):** after Tasks 1–7 landed, a 91-agent
+  adversarial workflow reviewed the branch diff across 7 dimensions
+  (lifecycle, refresh-race, guard-proxy, test-verb, push/pull, docs-drift,
+  test-quality), each finding re-verified by a 3-lens skeptic panel
+  (correctness / n8n-contract / materiality; majority-refute killed it). 9
+  findings survived and were all fixed:
+  - **HIGH — guard-proxy `jsCode` bypass:** n8n's `setNodeParameter` op
+    writes `jsCode` via a JSON-Pointer `path` + scalar `value`, with no
+    `jsCode` key — the original key-only guard forwarded it. `writesJsCode`
+    now covers both routes; regression-tested (guardproxy suite + real
+    container).
+  - **HIGH — `test` gap-check ran after the TTY push:** a pin gap could
+    mutate the draft then abort past keep/restore. Pins are now built
+    **before** any push (finding-2), unit-tested.
+  - **HIGH — `test` snapshot committable:** the pre-test snapshot (inline
+    jsCode) could be git-committed when `executions/` lacked its self-ignore
+    (`--mock` path). The verb now writes `executions/*` before the snapshot.
+  - **MED — the concurrent-refresh test didn't pin the mutex** (passed with
+    it removed): rewritten to force the race at `tools/call` after the shared
+    handshake; mutation-verified (fails without the mutex).
+  - **LOW — `#refresh` adopted a stale on-disk token** after a failed persist:
+    now redeems the in-memory token first, adopting disk only on
+    `invalid_grant`.
+  - **LOW — scope-list drift:** README + configuration.md recommended
+    `workflow:read` (unused post-branch) and omitted `workflow:list` (init's
+    probe) — fixed to match `template/.env.example`.
+  - **LOW — `test` loop-diff honesty:** a `splitInBatches` workflow now warns
+    that the diff covers first-iteration only.
+  - Plus new `test/unit/testrun.test.mts` closing the test-verb coverage gap.
 - **Review method (2026-07-22):** 16-agent workflow over the PR #97 diff —
   8 auditors (push gates, pull/snapshot, node verbs, credentials, triage
   conformance, process/docs, `lib/mcp.mts` deep review, test sufficiency),

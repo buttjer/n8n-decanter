@@ -80,6 +80,6 @@ plain-http hop, so auth may not carry through — best-effort only.
 `N8N_HOST` (and optionally `N8N_MCP_TOKEN`, `N8N_API_KEY`) in `.env` next to
 `decanter.config.json`, or the environment; OAuth credentials in
 `.decanter-auth.json` next to it. The scaffolded `.gitignore` keeps both
-files out of git. The API key is optional — only `executions`,
-`data-tables`, `duplicate`, and `delete` need it — see
+files out of git. The API key is optional — only `executions` and
+`data-tables` need it — see
 [Configuration](/docs/concepts/configuration/).

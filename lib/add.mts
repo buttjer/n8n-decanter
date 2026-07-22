@@ -3,7 +3,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type McpClient, updateWorkflow } from "./mcp.mts";
 import { pullWorkflow } from "./pull.mts";
-import { findWorkflowDir, readState, writeState } from "./state.mts";
+import { dirtyJsFiles, findWorkflowDir, readState, writeState } from "./state.mts";
 import type { DecanterConfig, Log, Workflow, WorkflowNode } from "./types.mts";
 import { CODE_NODE_TYPE, FILE_PLACEHOLDER_PREFIX, stableWorkflowJson } from "./util.mts";
 
@@ -54,6 +54,12 @@ export async function addCodeNode(mcp: McpClient, config: DecanterConfig, id: st
     throw new Error(`${wfFile}: invalid JSON (${(err as Error).message})`);
   }
   if (wf.nodes.some((n) => n.name === nodeName)) throw new Error(`a node named "${nodeName}" already exists in "${wf.name}"`);
+  // Pre-flight BEFORE the remote add: the embedded pull below overwrites .js
+  // files with the remote body, dropping unpushed edits (Plan 33 guard).
+  const dirty = dirtyJsFiles(dir);
+  if (dirty.length > 0) {
+    throw new Error(`unpushed local edits in ${dirty.join(", ")} — node create pulls the workflow afterwards, overwriting them; push first (or commit so git can recover them)`);
+  }
 
   const nodeId = randomUUID();
   await updateWorkflow(mcp, id, [{

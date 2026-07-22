@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type McpClient, updateWorkflow } from "./mcp.mts";
 import { pullWorkflow } from "./pull.mts";
-import { findWorkflowDir, readState, writeState } from "./state.mts";
+import { dirtyJsFiles, findWorkflowDir, readState, writeState } from "./state.mts";
 import type { DecanterConfig, Log, Workflow } from "./types.mts";
 import { isJsCodeNode, placeholderFile, renameNodeRefs, stableWorkflowJson } from "./util.mts";
 
@@ -37,6 +37,13 @@ export async function renameNode(mcp: McpClient, config: DecanterConfig, id: str
   const node = wf.nodes.find((n) => n.name === oldName);
   if (!node) throw new Error(`no node named "${oldName}" in "${wf.name}" (nodes: ${wf.nodes.map((n) => `"${n.name}"`).join(", ")})`);
   if (wf.nodes.some((n) => n.name === newName)) throw new Error(`a node named "${newName}" already exists in "${wf.name}"`);
+  // Pre-flight BEFORE the remote rename: the embedded pull below overwrites
+  // .js files with the remote body, which would silently drop unpushed edits
+  // (Plan 33 guard) — and aborting after the rename would leave local stale.
+  const dirty = dirtyJsFiles(dir);
+  if (dirty.length > 0) {
+    throw new Error(`unpushed local edits in ${dirty.join(", ")} — node rename pulls the workflow afterwards, overwriting them; push first (or commit so git can recover them)`);
+  }
 
   await updateWorkflow(mcp, id, [{ type: "renameNode", oldName, newName }]);
   log.ok(`renamed node "${oldName}" -> "${newName}" in n8n`);

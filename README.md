@@ -38,16 +38,28 @@ so nothing goes live until you `publish`. Workflow *structure* stays n8n's job
   a gitignored temp dir, so agents see actual payload shapes (and build
   accurate `node run` fixtures) instead of guessing; `executions clean` removes
   it when done.
+- **Instance-side pinned test runs** — `test` runs the workflow on **your
+  n8n instance** (draft only, never the live version): trigger/network/
+  credentialed nodes pinned from a capture, logic nodes executed for real on
+  the instance-exact engine (community nodes included, no Docker), each node
+  diffed against the capture — exits 1 on divergence. The recommended
+  runtime check.
 - **Engine-true simulation** — `simulate` replays a whole workflow through a
-  real n8n engine using a captured execution as the mock: pure nodes run for
-  real, network nodes pinned, credentials stripped. It diffs each node against
-  the capture (exits 1 on divergence — a CI-gateable regression check) and, in
-  a terminal, prints a URL to open the run in the n8n webapp. Nodes with no
-  captured data (gaps) are filled by hand — or by your IDE agent — in committed,
-  named [mock scenarios](docs/cli/mock.md) (`mock create` / `mock check`), no
-  API key or model call; the CLI stays fully offline.
+  real n8n engine **offline** (Docker) using a captured execution as the mock:
+  pure nodes run for real, network nodes pinned, credentials stripped. It
+  diffs each node against the capture (exits 1 on divergence) and, in a
+  terminal, prints a URL to open the run in the n8n webapp. The offline
+  sibling of `test`: pre-push verification of uncommitted code, CI without an
+  instance, `--network-none` isolation, engine-version rehearsal. Nodes with
+  no captured data (gaps) are filled by hand — or by your IDE agent — in
+  committed, named [mock scenarios](docs/cli/mock.md) (`mock create` /
+  `mock check`), no API key or model call.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
+- **Agent guard-proxy** — `mcp serve` gives coding agents full n8n MCP access
+  through a localhost proxy holding decanter's credentials (the agent never
+  sees them), while technically blocking Code-node (`jsCode`) writes — the
+  one thing that belongs in this repo's files, not in ad-hoc MCP edits.
 - **Shared code and small libraries** — `.ts` nodes import helpers/types
   from `shared/` and opted-in npm packages; push bundles them into
   self-contained nodes that run anywhere, n8n Cloud included.
@@ -111,9 +123,9 @@ ids to `decanter.config.json`:
   API key). For CI and headless setups; rotating it in n8n invalidates the old
   one.
 - **Public API key (optional)** — `N8N_API_KEY`, only needed for the verbs MCP
-  cannot serve: `executions`, `data-tables`, `duplicate`, `delete`. Scope it to
-  `execution:read`, `execution:list`, `workflow:read`, `workflow:create`,
-  `workflow:delete`, and the `dataTable:*` read scopes.
+  cannot serve: `executions` and `data-tables`. Scope it to `execution:read`,
+  `execution:list`, `workflow:list` (init's connection check), and the
+  `dataTable:*` read scopes.
 
 After every successful push **and pull**, the workflow's folder is
 git-committed automatically (scoped to that folder; outside a git repo it
@@ -140,7 +152,7 @@ n8n-decanter                        # interactive picker (terminal, inited
                                     #   stays in the workflow's menu between
                                     #   verbs, Esc backs out, Esc Esc quits
 # Setup
-n8n-decanter init [dir]             # interactive bootstrap (see Setup)
+n8n-decanter init [dir] [--force]   # interactive bootstrap (see Setup)
 n8n-decanter completion zsh|bash    # print a shell completion script
 
 # Sync
@@ -155,14 +167,13 @@ n8n-decanter unpublish [workflow…]  #   (unpublish returns to draft-only)
 
 # Workflow lifecycle
 n8n-decanter create "<name>"                 # create a blank workflow in n8n, then pull it
-n8n-decanter duplicate <workflow> ["<name>"] # clone a workflow (API; enable MCP on the copy to pull)
-n8n-decanter delete <workflow> [--force]     # delete from the server (API; folder kept)
+n8n-decanter archive <workflow> [--force]    # archive in n8n (reversible there; folder kept)
 n8n-decanter rename <workflow> "<new name>"  # rename the workflow in n8n (folder stays)
 
 # Inspect & test
 n8n-decanter status [workflow…] [--diff]   # drift report (--diff: line diffs);
                                     #   exits 1 on conflict/remote drift
-n8n-decanter check [workflow…]      # offline layout-compliance + typecheck
+n8n-decanter check [workflow…] [--no-typecheck]   # offline layout-compliance + typecheck
 n8n-decanter executions [workflow…] [--status=success|error|waiting] [--limit=N]
                                     # fetch recent execution data (run JSON)
                                     #   into workflows/<folder>/executions/
@@ -173,6 +184,11 @@ n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=c
                                     #   into a gitignored top-level data-tables/;
                                     #   filter/search/sort pull a slice server-side
 n8n-decanter data-tables [table…] clean     # delete fetched data-table data (offline)
+n8n-decanter test <workflow> [--execution <execution-id> | --mock <slug>] [--trigger <node>] [--json]
+                                    # pinned run ON THE INSTANCE (draft; the
+                                    #   recommended runtime check — instance-exact
+                                    #   engine, no Docker); diffs vs the capture,
+                                    #   exits 1 on divergence
 n8n-decanter simulate <workflow> [--execution <execution-id>] [--network-none] [--json]
                                     # replay the whole workflow through a real
                                     #   n8n engine (Docker): pure nodes run for
@@ -190,6 +206,11 @@ n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]
 n8n-decanter mock check <workflow> ["<slug>"]   # structurally validate a mock (offline)
 n8n-decanter list [--remote] [--json]   # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones; --json for tooling)
+
+# Agent guard
+n8n-decanter mcp serve [--port N]   # localhost MCP guard-proxy for agents: full n8n
+                                    #   MCP access with decanter's credentials,
+                                    #   minus Code-node (jsCode) writes
 
 # Node
 n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node in n8n
@@ -296,9 +317,10 @@ already run, so Claude Code on a Claude subscription needs no extra API tokens.
   server (~2.20+), MCP access enabled instance-wide, and a per-workflow
   "Available in MCP" flag. Workflows without the flag are visible in
   `list --remote` and the picker but can't be pulled until you enable them —
-  the CLI tells you where the switch lives. `executions`, `data-tables`,
-  `duplicate`, and `delete` still use the public API key (MCP has no execution
-  read, no data-table row read, no lossless clone, and no hard delete).
+  the CLI tells you where the switch lives. `executions` and `data-tables`
+  still use the public API key (MCP has no execution read and no data-table
+  row read). Duplicating and hard-deleting workflows are n8n-UI jobs — the
+  API-era `duplicate`/`delete` verbs were dropped in favor of `archive`.
 - **Structure edits don't sync from here.** `workflow.json` is a read-only
   snapshot: editing it changes nothing in n8n and the next `pull` overwrites
   it. Wire nodes, change parameters like a Code node's `mode`, and arrange the
@@ -328,7 +350,9 @@ on the next `pull`.
   compiles it (esbuild, comments stripped) and appends a
   `// @ts-n8n sha256:...` marker line; `pull` never touches the `.ts`.
   To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
-  its `//@file:` placeholder in `workflow.json` to the `.ts` name.
+  its `//@file:` placeholder in `workflow.json` to the `.ts` name. Converting
+  back works the same way (`.ts` → plain `.js` + re-point); the next push
+  clears the remote marker — push before pulling again.
 - `shared/*.ts` — helpers and types **imported by `.ts` nodes** (values and
   types); push bundles the imports into the compiled node, so the pushed
   code is self-contained and runs anywhere — n8n Cloud included, no

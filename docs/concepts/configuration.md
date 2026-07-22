@@ -50,11 +50,10 @@ In order of resolution:
      re-run `init` to re-consent (also the fix for a
      "MCP session expired" error).
 3. **`N8N_API_KEY` (optional)** — only for the verbs MCP cannot serve:
-   [executions](/docs/cli/executions/), [data-tables](/docs/cli/data-tables/),
-   [duplicate](/docs/cli/duplicate/), [delete](/docs/cli/delete/). Scope it
-   minimally: `execution:read`, `execution:list`, `workflow:read`,
-   `workflow:create`, `workflow:delete`, and the `dataTable:*` read scopes
-   (only while `dataTables` is on).
+   [executions](/docs/cli/executions/) and
+   [data-tables](/docs/cli/data-tables/). Scope it minimally:
+   `execution:read`, `execution:list`, `workflow:list` (init's connection
+   check), and the `dataTable:*` read scopes (only while `dataTables` is on).
 
 The instance needs **MCP access enabled** once (n8n → Settings → MCP;
 requires an n8n with the built-in MCP server, ~2.20+), and each synced

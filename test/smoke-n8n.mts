@@ -62,6 +62,11 @@ await docker(
   "-e", "N8N_SECURE_COOKIE=false",
   "-e", "N8N_DIAGNOSTICS_ENABLED=false",
   "-e", "N8N_PERSONALIZATION_ENABLED=false",
+  // The default MCP rate limit is 100 requests / IP / 5 min (mcp.config.ts)
+  // — this suite's CLI bursts cross it mid-run, and the client then honors
+  // a minutes-long Retry-After (correct, but it turns the suite into a
+  // sleep-athon). Raise the cap; the 429 handling itself is unit-tested.
+  "-e", "N8N_MCP_SERVER_RATE_LIMIT=10000",
   IMAGE,
 );
 const teardown = async (): Promise<void> => {
@@ -528,12 +533,16 @@ try {
       // normalizes quotes), so match the value, not the source spelling
       assert.match(remote.nodes.find((n: any) => n.id === "c1").parameters.jsCode, /watched/, "draft carries the save");
       assert.equal(remote.activeVersionId, liveBefore, "…and the LIVE version is untouched (draft-only)");
-      // a workflow.json save warns once and pushes nothing
+      // a workflow.json save warns once and pushes nothing — assert the
+      // no-push half on the REAL server too (Plan 33): the draft versionId
+      // must not move, proving no update_workflow was issued
       const wfJson = path.join(wfDir, "workflow.json");
+      const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
       const logCount = logs.length;
       writeFileSync(wfJson, read(wfJson));
       await sleep(1500);
       assert.ok(logs.slice(logCount).some((m) => m.includes("read-only structure snapshot")), "snapshot warning:\n" + logs.join("\n"));
+      assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "workflow.json save pushed nothing — draft versionId unchanged");
     } finally {
       await handle.close();
     }
@@ -561,6 +570,83 @@ try {
     assert.match(r.out, /not found|permission/i, r.out);
   });
 
+  await step("mcp serve: guard-proxy against the REAL instance — reads pass, a jsCode write is blocked (Plan 33)", async () => {
+    const { spawn } = await import("node:child_process");
+    const proc = spawn(process.execPath, [CLI, "mcp", "serve", "--port", "0"], { cwd: TMP, env });
+    let out = "";
+    proc.stdout.on("data", (c: Buffer) => (out += c.toString()));
+    proc.stderr.on("data", (c: Buffer) => (out += c.toString()));
+    try {
+      for (let i = 0; i < 40 && !out.includes("listening on"); i++) await sleep(250);
+      const url = out.match(/listening on (http:\/\/127\.0\.0\.1:\d+\/mcp-server\/http)/)?.[1];
+      const secret = out.match(/"Authorization": "Bearer ([^"]+)"/)?.[1];
+      assert.ok(url && secret, "serve printed the endpoint + session secret:\n" + out);
+
+      const rpc = async (body: unknown, session?: string) => {
+        const res = await fetch(url!, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${secret}`,
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            ...(session !== undefined && { "mcp-session-id": session }),
+          },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        return { status: res.status, text, session: res.headers.get("mcp-session-id") ?? session };
+      };
+      const parseResult = (text: string) => {
+        // plain JSON or SSE data: lines — take the last data: payload
+        const line = text.startsWith("event:") || text.includes("\ndata:") || text.startsWith("data:")
+          ? text.split("\n").filter((l) => l.startsWith("data:")).pop()!.slice(5)
+          : text;
+        return JSON.parse(line.trim());
+      };
+
+      // handshake THROUGH the proxy — session tracking mirrors the CLI's own
+      // client: adopt the mcp-session-id header from WHICHEVER response
+      // carries it (the real 2.30.7 doesn't guarantee it on initialize)
+      const init = await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "smoke-agent", version: "0" } } });
+      assert.equal(init.status, 200, init.text);
+      let session = init.session ?? undefined;
+      const notified = await rpc({ jsonrpc: "2.0", method: "notifications/initialized" }, session);
+      session = notified.session ?? session;
+
+      // a read passes through and returns the real workflow (with jsCode)
+      const details = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_workflow_details", arguments: { workflowId: wfId } } }, session);
+      assert.equal(details.status, 200, details.text);
+      const detailsMsg = parseResult(details.text);
+      assert.ok(JSON.stringify(detailsMsg).includes("jsCode"), "read passed through to the real instance");
+
+      // a jsCode write is blocked in-band, and the instance never sees it
+      const before = (await api("GET", `/api/v1/workflows/${wfId}`)).nodes.find((n: any) => n.name === "Ümläut Nödé").parameters.jsCode;
+      const write = await rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: wfId, operations: [{ type: "updateNodeParameters", nodeName: "Ümläut Nödé", parameters: { jsCode: "return [{json:{hacked:true}}]" } }] } } }, session);
+      assert.equal(write.status, 200, write.text);
+      const writeMsg = parseResult(write.text);
+      assert.equal(writeMsg.result?.isError, true, "blocked in-band: " + write.text);
+      assert.match(JSON.stringify(writeMsg), /guard-proxy/, "instructive block text");
+      const after = (await api("GET", `/api/v1/workflows/${wfId}`)).nodes.find((n: any) => n.name === "Ümläut Nödé").parameters.jsCode;
+      assert.equal(after, before, "the write never reached n8n");
+
+      // a structure op (rename there and back) passes through to the real instance
+      const rename = await rpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: wfId, operations: [{ type: "renameNode", oldName: "Ümläut Nödé", newName: "Proxy Renamed" }] } } }, session);
+      assert.equal(parseResult(rename.text).result?.isError ?? false, false, "structure op passed: " + rename.text);
+      assert.ok((await api("GET", `/api/v1/workflows/${wfId}`)).nodes.some((n: any) => n.name === "Proxy Renamed"), "rename landed via the proxy");
+      await rpc({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: wfId, operations: [{ type: "renameNode", oldName: "Proxy Renamed", newName: "Ümläut Nödé" }] } } }, session);
+      assert.ok((await api("GET", `/api/v1/workflows/${wfId}`)).nodes.some((n: any) => n.name === "Ümläut Nödé"), "rename reverted");
+      // the local .ts source references the old name — refresh the snapshot/state
+      let r = await cli("pull", wfId);
+      assert.equal(r.code, 0, r.out);
+      // the two renames bumped the DRAFT versionId; re-publish so the suite's
+      // "published & in sync" precondition holds for the steps after this one
+      r = await cli("publish", wfId);
+      assert.equal(r.code, 0, r.out);
+    } finally {
+      proc.kill("SIGTERM");
+    }
+  });
+
   await step("executions API: shape matches what Plan 3 C designs against", async () => {
     const page = await api("GET", "/api/v1/executions?includeData=true&limit=5");
     assert.ok(Array.isArray(page.data) && page.data.length > 0, "executions recorded");
@@ -583,7 +669,7 @@ try {
     assert.equal(remote.activeVersionId, remote.versionId, "published & in sync: live version == draft");
   });
 
-  await step("lifecycle verbs: create → push → publish → unpublish → delete round-trip", async () => {
+  await step("lifecycle verbs: create → push → publish → unpublish → archive round-trip", async () => {
     // create a blank draft on the server via the CLI, born unpublished
     let r = await cli("create", "Smoke Lifecycle");
     assert.equal(r.code, 0, r.out);
@@ -627,26 +713,38 @@ try {
     assert.match(r.out, /unpublished "Smoke Lifecycle" \([^)]+\) — draft only/);
     remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.active, false, "unpublish returned it to draft-only");
+    // Plan 33: assert the AFTER-unpublish shape too (only the born-unpublished
+    // case was pinned before) — the real server nulls activeVersionId
+    assert.equal(remote.activeVersionId, null, "unpublish clears activeVersionId on the real server");
 
-    // delete needs a ref (never touches config)
-    r = await cli("delete");
+    // archive needs a ref (never touches config)
+    r = await cli("archive");
     assert.equal(r.code, 1);
-    assert.match(r.out, /delete needs a workflow ref/);
-    // delete --force → hard delete even after publish/unpublish; local folder kept
-    r = await cli("delete", lifeId, "--force");
+    assert.match(r.out, /archive needs a workflow ref/);
+    // archive --force → MCP archive_workflow; the workflow survives on the
+    // server (isArchived), it is NOT hard-deleted; local folder kept
+    r = await cli("archive", lifeId, "--force");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /deleted "Smoke Lifecycle" \([^)]+\) from the server/);
-    const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
-    assert.equal(gone.status, 404, "hard delete: workflow gone from the server");
+    assert.match(r.out, /archived "Smoke Lifecycle" \([^)]+\) — restore or permanently delete it from the n8n UI/);
+    remote = await api("GET", `/api/v1/workflows/${lifeId}`);
+    assert.equal(remote.isArchived, true, "archived on the server");
+    assert.equal(remote.active, false, "stays unpublished");
     assert.ok(existsSync(path.join(lifeDir, ".decanter.json")), "local folder left untouched as the git record");
+    // archived workflows refuse MCP access (archived-first gate, real server text)
+    r = await cli("pull", lifeId);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /is archived and cannot be accessed/);
+    // tidy up: the public API hard delete still works for cleanup (not a CLI surface)
+    await api("DELETE", `/api/v1/workflows/${lifeId}`);
+    const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
+    assert.equal(gone.status, 404, "cleanup delete succeeded");
   });
 
-  // Plan 21 authoring verbs against real n8n. Dedicated workflows (not the
+  // Plan 21 authoring verbs against real n8n. A dedicated workflow (not the
   // heavily-mutated Smoke WF) so the assertions stay clean, torn down at the
-  // end. `authId`/`authDir`/`cloneId` thread from the add step into duplicate.
+  // end of the step. (The duplicate verb died in Plan 33 — no clone step.)
   let authId = "";
   let authDir = "";
-  let cloneId = "";
 
   await step("add: a scaffolded Code node executes in the real n8n sandbox", async () => {
     // fresh Webhook -> Respond skeleton (no code node yet); add mints the node
@@ -698,43 +796,8 @@ try {
     const out = await webhook({ n: 21 }, "smoke-auth-hook");
     assert.equal(out[0]?.myNewField, 1, "default scaffold body executed in the sandbox: " + JSON.stringify(out).slice(0, 300));
     assert.equal(out[0]?.body?.n, 21, "scaffold was correctly wired between Webhook and Respond");
-  });
 
-  await step("duplicate: real POST clone — born unpublished from a published source, independent", async () => {
-    const source = await api("GET", `/api/v1/workflows/${authId}`);
-    assert.equal(source.active, true, "source is published from the add step's publish");
-
-    let r = await cli("duplicate", authId, "Smoke Authoring Copy");
-    assert.equal(r.code, 0, r.out);
-    cloneId = r.out.match(/duplicated "Smoke Authoring" -> "Smoke Authoring Copy" \(([^)]+)\)/)?.[1] ?? "";
-    assert.ok(cloneId, "duplicate printed the new id: " + r.out);
-    assert.notEqual(cloneId, authId, "distinct new id");
-    // the clone is API-born → MCP-gated: duplicate surfaces guidance, then the
-    // n8n-side opt-in admits the pull
-    assert.match(r.out, /not yet available in MCP/, "gate guidance surfaced: " + r.out);
-    await enableMcpAccess(cloneId);
-    r = await cli("pull", cloneId);
-    assert.equal(r.code, 0, r.out);
-
-    const clone = await api("GET", `/api/v1/workflows/${cloneId}`);
-    assert.equal(clone.active, false, "clone born unpublished even though the source is published");
-    assert.equal(clone.nodes.length, source.nodes.length, "clone carries the source's nodes");
-    assert.deepEqual(clone.connections, source.connections, "clone preserves the connections");
-    const cloneDir = path.join(ROOT, "smoke-authoring-copy");
-    assert.ok(existsSync(path.join(cloneDir, ".decanter.json")), "clone pulled into a folder");
-    // the .js Code node round-trips byte-clean into the clone
-    assert.equal(read(cloneDir, "code", "enrich.js"), read(authDir, "code", "enrich.js"), "clone's enrich.js is byte-identical");
-
-    // independence: edit + push the clone; the source's remote code is untouched
-    const before = (await api("GET", `/api/v1/workflows/${authId}`)).nodes.find((n: any) => n.name === "Enrich").parameters.jsCode;
-    writeFileSync(path.join(cloneDir, "code", "enrich.js"), "return [{ json: { cloneOnly: true } }];\n");
-    r = await cli("push", cloneId);
-    assert.equal(r.code, 0, r.out);
-    const after = (await api("GET", `/api/v1/workflows/${authId}`)).nodes.find((n: any) => n.name === "Enrich").parameters.jsCode;
-    assert.equal(after, before, "editing the clone must not change the source workflow");
-
-    // tidy up both authoring workflows (the container is ephemeral, but keep it clean)
-    await api("DELETE", `/api/v1/workflows/${cloneId}`);
+    // tidy up the authoring workflow (the container is ephemeral, but keep it clean)
     await api("DELETE", `/api/v1/workflows/${authId}`);
   });
 
@@ -877,6 +940,21 @@ try {
     assert.equal(r.code, 0, r.out);
     assert.equal(recordedOut[0].json.doubled, n * 2, "sanity: recorded live output is 2×input");
     assert.match(r.out, new RegExp(`"doubled":\\s*${n * 2}\\b`), `offline run reproduces the live output: ${r.out}`);
+  });
+
+  await step("test verb: pinned run on the REAL instance — draft tested, pure node diffed clean (Plan 33)", async () => {
+    // captures from the previous steps are still on disk; local == draft ==
+    // published, so the non-TTY run tests the draft as-is and the
+    // deterministic Code node must reproduce its captured output exactly
+    const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
+    const r = await cli("test", wfId);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /pinned from capture/, "pins sourced from the newest capture: " + r.out);
+    assert.match(r.out, /Ümläut Nödé: matches capture/, "the real instance rerun matches the capture: " + r.out);
+    assert.match(r.out, /instance test matches the capture/);
+    assert.match(r.out, /live \(published\) version was never affected/);
+    assert.ok(!r.out.includes("tested the draft, NOT your local code"), "local == draft — no divergence note: " + r.out);
+    assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "non-TTY test mutated nothing");
   });
 
   await step("executions clean: fetched data is removed (offline)", async () => {

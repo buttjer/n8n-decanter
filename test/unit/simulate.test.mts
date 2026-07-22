@@ -384,6 +384,18 @@ describe("mock create (writeMock) + sourceFile resolution", () => {
     assert.ok(existsSync(path.join(dir, MOCKS_DIR, "1.json")));
   });
 
+  it("strips the capture's embedded workflowData — a committed mock must not duplicate node source", async () => {
+    const dir = gapWorkflowDir();
+    const captureFile = path.join(dir, "executions", "1.json");
+    const capture = JSON.parse(readFileSync(captureFile, "utf8"));
+    capture.workflowData = { nodes: [{ name: "Compute", parameters: { jsCode: "return $input.all();" } }] };
+    writeFileSync(captureFile, JSON.stringify(capture));
+    await writeMock(dir, "1", "no-inline", log);
+    const mock = JSON.parse(readFileSync(path.join(dir, MOCKS_DIR, "no-inline.json"), "utf8"));
+    assert.equal(mock.workflowData, undefined, "workflowData stripped from the committed mock");
+    assert.ok(mock.data.resultData.runData.Fetch, "runData survives the strip");
+  });
+
   it("validateMockRunData: no-op on a real capture (no _decanterMock marker)", () => {
     const capture = { id: 1, data: { resultData: { runData: { A: run([item({ x: 1 })]) } } } } as any;
     assert.doesNotThrow(() => validateMockRunData(capture, "1"));

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { DecanterState, Log } from "./types.mts";
-import { CODE_DIR } from "./util.mts";
+import { CODE_DIR, sha256 } from "./util.mts";
 
 export const STATE_FILE = ".decanter.json";
 
@@ -55,6 +55,25 @@ export function readState(dir: string): DecanterState | null {
 
 export function writeState(dir: string, state: DecanterState): void {
   writeFileSync(path.join(dir, STATE_FILE), JSON.stringify(state, null, 2) + "\n");
+}
+
+/**
+ * Tracked `.js` node files with unpushed local edits (hash ≠ last-sync
+ * hash) — exactly the files an embedded pull would overwrite with the
+ * remote body. `.ts` sources are never touched by pull, so they're not
+ * listed. Empty when there is no state (nothing tracked, nothing at risk).
+ */
+export function dirtyJsFiles(dir: string): string[] {
+  const state = readState(dir);
+  if (!state) return [];
+  const dirty: string[] = [];
+  for (const ns of Object.values(state.nodes)) {
+    if (!ns.file.endsWith(".js") || ns.lastPushedHash === undefined) continue;
+    const filePath = path.join(dir, ns.file);
+    if (!existsSync(filePath)) continue;
+    if (sha256(readFileSync(filePath, "utf8")) !== ns.lastPushedHash) dirty.push(ns.file);
+  }
+  return dirty;
 }
 
 /** All workflow folders under root (dirs containing a .decanter.json). */

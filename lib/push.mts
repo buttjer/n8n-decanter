@@ -31,8 +31,12 @@ export async function buildNodeCode(dir: string, file: string, log?: Log): Promi
 /**
  * Per-node code drift (Plan 32: the only drift guard left — structure is
  * n8n's job now). A node drifts when the remote body moved off the last-sync
- * hash AND differs from what we are about to write (a remote edit that
- * happens to match the local code just re-baselines silently).
+ * hash AND differs from what we are about to write. Two deliberate
+ * relaxations (Plan 33 decision — documented, not restored): an *undefined*
+ * `lastPushedHash` never drifts (no baseline exists — a first sync for that
+ * node has nothing to protect), and a remote edit that happens to match the
+ * local code just re-baselines silently (blocking a byte-identical write
+ * would only manufacture a conflict).
  */
 function codeDrift(remoteHash: string, localHash: string, lastPushedHash: string | undefined): boolean {
   return lastPushedHash !== undefined && remoteHash !== lastPushedHash && remoteHash !== localHash;
@@ -101,11 +105,19 @@ async function collectOps(
       continue;
     }
     const { jsCode, hash } = await buildNodeCode(dir, ns.file, log);
-    const remoteHash = sha256(splitMarker(node.parameters.jsCode).body);
+    const remoteSplit = splitMarker(node.parameters.jsCode);
+    const remoteHash = sha256(remoteSplit.body);
     if (codeDrift(remoteHash, hash, ns.lastPushedHash)) {
       problems.push(`node "${node.name}": remote code changed since last sync`);
     }
-    if (hash === remoteHash) continue; // already in sync — no write needed
+    // A body-equal write is still needed when the marker state disagrees with
+    // the file kind (Plan 33): a freshly converted .ts node whose marker
+    // hasn't landed yet pushes to REGISTER TS management, and a node
+    // re-pointed back to .js whose remote still carries a marker pushes to
+    // CLEAR it (otherwise the next pull would resurrect the node as .ts).
+    const missingMarker = ns.file.endsWith(".ts") && remoteSplit.markerHash === null;
+    const strayMarker = ns.file.endsWith(".js") && remoteSplit.markerHash !== null;
+    if (hash === remoteHash && !missingMarker && !strayMarker) continue; // already in sync — no write needed
     ops.push({ type: "updateNodeParameters", nodeName: node.name, parameters: { jsCode } });
   }
   if (!onlyNodeIds) {
@@ -187,8 +199,17 @@ function verifyRoundTrip(dir: string, state: DecanterState, confirmed: Workflow,
     // compare hashes only — the local build was just computed in collectOps,
     // but cheap re-hash keeps this function self-contained and read-only
     const localFile = path.join(dir, ns.file);
-    if (!existsSync(localFile) || ns.file.endsWith(".ts")) continue; // .ts verified via marker hash below
-    const remoteBody = splitMarker(node.parameters.jsCode).body;
+    if (!existsSync(localFile)) continue;
+    const { body: remoteBody, markerHash } = splitMarker(node.parameters.jsCode);
+    if (ns.file.endsWith(".ts")) {
+      // .ts: the pushed marker carries the compiled body's hash — a mismatch
+      // means the server normalized the code after the write (recompiling
+      // here would be the expensive way to say the same thing)
+      if (markerHash !== null && sha256(remoteBody) !== markerHash) {
+        log.warn(`node "${node.name}": remote code does not match its @ts-n8n marker hash after push — the server normalized it? inspect with status --diff`);
+      }
+      continue;
+    }
     if (sha256(readFileSync(localFile, "utf8")) !== sha256(remoteBody)) {
       log.warn(`node "${node.name}": remote code does not match ${ns.file} byte-exactly after push — the server normalized it? inspect with status --diff`);
     }
@@ -219,6 +240,9 @@ export async function pushSingleNode(
   if (ops.length > 0) {
     await updateWorkflow(mcp, state.workflowId, ops);
     confirmed = await getWorkflowDetails(mcp, state.workflowId);
+    // same invariant as a full push — watch saves must not skip it (it also
+    // backstops a rename between the read and the name-addressed write)
+    verifyRoundTrip(dir, state, confirmed, log);
   }
   recordSync(state, confirmed);
   writeState(dir, state);
