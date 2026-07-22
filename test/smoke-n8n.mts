@@ -62,6 +62,11 @@ await docker(
   "-e", "N8N_SECURE_COOKIE=false",
   "-e", "N8N_DIAGNOSTICS_ENABLED=false",
   "-e", "N8N_PERSONALIZATION_ENABLED=false",
+  // The default MCP rate limit is 100 requests / IP / 5 min (mcp.config.ts)
+  // — this suite's CLI bursts cross it mid-run, and the client then honors
+  // a minutes-long Retry-After (correct, but it turns the suite into a
+  // sleep-athon). Raise the cap; the 429 handling itself is unit-tested.
+  "-e", "N8N_MCP_SERVER_RATE_LIMIT=10000",
   IMAGE,
 );
 const teardown = async (): Promise<void> => {
@@ -565,6 +570,83 @@ try {
     assert.match(r.out, /not found|permission/i, r.out);
   });
 
+  await step("mcp serve: guard-proxy against the REAL instance — reads pass, a jsCode write is blocked (Plan 33)", async () => {
+    const { spawn } = await import("node:child_process");
+    const proc = spawn(process.execPath, [CLI, "mcp", "serve", "--port", "0"], { cwd: TMP, env });
+    let out = "";
+    proc.stdout.on("data", (c: Buffer) => (out += c.toString()));
+    proc.stderr.on("data", (c: Buffer) => (out += c.toString()));
+    try {
+      for (let i = 0; i < 40 && !out.includes("listening on"); i++) await sleep(250);
+      const url = out.match(/listening on (http:\/\/127\.0\.0\.1:\d+\/mcp-server\/http)/)?.[1];
+      const secret = out.match(/"Authorization": "Bearer ([^"]+)"/)?.[1];
+      assert.ok(url && secret, "serve printed the endpoint + session secret:\n" + out);
+
+      const rpc = async (body: unknown, session?: string) => {
+        const res = await fetch(url!, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${secret}`,
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            ...(session !== undefined && { "mcp-session-id": session }),
+          },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        return { status: res.status, text, session: res.headers.get("mcp-session-id") ?? session };
+      };
+      const parseResult = (text: string) => {
+        // plain JSON or SSE data: lines — take the last data: payload
+        const line = text.startsWith("event:") || text.includes("\ndata:") || text.startsWith("data:")
+          ? text.split("\n").filter((l) => l.startsWith("data:")).pop()!.slice(5)
+          : text;
+        return JSON.parse(line.trim());
+      };
+
+      // handshake THROUGH the proxy — session tracking mirrors the CLI's own
+      // client: adopt the mcp-session-id header from WHICHEVER response
+      // carries it (the real 2.30.7 doesn't guarantee it on initialize)
+      const init = await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "smoke-agent", version: "0" } } });
+      assert.equal(init.status, 200, init.text);
+      let session = init.session ?? undefined;
+      const notified = await rpc({ jsonrpc: "2.0", method: "notifications/initialized" }, session);
+      session = notified.session ?? session;
+
+      // a read passes through and returns the real workflow (with jsCode)
+      const details = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "get_workflow_details", arguments: { workflowId: wfId } } }, session);
+      assert.equal(details.status, 200, details.text);
+      const detailsMsg = parseResult(details.text);
+      assert.ok(JSON.stringify(detailsMsg).includes("jsCode"), "read passed through to the real instance");
+
+      // a jsCode write is blocked in-band, and the instance never sees it
+      const before = (await api("GET", `/api/v1/workflows/${wfId}`)).nodes.find((n: any) => n.name === "Ümläut Nödé").parameters.jsCode;
+      const write = await rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: wfId, operations: [{ type: "updateNodeParameters", nodeName: "Ümläut Nödé", parameters: { jsCode: "return [{json:{hacked:true}}]" } }] } } }, session);
+      assert.equal(write.status, 200, write.text);
+      const writeMsg = parseResult(write.text);
+      assert.equal(writeMsg.result?.isError, true, "blocked in-band: " + write.text);
+      assert.match(JSON.stringify(writeMsg), /guard-proxy/, "instructive block text");
+      const after = (await api("GET", `/api/v1/workflows/${wfId}`)).nodes.find((n: any) => n.name === "Ümläut Nödé").parameters.jsCode;
+      assert.equal(after, before, "the write never reached n8n");
+
+      // a structure op (rename there and back) passes through to the real instance
+      const rename = await rpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: wfId, operations: [{ type: "renameNode", oldName: "Ümläut Nödé", newName: "Proxy Renamed" }] } } }, session);
+      assert.equal(parseResult(rename.text).result?.isError ?? false, false, "structure op passed: " + rename.text);
+      assert.ok((await api("GET", `/api/v1/workflows/${wfId}`)).nodes.some((n: any) => n.name === "Proxy Renamed"), "rename landed via the proxy");
+      await rpc({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: wfId, operations: [{ type: "renameNode", oldName: "Proxy Renamed", newName: "Ümläut Nödé" }] } } }, session);
+      assert.ok((await api("GET", `/api/v1/workflows/${wfId}`)).nodes.some((n: any) => n.name === "Ümläut Nödé"), "rename reverted");
+      // the local .ts source references the old name — refresh the snapshot/state
+      let r = await cli("pull", wfId);
+      assert.equal(r.code, 0, r.out);
+      // the two renames bumped the DRAFT versionId; re-publish so the suite's
+      // "published & in sync" precondition holds for the steps after this one
+      r = await cli("publish", wfId);
+      assert.equal(r.code, 0, r.out);
+    } finally {
+      proc.kill("SIGTERM");
+    }
+  });
+
   await step("executions API: shape matches what Plan 3 C designs against", async () => {
     const page = await api("GET", "/api/v1/executions?includeData=true&limit=5");
     assert.ok(Array.isArray(page.data) && page.data.length > 0, "executions recorded");
@@ -858,6 +940,21 @@ try {
     assert.equal(r.code, 0, r.out);
     assert.equal(recordedOut[0].json.doubled, n * 2, "sanity: recorded live output is 2×input");
     assert.match(r.out, new RegExp(`"doubled":\\s*${n * 2}\\b`), `offline run reproduces the live output: ${r.out}`);
+  });
+
+  await step("test verb: pinned run on the REAL instance — draft tested, pure node diffed clean (Plan 33)", async () => {
+    // captures from the previous steps are still on disk; local == draft ==
+    // published, so the non-TTY run tests the draft as-is and the
+    // deterministic Code node must reproduce its captured output exactly
+    const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
+    const r = await cli("test", wfId);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /pinned from capture/, "pins sourced from the newest capture: " + r.out);
+    assert.match(r.out, /Ümläut Nödé: matches capture/, "the real instance rerun matches the capture: " + r.out);
+    assert.match(r.out, /instance test matches the capture/);
+    assert.match(r.out, /live \(published\) version was never affected/);
+    assert.ok(!r.out.includes("tested the draft, NOT your local code"), "local == draft — no divergence note: " + r.out);
+    assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "non-TTY test mutated nothing");
   });
 
   await step("executions clean: fetched data is removed (offline)", async () => {

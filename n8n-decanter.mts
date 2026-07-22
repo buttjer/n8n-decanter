@@ -232,7 +232,7 @@ async function main() {
   // Verb-first: slot 0 must be a known verb (a workflow named like a verb is now
   // just an argument, so the old "address it by id" caveat is gone). `node:<sub>`
   // is internal and already validated above.
-  if (!command.startsWith("node:") && !command.startsWith("mock:") && !VERBS.has(command)) {
+  if (!command.startsWith("node:") && !command.startsWith("mock:") && !command.startsWith("mcp:") && !VERBS.has(command)) {
     console.log(usage());
     throw new Error(`unknown verb: ${command}`);
   }

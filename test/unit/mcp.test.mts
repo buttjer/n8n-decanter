@@ -415,7 +415,7 @@ describe("429 backoff", () => {
           }
           if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
           attempts++;
-          if (attempts === 1) return void res.writeHead(429, { "retry-after": "7200" }).end("later"); // bogus-huge header → capped
+          if (attempts === 1) return void res.writeHead(429, { "retry-after": "7200" }).end("later"); // bogus-huge header → capped at n8n's real 5-min window
           if (attempts <= 6) return void res.writeHead(429).end("later"); // no header → exponential
           res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "{}" }] } }));
         });
@@ -428,7 +428,7 @@ describe("429 backoff", () => {
       // 5 retries after the first 429 → attempts 2..6 are still 429 → the 6th response ends the loop as an error
       await assert.rejects(mcp.callTool("probe", {}), /MCP tools\/call failed: 429/);
       assert.equal(attempts, 6, "1 initial + 5 retries");
-      assert.deepEqual(delays, [30_000, 2000, 4000, 8000, 8000], "Retry-After capped at 30s, then exponential over the TOTAL retry count (capped at 8s)");
+      assert.deepEqual(delays, [310_000, 2000, 4000, 8000, 8000], "Retry-After capped at n8n's verified 5-min window (+margin), then exponential over the TOTAL retry count (capped at 8s)");
     } finally {
       await srv.close();
     }

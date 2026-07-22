@@ -66,9 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP client hardening:** a transient handshake failure no longer poisons
   every later call in the same run; a 200-with-HTML answer (captive
   portal/reverse proxy) gets a named error instead of a raw `SyntaxError`;
-  body-read timeouts use the friendly timeout message; a bogus-huge
-  `Retry-After` is capped (30 s); a dropped MCP session (404 with a session
-  id) re-handshakes once transparently; a token-refresh response without a
+  body-read timeouts use the friendly timeout message; a rate-limit
+  `Retry-After` is honored up to n8n's verified 5-minute window (with a
+  visible "waiting Ns" warning) and capped there against bogus-huge
+  headers; a dropped MCP session (404 with a session id) re-handshakes once
+  transparently; a token-refresh response without a
   rotated refresh token keeps the old one; workflow lists that hit the
   200-row page cap warn about truncation.
 - **`node create` / `node rename` no longer overwrite unpushed `.js` edits:**

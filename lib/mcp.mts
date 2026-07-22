@@ -530,14 +530,18 @@ export class McpClient {
         refreshed = true; // access token may have just expired — refresh once
         continue;
       }
-      // n8n rate-limits the MCP endpoint (verified live: 429 under bursts of
-      // CLI runs) — a rejected request was NOT applied, so retrying is safe
-      // for every method, including update_workflow. Honor Retry-After
-      // (capped: a large or bogus header must not stall the CLI for minutes).
+      // n8n rate-limits the MCP endpoint (verified: 100 requests per IP per
+      // 5 MINUTES on 2.30.7 — mcp.config.ts, N8N_MCP_SERVER_RATE_LIMIT) — a
+      // rejected request was NOT applied, so retrying is safe for every
+      // method, including update_workflow. Honor Retry-After up to that
+      // verified window (a bogus header must not stall longer); the cap must
+      // NOT be shorter than the window, or a burst-heavy run gives up inside
+      // it (smoke-proven regression).
       if (res.status === 429 && rateRetries < 5) {
         rateRetries++;
         const retryAfter = Number(res.headers.get("retry-after"));
-        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 30_000) : Math.min(1000 * 2 ** (rateRetries - 1), 8000);
+        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 310_000) : Math.min(1000 * 2 ** (rateRetries - 1), 8000);
+        if (delayMs > 5000) this.#log?.warn(`n8n rate-limited the MCP endpoint (429) — waiting ${Math.round(delayMs / 1000)}s before retrying (n8n allows 100 requests / 5 min by default)`);
         await res.text().catch(() => {}); // drain before the retry
         await this.#sleep(delayMs);
         continue;
