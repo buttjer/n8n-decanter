@@ -193,6 +193,25 @@ items not yet claimed by one. Recommended order:
     (2026-07-22, n8n 2.30.7): byte-exact jsCode read/write, draft-first edits, and
     OAuth-first auth with refresh tokens all confirmed — the API can be dropped for
     the code path. Breaking; awaiting go/no-go. Proposed 2026-07-22.
+33. [Post-MCP-pivot wave](BLOCKED-33-post-mcp-pivot-wave.md) — everything queued
+    *behind* Plan 32, now grounded in its execution (PR #97, reviewed
+    2026-07-22 by a 16-agent audit+verify pass; gate: #97 merged). The old
+    review gate is answered — push guards, pull/snapshot invariant, node-verb
+    re-design, and API-optional all verified satisfied; MCP smoke tests real
+    (28 steps on the pinned container). Remaining: re-express lifecycle on MCP
+    per the maintainer's override (decided 2026-07-22: **`archive` replaces
+    `delete`** — no hard delete in decanter — and `duplicate` moves to the
+    SDK-code path behind a `validate_workflow` loop with a pull-back fidelity
+    check), fix verified defects (HIGH: single-use refresh-token
+    race; client robustness; push/pull semantics polish; snapshot loopholes in
+    `mocks/` + Python nodes), close named test debts (OAuth consent flow, 429
+    backoff, concurrent refresh), then the follow-up wave: the instance-side
+    `test` verb (pinned-data run + client-side diff, prompt-driven, draft
+    restore via `restore_workflow_version`), the guard-proxy stack (localhost
+    MCP proxy as sole token holder + slim config-drift hooks + proxy-first
+    template override), `simulate` kept as a differentiator with `test` as the
+    recommended default (decided 2026-07-22), and the AGENTS.md MCP-facts
+    update. Proposed 2026-07-22.
 
 ## Conventions
 
