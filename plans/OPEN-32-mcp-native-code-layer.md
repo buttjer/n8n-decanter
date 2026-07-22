@@ -81,8 +81,9 @@ Decided with the user (this session):
 2. **Ownership boundary + sync redesign:** decanter writes **only** the `jsCode` param of Code
    nodes, never structure. Redefine pull (read jsCode → files) and push (files →
    `updateNodeParameters` → optional publish). Two spike-verified semantics anchor the design:
-   **pull reads the draft** (`get_workflow_details` returns the draft version; published
-   content is not readable via MCP), and **`updateNodeParameters` merges** — a `{jsCode}`-only
+   **pull reads the tip** (`get_workflow_details` returns what the editor shows — the
+   unpublished draft if one exists, else the published content; only a *superseded* published
+   version is unreadable), and **`updateNodeParameters` merges** — a `{jsCode}`-only
    write preserves sibling params (`mode`, `language`), so push needs no read-modify-write.
    Drop whole-workflow structural hashing, the PUT-canonical drift guard, `.remote.js` conflict
    flow, and flat-layout rename migration — all tied to owning structure. Keep per-node content
@@ -142,6 +143,28 @@ Decided with the user (this session):
    override — not selective install — is what holds the boundary. Relates to
    [[n8n-agent-grounding-landscape]] (Plan 30 "override, don't fork").
 
+## Relation to Plan 30 (agent/LLM ergonomics — in planning, unmerged)
+
+[Plan 30](OPEN-30-agent-llm-working-ergonomics.md) predates this pivot; the split, agreed
+2026-07-22:
+
+- **Unaffected — ship independently, don't hold for this plan's go/no-go:** Theme A
+  (orient-first via read-only `status`), Theme B (instance version in `status` — *more*
+  load-bearing here, it powers the version-floor messaging), the read-only `n8n-docs` MCP
+  default scaffold (F5), docs-versioning recipe (F4), Theme D (loop diagram, allowlist audit).
+- **Superseded on a go:** Plan 30's Task 8 staged-`init` instance-MCP wiring (probe →
+  paste-a-UI-token → opt-in read-only extra) is built on premises this plan's spike replaced —
+  auth is OAuth-first in `init` (Task 5) and the instance MCP is the sync backend, not an
+  opt-in. On a go, Task 8 shrinks to its docs-MCP/fallback parts.
+- **One owner for the precedence override:** Plan 30's override ("never build via n8n MCP;
+  files+push, full stop") and this plan's Task 9 ("structure may go via MCP/skills; Code-node
+  source is decanter's") are **incompatible strings**. On a go, **Task 9 owns the override**
+  and Plan 30's version is dropped; on a no-go, Plan 30's stands.
+- **czlonkowski n8n-mcp demotes on a go:** with the instance MCP always wired, its
+  version-accurate `search_nodes`/`get_node_types`/`validate_node_config`/`get_sdk_reference`
+  cover the snapshot's schema/validation role; the snapshot stays only as the no-instance
+  fallback + template corpus (adjusts Plan 30's grounding ladder rung 2).
+
 ## Acceptance / verification
 
 - **Code-node source in git round-trips byte-exact** through the new MCP path (the invariant).
@@ -181,10 +204,13 @@ Decided with the user (this session):
     version**. This is the API-inaccessible draft-first edit.
   - **Merge semantics:** `updateNodeParameters` **merges** into existing params — writing
     `{jsCode}` alone preserves `mode`/`language` and vice versa. Push can send just the code.
-  - **Reads are draft-only:** `get_workflow_details` returns the **draft**;
-    `get_workflow_version` returns **metadata only** (no node params), so published content is
-    not readable via MCP — `restore_workflow_version` is the only path back to it. Pull
-    therefore syncs the draft, and a draft-vs-published content diff is not possible over MCP.
+  - **Reads return the tip (the editor view):** `get_workflow_details` always returns the
+    latest version — the unpublished draft if one exists, else the published content (verified
+    both ways: diverged → draft; re-published → that same content). The only gap: once a draft
+    has diverged, the **superseded published version's content** can't be read back —
+    `get_workflow_version` returns metadata only (no node params);
+    `restore_workflow_version` is the sole path to it. Pull therefore syncs the tip, and a
+    draft-vs-published content diff is not possible over MCP.
   - **Data tables are add-only:** create/rename/add-rows/columns exist, but **no row-read
     tool** — `search_data_tables` returns schema only (verified: inserted rows not readable
     back). Plan 25's rows stay on the public API.
