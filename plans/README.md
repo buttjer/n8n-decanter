@@ -213,6 +213,18 @@ items not yet claimed by one. Recommended order:
     template override), `simulate` kept as a differentiator with `test` as the
     recommended default (decided 2026-07-22), and the AGENTS.md MCP-facts
     update. Proposed 2026-07-22.
+34. [Blind agent field test](OPEN-34-blind-agent-field-test.md) — validate the
+    post-pivot product the way it's actually consumed: **blind** Sonnet coding
+    agents (headless `claude -p`, no knowledge they're being evaluated) act as
+    typical users against a real Docker n8n — `init` (token path) → structure
+    via n8n MCP skills through the guard-proxy → Code-node authoring →
+    `check`/`node run` → `push`/`publish` → instance-side runs; simple +
+    medium pure-node workflows only (no network/API nodes). Committed harness
+    (stage script reusing the smoke recipe, scenario pack, scripted invariant
+    verifier); Opus orchestrates in-character and grades; findings land as a
+    ranked report for maintainer triage — no product fixes in-plan. Also
+    produces the proxy-log evidence the Plan 0 authoring-skill entry waits on.
+    Proposed 2026-07-22.
 
 ## Conventions
 
