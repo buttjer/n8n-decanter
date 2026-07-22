@@ -150,6 +150,30 @@ the CLI, so `n8n-decanter` must be on the sync dir's PATH: install it globally
 under `node_modules`). The verbs `check`, `node run`, `rename`, and `node create` are fully
 offline (no credentials, no network).
 
+## Works with n8n's official skills
+
+n8n-decanter is built to **pair with the [official n8n skills](https://github.com/n8n-io/skills)** —
+n8n's first-party agent knowledge pack — not to replace them. **Install them
+and use them.** They teach your agent the runtime your Code nodes run in
+(`code-nodes`, `expressions`, `data-tables`, `error-handling`, `debugging`, …)
+and can build workflow structure over n8n's MCP — which, here, is n8n's job.
+
+The one boundary is **Code-node source**, and decanter enforces it for you so
+pairing the two is safe by construction. Run the [`mcp serve`](docs/cli/mcp-serve.md)
+**guard-proxy** and point your agent's MCP config at it: decanter holds the only
+n8n credential, forwards every skill/MCP read, structure edit, and publish
+untouched, and blocks exactly one thing — writes that set a Code node's
+`jsCode`. Those get redirected back to the repo (edit the file, `push`).
+
+```sh
+n8n-decanter mcp serve            # localhost proxy; prints URL + session secret
+# → point your agent's MCP config at the printed URL (never the instance)
+```
+
+So the skills build and wire freely; decanter keeps every Code node a real,
+typed, git-tracked file. **Full guide:
+[Using n8n's official skills](docs/agents/n8n-skills.md).**
+
 ## Commands
 
 ```sh
