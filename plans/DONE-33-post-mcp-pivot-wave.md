@@ -1,11 +1,16 @@
 # Plan 33 — Post-MCP-pivot wave: PR #97 review results, triage ratification, `test` verb, guard-proxy stack
 
 **Priority:** P1 (Tasks 1–3) / P2 (Tasks 4–7)
-**Status:** In progress (execution started 2026-07-22) — unblocked 2026-07-22:
-the gate (**PR #97**,
-`feat/plan-32-mcp-native-code-layer`, the Plan 32 execution) merged to main as
-`3c77f2a`. The execution **review is DONE** (2026-07-22, 16-agent audit+verify
-pass over the PR diff — see Notes → Review method); its results are folded into
+**Status:** Done (executed 2026-07-22) — all seven tasks implemented, tested
+(269 unit / 76 e2e / 10 proxy / 11 guard-proxy / 14 interactive green; 29/29
+smoke on real n8n 2.30.7), documented, and folded through a 91-agent
+adversarial branch review (9 findings fixed — see Notes → Execution review).
+One named debt remains open: Task 3 item 1's init fall-back-to-paste branch
+(needs a prompt-injection seam in `init`). Unblocked 2026-07-22: the gate
+(**PR #97**, `feat/plan-32-mcp-native-code-layer`, the Plan 32 execution)
+merged to main as `3c77f2a`. The gate **review is DONE** (2026-07-22,
+16-agent audit+verify pass over the PR diff — see Notes → Review method); its
+results are folded into
 the tasks below. Plan 32 / [DONE-32](DONE-32-mcp-native-code-layer.md) itself
 stays untouched.
 **Theme:** Everything queued behind the MCP pivot, now grounded in the *actual*

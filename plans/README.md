@@ -194,7 +194,7 @@ items not yet claimed by one. Recommended order:
     OAuth-first auth with refresh tokens all confirmed — the API can be dropped for
     the code path. Breaking; executed as PR #97 (merged 2026-07-22).
     Proposed 2026-07-22.
-33. [Post-MCP-pivot wave](INPROGRESS-33-post-mcp-pivot-wave.md) — everything queued
+33. [Post-MCP-pivot wave](DONE-33-post-mcp-pivot-wave.md) — everything queued
     *behind* Plan 32, now grounded in its execution (PR #97, merged
     2026-07-22; reviewed by a 16-agent audit+verify pass). The old
     review gate is answered — push guards, pull/snapshot invariant, node-verb
