@@ -110,6 +110,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`pull` with no argument now opens the picker on a fresh setup.** On a
+  terminal, `n8n-decanter pull` (no ref) lists your workflows — **local and
+  remote** (over MCP) — so you can pick one to pull without knowing its id or
+  pre-listing it in `decanter.config.json`; picking a not-yet-local workflow
+  pulls it fresh. Previously its no-ref picker showed only already-pulled
+  workflows, so a first-ever `pull` errored with `no workflow ids`. Piped /
+  non-interactive runs are unchanged (they pull the config `workflows` set).
 - **The scaffolded MCP config is rebuilt around the guard + n8n's official
   docs MCP.** `init`'s `.mcp.json` (and `opencode.json`) now wire two
   servers: **`n8n-instance`** — the `mcp connect` guard (see Added) — and

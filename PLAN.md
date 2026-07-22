@@ -309,7 +309,12 @@ a unique name prefix. Resolution is tiered — exact id → exact name
 (case-insensitive) → unique prefix — and never prompts. An id-shaped ref that
 matches nothing passes through unresolved; `pull` additionally resolves
 unknown names against MCP `search_workflows` (which sees every workflow,
-opted-in or not). A ref verb given no workflow opens the picker on a TTY.
+opted-in or not). A ref verb given no workflow opens the picker on a TTY to
+pick one (the verb menu is skipped). **For `pull` the no-ref picker merges the
+remote `search_workflows` list** (like the bare picker), so a fresh setup with
+nothing pulled still gets a menu — pick a not-yet-local workflow and it pulls;
+the other ref verbs act on local files, so they pick among already-pulled
+workflows only.
 
 The **interactive picker** (Plan 19/23) shows three states since Plan 32:
 pulled (green `●`), unpulled-but-available (yellow `○`), and
