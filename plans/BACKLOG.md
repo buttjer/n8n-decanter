@@ -115,6 +115,17 @@ entries carry no priority field) — adjust freely.
 
 ### Open — low (large scope or deferred)
 
+- [ ] **`init`'s OAuth fall-back-to-paste branch is untested** (named debt out
+      of [Plan 33](DONE-33-post-mcp-pivot-wave.md) Task 3.1). `runOAuthConsent`
+      now has full unit coverage (`test/unit/mcp.test.mts`), but the branch in
+      `lib/init.mts` that catches a failed consent and prompts for a pasted
+      `N8N_MCP_TOKEN` instead has none: `init` calls `createPrompt`, which binds
+      `process.stdin`/`stdout` directly, so there's no seam to script the paste
+      in a test. **Recommend:** thread an injectable prompt (or reuse the
+      `openBrowser`-style hook pattern) into `init` so the fallback path can be
+      driven, then assert: OAuth throws → paste prompt → token lands in `.env`
+      and the connection check runs against it. Small; the value is closing the
+      last uncovered auth branch. Severity: low.
 - [ ] **LLM semantic validation** — LLM-based *semantic* workflow validation as
       a command. Split out of the validator idea —
       [Plan 2](DONE-2-offline-validation-and-rename.md) covers only the offline
