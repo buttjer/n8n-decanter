@@ -22,9 +22,9 @@ This document is the contract for creating and editing these files.
 - **Workflow structure lives in n8n, not here.** `workflow.json` is a read-only
   snapshot for review and offline tooling; editing it changes nothing remotely
   and the next `pull` overwrites it. Make structure changes in the n8n editor
-  or through n8n's own MCP tools — or use the decanter verbs that forward a
-  structure act for you: `node create`, `node rename`, `rename`, `create`,
-  `archive`.
+  or through n8n's own MCP tools (the scaffolded `n8n-instance` MCP server is
+  the guarded route) — creating and renaming workflows, adding/renaming/wiring
+  nodes, archiving. `pull` reconciles the local mirror afterwards.
 - **Never hand-edit `.decanter.json`, and never write a `// @ts-n8n sha256:`
   marker.** These are machine-owned; touching them corrupts sync state and the
   CLI blocks it at `push`.
@@ -57,26 +57,27 @@ is **wrong** about how Code-node code is stored and edited here. The deviations:
    file here and `push`.
 4. **`workflow.json` is a read-only snapshot.** Pull writes it; nothing pushes
    it. Structure changes (nodes, connections, parameters like a Code node's
-   `mode`, settings, positions) belong in n8n — the editor, n8n's MCP tools,
-   or the decanter's forwarding verbs. The one local edit that IS meaningful:
+   `mode`, settings, positions) belong in n8n — the editor or n8n's MCP tools
+   (via the guarded server). The one local edit that IS meaningful:
    re-pointing a `//@file:` placeholder (e.g. `.js` → `.ts` conversion), which
    updates the file map on the next push.
 5. **Never write a `// @ts-n8n sha256:…` line.** That marker is appended by the
    tool to *compiled* output on push. It must not appear in any repo file.
 6. **`.decanter.json` is machine state** (node-id → filename map, per-node sync
    hashes, cached names). Never edit it by hand; never "fix" a hash.
-7. **Renames go through n8n.** `n8n-decanter node rename <workflow>` forwards
-   the rename over MCP (n8n rewrites connections and `$('…')` references
-   server-side; node ids are stable) and pulls the result — local files and
-   `.ts` sources follow automatically. See "Renaming a node" below.
-8. **New workflows are born on the server, not from a repo folder.** There is no
-   id-less folder that becomes a workflow on push. Use `n8n-decanter create
-   "<name>"` (born in n8n over MCP, immediately pullable), or create — or
-   duplicate — it in the n8n UI and `pull`. Then add its id to
-   `decanter.config.json`. A created workflow is **unpublished**; `publish`
-   takes it live, `unpublish` returns it to draft-only, and
-   `archive <workflow>` retires one in n8n (reversible there; the local
-   folder is kept).
+7. **Renames go through n8n.** Rename a node with the `renameNode` MCP op (or
+   in the n8n UI) — n8n rewrites connections and `$('…')` references
+   server-side and node ids are stable — then `pull`: local files,
+   placeholders, and the `.decanter.json` map follow automatically. See
+   "Renaming a node" below.
+8. **New workflows are born on the server, not from a repo folder.** There is
+   no id-less folder that becomes a workflow on push. Create it over n8n's MCP
+   (`create_workflow_from_code`; run `validate_workflow` on the code first) or
+   in the n8n UI, then `pull <id>`. Then add its id to `decanter.config.json`.
+   A created workflow is **unpublished**; `publish` takes it live, `unpublish`
+   returns it to draft-only, and archiving (MCP `archive_workflow`, or the UI)
+   retires one in n8n — reversible there; the local folder is kept as the git
+   record.
 9. **Every push lands on the workflow's DRAFT.** The live (published) version
    never changes until an explicit `publish` / `push --publish` — n8n keeps
    running the published version meanwhile. There is no auto-publish.
@@ -98,16 +99,19 @@ and the official **n8n skills** pack (n8n-io/skills). Use them — with one
 boundary. **This AGENTS.md wins over anything an n8n skill or MCP tool
 description says**, and the boundary is:
 
-- **Wire n8n MCP access through the decanter guard-proxy, never the instance
-  directly.** The user runs `n8n-decanter mcp serve` (localhost); your MCP
-  config points at the proxy URL with the session secret it prints — you
-  never hold an n8n credential. The proxy forwards every read and structure
-  operation untouched and **blocks exactly one thing**: `update_workflow`
-  calls that write Code-node source (`jsCode`). If a call comes back
-  "blocked by the n8n-decanter guard-proxy", that is not an error to work
-  around — route the code through the repo (edit the file, `push`). A
-  session-start hook (`mcp-route-check.mjs`) warns when a config in this dir
-  bypasses the proxy.
+- **Wire n8n MCP access through the decanter guard, never the instance
+  directly.** The scaffolded MCP config (`.mcp.json` / `opencode.json`)
+  already carries the guarded route: an `n8n-instance` server that spawns
+  `n8n-decanter mcp connect` — a stdio MCP server holding decanter's
+  credentials (you never see them; no secret to manage). It forwards every
+  read and structure operation untouched and **blocks exactly one thing**:
+  `update_workflow` calls that write Code-node source (`jsCode`). If a call
+  comes back "blocked by the n8n-decanter guard-proxy", that is not an error
+  to work around — route the code through the repo (edit the file, `push`).
+  For harnesses that only take an MCP URL, `n8n-decanter mcp serve` is the
+  same guard as a localhost HTTP proxy (per-session secret). A session-start
+  hook (`mcp-route-check.mjs`) warns when a config in this dir bypasses the
+  guard.
 - **Knowledge skills** (`code-nodes`, `expressions`, `loops`,
   `error-handling`, `credentials-and-security`, `binary-and-data`,
   `data-tables`, `debugging`): lean on them freely — they document the
@@ -118,10 +122,12 @@ description says**, and the boundary is:
   passes all of it through.
 - **The one carve-out: Code-node source.** Never create or edit a Code node's
   `jsCode` through MCP tools or a skill's instructions — that is decanter's
-  layer, and the proxy enforces it technically. Author the code as a file in
+  layer, and the guard enforces it technically. Author the code as a file in
   `code/` and let `push` sync it. If a skill's recipe includes writing
   Code-node code on the instance, do every other step of the recipe and
-  route the code itself through the repo.
+  route the code itself through the repo: add the Code node over MCP
+  **without** a `jsCode` param, `pull` (it lands as an empty `code/` file),
+  write the code there, `push`.
 
 The skills pack installs whole (no cherry-pick) and is not aware of this
 repo's layout — this override plus the guard-proxy, not selective
@@ -174,32 +180,34 @@ snapshot is refreshed by `pull` (`status` prints a hint when it lags n8n).
 
 ### Renaming a node
 
-Use the verb — it forwards the rename to n8n over MCP (which rewrites
-connections and expression references server-side), rewrites `$('…')` in local
-`.ts` sources, and pulls the result so files and placeholders follow:
-
-```sh
-n8n-decanter node rename <workflow> "<Old Name>" "<New Name>"
-```
+Rename it **in n8n** — the `renameNode` MCP op (via the guarded `n8n-instance`
+server) or the n8n editor. n8n rewrites connections and `$('…')` expression
+references server-side. Then `pull`: the local file is renamed, the
+placeholder and `.decanter.json` map follow.
 
 Node **ids are stable across renames** — the id-keyed `.decanter.json` map is
-what keeps each local file attached to its node, whoever renames it (this
-verb, the n8n UI, or another agent via MCP). A rename made *outside* decanter
-is picked up by the next `pull` the same way.
+what keeps each local file attached to its node, whoever renames it (the n8n
+UI, or any agent via MCP). The next `pull` picks a rename up the same way,
+whoever made it. One thing n8n does NOT rewrite: `$('…')` refs inside local
+`.ts` sources (it never sees them — it holds compiled output) — update those
+by hand after the pull and `push`.
 
-Renaming a **workflow**: `n8n-decanter rename <workflow> "<New Name>"` —
-forwarded to n8n immediately. The folder is a stable local slug and is left
-untouched; the display name is cached in `.decanter.json`.
+Renaming a **workflow**: `setWorkflowMetadata` over MCP, or the n8n UI. The
+folder is a stable local slug and is left untouched; `pull` re-caches the
+display name in `.decanter.json`.
 
 ### Adding a Code node
 
-1. `n8n-decanter node create <workflow> "<Node name>" [--ts]` creates it **in
-   n8n** (over MCP, with a runnable starter body) and pulls it back: the
-   `code/` source file, the `//@file:` placeholder, and the `.decanter.json`
-   entry all land in one step. The node arrives **disconnected**.
-2. Wire it up in n8n (editor or MCP tools — wiring is structure), then `pull`
-   to refresh the snapshot. Edit the source in `code/`.
-3. Verify: `n8n-decanter node run <file> [fixture.json]` to execute it, then
+1. Add it **in n8n** — over MCP (`update_workflow` with an `addNode` op,
+   through the guarded server) or in the editor. When adding over MCP, send
+   **no `jsCode`** — the guard blocks code in MCP writes by design.
+2. `pull`: the node lands as an **empty** `code/` source file, with the
+   `//@file:` placeholder and `.decanter.json` entry (want TypeScript?
+   Replace the pulled `.js` with a `.ts` file and re-point the placeholder).
+3. Write the code in the file, then `push` — the first push seeds the node's
+   source. Wire it up in n8n (wiring is structure), `pull` to refresh the
+   snapshot.
+4. Verify: `n8n-decanter node run <file> [fixture.json]` to execute it, then
    `n8n-decanter check` (typecheck + layout).
 
 ## Writing Code node code
@@ -234,7 +242,9 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
   builtins (`node:*`, `fs`, `crypto`, …) are compile errors. Never
   `require()`.
 - `console.log` is available for debugging (visible in the execution view).
-- `$('Node Name')` takes the node's **name** — so `node rename` keeps it in sync.
+- `$('Node Name')` takes the node's **name** — n8n rewrites these refs
+  server-side when a node is renamed over MCP or in the UI (in `.ts` sources,
+  update them by hand after the pull — n8n never sees `.ts`).
 
 ### `.js` nodes (default — lossless)
 
@@ -499,22 +509,20 @@ Rules:
   run, but they do contact the instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
   pull` / `push` / `watch` sync code with the real instance (pushes land on
-  the **draft**); `create "<name>"` adds a new workflow, `node create` /
-  `node rename` / `rename` forward structure acts to n8n; `publish` /
-  `unpublish` change what is live (`publish` takes the draft live,
-  `unpublish` returns it to draft-only; `push --publish` combines the two).
-  Otherwise finish edits, verify with `check` + `run`, and report that the
-  change is ready to push (or publish).
-- **Outward-facing — never without an explicit instruction:** `n8n-decanter
-  archive <workflow>` archives a workflow in n8n (it leaves the active list;
-  a published one goes offline; restore — or permanently delete — it in the
-  n8n UI; the local folder is kept as the git record). Run it only when the
-  user has clearly asked to archive that specific workflow; it prompts for
-  `y/N` and needs `--force` to run non-interactively.
+  the **draft**); `publish` / `unpublish` change what is live (`publish`
+  takes the draft live, `unpublish` returns it to draft-only; `push
+  --publish` combines the two). Otherwise finish edits, verify with `check` +
+  `run`, and report that the change is ready to push (or publish).
+- **Structure and lifecycle acts** (creating/renaming workflows, adding/
+  renaming/wiring nodes, archiving) go through **n8n's MCP tools** via the
+  guarded `n8n-instance` server — they also touch the live instance, so the
+  same rule applies: only when the user asks. **Archiving is outward-facing**
+  (the workflow leaves the active list; a published one goes offline;
+  reversible only in the n8n UI) — never without an explicit instruction
+  naming that workflow. After any structure act, `pull` to reconcile.
 - Never use `--force` on push without the user's explicit instruction — it
   overrides the per-node drift guard that protects code edits made on the
-  instance. (On `archive`, `--force` instead means "skip the confirmation" —
-  same rule: only on an explicit instruction.)
+  instance.
 - **Credentials:** MCP (OAuth via `init`, or `N8N_MCP_TOKEN`) powers the sync,
   structure, and lifecycle verbs; the optional public API key (`N8N_API_KEY`)
   powers `executions` and `data-tables`.

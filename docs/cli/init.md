@@ -48,7 +48,12 @@ under `node_modules`).
 The template includes an `AGENTS.md` contract for coding agents plus
 per-agent configs (Claude Code, Cursor, Codex, opencode), including a hook
 that runs `check` after node edits — see
-[Agents](/docs/agents/overview/).
+[Agents](/docs/agents/overview/). The scaffolded MCP config (`.mcp.json` /
+`opencode.json`) wires two servers out of the box: **`n8n-instance`** — your
+instance's full MCP surface through the [mcp connect](/docs/cli/mcp-connect/)
+guard (structure and lifecycle acts pass; Code-node `jsCode` writes are
+blocked toward the file + push flow) — and **`n8n-docs`**, n8n's official
+read-only docs MCP.
 
 ## Re-running init
 

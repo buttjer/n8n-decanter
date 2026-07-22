@@ -1,6 +1,6 @@
 ---
 title: The offline feedback loop
-description: check, node run, and node create give agents a credential-free verify loop.
+description: check and node run give agents a credential-free verify loop.
 order: 2
 ---
 
@@ -15,10 +15,6 @@ which makes them safe for agents to run without supervision:
   context and prints the items it returns. With a fixture, `$input`,
   `$('Node Name')`, env, and static data are all controllable — real
   execution feedback without touching the instance.
-- **[`node create`](/docs/cli/node-create/)** — scaffolds a Code node (node object, `//@file:`
-  placeholder, `code/` source, state entry) in one guard-checked step, so
-  there is no hand-editing of `workflow.json` to get a node id right.
-
 A typical agent iteration:
 
 ```sh
@@ -30,11 +26,13 @@ n8n-decanter check
 #  a push / with the user's go-ahead; see the taxonomy in docs/cli/test)
 ```
 
-Adding a Code node from scratch: run
-[`node create <workflow> "<Node name>" [--ts]`](/docs/cli/node-create/) — it mints
-the node id, writes the `code/` source, adds the placeholder, and re-checks the
-folder in one step (the node lands disconnected; wire it in the editor). Then
-edit the source and verify with `node run` + `check`. The
+Adding a Code node from scratch is a structure act — it happens **in n8n**
+(the editor, or an `addNode` MCP op through the
+[guard](/docs/cli/mcp-connect/) with **no** `jsCode`), then
+[`pull`](/docs/cli/pull/) lands it as an empty `code/` file with its
+placeholder and state entry (the node lands disconnected; wire it in n8n).
+Write the code in the file, verify with `node run` + `check`, and the first
+push seeds the node's source. The
 [sync layout](/docs/concepts/sync-layout/) page shows the shapes.
 
 Because verification routes through the CLI, `n8n-decanter` must be on the

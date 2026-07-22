@@ -64,10 +64,13 @@ so nothing goes live until you `publish`. Workflow *structure* stays n8n's job
   `mock check`), no API key or model call.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
-- **Agent guard-proxy** — `mcp serve` gives coding agents full n8n MCP access
-  through a localhost proxy holding decanter's credentials (the agent never
-  sees them), while technically blocking Code-node (`jsCode`) writes — the
-  one thing that belongs in this repo's files, not in ad-hoc MCP edits.
+- **Guarded agent access to n8n's MCP — wired by default** — the scaffolded
+  `.mcp.json` spawns `mcp connect`, a stdio MCP guard holding decanter's
+  credentials (the agent never sees them, no secret to manage): the full n8n
+  MCP surface for structure and lifecycle work, while technically blocking
+  Code-node (`jsCode`) writes — the one thing that belongs in this repo's
+  files, not in ad-hoc MCP edits. (`mcp serve` is the same guard as a
+  localhost HTTP proxy, for URL-configured agents.)
 - **Shared code and small libraries** — `.ts` nodes import helpers/types
   from `shared/` and opted-in npm packages; push bundles them into
   self-contained nodes that run anywhere, n8n Cloud included.
@@ -147,8 +150,8 @@ PostToolUse hook that runs `check` after node edits. Verification routes through
 the CLI, so `n8n-decanter` must be on the sync dir's PATH: install it globally
 (`npm i -g n8n-decanter`), add it to the sync dir's `devDependencies`, or
 `npm link` a git checkout (build it first — Node won't type-strip `.mts`
-under `node_modules`). The verbs `check`, `node run`, `rename`, and `node create` are fully
-offline (no credentials, no network).
+under `node_modules`). The verbs `check` and `node run` are fully offline (no
+credentials, no network).
 
 ## Works with n8n's official skills
 
@@ -159,16 +162,14 @@ and use them.** They teach your agent the runtime your Code nodes run in
 and can build workflow structure over n8n's MCP — which, here, is n8n's job.
 
 The one boundary is **Code-node source**, and decanter enforces it for you so
-pairing the two is safe by construction. Run the [`mcp serve`](docs/cli/mcp-serve.md)
-**guard-proxy** and point your agent's MCP config at it: decanter holds the only
-n8n credential, forwards every skill/MCP read, structure edit, and publish
-untouched, and blocks exactly one thing — writes that set a Code node's
-`jsCode`. Those get redirected back to the repo (edit the file, `push`).
-
-```sh
-n8n-decanter mcp serve            # localhost proxy; prints URL + session secret
-# → point your agent's MCP config at the printed URL (never the instance)
-```
+pairing the two is safe by construction — and the enforcement is **already
+wired**: the scaffolded `.mcp.json` points your agent's `n8n-instance` MCP
+server at the [`mcp connect`](docs/cli/mcp-connect.md) guard. Decanter holds
+the only n8n credential, forwards every skill/MCP read, structure edit, and
+publish untouched, and blocks exactly one thing — writes that set a Code
+node's `jsCode`. Those get redirected back to the repo (edit the file,
+`push`). Nothing to run, no secret to manage; for URL-configured harnesses,
+[`mcp serve`](docs/cli/mcp-serve.md) is the same guard over localhost HTTP.
 
 So the skills build and wire freely; decanter keeps every Code node a real,
 typed, git-tracked file. **Full guide:
@@ -196,11 +197,6 @@ n8n-decanter watch [workflow]       # push a workflow's nodes on save, draft-onl
                                     #   (+ browser live-reload, opt-in)
 n8n-decanter publish [workflow…]    # take the draft(s) live
 n8n-decanter unpublish [workflow…]  #   (unpublish returns to draft-only)
-
-# Workflow lifecycle
-n8n-decanter create "<name>"                 # create a blank workflow in n8n, then pull it
-n8n-decanter archive <workflow> [--force]    # archive in n8n (reversible there; folder kept)
-n8n-decanter rename <workflow> "<new name>"  # rename the workflow in n8n (folder stays)
 
 # Inspect & test
 n8n-decanter status [workflow…] [--diff]   # drift report (--diff: line diffs);
@@ -239,16 +235,23 @@ n8n-decanter mock check <workflow> ["<slug>"]   # structurally validate a mock (
 n8n-decanter list [--remote] [--json]   # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones; --json for tooling)
 
-# Agent guard
-n8n-decanter mcp serve [--port N]   # localhost MCP guard-proxy for agents: full n8n
-                                    #   MCP access with decanter's credentials,
-                                    #   minus Code-node (jsCode) writes
+# Agent guard — structure/lifecycle acts go through n8n's MCP, guarded
+n8n-decanter mcp connect            # stdio MCP guard (the scaffolded .mcp.json
+                                    #   spawns it): full n8n MCP access with
+                                    #   decanter's credentials, minus Code-node
+                                    #   (jsCode) writes; no secret to manage
+n8n-decanter mcp serve [--port N]   # the same guard as a localhost HTTP proxy,
+                                    #   for agents configured by URL
 
 # Node
-n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node in n8n
-n8n-decanter node rename <workflow> "<old node>" "<new node>"   # rename in n8n; local files follow
 n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node offline, print items
 ```
+
+Creating, renaming, and archiving workflows — and adding or renaming nodes —
+are **n8n's acts**: do them in the n8n editor or let your agent do them over
+n8n's MCP tools (through the guard above, which blocks only Code-node `jsCode`
+writes). The next `pull` reconciles: files follow renames, new Code nodes land
+as files (born empty under the guard — the first `push` seeds their source).
 
 A `<workflow>` is its **id, its workflow/folder name, or a unique name
 prefix** — `n8n-decanter push "Order Sync"` and `n8n-decanter push order` both
@@ -332,9 +335,9 @@ whole-workflow authoring toolkit.
 | **Preflights** (`check` / `simulate` / `test`) | 🟡 re-run past executions / pin data, but online in-editor | 🟡 inspect executions against a live env | ✅ offline `check` + `simulate`, instance-side `test`; each diffs every node vs a real capture, exits 1 on divergence |
 | **Draft-first code sync** | ✅ editor *Save* vs *Publish* (manual, in-browser) | 🟡 API sync republishes on push (no draft-only) | ✅ pushes land on the **draft**; `publish` is the deliberate go-live (over MCP) |
 | **Live editing** | ✅ the canvas (baseline) | 🟡 explicit pull/push, no auto-watch | ✅ `watch`: push on save + auto-reload the editor tab |
-| **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs; `mcp serve` guard-proxy holds credentials; offline `check`/`node run` loop |
+| **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs incl. a pre-wired `mcp connect` guard holding the credentials; offline `check`/`node run` loop |
 | **Model ownership** | ❌ locked to n8n's own hosted AI; can't use your Claude subscription | 🟡 beta Claude Code plugin uses your subscription; flagship Workbench needs an Anthropic key for Claude | ✅ never calls an LLM itself — your agent/subscription does 100%, no key or model config ever |
-| **Agentic workflow creation** | 🟡 AI Workflow Builder (natural language), but Cloud / plan-gated — credits, self-host needs setup | ✅ 537 node schemas + 7,700+ templates + skills | ✅ your agent builds structure over n8n's MCP (guard-proxied via `mcp serve`); decanter owns the Code-node source (`create`, `node create`) |
+| **Agentic workflow creation** | 🟡 AI Workflow Builder (natural language), but Cloud / plan-gated — credits, self-host needs setup | ✅ 537 node schemas + 7,700+ templates + skills | ✅ your agent builds structure over n8n's MCP (through the pre-wired `mcp connect` guard); decanter owns the Code-node source (files + `push`) |
 | **Whole-workflow authoring** | ❌ | ✅ `.workflow.ts` decorator classes (structure + links) | ❌ by design — structure stays n8n's (read-only `workflow.json` snapshot) |
 | **Multi-environment promotion** | 🟡 Enterprise source control / environments | ✅ `promote` remaps creds + refs Dev→Prod | 🟡 separate sync dir per instance, but no `promote` (IDs/creds/refs not remapped) |
 
@@ -357,14 +360,12 @@ needs no extra API tokens.
   `list --remote` and the picker but can't be pulled until you enable them —
   the CLI tells you where the switch lives. `executions` and `data-tables`
   still use the public API key (MCP has no execution read and no data-table
-  row read). Duplicating and hard-deleting workflows are n8n-UI jobs — the
-  API-era `duplicate`/`delete` verbs were dropped in favor of `archive`.
+  row read). Duplicating and hard-deleting workflows are n8n-UI jobs.
 - **Structure edits don't sync from here.** `workflow.json` is a read-only
   snapshot: editing it changes nothing in n8n and the next `pull` overwrites
   it. Wire nodes, change parameters like a Code node's `mode`, and arrange the
-  canvas in n8n itself (or via n8n's own MCP tools); the decanter verbs
-  (`rename`, `node create`, `node rename`) forward the common structure acts
-  for you.
+  canvas in n8n itself — or let your agent do it over n8n's own MCP tools
+  through the `mcp connect` guard; `pull` reconciles afterwards.
 - **Remote code edits are surfaced, then overwritten.** The per-node drift
   guard aborts a push when a Code node changed on the instance since the last
   sync (`--force` overrides). Pulling re-baselines: `status --diff` shows what
@@ -421,11 +422,11 @@ these, only the per-node drift guard. The typecheck runs as a blocking push
 gate too (`--no-typecheck` to skip; auto-skipped when no `tsconfig.json` is
 found).
 
-**Renaming a node** is forwarded to n8n over MCP —
-`node rename <workflow> "<old>" "<new>"` issues the rename (n8n rewrites
-connections and `$('…')` references server-side, node ids stay stable),
-rewrites local `.ts` sources, and pulls the result so files and placeholders
-follow.
+**Renaming a node** happens in n8n (the UI, or an agent's `renameNode` MCP op
+through the guard) — n8n rewrites connections and `$('…')` references
+server-side and node ids stay stable; the next `pull` renames the local file
+so placeholders and state follow. (`.ts` sources keep their `$('…')` refs —
+n8n never sees them — update those by hand.)
 
 ## Browser live-reload (watch)
 

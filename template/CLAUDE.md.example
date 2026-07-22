@@ -14,7 +14,9 @@ The contract above (from `AGENTS.md`) is authoritative. A few Claude-only notes:
   and feeds any failure back to you. Treat a failure as a blocker to finishing the task.
   The hook is a quiet no-op until the CLI is on your PATH (install it globally or
   `npm link` it) — until then run `n8n-decanter check` / `n8n-decanter node run` yourself.
-- **Renames must be atomic** (all four steps in the AGENTS.md rename checklist land in
-  one change). Use plan mode for multi-node renames so nothing is left half-updated.
+- **Renames happen in n8n, then `pull` reconciles** (see "Renaming a node" in
+  AGENTS.md). For multi-node renames, pull after each MCP rename so nothing is
+  left half-updated — and remember `.ts` sources keep their `$('…')` refs
+  until you update them by hand.
 - **`push --force` is blocked from the agent by design.** It overrides the drift guard;
   if it is genuinely needed, ask the user to run it themselves in the terminal.

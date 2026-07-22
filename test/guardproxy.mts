@@ -1,15 +1,19 @@
-// Focused suite for the MCP guard-proxy (lib/mcpserve.mts, Plan 33 Task 4).
-// Drives startGuardProxy directly against a scripted upstream "n8n" MCP
-// endpoint: pass-through (incl. SSE), the jsCode block, fail-closed parsing,
-// the session secret, the body cap, and the upstream-401 token refresh.
-// Binds localhost ports — sandboxes may block that.
+// Focused suite for the MCP guard in both transports: the HTTP guard-proxy
+// (lib/mcpserve.mts, `mcp serve`, Plan 33 Task 4) and the stdio guard
+// (lib/mcpconnect.mts, `mcp connect` — what the scaffolded .mcp.json spawns).
+// Both ride a scripted upstream "n8n" MCP endpoint: pass-through (incl. SSE
+// decoding), the jsCode block, fail-closed parsing, the session secret
+// (HTTP) / session-id management (stdio), the body cap, and the upstream-401
+// token refresh. Binds localhost ports — sandboxes may block that.
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import type { McpClient } from "../lib/mcp.mts";
+import { runStdioGuard } from "../lib/mcpconnect.mts";
 import { containsJsCodeKey, guardMessage, PROXY_STATE_FILE, startGuardProxy } from "../lib/mcpserve.mts";
 import type { Log } from "../lib/types.mts";
 import { createStepRunner } from "./harness.mts";
@@ -39,6 +43,8 @@ const upstream = http.createServer((req, res) => {
     }
     if (req.method === "DELETE") return void res.writeHead(200).end();
     const msg = body === "" ? {} : JSON.parse(body);
+    // notifications get n8n's 202-empty — the stdio guard must emit nothing
+    if (typeof msg.method === "string" && msg.method.startsWith("notifications/")) return void res.writeHead(202).end();
     // answer as SSE (the shape the pass-through must not mangle)
     res.writeHead(200, { "content-type": "text/event-stream", "mcp-session-id": "up-sess-1" })
       .end(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id ?? null, result: { echo: msg.params?.name ?? msg.method } })}\n\n`);
@@ -166,6 +172,109 @@ await step("upstream 401 → one forced token refresh, then the retry succeeds",
 await step("close removes the discovery file", async () => {
   await handle.close();
   assert.ok(!existsSync(path.join(configDir, PROXY_STATE_FILE)));
+});
+
+// ---------- the stdio guard (`mcp connect`) ----------
+
+/** Run the stdio guard on PassThrough pipes with a line-at-a-time reader. */
+function startStdio(host = upstreamHost) {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const done = runStdioGuard({ mcp: mcpStub, host, timeoutMs: 5000, log, input, output });
+  let buf = "";
+  const lines: string[] = [];
+  const waiters: Array<(l: string) => void> = [];
+  output.on("data", (chunk: Buffer) => {
+    buf += chunk.toString("utf8");
+    for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+      const line = buf.slice(0, i);
+      buf = buf.slice(i + 1);
+      const w = waiters.shift();
+      if (w) w(line);
+      else lines.push(line);
+    }
+  });
+  const next = (): Promise<string> =>
+    new Promise((resolve) => {
+      const l = lines.shift();
+      if (l !== undefined) resolve(l);
+      else waiters.push(resolve);
+    });
+  const send = (msg: unknown): boolean => input.write(`${typeof msg === "string" ? msg : JSON.stringify(msg)}\n`);
+  return {
+    send,
+    next,
+    pending: lines,
+    end: async () => {
+      input.end();
+      await done;
+    },
+  };
+}
+
+const stdio = startStdio();
+
+await step("stdio pass-through: initialize forwards with the real token; SSE decodes to a JSON line; session id is captured and replayed", async () => {
+  stdio.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+  const first = JSON.parse(await stdio.next());
+  assert.equal(first.id, 1);
+  assert.equal(first.result.echo, "initialize", "SSE data line decoded to plain JSON-RPC");
+  assert.equal(seen[seen.length - 1].auth, "Bearer real-n8n-token", "decanter's own credential used");
+  stdio.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  assert.equal(JSON.parse(await stdio.next()).id, 2);
+  assert.equal(seen[seen.length - 1].session, "up-sess-1", "captured session id replayed upstream");
+});
+
+await step("stdio notification: n8n's 202-empty emits nothing (the next line answers the next request)", async () => {
+  stdio.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+  stdio.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  const line = JSON.parse(await stdio.next());
+  assert.equal(line.id, 3, "notification produced no output line");
+});
+
+await step("stdio guard: a jsCode write is answered locally, upstream untouched", async () => {
+  const before = seen.length;
+  stdio.send({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "update_workflow", arguments: { operations: [{ type: "updateNodeParameters", nodeName: "T", parameters: { jsCode: "x" } }] } } });
+  const msg = JSON.parse(await stdio.next());
+  assert.equal(msg.id, 4);
+  assert.equal(msg.result.isError, true);
+  assert.match(msg.result.content[0].text, /guard-proxy.*n8n-decanter push/s);
+  assert.equal(seen.length, before, "the write never reached n8n");
+});
+
+await step("stdio fail closed: an unparseable line gets a -32700 error, nothing forwarded", async () => {
+  const before = seen.length;
+  stdio.send("{not json");
+  const msg = JSON.parse(await stdio.next());
+  assert.equal(msg.id, null);
+  assert.equal(msg.error.code, -32700);
+  assert.match(msg.error.message, /fail closed/);
+  assert.equal(seen.length, before);
+});
+
+await step("stdio upstream 401 → one forced token refresh, then the retry succeeds", async () => {
+  upstream401s = 1;
+  const before = refreshes;
+  stdio.send({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  const msg = JSON.parse(await stdio.next());
+  assert.equal(msg.result.echo, "search_workflows", JSON.stringify(msg));
+  assert.equal(refreshes, before + 1, "exactly one forced refresh");
+  assert.equal(seen[seen.length - 1].auth, "Bearer refreshed-token");
+});
+
+await step("stdio ends with the agent: input EOF resolves the guard", async () => {
+  await stdio.end();
+  assert.equal(stdio.pending.length, 0, "no stray output lines");
+});
+
+await step("stdio upstream down: an id'd request gets a JSON-RPC error naming the host", async () => {
+  const dead = startStdio("http://127.0.0.1:9");
+  dead.send({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  const msg = JSON.parse(await dead.next());
+  assert.equal(msg.id, 6);
+  assert.equal(msg.error.code, -32001);
+  assert.match(msg.error.message, /unreachable.*127\.0\.0\.1:9/);
+  await dead.end();
 });
 
 if (!hasFailed()) {

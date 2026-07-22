@@ -41,7 +41,7 @@ In order of resolution:
 
 1. **`N8N_HOST`** — always required for online verbs (`.env` or environment).
 2. **MCP credentials** (the sync verbs — pull, push, watch, status, publish,
-   unpublish, create, rename, node create/rename):
+   unpublish — and the `mcp connect`/`mcp serve` guard):
    - `N8N_MCP_TOKEN` (`.env` or environment) — a rotatable token from n8n →
      Settings → MCP → API key. Takes precedence when set.
    - Otherwise `.decanter-auth.json` — the OAuth client id + refresh token

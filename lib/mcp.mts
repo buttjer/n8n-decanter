@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Log, Workflow } from "./types.mts";
+import { CODE_NODE_TYPE } from "./util.mts";
 
 export const MCP_PATH = "/mcp-server/http";
 export const AUTH_FILE = ".decanter-auth.json";
@@ -652,6 +653,17 @@ export async function searchWorkflows(mcp: McpClient, log?: Log): Promise<McpWor
  */
 export async function getWorkflowDetails(mcp: McpClient, id: string): Promise<Workflow> {
   const res = await mcp.callTool<{ workflow: Workflow }>("get_workflow_details", { workflowId: id });
+  // Normalize the guarded-authoring shape at the single read choke point: a
+  // JS Code node born over MCP `addNode` carries NO jsCode param (the guard
+  // blocks code in addNode; n8n stores the params as sent). Treat it as
+  // empty source so pull lands it as a file and push can seed it — instead
+  // of every verb ignoring it as "not a JS Code node".
+  for (const node of res.workflow.nodes ?? []) {
+    if (node.type === CODE_NODE_TYPE && node.parameters && node.parameters.jsCode === undefined
+        && (node.parameters.language === undefined || node.parameters.language === "javaScript")) {
+      node.parameters.jsCode = "";
+    }
+  }
   return res.workflow;
 }
 
@@ -676,47 +688,3 @@ export async function unpublishWorkflowMcp(mcp: McpClient, id: string): Promise<
   if (res.success !== true) throw new McpToolError("unpublish_workflow", res.error ?? "unpublish failed");
 }
 
-/**
- * Archive a workflow (MCP `archive_workflow`, Plan 33 — the replacement for
- * the API-era hard delete). Reversible: n8n keeps it under the workflows
- * list's "Archived" filter; restoring and permanent deletion live in the n8n
- * UI. Refuses workflows not opted into MCP, and already-archived ones
- * ("archived and cannot be accessed"). Verified shape (n8n 2.30.7):
- * `{workflowId}` in, `{archived, workflowId, name}` out, errors in-band.
- */
-export async function archiveWorkflowMcp(mcp: McpClient, id: string): Promise<{ archived: boolean; workflowId: string; name: string }> {
-  return mcp.callTool<{ archived: boolean; workflowId: string; name: string }>("archive_workflow", { workflowId: id });
-}
-
-/** `validate_workflow`'s result shape (n8n 2.30.7) — warnings name the node + parameter path. */
-export interface McpValidationResult {
-  valid: boolean;
-  nodeCount?: number;
-  warnings?: Array<{ code: string; message: string; nodeName?: string; parameterPath?: string }>;
-  errors?: string[];
-  /** Server-provided recovery hint — surface it verbatim when present. */
-  hint?: string;
-}
-
-/** Validate n8n Workflow SDK code server-side (read-only, no workflow touched). */
-export async function validateWorkflowCode(mcp: McpClient, code: string): Promise<McpValidationResult> {
-  return mcp.callTool<McpValidationResult>("validate_workflow", { code });
-}
-
-/**
- * Create a workflow from n8n Workflow SDK code. The decanter only ever sends
- * the minimal `workflow('<slug>', '<name>')` expression (a blank workflow) —
- * MCP-created workflows are born `availableInMCP`, so the follow-up pull works.
- * The code passes the server's `validate_workflow` gate first (Plan 33): a
- * rejected expression never reaches `create_workflow_from_code`, and the
- * server's errors + hint surface verbatim.
- */
-export async function createWorkflowFromCode(mcp: McpClient, name: string, slug: string): Promise<{ workflowId: string; name: string }> {
-  const code = `workflow(${JSON.stringify(slug)}, ${JSON.stringify(name)})`;
-  const v = await validateWorkflowCode(mcp, code);
-  if (v.valid !== true) {
-    const reasons = (v.errors ?? []).join("; ") || "invalid workflow code";
-    throw new McpToolError("validate_workflow", `${reasons}${v.hint ? ` — ${v.hint}` : ""}`);
-  }
-  return mcp.callTool<{ workflowId: string; name: string }>("create_workflow_from_code", { code });
-}

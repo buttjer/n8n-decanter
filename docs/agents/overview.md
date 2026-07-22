@@ -42,10 +42,11 @@ for how the `mcp serve` guard-proxy makes that boundary safe by construction.
 | --- | --- |
 | `check`, `node run`, `mock` | Offline and safe — run freely. |
 | `status`, `list --remote` | Read the remote, no writes — safe, but they do contact the instance. |
-| `pull`, `push`, `watch`, `create`, `rename`, `node create`, `node rename`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks. Pushes land on the **draft**; `publish` (or `push --publish`) takes it live. |
+| `pull`, `push`, `watch`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks. Pushes land on the **draft**; `publish` (or `push --publish`) takes it live. |
+| Structure/lifecycle acts over n8n's MCP (create, rename, add/wire nodes — via the [guard](/docs/cli/mcp-connect/)) | Touch the live instance too — same rule: only when the user asks. After a structure act, `pull` reconciles the local mirror. |
 | `test` | Executes the workflow's **draft** on the instance (pinned trigger/network nodes, real logic nodes) — code runs remotely, so treat like a push: only when the user asks. Non-interactive runs never write; the live version is never affected. |
-| `archive` | **Outward-facing** — archives a workflow in n8n (it leaves the active list; a published one goes offline). Reversible only in the n8n UI. Never without an explicit instruction to archive *that* workflow. |
-| `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. (On `archive`, `--force` instead skips the confirmation — same rule.) |
+| Archiving (MCP `archive_workflow`) | **Outward-facing** — the workflow leaves the active list; a published one goes offline. Reversible only in the n8n UI. Never without an explicit instruction to archive *that* workflow. |
+| `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. |
 
 The default loop for an agent: edit → verify offline → report that the change
 is ready to push. See [The offline feedback loop](/docs/agents/offline-loop/).

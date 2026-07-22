@@ -350,16 +350,28 @@ mock server.
   `scripts/typecheck.mts` and the sync-dir upward search).
 - `n8n-decanter.mts` — thin CLI dispatcher; one module per concern in `lib/`;
   shared data-model types in `lib/types.mts`.
-- Grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`; node
-  ops live under a `node` namespace (`node create` / `node rename` / `node run`).
-  A ref verb with no workflow opens the picker on a TTY.
+- Grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`;
+  `node run` lives under the `node` namespace, the agent guard under `mcp`
+  (`mcp connect` / `mcp serve`). A ref verb with no workflow opens the picker
+  on a TTY. **The structure/lifecycle verbs are retired** (rename, create,
+  archive, node create, node rename — removed post-Plan-33): those acts go
+  through n8n's MCP tools (guarded), and `pull` reconciles the local mirror —
+  files follow renames; a Code node added over MCP without `jsCode` (the
+  guard blocks code in `addNode`) lands as an **empty file** whose first push
+  seeds the source (normalized in `getWorkflowDetails`).
 - **Backends (Plan 32):** the workflow code path (pull/push/watch/status/
-  publish/unpublish/create + the structure-forwarding verbs rename/node
-  create/node rename) rides `lib/mcp.mts` — a hand-rolled JSON-RPC client for
+  publish/unpublish) rides `lib/mcp.mts` — a hand-rolled JSON-RPC client for
   n8n's `POST /mcp-server/http` (initialize handshake, SSE parsing, bearer or
   OAuth auth with rotate-persist refresh, 429 backoff). `lib/api.mts` (public
-  REST, `N8N_API_KEY` optional) serves only what MCP can't: executions,
-  data-table reads, duplicate's lossless POST, delete's hard DELETE.
+  REST, `N8N_API_KEY` optional) serves only what MCP can't: executions and
+  data-table reads.
+- **Agent guard, two transports** (same `guardMessage` core in
+  `lib/mcpserve.mts`): `mcp connect` (`lib/mcpconnect.mts`) is a stdio MCP
+  server the agent spawns from the scaffolded `.mcp.json` — decanter's creds,
+  no secret, stderr-only logging; `mcp serve` is the localhost HTTP variant
+  (per-session secret, `.decanter-proxy.json` discovery file) for
+  URL-configured agents. Both forward everything except `update_workflow`
+  writes that set `jsCode`.
 - Data model (the part that spans files):
   - `workflows/<slug>/workflow.json` — **read-only structure snapshot**, each
     Code node's `jsCode` replaced by a `//@file:code/<node>.js` placeholder;

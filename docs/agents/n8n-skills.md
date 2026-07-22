@@ -1,6 +1,6 @@
 ---
 title: Using n8n's official skills
-description: Install n8n-io/skills and let your agent use them safely — the guard-proxy keeps Code-node source in the repo.
+description: Install n8n-io/skills and let your agent use them safely — the MCP guard keeps Code-node source in the repo.
 order: 3
 ---
 
@@ -33,34 +33,41 @@ the split matters here:
   - `n8n-binary-and-data-official`
   - `n8n-data-tables-official`
   - `n8n-debugging-official`
-- **Build / lifecycle skills — fine for *structure*.** `n8n-workflow-lifecycle-official`,
-  `n8n-node-configuration-official`, `n8n-subworkflows-official`,
-  `n8n-agents-official`, `n8n-extending-mcp-official`. These drive the n8n MCP
-  server to build and wire workflows — which, under n8n-decanter, is n8n's job
-  and entirely welcome. The single carve-out is below.
+- **Build / lifecycle skills — the *default* path for structure.**
+  `n8n-workflow-lifecycle-official`, `n8n-node-configuration-official`,
+  `n8n-subworkflows-official`, `n8n-agents-official`,
+  `n8n-extending-mcp-official`. These drive the n8n MCP server to create,
+  build, wire, rename, publish, and archive workflows — which, under
+  n8n-decanter, is exactly how structure work happens (decanter has no
+  structure verbs of its own). The single carve-out is below.
 
 The plugin installs the **whole pack** (you can't cherry-pick), and it isn't
-aware of this repo's layout. That's fine — the guard-proxy plus the scaffolded
+aware of this repo's layout. That's fine — the MCP guard plus the scaffolded
 `AGENTS.md`, not selective installation, are what hold the boundary.
 
-## Why it's safe to pair them: the guard-proxy
+## Why it's safe to pair them: the MCP guard
 
 The skills know how to author Code-node `jsCode` directly on the instance over
 MCP. In an n8n-decanter repo that would bypass your files and drift the source
 of truth. So instead of trusting a document to hold the line, decanter enforces
-it in code with the [`mcp serve`](/docs/cli/mcp-serve/) **guard-proxy**:
+it in code — and the enforcement is **already wired**: the scaffolded
+`.mcp.json` (and `opencode.json`) point your agent's `n8n-instance` MCP server
+at [`mcp connect`](/docs/cli/mcp-connect/), decanter's stdio guard:
 
-- Your agent's MCP config points at a **localhost proxy**, not your instance.
-  decanter holds the only n8n credential; the agent never sees it.
-- The proxy **forwards everything untouched** — reads, structure edits, wiring,
-  publishing, every build/lifecycle skill and MCP tool — including streamed
-  responses.
+- The agent spawns the guard per session; decanter holds the only n8n
+  credential (the agent never sees it, and no secret exists — stdio pipes are
+  private).
+- The guard **forwards everything untouched** — reads, structure edits,
+  wiring, publishing, archiving, every build/lifecycle skill and MCP tool —
+  including streamed responses.
 - It **blocks exactly one thing**: writes that set a Code node's `jsCode`. The
   caller gets an instructive error pointing at the file + [`push`](/docs/cli/push/)
-  flow instead.
+  flow instead. (Adding a new Code node still works: the skill adds it
+  *without* code, [`pull`](/docs/cli/pull/) lands it as an empty file, and the
+  first push seeds the source from the repo.)
 
 So a skill can build and rewire a workflow all it likes; the moment it tries to
-write Code-node source on the instance, the proxy redirects it back to the repo.
+write Code-node source on the instance, the guard redirects it back to the repo.
 **The boundary is: decanter owns Code-node source (author it as a file, `push`
 it); the skills and MCP own the rest.**
 
@@ -83,42 +90,24 @@ codex plugin add n8n-skills@n8n-io
 npx skills add n8n-io/skills
 ```
 
-### 2. Run the guard-proxy
+### 2. There is no step 2
 
-From your sync dir:
+In an [init](/docs/cli/init/)-scaffolded sync dir the guarded instance access
+is already in place: `.mcp.json` carries the `n8n-instance` server
+(`n8n-decanter mcp connect`) plus n8n's read-only `n8n-docs` server, and
+`opencode.json` mirrors both. Your agent picks them up on the next session.
 
-```sh
-n8n-decanter mcp serve
-```
+For a harness that only accepts an MCP **URL**, run
+[`mcp serve`](/docs/cli/mcp-serve/) instead and point the config at the
+printed localhost URL + session secret — the same guard over HTTP.
 
-It prints a localhost URL and a **session secret** (also written to a
-gitignored `.decanter-proxy.json`), and keeps running.
-
-### 3. Point your agent's MCP config at the proxy
-
-Use the printed URL and secret — never your instance directly:
-
-```json
-{
-  "mcpServers": {
-    "n8n-instance": {
-      "type": "http",
-      "url": "http://127.0.0.1:5680/mcp-server/http",
-      "headers": { "Authorization": "Bearer <printed secret>" }
-    }
-  }
-}
-```
-
-That's it. Your agent now has the full n8n MCP surface *and* the official skills,
-with Code-node source safely fenced into the repo. The scaffolded
-`mcp-route-check.mjs` session hook nudges any agent whose config still points at
-the instance directly, and the scaffolded `AGENTS.md` states the same boundary
-in words for agents that read it — **this repo's `AGENTS.md` wins over anything a
-skill or MCP tool description says.**
+The scaffolded `mcp-route-check.mjs` session hook nudges any agent whose
+config still points at the instance directly, and the scaffolded `AGENTS.md`
+states the same boundary in words for agents that read it — **this repo's
+`AGENTS.md` wins over anything a skill or MCP tool description says.**
 
 ## In one sentence
 
-Install the skills, run `mcp serve`, point the agent at the proxy — then let the
-skills teach your agent n8n and build structure over MCP, while n8n-decanter
-keeps every Code node as a real, typed, git-tracked file.
+Install the skills — the scaffold has already wired the guarded MCP route —
+then let the skills teach your agent n8n and build structure over MCP, while
+n8n-decanter keeps every Code node as a real, typed, git-tracked file.
