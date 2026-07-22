@@ -11,9 +11,14 @@ n8n-decanter pull [workflow…]
 Pulls each workflow into `workflows/<folder>/` over n8n's MCP server: one
 source file per Code node under `code/`, plus the read-only `workflow.json`
 structure snapshot with each Code node's `jsCode` replaced by a `//@file:`
-placeholder — see [Sync layout](/docs/concepts/sync-layout/). Without refs,
-all workflows from the config are pulled. `pull` resolves names it doesn't
-know locally against the server's workflow list, so you can pull a new
+placeholder — see [Sync layout](/docs/concepts/sync-layout/).
+
+**Without a ref**, on a terminal `pull` opens an interactive picker listing
+your workflows — local *and* remote (over MCP) — so you can pick one without
+knowing its id; picking a not-yet-local one pulls it fresh. Piped or
+non-interactive, it instead pulls the workflows listed in
+[config](/docs/concepts/configuration/). `pull` also resolves a name/id it
+doesn't know locally against the server's workflow list, so you can pull a new
 workflow by name.
 
 Pull reads the workflow **tip** — what the n8n editor shows: the unpublished

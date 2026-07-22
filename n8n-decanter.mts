@@ -350,15 +350,30 @@ function interactive(): boolean {
 }
 
 /**
- * No-ref → picker (Plan 27): pick a single pulled workflow for an already-known
- * verb (the verb menu is skipped). Returns the chosen id, or undefined when
- * nothing is pulled or the user quits — the caller then falls through to the
+ * No-ref → picker (Plan 27): pick a single workflow for an already-known verb
+ * (the verb menu is skipped). Returns the chosen id, or undefined when there is
+ * nothing to pick or the user quits — the caller then falls through to the
  * config default / error path exactly as a piped run would.
+ *
+ * For `pull` the remote list is merged in (like the bare `n8n-decanter` picker)
+ * so a fresh setup with nothing pulled still gets a menu — pick a not-yet-local
+ * workflow and it pulls, no config entry or id needed. Other verbs act on local
+ * files only, so their menu stays local-only.
  */
 async function pickOneWorkflow(config: DecanterConfig, verb: string, log: Log): Promise<string | undefined> {
   const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true, available: true }));
-  if (local.length === 0) return undefined;
-  const picked = await runPicker(local, undefined, { selectVerb: verb });
+  let entries = local;
+  if (verb === "pull") {
+    try {
+      const remote = (await searchWorkflows(createMcpClient(config, log), log)).map((w) => ({ id: w.id, name: w.name ?? w.id, available: w.availableInMCP }));
+      entries = mergeRemote(local, remote);
+    } catch {
+      // Offline / auth failure — degrade to a local-only menu (same as the bare
+      // picker, which shows a "remote list unavailable" notice and carries on).
+    }
+  }
+  if (entries.length === 0) return undefined;
+  const picked = await runPicker(entries, undefined, { selectVerb: verb });
   if (picked === "quit" || picked === "interrupted") return undefined;
   log.info(style.dim(`❯ ${verb} ${picked.name}`));
   return picked.id;

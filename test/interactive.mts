@@ -218,6 +218,25 @@ await step("notice option renders as a dim one-liner", async () => {
   await result;
 });
 
+await step("no-ref `pull` on a fresh setup: remote workflows are merged in and pullable from the picker", async () => {
+  const io = makeIo();
+  // Mirrors pickOneWorkflow("pull"): nothing pulled locally, so the remote list
+  // is merged in (mergeRemote) and shown with selectVerb "pull". A remote-only
+  // workflow is pickable and resolves to a pull of its id — no config entry or
+  // id-on-the-command-line needed.
+  const local: PickerEntry[] = [];
+  const entries = mergeRemote(local, [
+    { id: "rem777", name: "Remote Only", available: true },
+    { id: "gat888", name: "Gated Flow", available: false },
+  ]);
+  const result = runPicker(entries, undefined, { selectVerb: "pull", input: io.input, output: io.output });
+  await tick();
+  await sendKey(io, "remote"); // narrow to the available remote-only workflow
+  assert.match(io.text(), /Remote Only/);
+  await sendKey(io, "\r");
+  assert.deepEqual(await result, { verb: "pull", id: "rem777", name: "Remote Only" }, "picking a remote-only workflow pulls it");
+});
+
 await step("MCP-unavailable entry: red ⊘ row sorts last; Enter resolves to the enable-mcp sentinel, no verb menu", async () => {
   const io = makeIo();
   const withGated = mergeRemote(ENTRIES, [{ id: "ddd444", name: "Gated Flow", available: false }]);
