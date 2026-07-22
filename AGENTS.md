@@ -34,11 +34,13 @@ pass. Work that doesn't map to a numbered Plan gets no such label.
 
 ## What this is
 
-Standalone CLI that syncs n8n workflows into a git-friendly, folder-per-workflow
-layout: Code node sources become individual `.js`/`.ts` files and get pushed
-back via the n8n public API. **PLAN.md is the design document and source of
-truth** — it also records past decisions/observations so the project could be
-rebuilt from it.
+Standalone CLI that keeps the **Code-node source** of n8n workflows in git in a
+folder-per-workflow layout: Code node sources become individual `.js`/`.ts`
+files, synced with the instance over **n8n's built-in MCP server** (Plan 32 —
+draft-first, code-only; workflow structure stays n8n's job, mirrored into a
+read-only `workflow.json` snapshot). **PLAN.md is the design document and
+source of truth** — it also records past decisions/observations so the project
+could be rebuilt from it.
 
 **When your work changes the design, data model, flows, or surfaces a new
 decision or observation, update the PLAN.md.
@@ -351,17 +353,29 @@ mock server.
 - Grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`; node
   ops live under a `node` namespace (`node create` / `node rename` / `node run`).
   A ref verb with no workflow opens the picker on a TTY.
+- **Backends (Plan 32):** the workflow code path (pull/push/watch/status/
+  publish/unpublish/create + the structure-forwarding verbs rename/node
+  create/node rename) rides `lib/mcp.mts` — a hand-rolled JSON-RPC client for
+  n8n's `POST /mcp-server/http` (initialize handshake, SSE parsing, bearer or
+  OAuth auth with rotate-persist refresh, 429 backoff). `lib/api.mts` (public
+  REST, `N8N_API_KEY` optional) serves only what MCP can't: executions,
+  data-table reads, duplicate's lossless POST, delete's hard DELETE.
 - Data model (the part that spans files):
-  - `workflows/<slug>/workflow.json` — full workflow, each Code node's
-    `jsCode` replaced by a `//@file:code/<node>.js` placeholder; node sources
-    live kebab-case-named in the folder's `code/` subdir. The folder is the
-    **kebab slug** of the name for new pulls and is **sticky** thereafter (never
-    follows a remote rename; Plan 27).
+  - `workflows/<slug>/workflow.json` — **read-only structure snapshot**, each
+    Code node's `jsCode` replaced by a `//@file:code/<node>.js` placeholder;
+    node sources live kebab-case-named in the folder's `code/` subdir. Pull
+    rewrites it; nothing pushes it (the placeholders remain the file map —
+    re-pointing one is how `.js`↔`.ts` conversions register). The folder is
+    the **kebab slug** of the name for new pulls and is **sticky** thereafter
+    (never follows a remote rename; Plan 27).
   - `workflows/<slug>/.decanter.json` — state: node-id → file-path map
-    (`code/` prefix included), sync hashes, and the cached display **`name`**
-    (Plan 27 — read by the picker/`list`/ref-resolution). `lastPushedHash` means
-    "hash of the *remote* code at last sync (push **or** pull)", not only push.
-    `lastPulledWorkflowHash` is the code-stripped, key-sorted structure hash.
+    (`code/` prefix included), per-node sync hashes + cached node names
+    (Plan 32 — ids anchor identity, MCP addresses by name, push resolves
+    id→name from a fresh read), and the cached display **`name`** (Plan 27).
+    `lastPushedHash` means "hash of the *remote* code at last sync (push
+    **or** pull)". The old whole-workflow structure hash is gone.
+  - `.decanter-auth.json` (sync-dir root) — MCP OAuth credentials minted by
+    init; refresh tokens are single-use (rotated + persisted on every use).
   - `.js` node files are lossless (byte-identical round-trip). `.ts` files
     are one-way: push compiles via esbuild (`bundle: false`) and appends a
     `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker presence
@@ -369,13 +383,22 @@ mock server.
 - Push runs two independent gates, in order:
   1. Compliance guard (`lib/validate.mts`, shared with `check` and watch):
      layout violations are hard errors that `--force` does NOT bypass.
-  2. Drift guard: remote changed since last sync → abort; only this one is
-     bypassed by `--force`.
-- Pull never touches `.ts` sources; unmergeable remote changes surface as
-  `code/<node>.remote.js` files. Pull re-baselines `lastPushedHash` even on
-  conflict — meaning the next push overwrites remote edits by design. Pull's
-  rename machinery also migrates pre-`code/` flat layouts.
-- Sync hashes are recorded from the PUT *response*, not the request.
+  2. Per-node drift guard: a node's remote CODE moved off the last-sync hash
+     (and differs from the local payload) → abort; only this one is bypassed
+     by `--force`. Remote structure changes never block (status prints an
+     informational snapshot-stale hint instead).
+- Pushes land on the workflow's **draft** (one atomic `update_workflow`
+  batch of `{jsCode}`-only merge writes); `publish` / `push --publish` is the
+  go-live step. Pull reads the **tip** (draft if one exists). A workflow must
+  be `availableInMCP` (per-workflow n8n-side switch) — the picker shows
+  unavailable ones as a red third state with guidance.
+- Pull never touches `.ts` sources; remote edits to TS-managed nodes are
+  warned about (`status --diff` to inspect — no `.remote.js` artifacts since
+  Plan 32). Pull re-baselines `lastPushedHash` even on conflict — meaning the
+  next push overwrites remote edits by design. Pull's rename machinery also
+  migrates pre-`code/` flat layouts.
+- Sync hashes are recorded from a post-write confirming read
+  (`update_workflow` returns a summary, never the workflow).
 - `template/` is copied by `init` into new sync dirs. Files named
   `X.example` are inert in this repo on purpose (so agent tooling ignores
   them here) and materialize as `X` in the target — keep that suffix
@@ -400,13 +423,17 @@ functions; the CLI process is the surface users touch.
 
 ### Recipe
 
-- **Mock API**: ~40-line `node:http` server on `127.0.0.1:<port>` serving
-  `GET/PUT /api/v1/workflows/:id` from a mutable in-memory workflow; log
-  requests; add a control route (e.g. `PUT /__remote`) to simulate n8n-UI
-  edits mid-session. Fixture gotcha: `connections` must reference real node
+- **Mock server**: a `node:http` server on `127.0.0.1:<port>` serving BOTH
+  surfaces — `POST /mcp-server/http` (bearer-authed JSON-RPC: answer
+  `initialize` with plain JSON + an `mcp-session-id` header, `tools/call` as
+  SSE `data:` lines; implement `search_workflows` / `get_workflow_details` /
+  `update_workflow` (merge semantics) / `publish_workflow` from a mutable
+  in-memory workflow with an `availableInMCP` flag) and, for the API-only
+  verbs, the `GET /api/v1/...` routes. `test/e2e.mts`'s mock is the reference
+  implementation. Fixture gotcha: `connections` must reference real node
   names or the compliance guard blocks pushes.
 - **Sync dir**: temp dir with `.env` (`N8N_HOST=http://127.0.0.1:<port>`,
-  `N8N_API_KEY=test`) + `decanter.config.json`
+  `N8N_MCP_TOKEN=test-mcp-token`, `N8N_API_KEY=test`) + `decanter.config.json`
   (`{"root":"./workflows","workflows":["wf1"],"browserReload":"off"}`), then
   `git init` + local `user.name`/`user.email` — pull/push/watch auto-commit,
   and watch refuses its startup pull without git.

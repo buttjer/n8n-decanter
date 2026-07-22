@@ -13,7 +13,7 @@ and give the agent grounded knowledge tooling beyond the scaffolded n8n-mcp.
 (agent-behavior, safety-critical); Sonnet for the mechanical doc-surface
 propagation and any small verb/flag.
 
-> **Coordination with [Plan 32](OPEN-32-mcp-native-code-layer.md) (MCP-native pivot) —
+> **Coordination with [Plan 32](DONE-32-mcp-native-code-layer.md) (MCP-native pivot) —
 > read before executing Theme C.** Plan 32 proposes making the first-party instance MCP
 > decanter's *sync backend* (OAuth-first in `init`), which supersedes parts of this plan on a
 > go; the full split lives in Plan 32 → "Relation to Plan 30". Short version:
