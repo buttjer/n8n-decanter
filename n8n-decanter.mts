@@ -292,7 +292,7 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
   let remotePending: Promise<Array<{ id: string; name: string; available: boolean }>> | undefined;
   try {
     const mcp = createMcpClient(config);
-    remotePending = searchWorkflows(mcp).then((ws) => ws.map((w) => ({ id: w.id, name: w.name ?? w.id, available: w.availableInMCP })));
+    remotePending = searchWorkflows(mcp, log).then((ws) => ws.map((w) => ({ id: w.id, name: w.name ?? w.id, available: w.availableInMCP })));
   } catch (err) {
     remoteNotice = `remote list unavailable (${(err as Error).message.split("\n")[0]})`;
   }
@@ -422,7 +422,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     if (local) return local.id;
     if (command === "pull") {
       try {
-        const remote = await searchWorkflows(mcp());
+        const remote = await searchWorkflows(mcp(), log);
         const hit = matchWorkflowRef(remote.map((w) => ({ id: w.id, names: [w.name ?? ""] })), ref);
         if (hit) return hit.id;
       } catch (err) {
@@ -505,7 +505,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       const known = new Set(pulled.map((r) => r.id));
       // --remote lists over MCP: search_workflows sees EVERY workflow, but only
       // availableInMCP ones are pullable — the rest get the enable guidance.
-      const remote = remoteFlag ? (await searchWorkflows(mcp())).filter((w) => !known.has(w.id)) : [];
+      const remote = remoteFlag ? (await searchWorkflows(mcp(), log)).filter((w) => !known.has(w.id)) : [];
       if (jsonFlag) {
         // agent-friendly: pulled workflows carry a dir; remote-only ones dir: null
         const rows: Array<{ name: string; id: string; dir: string | null; mcpAvailable?: boolean }> = [
