@@ -57,18 +57,18 @@ so nothing goes live until you `publish`. Workflow *structure* stays n8n's job
 Requires **Node >= 22.18** (no build step — the CLI runs natively via Node's
 type stripping). Needs an n8n with the built-in **MCP server** (~2.20+):
 enable it once (Settings → MCP) and flip **"Available in MCP"** on each
-workflow you want to sync.
+workflow you want to sync — **only opted-in workflows can be pulled**.
 
 ```sh
 npm install -g n8n-decanter
-n8n-decanter init [dir]   # OAuth in your browser (or a pasted MCP token)
+n8n-decanter init [dir]           # OAuth in your browser (or a pasted MCP token)
+n8n-decanter pull <workflow-id>   # or run bare `n8n-decanter` to pick from a list
 ```
 
-Then add workflow ids to `decanter.config.json`:
-
-```json
-{ "root": "./workflows", "workflows": ["0cXNQKKzmO0pXiCq"] }
-```
+`pull` resolves the id (or name) against your instance and lands the workflow
+in `workflows/<slug>/` — no need to pre-list ids. (`decanter.config.json`'s
+optional `"workflows"` array just sets the default set a bare
+`pull`/`push`/`status` acts on.)
 
 **Credentials:** OAuth by default (via `init`); `N8N_MCP_TOKEN` for
 headless/CI; `N8N_API_KEY` is optional, needed only for `executions` and
@@ -136,7 +136,7 @@ whole-workflow authoring toolkit.
 > across your team.
 >
 > **Choose n8n-decanter if you…** your workflows live or die by their Code nodes
-> and you want them as real files — typed TypeScript, shared libraries,
+> and you want them as real files — TypeScript with typed n8n globals, shared libraries,
 > preflights (offline or instance-side), and code-level git history, synced
 > draft-first between your IDE, your coding agent, and n8n (even on Cloud).
 

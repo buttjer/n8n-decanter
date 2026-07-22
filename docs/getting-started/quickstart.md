@@ -21,32 +21,29 @@ an n8n with the built-in MCP server, ~2.20+), and flip **"Available in MCP"**
 on each workflow you want to sync (workflow card ⋯ menu, or workflow
 settings).
 
-## 2. Tell it which workflows to sync
+## 2. Pull a workflow
 
-Add workflow ids to `decanter.config.json`:
-
-```json
-{ "root": "./workflows", "workflows": ["0cXNQKKzmO0pXiCq"] }
-```
-
-Workflows are born in n8n: create the workflow there (even empty), then add
-its id here. All keys are documented in
-[Configuration](/docs/concepts/configuration/).
-
-## 3. Pull
+Workflows are born in n8n — create one there (even empty) and switch on
+**"Available in MCP"** (step 1); only opted-in workflows can be pulled. Then
+pull it by id or name:
 
 ```sh
-n8n-decanter pull
+n8n-decanter pull <workflow-id>   # or run bare `n8n-decanter` to pick from a list
 ```
 
-Each workflow lands as a folder under `workflows/`: a read-only
-`workflow.json` structure snapshot plus one source file per Code node in a
-`code/` subdir — see
+`pull` resolves refs it doesn't know locally against your instance, so you
+don't have to pre-list ids. Each workflow lands as a folder under
+`workflows/`: a read-only `workflow.json` structure snapshot plus one source
+file per Code node in a `code/` subdir — see
 [Sync layout](/docs/concepts/sync-layout/). After every successful pull and
 push, the workflow's folder is git-committed automatically (scoped to that
 folder; outside a git repo it just warns).
 
-## 4. Edit and push
+To fix a default set that a bare `pull`/`push`/`status` acts on, list ids in
+`decanter.config.json` (`"workflows": ["0cXNQKKzmO0pXiCq"]`); all keys are
+documented in [Configuration](/docs/concepts/configuration/).
+
+## 3. Edit and push
 
 Edit the node files in your IDE (or let your agent do it), verify offline
 with [check](/docs/cli/check/) and [node run](/docs/cli/node-run/), then:
