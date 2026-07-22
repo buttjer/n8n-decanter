@@ -1,6 +1,6 @@
 ---
 title: status
-description: Drift report — what changed locally, remotely, or both; CI-friendly exit codes.
+description: Code drift report — what changed locally, remotely, or both; CI-friendly exit codes.
 order: 5
 ---
 
@@ -8,21 +8,27 @@ order: 5
 n8n-decanter status [workflow…] [--diff]
 ```
 
-Reports, per workflow, whether local edits are pending a push, the remote
-changed since the last sync, or both (a conflict). It reads the remote but
-never writes.
+Reports, per workflow, whether local **Code-node** edits are pending a push,
+the remote code changed since the last sync, or both (a conflict). It reads
+the remote but never writes.
 
 The header line also shows the workflow's **publish state** (n8n 2.x):
 `published` or `unpublished`. When a published workflow's draft has moved ahead
-of the live version (a UI edit that wasn't published), `status` says so — *live
-version is older than the draft (push or "publish" to go live)* — so you can
-[push](/docs/cli/push/) or [publish](/docs/cli/publish/) to catch it up.
+of the live version (pushes land on the draft, and UI edits do too), `status`
+says so — *live version is older than the draft ("publish" to go live)* — so
+you know a [publish](/docs/cli/publish/) is pending.
+
+Structure is n8n's job: when the workflow's structure changed remotely,
+`status` prints an informational *structure snapshot out of date — pull to
+refresh* line. That is a hint to refresh `workflow.json`, not drift — it
+doesn't affect the exit code.
 
 ## Exit codes
 
 `status` exits **1** when a pull is needed or a push would clobber remote
-work (CONFLICT, remote-only changes, not pulled yet); local-only pending
-edits exit **0** — scripts and CI can gate on it like on `check`.
+**code** (CONFLICT, remote-only code changes, deleted nodes, not pulled yet);
+local-only pending edits and remote structure changes exit **0** — scripts
+and CI can gate on it like on `check`.
 
 ## `--diff`
 

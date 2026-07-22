@@ -8,9 +8,10 @@ order: 11
 n8n-decanter delete <workflow> [--force]
 ```
 
-Deletes a workflow from the n8n server. This is a **hard delete** — n8n removes
-it outright, even if it is published (there is no archive step). It cannot be
-undone on the server side.
+Deletes a workflow from the n8n server. This is a **hard delete** through the
+public API — n8n removes it outright, even if it is published (n8n's MCP
+tools can only archive, which is why this verb needs `N8N_API_KEY`, scope
+`workflow:delete`). It cannot be undone on the server side.
 
 Because it is destructive and outward-facing, consent is explicit:
 
@@ -25,9 +26,6 @@ reminds you to remove it so `pull` / `push` / `status` stop targeting it.
 `delete` always needs a ref and removes **one** workflow per invocation — it
 never falls back to the config's `workflows` list, and never cascades. Delete
 them one at a time.
-
-Needs credentials and the `workflow:delete` scope (see
-[configuration](/docs/concepts/configuration/)).
 
 ## `--force`
 

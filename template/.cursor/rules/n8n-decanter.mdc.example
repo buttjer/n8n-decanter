@@ -10,12 +10,18 @@ Hard rules (violating any of these corrupts sync state):
 
 - `jsCode` in any `workflow.json` is only a `//@file:code/<name>` placeholder. Never
   inline code there — edit the referenced source file in the folder's `code/` subdir.
-- Never edit `.decanter.json` (machine state) or any `*.remote.js` (incoming-change
-  artifact — port its change into the matching `.ts`, then delete it).
+- `workflow.json` is a read-only structure snapshot — structure changes happen in n8n
+  (editor or MCP tools), never by editing the file. The one meaningful local edit is
+  re-pointing a `//@file:` placeholder.
+- Code-node source is authored as files here and synced by decanter — never edit a
+  node's `jsCode` on the instance (UI or MCP tools).
+- Never edit `.decanter.json` or `.decanter-auth.json` (machine state / credentials).
 - Never write a `// @ts-n8n sha256:` line — the tool appends it on push.
-- Code nodes run as a function body with a top-level `return`, no `import`/`require`.
-- Run `npm run typecheck` after editing node source. `push` is a deploy — only when asked,
-  and never `--force` without an explicit instruction.
+- Code nodes run as a function body with a top-level `return`, no `import`/`require`
+  in `.js` nodes.
+- Run `npm run typecheck` after editing node source. `push` writes the DRAFT and only
+  when asked; `publish` is the deliberate go-live step; never `--force` without an
+  explicit instruction.
 
 Cursor applies this as guidance only; the n8n-decanter CLI enforces the same invariants
 at `push` regardless of which tool made the edit.

@@ -15,18 +15,18 @@ n8n-decanter                        # interactive picker (terminal, inited proje
 n8n-decanter init [dir] [--force]   # interactive bootstrap
 n8n-decanter completion zsh|bash
 
-# Sync
-n8n-decanter pull [workflow…]       # remote -> workflows/<kebab>/
-n8n-decanter push [workflow…] [--force] [--no-typecheck]
+# Sync — over n8n's MCP server, Code-node source only (structure lives in n8n)
+n8n-decanter pull [workflow…]       # code + structure snapshot -> workflows/<kebab>/
+n8n-decanter push [workflow…] [--force] [--publish] [--no-typecheck]   # to the DRAFT
 n8n-decanter watch [workflow]
 n8n-decanter publish [workflow…]    # take the draft(s) live
 n8n-decanter unpublish [workflow…]  # back to draft-only
 
 # Workflow lifecycle
-n8n-decanter create "<name>"                     # blank workflow, then pull
-n8n-decanter duplicate <workflow> ["<name>"]     # clone a workflow, then pull
-n8n-decanter delete <workflow> [--force]         # delete from the server
-n8n-decanter rename <workflow> "<new name>"      # rename the workflow (offline)
+n8n-decanter create "<name>"                     # blank workflow in n8n, then pull
+n8n-decanter duplicate <workflow> ["<name>"]     # clone via the API (enable MCP to pull the copy)
+n8n-decanter delete <workflow> [--force]         # delete from the server (API)
+n8n-decanter rename <workflow> "<new name>"      # rename the workflow in n8n
 
 # Inspect & test
 n8n-decanter status [workflow…] [--diff]
@@ -41,8 +41,8 @@ n8n-decanter mock check <workflow> ["<slug>"]                       # structural
 n8n-decanter list [--remote] [--json]
 
 # Node
-n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node (offline)
-n8n-decanter node rename <workflow> "<old node>" "<new node>"   # rename a node everywhere (offline)
+n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node in n8n
+n8n-decanter node rename <workflow> "<old node>" "<new node>"   # rename in n8n; local files follow
 n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node locally (offline)
 ```
 
@@ -62,10 +62,12 @@ n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node loc
 Running **bare `n8n-decanter`** (no verb, no arguments) in an inited project
 on a terminal opens a picker instead of printing usage: type to filter,
 `↑`/`↓` to move. Each row leads with a status glyph — `●` for a pulled
-workflow (green), `○` for a not-yet-pulled remote one (yellow) — so the state
+workflow (green), `○` for a not-yet-pulled remote one (yellow), `⊘` for a
+remote workflow **not yet available in MCP** (red, sorted last) — so the state
 reads by shape, not color alone, and the ids line up in an aligned column.
 `Enter` on a pulled workflow offers status/pull/push/watch/check/executions/simulate;
-`Enter` on an unpulled one pulls it directly. It stays in the workflow's verb
+`Enter` on an unpulled one pulls it directly; `Enter` on a `⊘` row explains
+where to flip the "Available in MCP" switch in n8n. It stays in the workflow's verb
 menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
 output and dirs without a `decanter.config.json` keep printing usage — scripts
 and LLM harnesses never see the picker.
@@ -93,12 +95,17 @@ errors with *unknown verb*. Flags may still appear in any position.
 
 | Verbs | Network |
 | --- | --- |
-| `check`, `rename`, `node create`, `node rename`, `node run`, `list`, `simulate`, `completion`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n API) |
-| `status`, `executions`, `data-tables` | Read the remote, never write |
-| `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish`, `delete` | Read/write the live instance |
+| `check`, `node run`, `list`, `simulate`, `mock`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance) |
+| `status`, `list --remote`, `executions`, `data-tables` | Read the remote, never write |
+| `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish`, `delete`, `rename`, `node create`, `node rename` | Read/write the live instance (pushes and structure acts land on the **draft**) |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward
-from the current directory) or the environment (`N8N_HOST`, `N8N_API_KEY`).
+from the current directory) or the environment. `N8N_HOST` plus **MCP
+credentials** (OAuth minted by [`init`](/docs/cli/init/) into
+`.decanter-auth.json`, or an `N8N_MCP_TOKEN`) power the sync verbs; the
+**public API key** (`N8N_API_KEY`, optional) powers only `executions`,
+`data-tables`, `duplicate`, and `delete` — the surfaces n8n's MCP server
+doesn't cover.
 
 ## Output and scripting
 

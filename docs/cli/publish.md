@@ -10,37 +10,33 @@ n8n-decanter unpublish [workflow…]   # return to draft-only
 ```
 
 n8n 2.x splits each workflow into a **draft** and a **published** version. In
-the editor, *Save* updates the draft and *Publish* makes it live. These verbs
-do the publish half from the CLI:
+the editor, *Save* updates the draft and *Publish* makes it live. Every
+decanter [push](/docs/cli/push/) updates the **draft only** — these verbs are
+the deliberate go-live half:
 
-- **`publish`** takes the draft live — the code runs from now on.
+- **`publish`** takes the draft live — the code runs from now on. On a
+  published workflow whose draft has diverged (pushes, or UI edits), it
+  promotes the newer draft.
 - **`unpublish`** returns the workflow to draft-only.
 
-Both need credentials (the `workflow:activate` / `workflow:deactivate` scopes;
-see [configuration](/docs/concepts/configuration/)). Without refs they act on
-the workflows listed in `decanter.config.json`.
+Both go over n8n's MCP server. Without refs they act on the workflows listed
+in `decanter.config.json`. `push --publish` combines a push with the publish
+in one command.
 
 ## Already in that state
 
-Running `publish` on an already-published workflow (or `unpublish` on an
-already-draft one) is a **no-op with a note**, not an error — nothing changes
-and the command still exits 0.
+Running `publish` when the live version already equals the draft (or
+`unpublish` on an already-draft workflow) is a **no-op with a note**, not an
+error — nothing changes and the command still exits 0.
 
-## Relationship to push
-
-Pushing to an *already-published* workflow republishes it immediately (n8n's
-public API hardcodes this — there is no draft-only update to a live workflow).
-So on a published workflow you rarely need `publish` — the push already went
-live. `publish` matters for an **unpublished** workflow whose draft you want to
-promote.
-
-For a staged rollout, the CLI-native sequence is:
+## The standard loop
 
 ```sh
-n8n-decanter wf unpublish   # triggers go down
-n8n-decanter wf push        # update the draft only
-n8n-decanter wf publish     # bring it back live with the new code
+n8n-decanter wf push        # update the draft (live version untouched)
+# …iterate, test, repeat…
+n8n-decanter wf publish     # ship it — or use push --publish for the last one
 ```
 
-See the [push](/docs/cli/push/) page and
-[sync layout](/docs/concepts/sync-layout/) for the full publish model.
+Because pushes never auto-publish, there is no need to `unpublish` first for
+a staged rollout — the draft accumulates changes while the published version
+keeps running.

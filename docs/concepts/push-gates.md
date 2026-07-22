@@ -1,6 +1,6 @@
 ---
 title: Push gates
-description: The typecheck gate, the compliance guard, and the drift guard — and what --force does.
+description: The typecheck gate, the compliance guard, and the per-node drift guard — and what --force does.
 order: 3
 ---
 
@@ -21,16 +21,19 @@ would corrupt sync state. The full list of checks is on the
 duplicate names/ids, orphan files, dangling `$('…')` references, marker
 misuse. Standalone: `n8n-decanter check`, no credentials needed.
 
-## 3. Drift guard
+## 3. Per-node drift guard
 
-If the remote changed since the last sync, push aborts with `pull first`.
-This is the only gate `--force` bypasses — it exists so you don't silently
-clobber edits made in the n8n UI.
+If a Code node's **remote code** changed since the last sync (and differs
+from what you're about to push), push aborts with `pull first`. This is the
+only gate `--force` bypasses — it exists so you don't silently clobber code
+edited on the instance. Remote **structure** changes never block a push:
+structure is n8n's job, and pushes write only `jsCode`.
 
-The interplay with pull matters: **pulling records the remote state as the
+The interplay with pull matters: **pulling records the remote code as the
 new sync base**, so after a warned pull the next push overwrites the surfaced
-remote edits by design — `.remote.js` files and git history are the safety
-net.
+remote edits by design — `status --diff` and git history are the safety net.
 
-Sync hashes are stored in [`.decanter.json`](/docs/concepts/sync-layout/);
-"last synced" means the last push *or* pull.
+Per-node sync hashes are stored in
+[`.decanter.json`](/docs/concepts/sync-layout/); "last synced" means the last
+push *or* pull. A remote edit that happens to match your local code
+re-baselines silently instead of aborting.

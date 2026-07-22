@@ -17,6 +17,10 @@ copy those shapes into [node run](/docs/cli/node-run/) fixtures, instead of
 guessing. A purely numeric argument is treated as an `<execution-id>`;
 everything else is a `<workflow>`.
 
+Uses the n8n **public API key** (`N8N_API_KEY`) — execution data is one of
+the surfaces n8n's MCP server doesn't serve, so this verb keeps the REST
+path. Without a key it fails with guidance.
+
 ## Options
 
 | Flag | Meaning |

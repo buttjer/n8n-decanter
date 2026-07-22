@@ -20,6 +20,10 @@ or deletes a data table, column, or row.
 A `<table>` is a table's **id or its exact name** (case-insensitive). With no
 argument, every table is fetched.
 
+Uses the n8n **public API key** (`N8N_API_KEY`) — MCP's data-table tools
+are add-only with no row reads, so this verb keeps the REST path. Without a
+key it fails with guidance.
+
 ## Where the data lands
 
 Data tables are **project-scoped — not owned by a workflow** — so, unlike
