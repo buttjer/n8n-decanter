@@ -479,10 +479,20 @@ the same traps:
   "sanitized/credentials-stripped" caveat strips credentials, *not* node params),
   plus `versionId`/`activeVersionId`. Writes go through `update_workflow` as an
   ordered batch of ops (`updateNodeParameters`/`setNodeParameter`/`addNode`/
-  `renameNode` (`oldName`+`newName`)/…) that **address nodes by name**; there is
-  no full-JSON-replace tool. An `updateNodeParameters` write lands on the **draft
-  only** (bumps `versionId`, leaves `activeVersionId` null); `publish_workflow`
-  activates it. This is the API-inaccessible draft-first capability.
+  `renameNode` (`oldName`+`newName`)/`addConnection` (`source`+`target`)/…) that
+  **address nodes by name**; there is no full-JSON-replace tool. An
+  `updateNodeParameters` write lands on the **draft only** (bumps `versionId`,
+  leaves `activeVersionId` untouched — an active workflow keeps running the
+  published version); `publish_workflow` activates it. This is the
+  API-inaccessible draft-first capability.
+- **More verified write/read semantics (2.30.7):** `updateNodeParameters`
+  **merges** into existing params (a `{jsCode}`-only write preserves `mode`/
+  `language`); **node ids survive `renameNode`**; reads are **draft-only** —
+  `get_workflow_version` returns metadata without node params, so published
+  content can't be read back over MCP (`restore_workflow_version` is the only
+  path to it). Data-table tools are **add-only** (create/rename/add rows+columns;
+  `search_data_tables` returns schema, never row values); `create_data_table`
+  requires a `projectId` (get it from `search_projects`).
 - **Two auth methods, and workflow visibility is the same under both:**
   `search_workflows` lists **all** workflows regardless of auth; the
   `availableInMCP` gate only limits `get_workflow_details`/edit. Auth is

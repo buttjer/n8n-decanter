@@ -42,9 +42,11 @@ Decided with the user (this session):
 - **Node identity across structure edits → acceptable to handle.** Skills/MCP may
   `renameNode`/re-add nodes; the `code/<file>` ↔ node mapping (`.decanter.json`, keyed on node
   id) must survive that. Manageable, needs design (Task 3).
-- **The public API is dropped for the code path.** MCP reads and writes Code-node `jsCode`
-  byte-exact (spike-confirmed), so a pure-MCP tool is viable for both directions. See Notes →
-  Spike findings.
+- **The public API is dropped for the workflow *code path* — not everywhere.** MCP reads and
+  writes Code-node `jsCode` byte-exact (spike-confirmed), so pure-MCP is viable for both
+  directions of the code sync. But MCP has **no data-table row reads** (add-only) and **no
+  published-version content reads** (draft only), so surfaces needing those — Plan 25's
+  `data-tables` verb — keep the public API. See Notes → Spike findings.
 - **[n8n-io/skills](https://github.com/n8n-io/skills): lean on the *knowledge* skills; keep
   the *build/lifecycle* ones subordinate.** The official pack splits in two: knowledge skills
   (`code-nodes`, `expressions`, `data-tables`, `binary-and-data`, `credentials-and-security`,
@@ -67,7 +69,8 @@ Decided with the user (this session):
 - This session's strategy discussion + spike (2026-07-22).
 - Related: Plan 20 ([DONE-20](DONE-20-cli-publish-lifecycle.md)) publish lifecycle is
   API-based (`activate`/`deactivate`, `versionId`/`activeVersionId`) — re-bases onto MCP
-  `publish_workflow`/`unpublish_workflow`. Plan 25 (data-tables) also API-based.
+  `publish_workflow`/`unpublish_workflow`. Plan 25 (data-tables) **stays API-based** — MCP has
+  no row reads (see Spike findings).
 
 ## Tasks
 
@@ -77,15 +80,23 @@ Decided with the user (this session):
    findings; reusable recipe in `AGENTS.md` "Driving a real n8n in Docker".
 2. **Ownership boundary + sync redesign:** decanter writes **only** the `jsCode` param of Code
    nodes, never structure. Redefine pull (read jsCode → files) and push (files →
-   `updateNodeParameters` → optional publish). Drop whole-workflow structural hashing, the
-   PUT-canonical drift guard, `.remote.js` conflict flow, and flat-layout rename migration —
-   all tied to owning structure. Keep per-node content hashing.
+   `updateNodeParameters` → optional publish). Two spike-verified semantics anchor the design:
+   **pull reads the draft** (`get_workflow_details` returns the draft version; published
+   content is not readable via MCP), and **`updateNodeParameters` merges** — a `{jsCode}`-only
+   write preserves sibling params (`mode`, `language`), so push needs no read-modify-write.
+   Drop whole-workflow structural hashing, the PUT-canonical drift guard, `.remote.js` conflict
+   flow, and flat-layout rename migration — all tied to owning structure. Keep per-node content
+   hashing.
 3. **Node-identity mapping** across MCP structure edits (`renameNode`/add/remove) — keep
    `code/<file>` ↔ node stable in `.decanter.json`. MCP addresses nodes by **name** while the
    map is keyed on node **id** (stable across renames), so this is a name↔id reconciliation
    layer.
-4. **Lifecycle re-base:** `publish`/`unpublish`/`create`/`delete` onto MCP tools
-   (`publish_workflow`, `unpublish_workflow`, `create_workflow_from_code`, `archive_workflow`).
+4. **Lifecycle re-base:** `publish`/`unpublish` map cleanly onto `publish_workflow`/
+   `unpublish_workflow` (spike-verified end-to-end, incl. draft divergence on an active
+   workflow). `create`/`duplicate`/`delete` need design: MCP creation is
+   `create_workflow_from_code` (**n8n Workflow SDK code, not a JSON payload** — `duplicate`
+   can't just replay a GET), and MCP has **no hard delete, only `archive_workflow`** — decide
+   per verb whether to re-express, keep on the API, or drop.
 5. **`init` onboarding + MCP auth — OAuth-first.** **OAuth2 is the primary method; consent
    happens in `init`.** `init` is the interactive/TTY moment (user present, browser available),
    so n8n's authorization-code flow fits there: one-time browser consent → decanter stores the
@@ -164,14 +175,26 @@ Decided with the user (this session):
     credentials are stripped, not node params), plus full structure + `versionId`/
     `activeVersionId` — enough for a read-only structure snapshot.
   - **Write + draft:** `update_workflow`/`updateNodeParameters` writes `jsCode` **byte-exact to
-    the draft only** (`versionId` bumps, `activeVersionId` stays null); `publish_workflow`
-    activates. This is the API-inaccessible draft-first edit.
+    the draft only** (`versionId` bumps; `activeVersionId` untouched); `publish_workflow`
+    activates. Verified through the full cycle: publish (with a trigger node) → draft edit →
+    draft/active version ids diverge while the workflow **stays active on the published
+    version**. This is the API-inaccessible draft-first edit.
+  - **Merge semantics:** `updateNodeParameters` **merges** into existing params — writing
+    `{jsCode}` alone preserves `mode`/`language` and vice versa. Push can send just the code.
+  - **Reads are draft-only:** `get_workflow_details` returns the **draft**;
+    `get_workflow_version` returns **metadata only** (no node params), so published content is
+    not readable via MCP — `restore_workflow_version` is the only path back to it. Pull
+    therefore syncs the draft, and a draft-vs-published content diff is not possible over MCP.
+  - **Data tables are add-only:** create/rename/add-rows/columns exist, but **no row-read
+    tool** — `search_data_tables` returns schema only (verified: inserted rows not readable
+    back). Plan 25's rows stay on the public API.
   - **Per-workflow gate:** `search_workflows` lists all workflows; `get_workflow_details`/edit
     require `availableInMCP` (`PATCH /rest/mcp/workflows/toggle-access
     {availableInMCP:true, workflowIds:[…]}`). Independent of auth method.
   - **Node identity:** ops address nodes **by name** (rename is `{renameNode, oldName,
-    newName}`); n8n keeps node ids across renames, so decanter's id-keyed `.decanter.json` map
-    is the stable anchor (Task 3).
+    newName}`; connections are `{addConnection, source, target}`); **node ids survive renames**
+    (verified: rename via MCP, id unchanged on the public GET), so decanter's id-keyed
+    `.decanter.json` map is the stable anchor (Task 3).
   - **Tool set (33):** incl. `get_workflow_details`, `update_workflow`,
     `create_workflow_from_code`, `publish_workflow`/`unpublish_workflow`,
     `get_workflow_version`/`restore_workflow_version`, `validate_workflow`, `test_workflow`,
