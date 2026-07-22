@@ -225,6 +225,27 @@ entries carry no priority field) — adjust freely.
       Until then 5.x (and any transitional 6.x that keeps the JS API) is the
       supported line; 5.x patch/minor bumps still flow. Severity: low.
 
+### Open — distinctive features (differentiators, tracked as their own class)
+
+- [ ] **Decanter-native code-node authoring skill, distributed skills.sh-first**
+      (2026-07-22, deferred out of [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md)).
+      A small **original** skill (1–2 files, no n8n-io/skills fork — Plan 30's
+      "override, not fork" stands) teaching agents the decanter authoring loop:
+      *Code nodes are authored as files under `code/` and synced via decanter
+      push* — `node create` → edit → `node run` → `check` → `simulate`/`test` →
+      `push`, plus the TS import/bundling and `@ts-n8n` marker rules.
+      Distribution with **skills.sh in mind** (`npx skills add`, 20+ agents) plus
+      the plugin marketplaces (Claude Code, Codex) that also carry hook wiring.
+      Rationale: (1) routing-layer competition — the n8n meta-skill routes
+      "build/edit code node" intents toward MCP builds; a decanter skill answers
+      the same intent with files+push at the layer agents actually consult;
+      (2) portable procedural knowledge without bloating the always-loaded
+      sync-dir `AGENTS.md`; (3) skills.sh discoverability as an adoption
+      channel. Its *defensive* role is already covered by Plan 33's guard-proxy
+      stack, so this is ergonomics/reach, not safety — pick up if Plan 33's
+      proxy logs show the n8n skills' routing nudge biting agents in practice,
+      or when the adoption channel becomes worth it.
+
 ### Graduated (tracked by a numbered plan; not yet done)
 
 - [x] **`publish` / `unpublish` verbs** (2026-07-19) — `POST

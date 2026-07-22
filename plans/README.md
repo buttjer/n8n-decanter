@@ -193,6 +193,18 @@ items not yet claimed by one. Recommended order:
     (2026-07-22, n8n 2.30.7): byte-exact jsCode read/write, draft-first edits, and
     OAuth-first auth with refresh tokens all confirmed — the API can be dropped for
     the code path. Breaking; awaiting go/no-go. Proposed 2026-07-22.
+33. [Post-MCP-pivot wave](BLOCKED-33-post-mcp-pivot-wave.md) — everything queued
+    *behind* Plan 32 (hard gate: starts only after it is fully executed): a
+    review gate verifying the execution (validate-gate carryover, no inline
+    source in git-tracked JSON, `node create`/`node rename` re-design,
+    credentials), the maintainer's standing Task 4 decisions
+    (`delete`→`archive`, `create`/`duplicate` via MCP + `validate_workflow`,
+    API key optional), and the follow-up wave: the instance-side `test` verb
+    (pinned-data run + client-side diff, prompt-driven, draft restore via
+    `restore_workflow_version`), the guard-proxy stack (localhost MCP proxy as
+    sole token holder + slim config-drift hooks + proxy-first template
+    override), a `simulate` keep/drop decision, and the AGENTS.md MCP-facts
+    update. Proposed 2026-07-22.
 
 ## Conventions
 
