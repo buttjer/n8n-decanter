@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { checkNodeImports, findBundleContext, scanNodeImports } from "./compile.mts";
-import { MOCKS_DIR } from "./executions.mts";
+import { LEGACY_FIXTURES_DIR, SCENARIOS_DIR } from "./executions.mts";
 import { readState } from "./state.mts";
 import type { Log, Workflow } from "./types.mts";
 import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, forEachConnectionTarget, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
@@ -171,8 +171,8 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   }
 
   // Orphans and strays. Only the folder root and code/ are scanned: other
-  // subdirs are reserved for future artifacts (executions/, fixtures/ — see
-  // plans 3 and 7) and must not trip the guard.
+  // subdirs are reserved for artifacts (executions/, scenarios/ — see
+  // plans 3 and 7/37) and must not trip the guard.
   const codeDir = path.join(dir, CODE_DIR);
   const entries = readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isFile())
@@ -201,22 +201,29 @@ export function validateWorkflowDir(dir: string): ValidationResult {
       warnings.push(`node "${node.name}": Python Code node — its pythonCode stays inline in workflow.json (decanter extracts JS/TS only; Python extraction is a planned feature)`);
     }
   }
-  const mocksDir = path.join(dir, MOCKS_DIR);
-  if (existsSync(mocksDir)) {
-    for (const entry of readdirSync(mocksDir).filter((e) => e.endsWith(".json"))) {
+  const scenariosDir = path.join(dir, SCENARIOS_DIR);
+  if (existsSync(scenariosDir)) {
+    for (const entry of readdirSync(scenariosDir).filter((e) => e.endsWith(".json"))) {
       try {
-        const mock = JSON.parse(readFileSync(path.join(mocksDir, entry), "utf8")) as { workflowData?: { nodes?: Array<{ parameters?: Record<string, unknown> }> } };
-        const inline = mock.workflowData?.nodes?.some((n) => {
+        const scenario = JSON.parse(readFileSync(path.join(scenariosDir, entry), "utf8")) as { workflowData?: { nodes?: Array<{ parameters?: Record<string, unknown> }> } };
+        const inline = scenario.workflowData?.nodes?.some((n) => {
           const code = n.parameters?.jsCode;
           return typeof code === "string" && code.trim() !== "" && !code.startsWith(FILE_PLACEHOLDER_PREFIX);
         });
         if (inline === true) {
-          warnings.push(`${MOCKS_DIR}/${entry}: embeds inline Code-node source under workflowData — committed mocks must not duplicate node code; delete the mock's "workflowData" block (freshly created mocks omit it)`);
+          warnings.push(`${SCENARIOS_DIR}/${entry}: embeds inline Code-node source under workflowData — committed scenarios must not duplicate node code; delete the scenario's "workflowData" block (freshly created ones omit it)`);
         }
       } catch {
-        // corrupt mock JSON — `mock check` owns that error
+        // corrupt scenario JSON — `scenario check` owns that error
       }
     }
+  }
+
+  // Retired per-node fixtures (Plan 37): a leftover fixtures/ dir is a hard error
+  // naming the replacement — no deprecation read-path.
+  const fixturesDir = path.join(dir, LEGACY_FIXTURES_DIR);
+  if (existsSync(fixturesDir) && readdirSync(fixturesDir).some((e) => e.endsWith(".json"))) {
+    errors.push(`${LEGACY_FIXTURES_DIR}/ dir is retired — per-node fixtures and \`simulate --pin\` were removed (Plan 37); recreate the data as a scenario (\`scenario create --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/`);
   }
   return { errors, warnings };
 }

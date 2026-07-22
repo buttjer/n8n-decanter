@@ -5,7 +5,7 @@ order: 7
 ---
 
 ```sh
-n8n-decanter test <workflow> [--execution <execution-id> | --mock <slug>] [--trigger <node>] [--json]
+n8n-decanter test <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
 ```
 
 Runs the workflow **on your n8n instance** (MCP `test_workflow`) with
@@ -20,10 +20,18 @@ capture — divergence exits 1, so it's CI-gateable like
 
 Pins come from the same sources `simulate` uses: a fetched capture
 (`--execution <id>`, defaulting to the newest under `executions/`) or a
-committed [mock scenario](/docs/cli/mock/) (`--mock <slug>`). A
+committed [scenario](/docs/cli/scenario/) (`--scenario <slug>`). A
 trigger/network node with no captured output **aborts before anything
 runs** — an unpinned one would hit the real world. `--trigger <node>` picks
 the start trigger in multi-trigger workflows.
+
+**Synthetic pins are the exception to the diff.** A `--scenario` with any
+`authored`/`scaffolded` node (see
+[provenance](/docs/cli/scenario/#provenance-and-synthetic-pins)) is reported
+"**synthetic pins — proves executability, not output correctness**": no
+per-node diff is asserted, and `ok` reflects only that the instance run
+succeeded. A capture-only run keeps the diff/exit-1 semantics above
+unchanged. `--json` adds `syntheticPins: boolean` and `provenance`.
 
 ## Preflights — which one when?
 
@@ -35,8 +43,8 @@ every node against a real capture and exit 1 on divergence.
 | Preflight | Where it runs | What it needs | Reach for it when |
 | --- | --- | --- | --- |
 | [check](/docs/cli/check/) | locally, static | nothing | every edit — layout + types, offline |
-| **`test`** (recommended) | **your instance**, runtime | MCP + a capture/mock | the default runtime check: instance-exact engine, community nodes, no Docker |
-| [simulate](/docs/cli/simulate/) | local engine, runtime | Docker + a capture/mock | pre-push verification of *uncommitted local* code, CI without an instance, `--network-none` isolation, engine-version rehearsal |
+| **`test`** (recommended) | **your instance**, runtime | MCP + a capture/scenario | the default runtime check: instance-exact engine, community nodes, no Docker |
+| [simulate](/docs/cli/simulate/) | local engine, runtime | Docker + a capture/scenario | pre-push verification of *uncommitted local* code, CI without an instance, `--network-none` isolation, engine-version rehearsal |
 
 ## What gets tested — local code or the draft?
 

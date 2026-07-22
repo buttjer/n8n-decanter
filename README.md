@@ -37,6 +37,11 @@ so nothing goes live until you `publish`. Workflow *structure* stays n8n's job
   per-node drift guard gate every push; `check` (offline), `simulate`
   (offline engine replay, Docker), and `test` (instance-side) each diff every
   node against a real captured execution and exit 1 on divergence.
+- **Committed, schema-scaffolded scenarios** — `scenario create` turns a
+  captured execution and/or the workflow's own output schemas
+  (`--scaffold`, no LLM API) into a reviewable, git-tracked pin-data set that
+  `test`/`simulate` replay — the durable counterpart to an agent's ephemeral
+  in-session pin flow.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
 - **Guarded agent access to n8n's MCP — wired by default** — the scaffolded
@@ -108,7 +113,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `data-tables [table…]` | Fetch data-table schema + rows (read-only) |
 | `test <workflow>` | Pinned run **on the instance** (draft); diffs vs a capture |
 | `simulate <workflow>` | Offline engine replay (Docker); diffs vs a capture |
-| `mock create` / `mock check` | Build / validate a committed mock scenario |
+| `scenario create` / `scenario check` | Build / validate a committed scenario (captured and/or schema-scaffolded) |
 | `list [--remote]` | Pulled workflows (`--remote` adds unpulled ones) |
 | `mcp connect` / `mcp serve` | Guarded MCP access for coding agents |
 | `node run <node-file>` | Run a Code node offline, print its items |

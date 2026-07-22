@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
 import { findWorkflowDir, listWorkflowDirs } from "./state.mts";
@@ -6,20 +6,62 @@ import type { Execution, Log, Workflow } from "./types.mts";
 
 export const EXECUTIONS_DIR = "executions";
 /**
- * Committed, hand-editable execution **mocks** (Plan 7 task 6) — named scenarios
- * created by `mock create` from a captured execution, with any gap nodes flagged
- * for filling. Tracked in git (unlike gitignored `executions/`), so mocked
- * replays are reproducible for teammates and CI. Selected explicitly by slug
- * (`simulate --mock <slug>`), not auto-preferred.
+ * Committed, hand-editable **scenarios** (Plan 7 task 6, renamed Plan 37) —
+ * named, full-workflow pin-data sets created by `scenario create` from a
+ * captured execution (or scaffolded from the workflow's schemas), with any gap
+ * nodes flagged for filling. Tracked in git (unlike gitignored `executions/`),
+ * so replays are reproducible for teammates and CI. Selected explicitly by slug
+ * (`simulate --scenario <slug>`), not auto-preferred.
  */
-export const MOCKS_DIR = "mocks";
+export const SCENARIOS_DIR = "scenarios";
+/** Pre-Plan-37 dir name for scenarios; auto-migrated to `scenarios/` on any verb that touches it. */
+export const LEGACY_MOCKS_DIR = "mocks";
+/** Retired per-node pin dir (`simulate --pin`); a leftover one is now a hard error naming the replacement. */
+export const LEGACY_FIXTURES_DIR = "fixtures";
+
+/**
+ * Auto-migrate a workflow folder's pre-Plan-37 `mocks/` dir to `scenarios/`
+ * (Plan 37 fold decision: the dir rename is automatic, separate from the
+ * verb/flag spelling change). Plain `renameSync` — the pull/push/watch
+ * auto-commit records it as a git rename, preserving history. Refuses when both
+ * dirs exist (a manual merge is needed). No-op when there's no legacy dir.
+ */
+export function migrateScenariosDir(dir: string, log: Log): void {
+  const legacy = path.join(dir, LEGACY_MOCKS_DIR);
+  if (!existsSync(legacy)) return;
+  const target = path.join(dir, SCENARIOS_DIR);
+  if (existsSync(target)) {
+    throw new Error(
+      `both ${LEGACY_MOCKS_DIR}/ (legacy) and ${SCENARIOS_DIR}/ exist in ${path.relative(process.cwd(), dir)} — ` +
+        `move the ${LEGACY_MOCKS_DIR}/*.json files into ${SCENARIOS_DIR}/ and delete ${LEGACY_MOCKS_DIR}/`,
+    );
+  }
+  renameSync(legacy, target);
+  log.info(`migrated ${LEGACY_MOCKS_DIR}/ -> ${SCENARIOS_DIR}/ (mock -> scenario)`);
+}
+
+/**
+ * Hard-error on a leftover `fixtures/` dir (Plan 37 fold decision 1: no
+ * deprecation read-path). `simulate --pin` and per-node `fixtures/` are removed;
+ * their role is absorbed by self-contained scenarios. Names the replacement.
+ * No-op when there's no `fixtures/` dir with `.json` files in it.
+ */
+export function assertNoLegacyFixtures(dir: string): void {
+  const fx = path.join(dir, LEGACY_FIXTURES_DIR);
+  if (!existsSync(fx)) return;
+  if (!readdirSync(fx).some((e) => e.endsWith(".json"))) return;
+  throw new Error(
+    `legacy ${LEGACY_FIXTURES_DIR}/ dir found in ${path.relative(process.cwd(), dir)} — per-node fixtures and \`simulate --pin\` were removed (Plan 37). ` +
+      `Recreate the data as a committed scenario (\`n8n-decanter <workflow> scenario create --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/.`,
+  );
+}
 
 /**
  * The newest captured execution id in a workflow folder's `executions/` dir, or
  * null when none are captured. n8n execution ids are incrementing integers, so
  * "newest" is the highest numeric filename; non-numeric files are ignored. Lets
- * `simulate`/`mock create` (and the picker, which can't supply an id) default to
- * the latest capture. Mocks are slug-named scenarios, not "latest"-ordered, so
+ * `simulate`/`scenario create` (and the picker, which can't supply an id) default
+ * to the latest capture. Scenarios are slug-named, not "latest"-ordered, so
  * they're chosen explicitly and don't participate here.
  */
 export function latestCaptureId(dir: string): string | null {
@@ -41,7 +83,7 @@ export function latestCaptureId(dir: string): string | null {
  * by version so a page of same-version executions warns once; silent when the
  * draft version or the execution version is unavailable (defensive).
  */
-export function warnStaleFixtures(dir: string, executions: Execution[], log: Log): void {
+export function warnStaleCaptures(dir: string, executions: Execution[], log: Log): void {
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) return;
   let draft: unknown;
@@ -94,7 +136,7 @@ export async function fetchExecutions(
     return;
   }
   writeExecutionFiles(dir, executions, log);
-  warnStaleFixtures(dir, executions, log);
+  warnStaleCaptures(dir, executions, log);
   log.ok(`${executions.length} execution${executions.length === 1 ? "" : "s"} -> ${path.relative(process.cwd(), path.join(dir, EXECUTIONS_DIR))} (gitignored — temp data, "executions clean" removes it)`);
 }
 
@@ -109,7 +151,7 @@ export async function fetchExecutionById(api: N8nApi, root: string, executionId:
   const dir = findWorkflowDir(root, workflowId, log);
   if (!dir) throw new Error(`execution ${executionId} belongs to workflow ${workflowId}, which is not pulled under ${root} — pull it first`);
   writeExecutionFiles(dir, [exec], log);
-  warnStaleFixtures(dir, [exec], log);
+  warnStaleCaptures(dir, [exec], log);
   log.ok(`execution ${executionId} -> ${path.relative(process.cwd(), path.join(dir, EXECUTIONS_DIR))}`);
 }
 

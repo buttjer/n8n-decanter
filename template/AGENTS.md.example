@@ -383,7 +383,7 @@ Rules:
 
 ## Runtime checks: `test` (instance) and `simulate` (offline)
 
-Two pinned-run checks share the capture/mock sources; **recommend `test`
+Two pinned-run checks share the capture/scenario sources; **recommend `test`
 first** — it runs on the instance's exact engine (community nodes included)
 with no Docker. Reach for `simulate` when the run must be offline: pre-push
 verification of uncommitted local code, CI without an instance,
@@ -397,30 +397,40 @@ against the capture and exit 1 on divergence.
 - `n8n-decanter simulate <workflow>` — the same idea through a **local**
   n8n engine (Docker), fully offline.
 
-## Filling simulation gaps (`mocks/` — committed scenarios)
+## Scenarios (`scenarios/` — committed pin-data sets)
 
-`n8n-decanter simulate <workflow>` replays a workflow through a real n8n engine,
-pinning network nodes to a captured execution (`test` pins the same way,
-instance-side, and uses the same mocks). A **gap** is a network node the
-replay reaches that has **no captured data** (added or reparametrized since the
-capture). Both verbs hard-error on a gap rather than run half-real — and this
-is a task you, the agent, are well-suited to complete. **The CLI never calls an
-LLM or needs an API key; you author the mock data locally.**
+A **scenario** is a named, committed input set for a workflow —
+`scenarios/<slug>.json`, captured from a real run or scaffolded from the
+workflow's schemas — that `test`/`simulate` replay and diff against. Both verbs
+pin network nodes to it; a **gap** is a network node the replay reaches that has
+**no data** (added or reparametrized since the capture). They hard-error on a
+gap rather than run half-real — and filling it is a task you, the agent, are
+well-suited to complete. **The CLI never calls an LLM or invents values; you
+author the data locally and it is reviewed in the diff.**
 
 The loop:
 
 ```sh
-n8n-decanter "<workflow>" simulate --execution <id>      # ✗ gap: <Node> has no data
-n8n-decanter "<workflow>" mock create "<slug>" --execution <id>   # writes a committed, fillable scenario
-#   → edit workflows/<folder>/mocks/<slug>.json  (see below)
-n8n-decanter "<workflow>" mock check <slug>              # validate offline (fast, no Docker)
-n8n-decanter "<workflow>" simulate --mock <slug>         # replay the filled scenario
+n8n-decanter "<workflow>" simulate --execution <id>                 # ✗ gap: <Node> has no data
+n8n-decanter "<workflow>" scenario create "<slug>" --execution <id> # writes a committed, fillable scenario
+#   → edit workflows/<folder>/scenarios/<slug>.json  (see below)
+n8n-decanter "<workflow>" scenario check <slug>                     # validate offline (fast, no Docker)
+n8n-decanter "<workflow>" simulate --scenario <slug>               # replay the filled scenario
 ```
 
-`mock create` copies the capture into `mocks/<slug>.json` (a **named scenario** —
-`happy-path`, `empty-cart`, …; the slug defaults to the execution id) and adds a
-`_decanterMock` block listing each gap node with its **type**, **parameters**,
-and an **`inputSample`** (the items feeding it). For each node in `fill`, add its
+Add `--scaffold` to `scenario create` to annotate each gap with its **output
+schema** (from n8n's read-only `prepare_test_pin_data`) — a `--scaffold` with no
+`--execution` builds a from-scratch set where *every* pinnable node is a fill
+entry. Provenance is tracked per node: `capture` (real, diff-asserted),
+`authored` (hand-filled), `scaffolded` (schema-guided). A run on a scenario with
+any non-`capture` node is reported as **synthetic pins — proves executability,
+not output correctness** (no per-node diff asserted).
+
+`scenario create` copies the capture into `scenarios/<slug>.json` (a **named
+scenario** — `happy-path`, `empty-cart`, …; the slug defaults to the execution
+id) and adds a `_decanterScenario` block listing each gap node with its
+**type**, **parameters**, an **`inputSample`** (the items feeding it), and —
+with `--scaffold` — an **`expectedSchema`**. For each node in `fill`, add its
 output under `data.resultData.runData`:
 
 ```jsonc
@@ -438,21 +448,23 @@ output under `data.resultData.runData`:
 
 How to author good data:
 
-- **Use the context.** Read the node's `type`/`parameters` and `inputSample` in
-  the `_decanterMock.fill` entry, and infer a realistic output. An HTTP GET to a
-  CRM returns a record; a DB query returns rows; a Slack post returns a
-  message-sent ack. One item in, one enriched item out is the common case.
+- **Use the context.** Read the node's `type`/`parameters`, `inputSample`, and
+  (if scaffolded) `expectedSchema` in the `_decanterScenario.fill` entry, and
+  infer a realistic output. An HTTP GET to a CRM returns a record; a DB query
+  returns rows; a Slack post returns a message-sent ack. One item in, one
+  enriched item out is the common case.
 - **Match the input's `pairedItem` when downstream nodes link items** (e.g.
   `$('<Node>').itemMatching(...)`): give each output item `"pairedItem": { "item": <inputIndex> }`.
-- **Keep the `fill` list as-is.** It records which nodes are mocked (not
-  captured) and is what `mock check` validates. Don't delete it.
-- **Validate offline with `mock check <slug>`** — a fast, node-named structural
-  check that needs no Docker; run it in your fill→check→fix loop. It fails if an
-  item isn't `{ "json": … }` or a `fill` node is still empty. `simulate --mock`
-  runs the same check on load. There is no official n8n JSON Schema — this is the
-  decanter's own check of the exact shape it replays.
-- **Committed, so review for PII.** Unlike `executions/`, `mocks/` is tracked in
-  git (reproducible replays). The data you write is *mock*, but the copied
+- **Keep the `fill` list as-is.** It records which nodes are synthetic (not
+  captured) — the provenance signal — and is what `scenario check` validates.
+  Don't delete it.
+- **Validate offline with `scenario check <slug>`** — a fast, node-named
+  structural check that needs no Docker; run it in your fill→check→fix loop. It
+  fails if an item isn't `{ "json": … }` or a `fill` node is still empty.
+  `simulate --scenario` runs the same check on load. There is no official n8n
+  JSON Schema — this is the decanter's own check of the exact shape it replays.
+- **Committed, so review for PII.** Unlike `executions/`, `scenarios/` is tracked
+  in git (reproducible replays). The data you author is synthetic, but a copied
   capture around it can hold real payloads — don't commit secrets.
 
 ## Data tables (`data-tables/` — temporary, gitignored)
@@ -498,7 +510,7 @@ Rules:
 
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
   `n8n-decanter node run <file> [fixture]`,
-  `n8n-decanter mock create <workflow>` / `mock check <workflow>` (fillable mock scenarios),
+  `n8n-decanter scenario create <workflow>` / `scenario check <workflow>` (committed pin-data sets),
   `n8n-decanter executions clean`, `n8n-decanter data-tables clean`. These never
   touch the network.
 - **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line

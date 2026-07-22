@@ -182,6 +182,26 @@ function callMcpTool(name: string, args: any): any | null {
         ...(args.includeData === true && { data: { resultData: { runData: testRunData } } }),
       });
     }
+    case "prepare_test_pin_data": {
+      // schema oracle (Plan 37): triggers/http/credentialed nodes need pins with
+      // schemas; logic nodes execute normally. Returns schemas only, never data.
+      const gated = gate(args.workflowId);
+      if (gated) return gated;
+      const wf = db.get(args.workflowId);
+      const needs = (n: any) => /webhook|httpRequest|trigger/i.test(n.type) || n.credentials !== undefined;
+      const enabled = wf.nodes.filter((n: any) => n.disabled !== true);
+      const nodeSchemasToGenerate: Record<string, unknown> = {};
+      const nodesSkipped: string[] = [];
+      for (const n of enabled) {
+        if (needs(n)) nodeSchemasToGenerate[n.name] = { type: "object", properties: { id: { type: "string" } } };
+        else nodesSkipped.push(n.name);
+      }
+      const withSchema = Object.keys(nodeSchemasToGenerate).length;
+      return ok({
+        nodeSchemasToGenerate, nodesWithoutSchema: [], nodesSkipped,
+        coverage: { withSchemaFromExecution: 0, withSchemaFromDefinition: withSchema, withoutSchema: 0, skipped: nodesSkipped.length, total: enabled.length },
+      });
+    }
     case "archive_workflow": {
       const gated = gate(args.workflowId);
       if (gated) return gated;
@@ -1182,7 +1202,7 @@ await step("completion: prints shell scripts; __complete emits verbs, flags, nam
   r = await cli("__complete");
   assert.equal(r.code, 0, r.out);
   const words = r.out.trim().split("\n");
-  // "create" survives as the `mock create` sub-verb; "connect"/"serve" are the `mcp` sub-verbs
+  // "create" survives as the `scenario create` sub-verb; "connect"/"serve" are the `mcp` sub-verbs
   for (const w of ["pull", "push", "watch", "list", "node", "create", "run", "connect", "serve", "--force", "--publish", "wf123", "Order Sync v2"]) {
     assert.ok(words.includes(w), `__complete must emit "${w}": ${r.out}`);
   }
@@ -1361,24 +1381,24 @@ await step("guard: orphan code files error; reserved subdirs and .d.ts ignored",
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   writeFileSync(path.join(dir2, "code", "orphan.js"), "return [];\n");
   writeFileSync(path.join(dir2, "stray.ts"), "export {};\n");
-  // future artifact dirs (plans 3/7: executions/, fixtures/, mocks/) must not trip the guard
+  // artifact dirs (plans 3/7/37: executions/, scenarios/) must not trip the guard
   mkdirSync(path.join(dir2, "executions"), { recursive: true });
   writeFileSync(path.join(dir2, "executions", "not-code.js"), "// captured\n");
-  mkdirSync(path.join(dir2, "mocks"), { recursive: true });
-  writeFileSync(path.join(dir2, "mocks", "also-not-code.js"), "// mock\n");
+  mkdirSync(path.join(dir2, "scenarios"), { recursive: true });
+  writeFileSync(path.join(dir2, "scenarios", "also-not-code.js"), "// scenario\n");
   writeFileSync(path.join(dir2, "code", "types.d.ts"), "type Row = { id: number };\n");
   const r = await cli("check", "--no-typecheck");
   assert.equal(r.code, 1, "check must fail on orphans: " + r.out);
   assert.match(r.out, /orphan code file code\/orphan\.js/);
   assert.match(r.out, /orphan code file stray\.ts/);
   assert.ok(!r.out.includes("not-code.js"), "files under executions/ must be ignored: " + r.out);
-  assert.ok(!r.out.includes("also-not-code.js"), "files under mocks/ must be ignored: " + r.out);
+  assert.ok(!r.out.includes("also-not-code.js"), "files under scenarios/ must be ignored: " + r.out);
   assert.ok(!r.out.includes("types.d.ts"), ".d.ts files are not orphans: " + r.out);
   unlinkSync(path.join(dir2, "code", "orphan.js"));
   unlinkSync(path.join(dir2, "stray.ts"));
   unlinkSync(path.join(dir2, "code", "types.d.ts"));
   rmSync(path.join(dir2, "executions"), { recursive: true });
-  rmSync(path.join(dir2, "mocks"), { recursive: true });
+  rmSync(path.join(dir2, "scenarios"), { recursive: true });
   const r2 = await cli("check", "--no-typecheck");
   assert.equal(r2.code, 0, r2.out);
 });
@@ -1755,11 +1775,11 @@ await step("executions: fetches run JSON into a self-gitignored dir; filters pas
   assert.equal(r.code, 1, "unknown execution id must fail");
 });
 
-await step("mock create/check: named scenario into committed mocks/, validated offline", async () => {
+await step("scenario create/check: named set into committed scenarios/, validated offline", async () => {
   const exDir = path.join(dirF, "executions");
-  const mockDir = path.join(dirF, "mocks");
+  const scenarioDir = path.join(dirF, "scenarios");
   assert.ok(existsSync(path.join(exDir, "201.json")), "previous step left capture 201");
-  // offline: no credentials needed (reads a capture, writes a committed mock)
+  // offline: no credentials needed (reads a capture, writes a committed scenario)
   const savedEnv = env;
   env = { ...savedEnv };
   delete env.N8N_HOST;
@@ -1767,34 +1787,93 @@ await step("mock create/check: named scenario into committed mocks/, validated o
   delete env.N8N_MCP_TOKEN;
   try {
     // slug is a positional; kebab-slugged on disk
-    let r = await cli("mock", "create", "wf123", "Happy Path", "--execution", "201");
+    let r = await cli("scenario", "create", "wf123", "Happy Path", "--execution", "201");
     assert.equal(r.code, 0, r.out);
-    assert.ok(existsSync(path.join(mockDir, "happy-path.json")), "mock file written: " + r.out);
-    const mock = JSON.parse(read(mockDir, "happy-path.json"));
+    assert.ok(existsSync(path.join(scenarioDir, "happy-path.json")), "scenario file written: " + r.out);
+    const scenario = JSON.parse(read(scenarioDir, "happy-path.json"));
     // full copy of the capture (real runData preserved) + a guidance block
-    assert.equal(mock.data.resultData.runData.Transform[0].data.main[0][0].json.total, 9.5);
-    assert.equal(mock._decanterMock.sourceExecution, "201");
-    assert.ok(Array.isArray(mock._decanterMock.fill), "fill list present");
+    assert.equal(scenario.data.resultData.runData.Transform[0].data.main[0][0].json.total, 9.5);
+    assert.equal(scenario._decanterScenario.source, "capture");
+    assert.equal(scenario._decanterScenario.sourceExecution, "201");
+    assert.ok(Array.isArray(scenario._decanterScenario.fill), "fill list present");
     assert.match(r.out, /credentials\/PII/); // PII review warning
     // refuses to clobber (protects hand-filled data)
-    r = await cli("mock", "create", "wf123", "Happy Path", "--execution", "201");
+    r = await cli("scenario", "create", "wf123", "Happy Path", "--execution", "201");
     assert.equal(r.code, 1);
     assert.match(r.out, /already exists/);
-    // mock check validates the committed mock offline (no Docker)
-    r = await cli("mock", "check", "wf123", "happy-path");
+    // scenario check validates the committed scenario offline (no Docker)
+    r = await cli("scenario", "check", "wf123", "happy-path");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /valid/);
-    // a structurally broken mock fails check with exit 1
-    writeFileSync(path.join(mockDir, "broken.json"), JSON.stringify({ _decanterMock: { fill: [] }, data: { resultData: { runData: { X: [{ data: { main: [[42]] } }] } } } }));
-    r = await cli("mock", "check", "wf123", "broken");
+    // a structurally broken scenario fails check with exit 1
+    writeFileSync(path.join(scenarioDir, "broken.json"), JSON.stringify({ _decanterScenario: { fill: [] }, data: { resultData: { runData: { X: [{ data: { main: [[42]] } }] } } } }));
+    r = await cli("scenario", "check", "wf123", "broken");
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /invalid|must be an object/);
-    // check-all also fails while a broken mock is present
-    r = await cli("mock", "check", "wf123");
+    // check-all also fails while a broken scenario is present
+    r = await cli("scenario", "check", "wf123");
     assert.equal(r.code, 1, r.out);
   } finally {
     env = savedEnv;
-    rmSync(mockDir, { recursive: true, force: true });
+    rmSync(scenarioDir, { recursive: true, force: true });
+  }
+});
+
+await step("scenario create --scaffold: schema-annotated fills from prepare_test_pin_data, no invented values", async () => {
+  const scenarioDir = path.join(dirF, "scenarios");
+  try {
+    // bare --scaffold (no --execution) builds a from-scratch set over the wire
+    const r = await cli("scenario", "create", "wf123", "scaffolded", "--scaffold");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /scaffold coverage/);
+    const scenario = JSON.parse(read(scenarioDir, "scaffolded.json"));
+    assert.equal(scenario._decanterScenario.source, "scaffold");
+    // Webhook (trigger) is the pinnable node; it gets a schema-annotated fill entry
+    const webhook = scenario._decanterScenario.fill.find((f: any) => f.node === "Webhook");
+    assert.ok(webhook, "Webhook is a scaffolded fill entry: " + JSON.stringify(scenario._decanterScenario.fill));
+    assert.ok(webhook.expectedSchema, "fill carries expectedSchema (provenance scaffolded)");
+    // no value invented — runData stays empty until a person/agent authors it
+    assert.deepEqual(scenario.data.resultData.runData, {});
+  } finally {
+    rmSync(scenarioDir, { recursive: true, force: true });
+  }
+});
+
+await step("scenario migration + mock/--mock hard errors", async () => {
+  const savedEnv = env;
+  env = { ...savedEnv };
+  delete env.N8N_HOST;
+  delete env.N8N_API_KEY;
+  delete env.N8N_MCP_TOKEN;
+  const legacyDir = path.join(dirF, "mocks");
+  try {
+    // the retired `mock` verb hard-errors naming `scenario`
+    let r = await cli("mock", "create", "wf123");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /renamed to `scenario`/);
+    // `--mock` hard-errors naming `--scenario`
+    r = await cli("simulate", "wf123", "--mock", "x");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /--mock.*were removed/);
+    // a legacy mocks/ dir auto-migrates to scenarios/ on a scenario verb
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(path.join(legacyDir, "legacy.json"), JSON.stringify({ _decanterMock: { fill: [] }, data: { resultData: { runData: {} } } }));
+    r = await cli("scenario", "check", "wf123", "legacy");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!existsSync(legacyDir), "legacy mocks/ migrated away");
+    assert.ok(existsSync(path.join(dirF, "scenarios", "legacy.json")), "moved to scenarios/");
+    // a leftover fixtures/ dir is a hard error naming the replacement
+    const fxDir = path.join(dirF, "fixtures");
+    mkdirSync(fxDir, { recursive: true });
+    writeFileSync(path.join(fxDir, "fetch.json"), "{}");
+    r = await cli("simulate", "wf123", "--execution", "201");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /fixtures\/.*removed \(Plan 37\)/);
+    rmSync(fxDir, { recursive: true, force: true });
+  } finally {
+    env = savedEnv;
+    rmSync(path.join(dirF, "scenarios"), { recursive: true, force: true });
+    rmSync(legacyDir, { recursive: true, force: true });
   }
 });
 
@@ -2078,7 +2157,7 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
   r = await cli("test", "wfT1");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /no --execution\/--mock given; using the latest capture 301/);
+  assert.match(r.out, /no --execution\/--scenario given; using the latest capture 301/);
   assert.match(r.out, /1 node\(s\) pinned from capture 301/);
   assert.match(r.out, /Compute: matches capture/);
   assert.match(r.out, /instance test matches the capture/);
@@ -2114,7 +2193,7 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   db.get("wfT1").nodes.push({ id: "t3", name: "Fetch Prices", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [440, 0], parameters: { url: "http://x" } });
   r = await cli("test", "wfT1");
   assert.equal(r.code, 1);
-  assert.match(r.out, /cannot pin "Fetch Prices"[\s\S]*mock create/);
+  assert.match(r.out, /cannot pin "Fetch Prices"[\s\S]*scenario create/);
   db.get("wfT1").nodes.pop();
 });
 

@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { DEFAULT_N8N_VERSION, dockerAvailable, VIEWER_CONTAINER, VIEWER_LOGIN } from "../lib/engine.mts";
-import { pinFixtures, runSimulation } from "../lib/simulate.mts";
+import { runSimulation, writeScenario } from "../lib/simulate.mts";
 import { createStepRunner } from "./harness.mts";
 
 const execFile = promisify(execFileCb);
@@ -168,13 +168,15 @@ try {
     assert.ok(report.url!.endsWith(`/executions/${results[0].id}`), `URL execId should match the saved run (${results[0].id})`);
   });
 
-  await step("simulate --pin: writes committed fixtures from the capture", async () => {
-    pinFixtures(TMP, "1", log as any);
-    assert.ok(existsSync(path.join(TMP, "fixtures", "webhook.json")));
-    assert.ok(existsSync(path.join(TMP, "fixtures", "fetch.json")));
-    // pinned fixtures replay identically
-    const report = await runSimulation(TMP, "1", { version: IMAGE_TAG }, log as any);
-    assert.equal(report.ok, true, "pinned replay must still match");
+  await step("scenario create + simulate --scenario: a committed capture replays identically", async () => {
+    const { slug, gaps } = await writeScenario(TMP, { execId: "1", slug: "happy path" }, log as any);
+    assert.equal(slug, "happy-path");
+    assert.deepEqual(gaps, [], "the happy-path capture has no gaps");
+    assert.ok(existsSync(path.join(TMP, "scenarios", "happy-path.json")));
+    // a capture-provenance scenario keeps full diff semantics and must still match
+    const report = await runSimulation(TMP, "happy-path", { version: IMAGE_TAG, source: "scenario" }, log as any);
+    assert.equal(report.syntheticPins, false, "a pure-capture scenario is not synthetic");
+    assert.equal(report.ok, true, "committed-capture replay must still match");
   });
 
   console.log(`\n${passedCount()} sim steps passed against ${IMAGE}`);

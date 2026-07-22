@@ -13,7 +13,7 @@ import { getWorkflowDetails, type McpClient, updateWorkflow } from "./mcp.mts";
 import { createPrompt } from "./prompt.mts";
 import { buildNodeCode, pushWorkflow } from "./push.mts";
 import { readState, writeState } from "./state.mts";
-import { diffItems, firstRunItems, isLoopDriver, isPureNode, type NodeDiff, type RunData, type RunItem, readCapture, type SimSource } from "./simulate.mts";
+import { diffItems, firstRunItems, isLoopDriver, isPureNode, type NodeDiff, type Provenance, type RunData, type RunItem, readCapture, scenarioIsSynthetic, scenarioProvenance, type SimSource } from "./simulate.mts";
 import type { DecanterConfig, Log, Workflow } from "./types.mts";
 import { isJsCodeNode, publicationState, sha256, splitMarker } from "./util.mts";
 
@@ -41,7 +41,15 @@ export interface TestReport {
   error?: string;
   /** Nodes pinned from the capture (trigger + network + credentialed). */
   pinned: string[];
-  /** Per-pure-node diffs of the instance run vs the capture. */
+  /**
+   * True when the source scenario carries any non-`capture` (authored/scaffolded)
+   * pins (Plan 37): the run proves **executability, not output correctness** — no
+   * per-node diff is asserted and `ok` reflects only that the instance run succeeded.
+   */
+  syntheticPins: boolean;
+  /** Per-node provenance of the source's pins (`capture`/`authored`/`scaffolded`). */
+  provenance: Record<string, Provenance>;
+  /** Per-pure-node diffs of the instance run vs the capture (only `capture`-provenance nodes are asserted). */
   diffs: NodeDiff[];
   divergent: string[];
   /** What was tested: the local code (pushed to the draft first) or the draft as-is. */
@@ -76,7 +84,7 @@ export function buildTestPins(wf: Workflow, runData: RunData, ref: string, sourc
   if (gaps.length > 0) {
     throw new Error(
       `cannot pin ${gaps.map((g) => `"${g}"`).join(", ")} — no captured output in ${source} ${ref}, and an unpinned ` +
-        `trigger/network node would run for REAL on the instance. Fill a mock scenario first: n8n-decanter mock create <workflow>`,
+        `trigger/network node would run for REAL on the instance. Fill a scenario first: n8n-decanter scenario create <workflow>`,
     );
   }
   return { pinData, pinned: Object.keys(pinData) };
@@ -183,7 +191,12 @@ export async function runTest(
   log: Log,
 ): Promise<TestReport> {
   const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
-  const { runData } = readCapture(dir, ref, source);
+  const { exec, runData } = readCapture(dir, ref, source);
+  // Provenance (Plan 37): a scenario with any authored/scaffolded node proves
+  // executability only — the diff below asserts capture-provenance nodes
+  // exclusively and divergence never fails a synthetic run.
+  const provenance = scenarioProvenance(exec);
+  const syntheticPins = source === "scenario" && scenarioIsSynthetic(exec);
 
   // 1) pre-check read: publication state + the byte-exact draft snapshot
   let remote = await getWorkflowDetails(mcp, id);
@@ -248,6 +261,7 @@ export async function runTest(
     const ranData = execution.data?.resultData?.runData ?? {};
     for (const node of remote.nodes) {
       if (node.disabled === true || !isPureNode(node)) continue;
+      if ((provenance.get(node.name) ?? "capture") !== "capture") continue; // only assert capture-provenance nodes
       const expected = firstRunItems(runData[node.name]);
       if (expected === undefined) continue; // didn't run in the capture — nothing to compare
       const actual = firstRunItems(ranData[node.name]) ?? [];
@@ -277,13 +291,16 @@ export async function runTest(
     status: result.status,
     error: result.error,
     pinned,
+    syntheticPins,
+    provenance: Object.fromEntries(provenance),
     diffs,
     divergent,
     tested: pushed ? "local (pushed to the draft)" : "draft as-is",
     localDiffersFromTested: differs && !pushed,
     restored,
     firstIterationOnly: hasLoop,
-    ok: result.status === "success" && divergent.length === 0,
+    // synthetic pins prove executability only — divergence is informational, not a fail
+    ok: result.status === "success" && (syntheticPins || divergent.length === 0),
   };
 }
 
@@ -301,7 +318,8 @@ export function printTestReport(r: TestReport, log: Log): void {
         log.info(`    actual   ${JSON.stringify(d.actual)}`);
       }
     }
-    if (r.ok) log.ok(`instance test matches the capture (${r.diffs.length} node${r.diffs.length === 1 ? "" : "s"} checked)`);
+    if (r.syntheticPins) log.ok(`instance run succeeded — synthetic pins (authored/scaffolded), so this proves executability, not output correctness (no per-node diff asserted)`);
+    else if (r.ok) log.ok(`instance test matches the capture (${r.diffs.length} node${r.diffs.length === 1 ? "" : "s"} checked)`);
     else log.error(`instance test diverged: ${r.divergent.join(", ")}`);
   }
   if (r.firstIterationOnly) {

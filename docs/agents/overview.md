@@ -40,7 +40,7 @@ for how the `mcp serve` guard-proxy makes that boundary safe by construction.
 
 | Commands | Agent policy |
 | --- | --- |
-| `check`, `node run`, `mock` | Offline and safe — run freely. |
+| `check`, `node run`, `scenario` | Offline and safe — run freely (`scenario create --scaffold` is the exception; it needs MCP). |
 | `status`, `list --remote` | Read the remote, no writes — safe, but they do contact the instance. |
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks. Pushes land on the **draft**; `publish` (or `push --publish`) takes it live. |
 | Structure/lifecycle acts over n8n's MCP (create, rename, add/wire nodes — via the [guard](/docs/cli/mcp-connect/)) | Touch the live instance too — same rule: only when the user asks. After a structure act, `pull` reconciles the local mirror. |

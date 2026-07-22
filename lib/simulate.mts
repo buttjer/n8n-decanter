@@ -1,5 +1,5 @@
-// Plan 7 — engine-true simulation, offline half: fixture loader + route-B
-// workflow transform. Given a captured execution, produce a *copy* of the
+// Plan 7 — engine-true simulation, offline half: scenario/capture loader +
+// route-B workflow transform. Given a captured execution, produce a *copy* of the
 // workflow that the real n8n engine can replay dry: pure (side-effect-free)
 // nodes execute for real, every network/side-effectful node is pinned to its
 // captured output, credentials are stripped, and no outbound-capable node
@@ -14,13 +14,13 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runEngine, startViewer } from "./engine.mts";
-import { EXECUTIONS_DIR, MOCKS_DIR, warnStaleFixtures } from "./executions.mts";
+import { EXECUTIONS_DIR, SCENARIOS_DIR, warnStaleCaptures } from "./executions.mts";
+import type { PinDataScaffold } from "./mcp.mts";
 import { buildNodeCode } from "./push.mts";
 import { readState } from "./state.mts";
 import type { Execution, Log, NodeParameters, Workflow, WorkflowNode } from "./types.mts";
 import { canonicalJson, forEachConnectionTarget, isJsCodeNode, kebabCase, placeholderFile } from "./util.mts";
 
-export const FIXTURES_DIR = "fixtures";
 /** Name of the synthetic Manual Trigger the transform prepends as the entry point. */
 export const SIM_START_NODE = "__sim_start__";
 /** Prefix for the synthetic Limit nodes tier-2 injects to cap a loop to one batch. */
@@ -71,27 +71,21 @@ export interface RunItem {
 }
 
 /**
- * A committed, provenance-stamped fixture — `fixtures/<sanitized>.json`. Keyed
- * to a node by its `node` field (not the filename, which is lossy). Written by
- * `simulate --pin` (`source: "capture"`); read here like a capture, taking
- * precedence over `executions/` temp data. (Gaps — nodes with no captured data —
- * are filled instead via a committed `mocks/<slug>.json` scenario, see `writeMock`.)
+ * Per-node provenance for a scenario's pinned data (Plan 37): where a node's
+ * items came from. `capture` = a real execution (can serve as a diff baseline);
+ * `authored` = human/agent-filled by hand; `scaffolded` = schema-guided fill
+ * (still authored values, but with an `expectedSchema` to guide them). Consumers
+ * only diff `capture`-provenance nodes; any non-`capture` node marks the run's
+ * pins as **synthetic** ("proves executability, not output correctness").
  */
-export interface Fixture {
-  /** Where the items came from — a real capture or a hand-authored guess (aging, flagged). */
-  source: "capture" | "llm-guess";
-  /** Exact node name these items pin. */
-  node: string;
-  execId?: string | number;
-  workflowVersionId?: string;
-  date?: string;
-  items: RunItem[];
-}
+export type Provenance = "capture" | "authored" | "scaffolded";
 
 /**
  * Context recorded for one unpinnable network node (a *gap*): its type +
  * parameters and the captured items feeding it — enough for the local agent (or
- * a human) to author plausible output when filling a `mocks/<slug>.json` scenario.
+ * a human) to author plausible output when filling a `scenarios/<slug>.json`
+ * file. `expectedSchema` is the node's output JSON Schema when `--scaffold`
+ * annotated it (from `prepare_test_pin_data`); absent for a plain gap.
  */
 export interface GapContext {
   node: string;
@@ -99,13 +93,15 @@ export interface GapContext {
   parameters: NodeParameters;
   /** Captured items this node receives from upstream — context for the fill. */
   input: RunItem[];
+  /** Output JSON Schema for the fill, when `--scaffold` annotated this node. */
+  expectedSchema?: unknown;
 }
 
 /**
  * Thrown by `buildSimulation` when one or more reachable network nodes have no
- * captured or fixture data. Carries the per-node `gaps` so the `mock` verb can
- * scaffold a fillable `mocks/<slug>.json` scenario; the message leads the user to
- * filling a mock (or hand-pinning a fixture).
+ * pinned data. Carries the per-node `gaps` so `scenario create` can scaffold a
+ * fillable `scenarios/<slug>.json`; the message leads the user to filling a
+ * scenario.
  */
 export class SimulationGapError extends Error {
   readonly gaps: GapContext[];
@@ -160,31 +156,31 @@ export function firstRunItems(runs: NodeRun[] | undefined): RunItem[] | undefine
   return Array.isArray(first) ? first : [];
 }
 
-/** Where a replay source lives: a slug-named committed mock, or a raw temp capture. */
-export type SimSource = "capture" | "mock";
+/** Where a replay source lives: a slug-named committed scenario, or a raw temp capture. */
+export type SimSource = "capture" | "scenario";
 
-/** Filename (without dir) for a source ref — mocks are kebab-slugged, captures are ids. */
+/** Filename (without dir) for a source ref — scenarios are kebab-slugged, captures are ids. */
 function sourceName(ref: string, source: SimSource): string {
-  return source === "mock" ? kebabCase(ref) : ref;
+  return source === "scenario" ? kebabCase(ref) : ref;
 }
 
 /**
- * Locate a replay source file: `mocks/<slug>.json` for a committed mock scenario
- * (chosen explicitly by `simulate --mock <slug>`) or `executions/<id>.json` for a
- * gitignored raw capture. `null` when it doesn't exist.
+ * Locate a replay source file: `scenarios/<slug>.json` for a committed scenario
+ * (chosen explicitly by `simulate --scenario <slug>`) or `executions/<id>.json`
+ * for a gitignored raw capture. `null` when it doesn't exist.
  */
 export function sourceFile(dir: string, ref: string, source: SimSource): string | null {
-  const sub = source === "mock" ? MOCKS_DIR : EXECUTIONS_DIR;
+  const sub = source === "scenario" ? SCENARIOS_DIR : EXECUTIONS_DIR;
   const file = path.join(dir, sub, `${sourceName(ref, source)}.json`);
   return existsSync(file) ? file : null;
 }
 
-/** Read + validate a replay source (a raw capture, or a committed mock scenario). */
+/** Read + validate a replay source (a raw capture, or a committed scenario). */
 export function readCapture(dir: string, ref: string, source: SimSource): { exec: Execution; runData: RunData } {
   const file = sourceFile(dir, ref, source);
   if (!file) {
-    throw new Error(source === "mock"
-      ? `mock "${ref}" not found under ${MOCKS_DIR}/ — create it first: n8n-decanter <ref> mock create ${ref}`
+    throw new Error(source === "scenario"
+      ? `scenario "${ref}" not found under ${SCENARIOS_DIR}/ — create it first: n8n-decanter <ref> scenario create ${ref}`
       : `execution ${ref} not captured under ${EXECUTIONS_DIR}/ — fetch it first: n8n-decanter <ref> executions`);
   }
   let exec: Execution;
@@ -193,23 +189,52 @@ export function readCapture(dir: string, ref: string, source: SimSource): { exec
   } catch (err) {
     throw new Error(`corrupt ${source} ${file} (${(err as Error).message})`);
   }
-  validateMockRunData(exec, ref); // no-op for real captures; checks hand-filled mocks
+  validateScenarioRunData(exec, ref); // no-op for real captures; checks hand-filled scenarios
   return { exec, runData: runDataOf(exec, ref) };
 }
 
+/** A scenario's metadata block — reads the Plan 37 `_decanterScenario`, or the legacy `_decanterMock`. */
+export function readScenarioMeta(exec: Execution): ScenarioMeta | undefined {
+  const e = exec as { _decanterScenario?: ScenarioMeta; _decanterMock?: ScenarioMeta };
+  return e._decanterScenario ?? e._decanterMock;
+}
+
 /**
- * Structural validation of a hand-filled execution mock. n8n publishes **no
- * JSON Schema** for run data — the format is only the `n8n-workflow` TS types
+ * Per-node provenance for a scenario (Plan 37): every node present in the
+ * scenario's runData is `capture` unless it's in the fill list, where it's
+ * `scaffolded` (an `expectedSchema` was attached) or `authored` (a plain gap
+ * the user filled by hand). Nodes not in the scenario at all are absent.
+ */
+export function scenarioProvenance(exec: Execution): Map<string, Provenance> {
+  const out = new Map<string, Provenance>();
+  const runData = (exec as { data?: { resultData?: { runData?: unknown } } }).data?.resultData?.runData;
+  if (runData && typeof runData === "object" && !Array.isArray(runData)) {
+    for (const node of Object.keys(runData as Record<string, unknown>)) out.set(node, "capture");
+  }
+  for (const f of readScenarioMeta(exec)?.fill ?? []) {
+    if (typeof f.node === "string") out.set(f.node, f.expectedSchema !== undefined ? "scaffolded" : "authored");
+  }
+  return out;
+}
+
+/** True when a scenario carries any non-`capture` (authored/scaffolded) pins — its results prove executability, not output correctness. */
+export function scenarioIsSynthetic(exec: Execution): boolean {
+  return (readScenarioMeta(exec)?.fill?.length ?? 0) > 0;
+}
+
+/**
+ * Structural validation of a hand-filled scenario. n8n publishes **no JSON
+ * Schema** for run data — the format is only the `n8n-workflow` TS types
  * (`IRunExecutionData` → `ITaskData` → `INodeExecutionData`) — so we validate the
  * exact shape `simulate` consumes and give an actionable error naming the node.
- * Runs only on files carrying a `_decanterMock` marker (real captures come
- * straight from the API and are trusted); their copied-in nodes were valid, so
- * this effectively checks the agent's/human's edits. Also flags mock nodes still
- * listed to fill but left without data. Exported for direct testing.
+ * Runs only on files carrying a `_decanterScenario`/`_decanterMock` marker (real
+ * captures come straight from the API and are trusted); their copied-in nodes
+ * were valid, so this effectively checks the agent's/human's edits. Also flags
+ * scenario nodes still listed to fill but left without data. Exported for testing.
  */
-export function validateMockRunData(exec: Execution, slug: string): void {
-  const meta = (exec as { _decanterMock?: { fill?: Array<{ node?: string }> } })._decanterMock;
-  if (meta === undefined) return; // not a mock
+export function validateScenarioRunData(exec: Execution, slug: string): void {
+  const meta = readScenarioMeta(exec);
+  if (meta === undefined) return; // not a scenario
   const runData = (exec as { data?: { resultData?: { runData?: unknown } } }).data?.resultData?.runData;
   const problems: string[] = [];
   if (runData && typeof runData === "object" && !Array.isArray(runData)) {
@@ -234,33 +259,11 @@ export function validateMockRunData(exec: Execution, slug: string): void {
     .map((f) => f.node)
     .filter((n): n is string => typeof n === "string" && firstRunItems((runData as RunData | undefined)?.[n]) === undefined);
   if (unfilled.length > 0) {
-    problems.push(`incomplete: add runData for ${unfilled.join(", ")} (still listed in _decanterMock.fill)`);
+    problems.push(`incomplete: add runData for ${unfilled.join(", ")} (still listed in _decanterScenario.fill)`);
   }
   if (problems.length > 0) {
-    throw new Error(`mock ${MOCKS_DIR}/${kebabCase(slug)}.json is invalid:\n  - ${problems.join("\n  - ")}\n  expected per node: runData["<node>"] = [ { "data": { "main": [ [ { "json": { … } } ] ] } } ]`);
+    throw new Error(`scenario ${SCENARIOS_DIR}/${kebabCase(slug)}.json is invalid:\n  - ${problems.join("\n  - ")}\n  expected per node: runData["<node>"] = [ { "data": { "main": [ [ { "json": { … } } ] ] } } ]`);
   }
-}
-
-/** Load committed fixtures, keyed by their `node` field. Corrupt files throw by name. */
-function readFixtures(dir: string): Map<string, Fixture> {
-  const out = new Map<string, Fixture>();
-  const fixturesDir = path.join(dir, FIXTURES_DIR);
-  if (!existsSync(fixturesDir)) return out;
-  for (const entry of readdirSync(fixturesDir)) {
-    if (!entry.endsWith(".json")) continue;
-    const file = path.join(fixturesDir, entry);
-    let fixture: Fixture;
-    try {
-      fixture = JSON.parse(readFileSync(file, "utf8")) as Fixture;
-    } catch (err) {
-      throw new Error(`corrupt fixture ${file} (${(err as Error).message})`);
-    }
-    if (typeof fixture.node !== "string" || !Array.isArray(fixture.items)) {
-      throw new Error(`fixture ${file}: must have a string "node" and an "items" array`);
-    }
-    out.set(fixture.node, fixture);
-  }
-  return out;
 }
 
 /** Every node name that is the *target* of at least one connection (has an input edge). */
@@ -341,7 +344,7 @@ function emitCode(items: RunItem[]): string {
 
 /** JS body for a neutralized (untaken/disabled) network node: fail loudly if reached. */
 function guardCode(name: string): string {
-  return `throw new Error(${JSON.stringify(`[decanter simulate] network node "${name}" has no captured or fixture data and was reached unexpectedly — re-capture the execution or pin a fixture`)});\n`;
+  return `throw new Error(${JSON.stringify(`[decanter simulate] network node "${name}" has no pinned data and was reached unexpectedly — re-capture the execution or add it to the scenario`)});\n`;
 }
 
 /** A name-preserving Code node standing in for a replaced trigger/network node. */
@@ -384,8 +387,7 @@ export async function buildSimulation(
   if (readState(dir) === null) throw new Error(`no .decanter.json in ${dir} — pull the workflow first`);
 
   const { exec, runData } = readCapture(dir, ref, source);
-  warnStaleFixtures(dir, [exec], log);
-  const fixtures = readFixtures(dir);
+  warnStaleCaptures(dir, [exec], log);
 
   // Loop captures (Plan 7 "Loop workflows"). A single-iteration loop replays
   // faithfully — only the loop driver ran more than once (twice: one batch pass
@@ -416,12 +418,9 @@ export async function buildSimulation(
       }))
     : undefined;
 
-  // Resolve each node's pinned items: fixture (committed) over capture (temp).
-  const itemsFor = (name: string): RunItem[] | undefined => {
-    const fixture = fixtures.get(name);
-    if (fixture) return fixture.items;
-    return firstRunItems(runData[name]);
-  };
+  // A scenario is self-contained (Plan 37): each node's pins come from exactly
+  // one source — the scenario's own runData (or the raw capture's).
+  const itemsFor = (name: string): RunItem[] | undefined => firstRunItems(runData[name]);
 
   const captured = new Map<string, RunItem[]>();
   const pinned: string[] = [];
@@ -459,8 +458,8 @@ export async function buildSimulation(
       captured.set(node.name, items);
       nodes.push(replacementNode(node, emitCode(items)));
     } else if (!disabled && reachableInCapture(node.name, wf.connections, runData)) {
-      // Reached in capture but no data → real gap. Collect context so the `mock`
-      // namespace can scaffold a fillable mocks/ scenario for it.
+      // Reached in capture but no data → real gap. Collect context so
+      // `scenario create` can scaffold a fillable scenarios/ file for it.
       gaps.push({ node: node.name, type: node.type, parameters: node.parameters, input: capturedInputFor(node.name, wf.connections, runData) });
       nodes.push(replacementNode(node, guardCode(node.name)));
     } else {
@@ -472,9 +471,9 @@ export async function buildSimulation(
   if (gaps.length > 0) {
     const names = gaps.map((g) => g.node).join(", ");
     throw new SimulationGapError(
-      source === "mock"
-        ? `mock "${ref}" still has network node(s) with no data: ${names} — add their runData under data.resultData.runData in ${MOCKS_DIR}/${sourceName(ref, "mock")}.json (see the _decanterMock block), then re-run. Validate offline with: n8n-decanter <workflow> mock check ${ref}.`
-        : `network node(s) reached with no captured data: ${names} — create a committed, fillable mock with \`n8n-decanter <workflow> mock create --execution ${ref}\`, add their runData, and replay with \`simulate --mock\`. The mock is edited locally — the CLI never calls a model.`,
+      source === "scenario"
+        ? `scenario "${ref}" still has network node(s) with no data: ${names} — add their runData under data.resultData.runData in ${SCENARIOS_DIR}/${sourceName(ref, "scenario")}.json (see the _decanterScenario block), then re-run. Validate offline with: n8n-decanter <workflow> scenario check ${ref}.`
+        : `network node(s) reached with no captured data: ${names} — create a committed, fillable scenario with \`n8n-decanter <workflow> scenario create --execution ${ref}\`, add their runData, and replay with \`simulate --scenario\`. The scenario is edited locally — the CLI never calls a model.`,
       gaps,
     );
   }
@@ -515,8 +514,8 @@ export async function buildSimulation(
 /**
  * Run the offline transform purely to discover unpinnable gaps — returns the
  * per-node `GapContext[]` if `buildSimulation` raises `SimulationGapError`, else
- * `[]`. Any other failure (e.g. a multi-batch loop) propagates. Used by `mock`
- * to learn which nodes to flag for filling.
+ * `[]`. Any other failure (e.g. a multi-batch loop) propagates. Used by
+ * `scenario create` to learn which nodes to flag for filling.
  */
 export async function detectGaps(dir: string, ref: string, log: Log, source: SimSource = "capture"): Promise<GapContext[]> {
   try {
@@ -528,97 +527,160 @@ export async function detectGaps(dir: string, ref: string, log: Log, source: Sim
   }
 }
 
-/** Guidance + per-node context `mock create` records for gaps to be hand-filled. */
-interface MockMeta {
-  sourceExecution: string;
+/** Guidance + per-node context `scenario create` records for gaps to be authored. */
+export interface ScenarioMeta {
+  /** How the scenario was seeded overall: from a real capture, scaffolded from schemas, or both. */
+  source: "capture" | "scaffold" | "capture+scaffold";
+  /** The capture id a capture-seeded scenario was built from (absent for a pure scaffold). */
+  sourceExecution?: string;
   createdAt: string;
+  /** Draft version at create time — scenario staleness warns when the draft has moved past it. */
+  workflowVersionId?: string;
   guidance: string;
-  /** Nodes still needing `runData` — the fill list; kept as-is (mock provenance + `mock check` target). */
-  fill: Array<{ node: string; type: string; parameters: NodeParameters; inputSample: unknown[] }>;
+  /**
+   * Nodes still needing `runData` authored — the fill list. `expectedSchema`
+   * present ⇒ **scaffolded** (schema-guided, from `prepare_test_pin_data`);
+   * absent ⇒ a plain gap to **author** by hand. Kept as-is: it records which
+   * nodes are synthetic (the provenance signal) and is what `scenario check`
+   * validates.
+   */
+  fill: Array<{ node: string; type: string; parameters: NodeParameters; inputSample: unknown[]; expectedSchema?: unknown }>;
+}
+
+/** Placeholder schema recorded for a scaffolded node n8n couldn't schema (still provenance `scaffolded`). */
+const NO_SCHEMA_HINT = { $comment: "no schema available from n8n — author a single empty item: [ { \"json\": {} } ]" };
+
+/** Nodes that must be pinned in a scenario/test run: enabled, not on the pure allowlist, not a loop driver. */
+function pinnableNodes(wf: Workflow): WorkflowNode[] {
+  return (wf.nodes ?? []).filter((n) => n.disabled !== true && !isPureNode(n) && !isLoopDriver(n));
 }
 
 /**
- * `mock create`: promote the gitignored temp capture `executions/<id>.json` into
- * a committed, hand-editable **named scenario** `mocks/<slug>.json` (same
- * execution format, so `simulate --mock <slug>` reads it verbatim). Slug defaults
- * to the execution id. Any *gap* (network node reached with no captured data) is
- * listed under a `_decanterMock` block with its type/params/input as context; the
- * local agent (or a human) adds the node's `runData` there. **No LLM is ever
- * called** — the CLI only scaffolds the file. Refuses to clobber an existing mock
- * (your fills are safe). Returns the gap node names to fill.
+ * `scenario create`: write a committed, hand-editable **scenario**
+ * `scenarios/<slug>.json` (execution-shaped, so `simulate/test --scenario <slug>`
+ * read it verbatim). Two seeds, composable:
+ *  - `--execution <id>`: promote the gitignored capture into the scenario; nodes
+ *    with captured output are provenance `capture`, each remaining *gap* (a
+ *    network node reached with no data) is listed under `_decanterScenario.fill`.
+ *  - `--scaffold` (a `prepare_test_pin_data` result): annotate every gap with its
+ *    output `expectedSchema` (provenance `scaffolded`); with no `--execution`,
+ *    *every* pinnable node becomes a scaffolded fill entry (a from-scratch set).
+ * **No LLM is ever called** and **no values are invented** — the CLI only
+ * scaffolds fill entries; a person/agent authors the values and reviews them in
+ * the diff. Refuses to clobber an existing scenario. Returns the gap node names.
  */
-export async function writeMock(dir: string, execId: string, slug: string, log: Log): Promise<{ slug: string; file: string; gaps: string[] }> {
-  const name = kebabCase(slug);
-  const mockFile = path.join(dir, MOCKS_DIR, `${name}.json`);
-  if (existsSync(mockFile)) {
-    throw new Error(`mock "${name}" already exists: ${path.relative(process.cwd(), mockFile)} — edit it directly, or delete it to regenerate`);
+export async function writeScenario(
+  dir: string,
+  opts: { execId?: string; slug: string; scaffold?: PinDataScaffold },
+  log: Log,
+): Promise<{ slug: string; file: string; gaps: string[]; coverage?: PinDataScaffold["coverage"] }> {
+  const name = kebabCase(opts.slug);
+  const scenarioFile = path.join(dir, SCENARIOS_DIR, `${name}.json`);
+  if (existsSync(scenarioFile)) {
+    throw new Error(`scenario "${name}" already exists: ${path.relative(process.cwd(), scenarioFile)} — edit it directly, or delete it to regenerate`);
   }
-  const rawFile = path.join(dir, EXECUTIONS_DIR, `${execId}.json`);
-  if (!existsSync(rawFile)) {
-    throw new Error(`execution ${execId} not captured under ${EXECUTIONS_DIR}/ — fetch it first: n8n-decanter <ref> executions`);
+  const wfFile = path.join(dir, "workflow.json");
+  if (!existsSync(wfFile)) throw new Error(`no workflow.json in ${dir} — pull the workflow first`);
+  const wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
+
+  // Schema oracle (--scaffold): node name → output JSON Schema (or the no-schema hint).
+  const schemaByNode = new Map<string, unknown>();
+  if (opts.scaffold) {
+    for (const [node, schema] of Object.entries(opts.scaffold.nodeSchemasToGenerate)) schemaByNode.set(node, schema);
+    for (const node of opts.scaffold.nodesWithoutSchema) if (!schemaByNode.has(node)) schemaByNode.set(node, NO_SCHEMA_HINT);
   }
-  let exec: Execution;
-  try {
-    exec = JSON.parse(readFileSync(rawFile, "utf8")) as Execution;
-  } catch (err) {
-    throw new Error(`corrupt capture ${rawFile} (${(err as Error).message})`);
+
+  let baseExec: Execution & { workflowData?: unknown };
+  let gaps: GapContext[];
+  let overallSource: ScenarioMeta["source"];
+  if (opts.execId !== undefined) {
+    const rawFile = path.join(dir, EXECUTIONS_DIR, `${opts.execId}.json`);
+    if (!existsSync(rawFile)) {
+      throw new Error(`execution ${opts.execId} not captured under ${EXECUTIONS_DIR}/ — fetch it first: n8n-decanter <ref> executions`);
+    }
+    try {
+      baseExec = JSON.parse(readFileSync(rawFile, "utf8")) as Execution;
+    } catch (err) {
+      throw new Error(`corrupt capture ${rawFile} (${(err as Error).message})`);
+    }
+    // Discover gaps from the raw capture (source=capture; the scenario doesn't exist yet).
+    gaps = await detectGaps(dir, opts.execId, log, "capture");
+    overallSource = opts.scaffold ? "capture+scaffold" : "capture";
+  } else {
+    // Pure scaffold: no capture — every pinnable node is a gap to author.
+    if (!opts.scaffold) {
+      throw new Error("scenario create with no --execution needs --scaffold — or fetch a capture first with `n8n-decanter <ref> executions`");
+    }
+    baseExec = { id: name, mode: "manual", workflowVersionId: typeof wf.versionId === "string" ? wf.versionId : undefined, data: { resultData: { runData: {} } } } as unknown as Execution;
+    gaps = pinnableNodes(wf).map((n) => ({ node: n.name, type: n.type, parameters: n.parameters, input: [] }));
+    overallSource = "scaffold";
   }
-  // Discover gaps from the raw capture (source=capture; the mock doesn't exist yet).
-  const gaps = await detectGaps(dir, execId, log, "capture");
-  const meta: MockMeta = {
-    sourceExecution: execId,
+
+  const fill = gaps.map((g) => {
+    const schema = schemaByNode.get(g.node);
+    return { node: g.node, type: g.type, parameters: g.parameters, inputSample: g.input.map((i) => i.json), ...(schema !== undefined ? { expectedSchema: schema } : {}) };
+  });
+  const wfVersion = typeof (baseExec as { workflowVersionId?: unknown }).workflowVersionId === "string"
+    ? (baseExec as { workflowVersionId: string }).workflowVersionId
+    : (typeof wf.versionId === "string" ? wf.versionId : undefined);
+  const meta: ScenarioMeta = {
+    source: overallSource,
+    ...(opts.execId !== undefined ? { sourceExecution: opts.execId } : {}),
     createdAt: new Date().toISOString().slice(0, 10),
+    ...(wfVersion !== undefined ? { workflowVersionId: wfVersion } : {}),
     guidance: gaps.length > 0
-      ? `Mock data — not a real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample as context. Keep the "fill" list as-is — it records which nodes are mocked and is what "mock check" validates. Validate offline: n8n-decanter <workflow> mock check ${name}. Then replay: n8n-decanter <workflow> simulate --mock ${name}.`
-      : `Committed, reproducible copy of capture ${execId} — no gaps to fill.`,
-    fill: gaps.map((g) => ({ node: g.node, type: g.type, parameters: g.parameters, inputSample: g.input.map((i) => i.json) })),
+      ? `Scenario pin data — synthetic, not a full real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample${opts.scaffold ? "/expectedSchema" : ""} as context. Keep the "fill" list as-is — it records which nodes are synthetic (provenance) and is what "scenario check" validates. Validate offline: n8n-decanter <workflow> scenario check ${name}. Then replay: n8n-decanter <workflow> simulate --scenario ${name}.`
+      : `Committed, reproducible copy of capture ${opts.execId} — no gaps to fill.`,
+    fill,
   };
-  mkdirSync(path.dirname(mockFile), { recursive: true });
+  mkdirSync(path.dirname(scenarioFile), { recursive: true });
   // Strip the capture's embedded workflowData: nothing reads it, and it
   // carries every Code node's inline jsCode — committing it would duplicate
   // node source in git, violating the snapshot invariant (Plan 33; the
-  // compliance guard warns about legacy mocks that still embed it).
-  const { workflowData: _dropped, ...cleanExec } = exec as Execution & { workflowData?: unknown };
-  writeFileSync(mockFile, JSON.stringify({ ...cleanExec, _decanterMock: meta }, null, 2) + "\n");
+  // compliance guard warns about legacy scenarios that still embed it).
+  const { workflowData: _dropped, ...cleanExec } = baseExec;
+  writeFileSync(scenarioFile, JSON.stringify({ ...cleanExec, _decanterScenario: meta }, null, 2) + "\n");
 
-  const rel = path.relative(process.cwd(), mockFile);
+  const rel = path.relative(process.cwd(), scenarioFile);
+  const seededFrom = opts.execId !== undefined ? `capture ${opts.execId}` : "workflow schemas";
   if (gaps.length > 0) {
-    log.info(`mock "${name}" written from capture ${execId} -> ${rel}`);
-    log.warn(`fill runData for ${gaps.length} node${gaps.length === 1 ? "" : "s"}: ${gaps.map((g) => g.node).join(", ")} — see "_decanterMock", validate with \`mock check ${name}\`, then \`simulate --mock ${name}\``);
+    log.info(`scenario "${name}" written from ${seededFrom} -> ${rel}`);
+    if (opts.scaffold) log.info(`scaffold coverage: ${opts.scaffold.coverage.withSchemaFromExecution + opts.scaffold.coverage.withSchemaFromDefinition} with schema, ${opts.scaffold.coverage.withoutSchema} without, ${opts.scaffold.coverage.skipped} run for real (of ${opts.scaffold.coverage.total})`);
+    log.warn(`author runData for ${gaps.length} node${gaps.length === 1 ? "" : "s"}: ${gaps.map((g) => g.node).join(", ")} — see "_decanterScenario", validate with \`scenario check ${name}\`, then \`simulate --scenario ${name}\``);
   } else {
-    log.ok(`mock "${name}" written from capture ${execId} -> ${rel} — no gaps; replay with \`simulate --mock ${name}\``);
+    log.ok(`scenario "${name}" written from ${seededFrom} -> ${rel} — no gaps; replay with \`simulate --scenario ${name}\``);
   }
-  log.warn("mock copies real captured data — review for credentials/PII before committing");
-  return { slug: name, file: mockFile, gaps: gaps.map((g) => g.node) };
+  if (opts.execId !== undefined) log.warn("scenario copies real captured data — review for credentials/PII before committing");
+  return { slug: name, file: scenarioFile, gaps: gaps.map((g) => g.node), coverage: opts.scaffold?.coverage };
 }
 
-/** The slugs of the committed mock scenarios in a workflow folder (sorted). */
-export function listMockSlugs(dir: string): string[] {
-  const mocksDir = path.join(dir, MOCKS_DIR);
-  if (!existsSync(mocksDir)) return [];
-  return readdirSync(mocksDir).filter((e) => e.endsWith(".json")).map((e) => e.slice(0, -5)).sort();
+/** The slugs of the committed scenarios in a workflow folder (sorted). */
+export function listScenarioSlugs(dir: string): string[] {
+  const scenariosDir = path.join(dir, SCENARIOS_DIR);
+  if (!existsSync(scenariosDir)) return [];
+  return readdirSync(scenariosDir).filter((e) => e.endsWith(".json")).map((e) => e.slice(0, -5)).sort();
 }
 
 /**
- * `mock check`: structurally validate one mock (or every mock in the folder,
- * when `slug` is undefined) offline — the fast agent-loop check that doesn't need
- * Docker. Parses the file and runs `validateMockRunData`; logs OK / the
- * node-named error per mock. Returns the number of invalid mocks (0 = all good).
+ * `scenario check`: structurally validate one scenario (or every scenario in the
+ * folder, when `slug` is undefined) offline — the fast agent-loop check that
+ * doesn't need Docker. Parses the file and runs `validateScenarioRunData`; logs
+ * OK / the node-named error per scenario. Returns the number of invalid ones.
  */
-export function checkMocks(dir: string, slug: string | undefined, log: Log): number {
-  const slugs = slug !== undefined ? [kebabCase(slug)] : listMockSlugs(dir);
+export function checkScenarios(dir: string, slug: string | undefined, log: Log): number {
+  const slugs = slug !== undefined ? [kebabCase(slug)] : listScenarioSlugs(dir);
   if (slugs.length === 0) {
-    log.info(slug !== undefined ? `no mock "${slug}" under ${MOCKS_DIR}/` : `no mocks under ${MOCKS_DIR}/ — create one with: n8n-decanter <workflow> mock create`);
+    log.info(slug !== undefined ? `no scenario "${slug}" under ${SCENARIOS_DIR}/` : `no scenarios under ${SCENARIOS_DIR}/ — create one with: n8n-decanter <workflow> scenario create`);
     return 0;
   }
   let invalid = 0;
   for (const s of slugs) {
-    const file = path.join(dir, MOCKS_DIR, `${s}.json`);
-    if (!existsSync(file)) { log.error(`mock "${s}": not found under ${MOCKS_DIR}/`); invalid++; continue; }
+    const file = path.join(dir, SCENARIOS_DIR, `${s}.json`);
+    if (!existsSync(file)) { log.error(`scenario "${s}": not found under ${SCENARIOS_DIR}/`); invalid++; continue; }
     try {
       const exec = JSON.parse(readFileSync(file, "utf8")) as Execution;
-      validateMockRunData(exec, s);
-      log.ok(`mock "${s}": valid`);
+      validateScenarioRunData(exec, s);
+      log.ok(`scenario "${s}": valid`);
     } catch (err) {
       log.error((err as Error).message);
       invalid++;
@@ -667,14 +729,22 @@ export interface SimulationReport {
   pure: string[];
   /** Loop-driver nodes that ran for real (single-iteration loops); not diffed. */
   loops: string[];
-  /** Per-pure-node diffs of replay vs capture. */
+  /**
+   * True when the scenario carries any non-`capture` (authored/scaffolded) pins
+   * (Plan 37): the run proves **executability, not output correctness** — no
+   * per-node diff is asserted and `ok` reflects only that the engine ran clean.
+   */
+  syntheticPins: boolean;
+  /** Per-node provenance of the pinned/pure nodes (`capture`/`authored`/`scaffolded`). */
+  provenance: Record<string, Provenance>;
+  /** Per-pure-node diffs of replay vs capture (only `capture`-provenance nodes are asserted). */
   diffs: NodeDiff[];
   /** Names of nodes whose replayed output diverged from the capture. */
   divergent: string[];
   /** True when the engine reported the run itself as successful. */
   engineOk: boolean;
   engineError?: string;
-  /** Overall pass: engine ran clean AND nothing diverged. Meaningless when `bestEffortLoop`. */
+  /** Overall pass: engine ran clean AND (for capture scenarios) nothing diverged. Meaningless when `bestEffortLoop`. */
   ok: boolean;
   /**
    * Tier-2 (viewer-only): this run is a best-effort *iteration 1 of `loopIterations`*
@@ -714,10 +784,18 @@ export async function runSimulation(
 ): Promise<SimulationReport> {
   // Viewer mode opts into tier-2: a multi-batch loop becomes a best-effort
   // "iteration 1 of N" instead of a hard error (headless/CI still hard-errors).
-  const sim = await buildSimulation(dir, ref, log, { source: opts.source, allowMultiBatch: opts.viewer === true });
+  const src: SimSource = opts.source ?? "capture";
+  const sim = await buildSimulation(dir, ref, log, { source: src, allowMultiBatch: opts.viewer === true });
+  // Provenance (Plan 37): a scenario with any authored/scaffolded node proves
+  // executability only — the per-node diff below asserts capture-provenance
+  // nodes exclusively, and divergence never fails a synthetic run.
+  const { exec } = readCapture(dir, ref, src);
+  const provenanceMap = scenarioProvenance(exec);
+  const syntheticPins = src === "scenario" && scenarioIsSynthetic(exec);
   const base = {
     execId: ref, version: opts.version, networkNone: opts.networkNone === true,
     pinned: sim.pinned, pure: sim.pure, loops: sim.loops,
+    syntheticPins, provenance: Object.fromEntries(provenanceMap),
   };
 
   // Tier-2 is display-only: there's no faithful diff for N>1 (pinning is
@@ -745,6 +823,7 @@ export async function runSimulation(
   }) : undefined;
   const diffs: NodeDiff[] = [];
   for (const node of sim.pure) {
+    if ((provenanceMap.get(node) ?? "capture") !== "capture") continue; // only assert capture-provenance nodes
     const expected = sim.captured.get(node);
     if (!expected) continue; // node didn't run in the capture — nothing to compare
     const actual = run.runData.get(node) ?? [];
@@ -753,44 +832,9 @@ export async function runSimulation(
   const divergent = diffs.filter((d) => !d.equal).map((d) => d.node);
   return {
     ...base, diffs, divergent,
-    engineOk: run.ok, engineError: run.error, ok: run.ok && divergent.length === 0,
+    engineOk: run.ok, engineError: run.error,
+    // synthetic pins prove executability only — divergence is informational, not a fail
+    ok: run.ok && (syntheticPins || divergent.length === 0),
     url: viewer?.url, login: viewer?.login,
   };
-}
-
-/**
- * `simulate --pin`: copy the capture's network-node outputs into committed,
- * provenance-stamped `fixtures/<node>.json` files, so a gitignored capture
- * becomes a reproducible, reviewable fixture. Warns about PII — execution data
- * can hold credentials/personal data (why `executions/` is gitignored).
- */
-export function pinFixtures(dir: string, execId: string, log: Log): void {
-  const wfFile = path.join(dir, "workflow.json");
-  if (!existsSync(wfFile)) throw new Error(`no workflow.json in ${dir} — pull the workflow first`);
-  const wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
-  const { exec, runData } = readCapture(dir, execId, "capture");
-  const fixturesDir = path.join(dir, FIXTURES_DIR);
-  mkdirSync(fixturesDir, { recursive: true });
-  const date = new Date().toISOString().slice(0, 10);
-  let pinned = 0;
-  for (const node of wf.nodes) {
-    if (isPureNode(node)) continue; // only network nodes get pinned
-    const items = firstRunItems(runData[node.name]);
-    if (!items) continue;
-    const fixture: Fixture = {
-      source: "capture", node: node.name, execId,
-      workflowVersionId: typeof exec.workflowVersionId === "string" ? exec.workflowVersionId : undefined,
-      date, items,
-    };
-    const file = path.join(fixturesDir, `${kebabCase(node.name)}.json`);
-    writeFileSync(file, JSON.stringify(fixture, null, 2) + "\n");
-    log.info(`pinned ${node.name} -> ${path.relative(process.cwd(), file)}`);
-    pinned++;
-  }
-  if (pinned === 0) {
-    log.warn(`no network nodes with captured output in execution ${execId} — nothing to pin`);
-    return;
-  }
-  log.warn("review pinned fixtures before committing — execution data can contain credentials/PII");
-  log.ok(`pinned ${pinned} node${pinned === 1 ? "" : "s"} from execution ${execId} into ${FIXTURES_DIR}/`);
 }

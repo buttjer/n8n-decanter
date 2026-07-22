@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check).** `n8n-decanter test <workflow>` runs the workflow on your
   instance via MCP `test_workflow`: the trigger and network/credentialed
   nodes are pinned from a capture (`--execution`, default newest) or a
-  committed mock (`--mock`), logic nodes execute for real on the
+  committed scenario (`--scenario`), logic nodes execute for real on the
   instance-exact engine, and each node's output is diffed against the
   capture (exit 1 on divergence; `--trigger` picks the start node,
   `--json` emits the report). The run targets the **draft** — the live
@@ -73,6 +73,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   create, so a faithful clone required the public API — rather than keep the
   API dependency or ship a lossy SDK-code re-expression, the verb was
   dropped. Duplicate workflows from the n8n UI and `pull` the copy.
+- **Breaking: `simulate --pin` and per-node `fixtures/` are gone — folded into
+  `scenario`.** The per-node `workflows/<folder>/fixtures/<node>.json`
+  mechanism and its precedence over captures are removed outright; a scenario
+  is now the only committed pin artifact and is always self-contained (no
+  fixture-over-capture layering to reason about). `--pin`'s job — "make a
+  clean capture reproducible" — is now `scenario create --execution <id>`. A
+  leftover `fixtures/` dir is a **hard error** from `simulate`/`check` naming
+  the replacement; there is no silent read-path or auto-migration for it
+  (unlike a leftover `mocks/` dir, which auto-migrates to `scenarios/` on
+  first touch — see the `scenario` namespace under Added).
 
 ### Fixed
 
@@ -108,7 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   community `n8n-mcp` server. The docs server can't reach your instance, so
   it can't bypass the guard — live workflow access goes only through
   `n8n-instance`. The scaffolded Claude Code allowlist pre-approves
-  `mcp__n8n-docs` plus the offline/read verbs `pull`, `mock`, and
+  `mcp__n8n-docs` plus the offline/read verbs `pull`, `scenario`, and
   `simulate`; instance-mutating verbs still prompt.
 - **A body-equal push now re-registers a missing `@ts-n8n` marker** — when a
   `.ts` node's compiled code already matches the remote but the marker is
@@ -119,9 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   push clears the remote `@ts-n8n` marker even when the code is otherwise
   identical, so the node stops being TS-managed (previously the stale
   marker made the next pull resurrect the node as `.ts`).
-- **`mock create` strips the capture's embedded `workflowData`** — committed
-  mocks no longer duplicate every Code node's source in git; the compliance
-  guard warns about legacy mocks that still embed it, and it now also flags
+- **`scenario create` strips the capture's embedded `workflowData`** — committed
+  scenarios no longer duplicate every Code node's source in git; the compliance
+  guard warns about legacy scenarios that still embed it, and it now also flags
   Python Code nodes honestly (their `pythonCode` stays inline in
   `workflow.json`; extraction is a planned feature).
 - **Template refresh (from the MCP pivot):** the sync-dir `AGENTS.md`
@@ -171,20 +181,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **New `mock` namespace — fill `simulate` gaps with committed mock scenarios.**
-  A *gap* (a network node reached in the replay with no captured data) used to be
-  a dead end. `mock create <workflow> ["<slug>"] [--execution <id>]` promotes a
-  gitignored capture into a tracked, hand-editable **named scenario**
-  `workflows/<folder>/mocks/<slug>.json` (slug defaults to the execution id) and
-  flags which nodes to fill. You (or your IDE agent) add the nodes' `runData` —
-  **no API key, the CLI never calls a model** — and replay it with
-  `simulate --mock <slug>`. `mock check <workflow> ["<slug>"]` **structurally
-  validates** a mock (or all of them) **offline** — no Docker — with a node-named
-  error if an item is malformed or a flagged node is left empty; `simulate --mock`
-  runs the same check on load. n8n publishes no execution-data JSON Schema, so the
-  decanter checks the exact shape it replays. Committed → mocked replays are
-  reproducible for teammates and CI; `mock create` warns about PII and refuses to
-  overwrite an existing mock.
+- **New `scenario` namespace — named, committed pin-data sets, captured and/or
+  schema-scaffolded.** A *gap* (a network node reached in the replay with no
+  pinned data) used to be a dead end. `scenario create <workflow> ["<slug>"]
+  [--execution <id>] [--scaffold]` writes a tracked, self-contained
+  **scenario** `workflows/<folder>/scenarios/<slug>.json` (slug defaults to the
+  execution id) and flags which nodes to fill: `--execution <id>` promotes a
+  gitignored capture and flags each remaining gap; `--scaffold` calls n8n's
+  read-only MCP tool `prepare_test_pin_data` and annotates every gap with its
+  output **JSON Schema** (no data — the tool is a schema oracle only); the two
+  compose, and a bare `--scaffold` with no capture builds a from-scratch set
+  where every pinnable node is a fill entry. You (or your IDE agent) add the
+  nodes' `runData` — **no API key, the CLI never calls a model or invents
+  values** — and replay it with `simulate --scenario <slug>` /
+  `test --scenario <slug>`. Each node's pins carry a **provenance**
+  (`capture`/`authored`/`scaffolded`); a run on a scenario with any
+  non-`capture` node is labeled "**synthetic pins — proves executability, not
+  output correctness**" (no per-node diff asserted; `--json` reports gain
+  `syntheticPins`/`provenance`), while a capture-only scenario keeps full
+  per-node diff and exit-1-on-divergence semantics. `scenario check <workflow>
+  ["<slug>"]` **structurally validates** a scenario (or all of them)
+  **offline** — no Docker — with a node-named error if an item is malformed or
+  a flagged node is left empty; `simulate --scenario`/`test --scenario` run the
+  same check on load. n8n publishes no execution-data JSON Schema, so decanter
+  checks the exact shape it replays. Committed → scenario-based replays are
+  reproducible for teammates and CI; `scenario create` warns about PII and
+  refuses to overwrite an existing scenario. A `mocks/` dir from an earlier
+  unreleased build auto-migrates to `scenarios/` on first touch.
 - **`simulate` previews multi-batch loops in the viewer.** In an interactive
   terminal, a genuine multi-batch loop (previously a hard error) now caps the
   loop to its first batch and opens that single iteration in the browsable
@@ -198,7 +221,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value flag in its space-separated form without a value — e.g.
   `n8n-decanter --status pull` — used to consume the `pull` verb as the
   flag's value and then fail with a confusing "no verb" error. Such flags
-  (`--status`, `--limit`, `--execution`, `--pin`, `--n8n-version`, `--mock`,
+  (`--status`, `--limit`, `--execution`, `--n8n-version`, `--scenario`,
   `--filter`, `--search`, `--sort`) now refuse to eat a known verb and report
   `--status needs a value (e.g. --status=success)` instead.
 
