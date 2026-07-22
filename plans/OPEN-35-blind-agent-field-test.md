@@ -1,4 +1,4 @@
-# Plan 34 — Blind agent field test: Sonnet "users" on a real Docker n8n
+# Plan 35 — Blind agent field test: Sonnet "users" on a real Docker n8n
 
 **Priority:** P1 — Plans 32+33 shipped a Breaking rework of the entire
 agent-facing surface; this validates it the way it will actually be consumed,

@@ -213,7 +213,7 @@ items not yet claimed by one. Recommended order:
     template override), `simulate` kept as a differentiator with `test` as the
     recommended default (decided 2026-07-22), and the AGENTS.md MCP-facts
     update. Proposed 2026-07-22.
-34. [Blind agent field test](OPEN-34-blind-agent-field-test.md) — validate the
+35. [Blind agent field test](OPEN-35-blind-agent-field-test.md) — validate the
     post-pivot product the way it's actually consumed: **blind** Sonnet coding
     agents (headless `claude -p`, no knowledge they're being evaluated) act as
     typical users against a real Docker n8n — `init` (token path) → structure
