@@ -91,7 +91,9 @@ The decisions behind the strings:
   the hero appears. The Plan 33 `test`-verb taxonomy table
   (`check` = static/offline, `simulate` = local runtime, `test` = instance
   runtime) should adopt "Preflights" as its heading — coordination note, not
-  an edit to Plan 33.
+  an edit to Plan 33. **Scope (decided 2026-07-22): marketing/docs vocabulary
+  only** — no CLI surface; a possible `preflight` verb grouping the gate is
+  parked in [DECISIONS-NEEDED](DECISIONS-NEEDED.md).
 - **Draft-first is deliberately NOT in the hero** (maintainer): expected
   behavior isn't a feature — a sane tool doesn't celebrate
   not-going-live-on-save; the public API's instant republish is the anomaly.
@@ -143,15 +145,20 @@ The decisions behind the strings:
    - Hero tagline + intro re-cast from the kit (Task 1's headline + subline).
    - **Feature bullets:** order/frame around the four pillars; make **shared
      code** and the **local/offline loop** as prominent as draft-first.
-   - **"How it compares" reframe (fully open — untouched by #97):** decanter
-     no longer competes on canonical sync — n8n's MCP + skills become the
-     *complement it builds on*, not a rival (say so explicitly). Re-examine
-     every row ("Versioning" becomes code-first + read-only snapshot; fix the
-     stale *"planned (`node create` + `push --create`)"* cell); add rows for
-     the new differentiators — **draft-first edits/deliberate publish** (the
-     API-based tools can't do it) and **instance-side pinned tests with
-     diff** (`test`, once Plan 33 ships it). Update the "Choose X if you…"
-     cards and the bottom line.
+   - **"How it compares" reframe (untouched by #97; stance decided
+     2026-07-22):** the table stays **three columns** — n8n's MCP + skills get
+     **no column of their own** (you don't benchmark against what you build
+     on); the complement framing is one explicit sentence above the table
+     instead. Re-examine every row ("Versioning" becomes code-first +
+     read-only snapshot); the **"Agentic workflow creation" row upgrades to
+     ✅** ("your agent builds structure over n8n's MCP, guard-proxied;
+     decanter owns the code") — **verify at execution time** that Plan 33's
+     `create`/`duplicate` + guard-proxy actually landed before claiming it,
+     and fix the stale *"planned (`node create` + `push --create`)"* cell
+     either way. Add rows for the new differentiators — **draft-first
+     edits/deliberate publish** (API-based tools can't) and **instance-side
+     pinned tests with diff** (`test`). The **"Choose X if you…" cards stay**
+     (decided), refreshed to the kit; update the bottom line.
 3. **Website landing** (`website/src/pages/index.astro`) — **P1: carries the
    live drift** (hero still says "pushed back through the n8n API"; features
    still sell the whole-workflow drift-guard framing). Hero h1/p, the
@@ -166,9 +173,11 @@ The decisions behind the strings:
    `docs/concepts/push-gates.md` (post-pivot guard set), `docs/agents/*`
    (proxy-first wiring per Plan 33 Task 3), `docs/cli/overview.md` intro.
    `llms.txt`/`llms-full.txt` regenerate from docs — no manual pass.
-5. **Metadata:** `package.json` `description` + `keywords` (drop/adjust
-   `"sync"`, add `"mcp"`); GitHub repo About text + topics; verify the npm page
-   (README-driven) reads right after Task 2.
+5. **Metadata:** `package.json` `description` (= the kit headline) +
+   `keywords` — decided 2026-07-22: **keep `sync`**; add **`mcp`**,
+   **`ai-agents`**, **`toolkit`** (`cli` is already present); `python` joins
+   when Plan 28 ships. GitHub repo About (= headline) + matching topics;
+   verify the npm page (README-driven) reads right after Task 2.
 6. **Demo media currency:** `docs/terminal-demo.gif` + `docs/agent-demo.gif`
    (used by README *and* landing page) — re-record if they show a
    removed/renamed flow (e.g. `delete` in the picker, API-key init); keep if
