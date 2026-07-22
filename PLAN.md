@@ -529,7 +529,9 @@ Unchanged by Plan 32 (the file layer is decanter's layer):
 1. ✅ Scaffold + pull, single workflow (API era — validated the data model).
 2. ✅ push — reassembly, compile+marker, drift guard (API era).
 3. ✅ multi-workflow loop + rename handling by id.
-4. ⬜ n8n folder hierarchy — still blocked on API exposure
+4. ⬜ n8n folder hierarchy — rescoped 2026-07-22 to **read-only "Local
+   Overview"** (pull mirrors n8n placement as local dir nesting; decanter
+   never writes folders/placement); blocked on one upstream MCP read fix
    ([Plan 8](plans/BLOCKED-8-folder-hierarchy-in-sync-layout.md)).
 5. ✅ QoL: `watch`, `status`.
 6. ✅ `init`; 7. ✅ compliance guard + `check`; 8. ✅ structural validation +
@@ -635,7 +637,8 @@ API-era build that still hold are kept; superseded ones are marked.
   site), so it is **always null** — an upstream one-line wiring gap, not a
   design stance. The folder *tree* is readable (`search_folders`), but MCP has
   no move op and no folder create; only `create_workflow_from_code` takes a
-  `folderId`. Plan 8 stays blocked; full findings in its "MCP re-check"
+  `folderId`. Plan 8 stays blocked (and was rescoped 2026-07-22 to read-only
+  local mirroring — "Local Overview"); full findings in its "MCP re-check"
   section.
 - ~~Filename sanitization; PUT round-trip preservation of tags/pinData;
   activate/deactivate shapes; create body; DELETE on published~~ — all
