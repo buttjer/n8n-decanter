@@ -1052,13 +1052,13 @@ await step("list: name, id, and folder per pulled workflow; --remote adds unpull
   let r = await cli("list");
   assert.equal(r.code, 0, r.out);
   // display name is the cached "Order Sync v2"; folder is the sticky order-sync slug
-  assert.match(r.out, /Order Sync v2  wf123  workflows[/\\]order-sync/);
+  assert.match(r.out, /Order Sync v2 {2}wf123 {2}workflows[/\\]order-sync/);
   db.set("wf777", { ...structuredClone(db.get("wf123")), id: "wf777", name: "Unpulled Flow" });
   try {
     r = await cli("list", "--remote");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /Unpulled Flow  wf777  \(not pulled\)/);
-    assert.match(r.out, /Order Sync v2  wf123/);
+    assert.match(r.out, /Unpulled Flow {2}wf777 {2}\(not pulled\)/);
+    assert.match(r.out, /Order Sync v2 {2}wf123/);
     // --json: pulled rows carry a dir; remote-only rows are dir:null
     r = await cli("list", "--remote", "--json");
     assert.equal(r.code, 0, r.out);
@@ -1114,7 +1114,7 @@ await step("api timeout: a hung instance aborts with a clear error", async () =>
 });
 
 await step("DEBUG=1 prints the stack trace on errors", async () => {
-  let r = await cli("definitely-not-a-verb");
+  const r = await cli("definitely-not-a-verb");
   assert.equal(r.code, 1);
   assert.ok(!r.out.includes("    at "), "no stack without DEBUG: " + r.out);
   try {
@@ -1122,7 +1122,7 @@ await step("DEBUG=1 prints the stack trace on errors", async () => {
     assert.fail("must exit non-zero");
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
-    assert.match((e.stdout ?? "") + (e.stderr ?? ""), /    at /, "DEBUG=1 must include the stack");
+    assert.match((e.stdout ?? "") + (e.stderr ?? ""), / {4}at /, "DEBUG=1 must include the stack");
   }
 });
 
@@ -1265,20 +1265,24 @@ await step("guard: orphan code files error; reserved subdirs and .d.ts ignored",
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   writeFileSync(path.join(dir2, "code", "orphan.js"), "return [];\n");
   writeFileSync(path.join(dir2, "stray.ts"), "export {};\n");
-  // future artifact dirs (plans 3/7: executions/, fixtures/) must not trip the guard
+  // future artifact dirs (plans 3/7: executions/, fixtures/, mocks/) must not trip the guard
   mkdirSync(path.join(dir2, "executions"), { recursive: true });
   writeFileSync(path.join(dir2, "executions", "not-code.js"), "// captured\n");
+  mkdirSync(path.join(dir2, "mocks"), { recursive: true });
+  writeFileSync(path.join(dir2, "mocks", "also-not-code.js"), "// mock\n");
   writeFileSync(path.join(dir2, "code", "types.d.ts"), "type Row = { id: number };\n");
   const r = await cli("check", "--no-typecheck");
   assert.equal(r.code, 1, "check must fail on orphans: " + r.out);
   assert.match(r.out, /orphan code file code\/orphan\.js/);
   assert.match(r.out, /orphan code file stray\.ts/);
   assert.ok(!r.out.includes("not-code.js"), "files under executions/ must be ignored: " + r.out);
+  assert.ok(!r.out.includes("also-not-code.js"), "files under mocks/ must be ignored: " + r.out);
   assert.ok(!r.out.includes("types.d.ts"), ".d.ts files are not orphans: " + r.out);
   unlinkSync(path.join(dir2, "code", "orphan.js"));
   unlinkSync(path.join(dir2, "stray.ts"));
   unlinkSync(path.join(dir2, "code", "types.d.ts"));
   rmSync(path.join(dir2, "executions"), { recursive: true });
+  rmSync(path.join(dir2, "mocks"), { recursive: true });
   const r2 = await cli("check", "--no-typecheck");
   assert.equal(r2.code, 0, r2.out);
 });
@@ -1680,6 +1684,48 @@ await step("executions: fetches run JSON into a self-gitignored dir; filters pas
   assert.equal(r.code, 1, "unknown execution id must fail");
 });
 
+await step("mock create/check: named scenario into committed mocks/, validated offline", async () => {
+  const exDir = path.join(dirF, "executions");
+  const mockDir = path.join(dirF, "mocks");
+  assert.ok(existsSync(path.join(exDir, "201.json")), "previous step left capture 201");
+  // offline: no credentials needed (reads a capture, writes a committed mock)
+  const savedEnv = env;
+  env = { ...savedEnv };
+  delete env.N8N_HOST;
+  delete env.N8N_API_KEY;
+  try {
+    // slug is a positional; kebab-slugged on disk
+    let r = await cli("mock", "create", "wf123", "Happy Path", "--execution", "201");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(existsSync(path.join(mockDir, "happy-path.json")), "mock file written: " + r.out);
+    const mock = JSON.parse(read(mockDir, "happy-path.json"));
+    // full copy of the capture (real runData preserved) + a guidance block
+    assert.equal(mock.data.resultData.runData.Transform[0].data.main[0][0].json.total, 9.5);
+    assert.equal(mock._decanterMock.sourceExecution, "201");
+    assert.ok(Array.isArray(mock._decanterMock.fill), "fill list present");
+    assert.match(r.out, /credentials\/PII/); // PII review warning
+    // refuses to clobber (protects hand-filled data)
+    r = await cli("mock", "create", "wf123", "Happy Path", "--execution", "201");
+    assert.equal(r.code, 1);
+    assert.match(r.out, /already exists/);
+    // mock check validates the committed mock offline (no Docker)
+    r = await cli("mock", "check", "wf123", "happy-path");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /valid/);
+    // a structurally broken mock fails check with exit 1
+    writeFileSync(path.join(mockDir, "broken.json"), JSON.stringify({ _decanterMock: { fill: [] }, data: { resultData: { runData: { X: [{ data: { main: [[42]] } }] } } } }));
+    r = await cli("mock", "check", "wf123", "broken");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /invalid|must be an object/);
+    // check-all also fails while a broken mock is present
+    r = await cli("mock", "check", "wf123");
+    assert.equal(r.code, 1, r.out);
+  } finally {
+    env = savedEnv;
+    rmSync(mockDir, { recursive: true, force: true });
+  }
+});
+
 await step("executions clean: removes the dirs, credentials-free", async () => {
   const exDir = path.join(dirF, "executions");
   assert.ok(existsSync(exDir), "previous step left fetched data");
@@ -1862,7 +1908,7 @@ await step("status: version-aware — a live version older than the draft prints
     // an in-sync published workflow stays plain (wf123: activeVersionId == versionId)
     r = await cli("status", "wf123");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /\]  published/);
+    assert.match(r.out, /\] {2}published/);
     assert.ok(!r.out.includes("older than the draft"), "in-sync published stays plain: " + r.out);
   } finally {
     created.versionId = prevVersion;

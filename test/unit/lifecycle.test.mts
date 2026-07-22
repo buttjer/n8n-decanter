@@ -16,9 +16,18 @@ function stubApi(remote: Workflow) {
   const calls: string[] = [];
   const api = {
     getWorkflow: async () => remote,
-    activateWorkflow: async () => (calls.push("activate"), { ...remote, active: true }),
-    deactivateWorkflow: async () => (calls.push("deactivate"), { ...remote, active: false }),
-    deleteWorkflow: async () => (calls.push("delete"), remote),
+    activateWorkflow: async () => {
+      calls.push("activate");
+      return { ...remote, active: true };
+    },
+    deactivateWorkflow: async () => {
+      calls.push("deactivate");
+      return { ...remote, active: false };
+    },
+    deleteWorkflow: async () => {
+      calls.push("delete");
+      return remote;
+    },
   } as unknown as N8nApi;
   return { api, calls };
 }

@@ -73,7 +73,7 @@ export function forEachConnectionTarget(
 export function sanitizeFilename(name: string): string {
   const cleaned = name
     .replace(/[/\\:*?"<>|]/g, "-")
-    // eslint-disable-next-line no-control-regex
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control chars from filenames is intentional.
     .replace(/[\x00-\x1f]/g, "")
     .trim()
     .replace(/\.+$/, "");

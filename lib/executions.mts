@@ -5,13 +5,22 @@ import { findWorkflowDir, listWorkflowDirs } from "./state.mts";
 import type { Execution, Log, Workflow } from "./types.mts";
 
 export const EXECUTIONS_DIR = "executions";
+/**
+ * Committed, hand-editable execution **mocks** (Plan 7 task 6) — named scenarios
+ * created by `mock create` from a captured execution, with any gap nodes flagged
+ * for filling. Tracked in git (unlike gitignored `executions/`), so mocked
+ * replays are reproducible for teammates and CI. Selected explicitly by slug
+ * (`simulate --mock <slug>`), not auto-preferred.
+ */
+export const MOCKS_DIR = "mocks";
 
 /**
  * The newest captured execution id in a workflow folder's `executions/` dir, or
  * null when none are captured. n8n execution ids are incrementing integers, so
  * "newest" is the highest numeric filename; non-numeric files are ignored. Lets
- * `simulate` (and the picker, which can't supply an id) default to the latest
- * capture.
+ * `simulate`/`mock create` (and the picker, which can't supply an id) default to
+ * the latest capture. Mocks are slug-named scenarios, not "latest"-ordered, so
+ * they're chosen explicitly and don't participate here.
  */
 export function latestCaptureId(dir: string): string | null {
   const outDir = path.join(dir, EXECUTIONS_DIR);

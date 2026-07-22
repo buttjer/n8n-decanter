@@ -70,6 +70,10 @@ entries carry no priority field) — adjust freely.
       agents that `run` generated/untrusted node files. **Recommend:** state
       plainly in README + template `AGENTS.md` that `run` is not a sandbox
       (never `run` a node you wouldn't execute by hand). Severity: moderate.
+      (graduated 2026-07-22 to
+      [Plan 31](OPEN-31-run-sandbox-boundary.md), which goes further than the
+      doc note: an enforced safe-by-default sandbox with `--unsafe` to opt out —
+      the doc half stays as Plan 31's fallback for `--unsafe`.)
 - [ ] **`run`'s faked n8n context silently diverges from n8n — `$jmespath`
       throws, other globals are absent, and the docs never mark the boundary.**
       `lib/run.mts` `buildGlobals`: `$jmespath` (line ~170) is wired to *throw*
@@ -92,7 +96,7 @@ entries carry no priority field) — adjust freely.
       emulated in `run`" message instead of a bare `ReferenceError`. Relates to
       the `run` host-privileges item above and `run --from-execution` below.
       Severity: moderate.
-- [ ] **Add a linter (or remove the stray disable directive).**
+- [x] **Add a linter (or remove the stray disable directive).**
       `lib/util.mts:76` carries `// eslint-disable-next-line no-control-regex`,
       but **there is no ESLint (or any linter) config in the repo** — the
       directive references tooling that was never wired up. For a public TS CLI
@@ -103,6 +107,11 @@ entries carry no priority field) — adjust freely.
       stack — wire it into `npm run` + the CI job, then the disable directive
       becomes real (or is dropped). Would also have caught the two cleanups
       below.
+      (done 2026-07-22: Biome 2.5.5 wired as `npm run lint`/`lint:fix` +
+      `biome.json` + a CI step; recommended rules minus this repo's deliberate
+      style (useTemplate/noNonNullAssertion/noExplicitAny/noTemplateCurlyInString).
+      The eslint directive is now a real `// biome-ignore
+      lint/suspicious/noControlCharactersInRegex` in `lib/util.mts`.)
 
 ### Open — low (large scope or deferred)
 
@@ -128,12 +137,14 @@ entries carry no priority field) — adjust freely.
       the port rides the browser's forwarded cookies; https/remote upstreams
       are best-effort) deserves one explicit paragraph in PLAN.md/README beyond
       the current "https is best-effort" note. Severity: low.
-- [ ] **Dead comment guard in `parseEnvFile`.** `lib/config.mts:11` —
+- [x] **Dead comment guard in `parseEnvFile`.** `lib/config.mts:11` —
       `m[0].trimStart().startsWith("#")` can never be true: the key regex
       (`[A-Za-z_]…`) already rejects any `#`-leading line, so `m` is `null`
       there. Harmless, but delete the guard or add a real inline-`#` handling
       story so the intent is honest.
-- [ ] **Dead luxon-optional branch in `run`.** `lib/run.mts` `buildGlobals`
+      (done 2026-07-22: dropped the `#` guard; `if (!m) continue;` already
+      filters comment/blank lines. Comment explains why.)
+- [x] **Dead luxon-optional branch in `run`.** `lib/run.mts` `buildGlobals`
       (~136-143) wraps the luxon import in `try/catch` and warns "luxon not
       installed — DateTime/$now/$today are unavailable", leaving `$now`/`$today`
       `undefined`. But **luxon is a hard `dependencies` entry** (package.json),
@@ -144,15 +155,23 @@ entries carry no priority field) — adjust freely.
       `undefined` fallbacks; or, if "run works without luxon for pure-logic
       nodes" is a wanted property, move luxon to `optionalDependencies` so the
       code reflects reality. Severity: low.
-- [ ] **Unused `log` parameter in `loadFixture`.** `lib/run.mts:76` —
+      (done 2026-07-22: import luxon directly; dropped the try/catch, the warn,
+      and the `undefined` fallbacks — luxon stays a hard dependency.)
+- [x] **Unused `log` parameter in `loadFixture`.** `lib/run.mts:76` —
       `loadFixture(fixturePath, log)` never uses `log`. Drop it (a linter would
       have caught this — see the linter item above).
-- [ ] **Value-flag parser can swallow a following token.** `n8n-decanter.mts`
+      (done 2026-07-22: dropped from `loadFixture` and its now-logless
+      `buildGlobals` caller; the Biome `noUnusedFunctionParameters` rule now
+      guards against recurrence.)
+- [x] **Value-flag parser can swallow a following token.** `n8n-decanter.mts`
       (the `--status`/`--limit` peel-off) consumes the next arg unconditionally
       when no `=value` is given, so `n8n-decanter --status pull` reads `pull` as
       the status value and then finds no verb. Documented-as-needs-a-value, but
       a friendlier error ("`--status` needs a value; did you mean `status`?")
       or requiring `=` for these flags would remove the surprise. Severity: low.
+      (done 2026-07-22: the space-separated form no longer consumes a token
+      that is another flag or a known verb, so `--status pull` errors with
+      "--status needs a value (e.g. --status=success)".)
 - [x] **Remove the `uuid` verb (scope creep) — supersede it with Plan 21's
       `add`.** `n8n-decanter uuid [count]` (`n8n-decanter.mts` handler ~179-184)
       is a general lowercase-v4 UUID generator justified only for hand-authoring
@@ -171,9 +190,13 @@ entries carry no priority field) — adjust freely.
       entry. Severity: low (deferred until `add` ships).
       (done 2026-07-20, alongside Plan 21's `add`: verb + docs + agent template
       + e2e step removed; `add` now mints the id. Breaking → v0.4.0.)
-- [ ] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
+- [x] **Optional OSS repo hygiene.** No `CODEOWNERS`, PR template, or issue
       templates. Low priority for a solo project, but cheap and conventional if
       contributions are wanted (CONTRIBUTING.md already invites them).
+      (done 2026-07-22: `.github/CODEOWNERS` (`* @buttjer`),
+      `PULL_REQUEST_TEMPLATE.md` (mirrors the CONTRIBUTING/AGENTS acceptance
+      criteria), and `ISSUE_TEMPLATE/` bug + feature templates with a
+      `config.yml` pointing security reports at the existing SECURITY.md flow.)
 - [ ] **Cross-PR docs-drift guardrail in CI** (2026-07-20). The `/docs` pages
       can fall behind the CLI when a behavior change and its docs live in
       *separate* PRs: v0.3.0 (#29 — `--allow-env` + `executions` in the picker)
@@ -246,12 +269,14 @@ entries carry no priority field) — adjust freely.
       workflow → [Plan 21](DONE-21-repo-authored-workflows.md) `duplicate`;
       both preserve pull-first. The data-model-inverting `push --create`
       variant was dropped by user decision. Both shipped 2026-07-20.)
-- [ ] **Engine-true simulation suite** — real e2e test or simulation suite: is
+- [x] **Engine-true simulation suite** — real e2e test or simulation suite: is
       there a way to really execute the workflow with the n8n engine using
       executions data as a mock/dry run? Also making sure nothing is really
       written through APIs or similar. Keep in mind executions data can be
       flawed or change in the future. (graduated to
-      [Plan 7](OPEN-7-engine-true-simulation-suite.md))
+      [Plan 7](DONE-7-engine-true-simulation-suite.md) — **done 2026-07-21**,
+      Docker backend; the dependency-free npx backend is split to
+      [Plan 26](OPEN-26-npx-engine-backend.md))
 
 ### Done
 

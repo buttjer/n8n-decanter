@@ -319,6 +319,63 @@ Rules:
   version (n8n 2.x), which may be older than the local draft, and payloads
   change over time — re-fetch rather than trusting stale files.
 
+## Filling simulation gaps (`mocks/` — committed scenarios)
+
+`n8n-decanter simulate <workflow>` replays a workflow through a real n8n engine,
+pinning network nodes to a captured execution. A **gap** is a network node the
+replay reaches that has **no captured data** (added or reparametrized since the
+capture). `simulate` hard-errors on a gap rather than run half-real — and this
+is a task you, the agent, are well-suited to complete. **The CLI never calls an
+LLM or needs an API key; you author the mock data locally.**
+
+The loop:
+
+```sh
+n8n-decanter "<workflow>" simulate --execution <id>      # ✗ gap: <Node> has no data
+n8n-decanter "<workflow>" mock create "<slug>" --execution <id>   # writes a committed, fillable scenario
+#   → edit workflows/<folder>/mocks/<slug>.json  (see below)
+n8n-decanter "<workflow>" mock check <slug>              # validate offline (fast, no Docker)
+n8n-decanter "<workflow>" simulate --mock <slug>         # replay the filled scenario
+```
+
+`mock create` copies the capture into `mocks/<slug>.json` (a **named scenario** —
+`happy-path`, `empty-cart`, …; the slug defaults to the execution id) and adds a
+`_decanterMock` block listing each gap node with its **type**, **parameters**,
+and an **`inputSample`** (the items feeding it). For each node in `fill`, add its
+output under `data.resultData.runData`:
+
+```jsonc
+"data": { "resultData": { "runData": {
+  // …existing captured nodes stay untouched…
+  "<Node Name>": [                    // one entry per run (a normal node runs once)
+    { "data": { "main": [             // outputs; index 0 is the node's main output
+      [                               // items array for that output
+        { "json": { /* the realistic output this node would emit */ } }
+      ]
+    ] } }
+  ]
+} } }
+```
+
+How to author good data:
+
+- **Use the context.** Read the node's `type`/`parameters` and `inputSample` in
+  the `_decanterMock.fill` entry, and infer a realistic output. An HTTP GET to a
+  CRM returns a record; a DB query returns rows; a Slack post returns a
+  message-sent ack. One item in, one enriched item out is the common case.
+- **Match the input's `pairedItem` when downstream nodes link items** (e.g.
+  `$('<Node>').itemMatching(...)`): give each output item `"pairedItem": { "item": <inputIndex> }`.
+- **Keep the `fill` list as-is.** It records which nodes are mocked (not
+  captured) and is what `mock check` validates. Don't delete it.
+- **Validate offline with `mock check <slug>`** — a fast, node-named structural
+  check that needs no Docker; run it in your fill→check→fix loop. It fails if an
+  item isn't `{ "json": … }` or a `fill` node is still empty. `simulate --mock`
+  runs the same check on load. There is no official n8n JSON Schema — this is the
+  decanter's own check of the exact shape it replays.
+- **Committed, so review for PII.** Unlike `executions/`, `mocks/` is tracked in
+  git (reproducible replays). The data you write is *mock*, but the copied
+  capture around it can hold real payloads — don't commit secrets.
+
 ## Data tables (`data-tables/` — temporary, gitignored)
 
 When a workflow reads or writes an n8n **data table** (the built-in
@@ -361,6 +418,7 @@ Rules:
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
   `n8n-decanter node run <file> [fixture]`, `n8n-decanter node create <workflow> "<Node name>"`,
   `n8n-decanter node rename <workflow> …`, `n8n-decanter rename <workflow> …`,
+  `n8n-decanter mock create <workflow>` / `mock check <workflow>` (fillable mock scenarios),
   `n8n-decanter executions clean`, `n8n-decanter data-tables clean`. These never
   touch the network.
 - **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line

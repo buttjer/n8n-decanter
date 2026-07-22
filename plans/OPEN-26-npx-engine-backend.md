@@ -1,6 +1,6 @@
 # Plan 26 — npx engine backend for `simulate` (Docker-free)
 
-**Priority:** P3 (accessibility win; a follow-up to [Plan 7](OPEN-7-engine-true-simulation-suite.md), which shipped Docker-only)
+**Priority:** P3 (accessibility win; a follow-up to [Plan 7](DONE-7-engine-true-simulation-suite.md), which shipped Docker-only)
 **Status:** Not started
 **Theme:** A dependency-free **`npx n8n@<ver>`** engine backend so `simulate`
 runs without Docker — using the Node the CLI already requires. The headless
@@ -8,7 +8,7 @@ diff run is npx's natural home; the browsable viewer stays Docker-preferred.
 
 ## Why
 
-[Plan 7](OPEN-7-engine-true-simulation-suite.md) shipped `simulate` with a
+[Plan 7](DONE-7-engine-true-simulation-suite.md) shipped `simulate` with a
 **Docker-only** engine backend — so today `simulate` needs a running Docker
 daemon. Plan 7 always *intended* npx to be the default (Docker the opt-in
 hard-isolation mode); it shipped Docker first because that's what got validated
@@ -23,7 +23,7 @@ either way — this is about *reach*, not correctness.**
 
 ## Source
 
-- [Plan 7](OPEN-7-engine-true-simulation-suite.md) "Design decision — the
+- [Plan 7](DONE-7-engine-true-simulation-suite.md) "Design decision — the
   engine": npx was the intended default, split out here so Plan 7 can close on
   the shipped Docker backend.
 - [Plan 15](DONE-15-docker-n8n-smoke-suite.md) / the Plan 7 spike: the

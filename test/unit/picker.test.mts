@@ -169,6 +169,7 @@ describe("verb stage", () => {
 describe("renderLines (pure view, Plan 23)", () => {
   // Strip SGR escapes so assertions hold whether or not the test stream is a
   // color-capable TTY — this is exactly the monochrome/NO_COLOR reader's view.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping literal ANSI SGR escapes is the point.
   const plain = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
   const mixed: PickerEntry[] = [
     { id: "aaa111", name: "Billing Sync", pulled: true },

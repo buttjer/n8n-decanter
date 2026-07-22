@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **New `mock` namespace — fill `simulate` gaps with committed mock scenarios.**
+  A *gap* (a network node reached in the replay with no captured data) used to be
+  a dead end. `mock create <workflow> ["<slug>"] [--execution <id>]` promotes a
+  gitignored capture into a tracked, hand-editable **named scenario**
+  `workflows/<folder>/mocks/<slug>.json` (slug defaults to the execution id) and
+  flags which nodes to fill. You (or your IDE agent) add the nodes' `runData` —
+  **no API key, the CLI never calls a model** — and replay it with
+  `simulate --mock <slug>`. `mock check <workflow> ["<slug>"]` **structurally
+  validates** a mock (or all of them) **offline** — no Docker — with a node-named
+  error if an item is malformed or a flagged node is left empty; `simulate --mock`
+  runs the same check on load. n8n publishes no execution-data JSON Schema, so the
+  decanter checks the exact shape it replays. Committed → mocked replays are
+  reproducible for teammates and CI; `mock create` warns about PII and refuses to
+  overwrite an existing mock.
+- **`simulate` previews multi-batch loops in the viewer.** In an interactive
+  terminal, a genuine multi-batch loop (previously a hard error) now caps the
+  loop to its first batch and opens that single iteration in the browsable
+  viewer, clearly labeled *"iteration 1 of N — not a pass/fail check."* Headless
+  / `--json` / `--network-none` runs (scripts, CI) still hard-error, so an exit
+  code is never mistaken for a verified pass.
+
+### Fixed
+
+- **Value-taking flags no longer swallow a following verb.** Writing a
+  value flag in its space-separated form without a value — e.g.
+  `n8n-decanter --status pull` — used to consume the `pull` verb as the
+  flag's value and then fail with a confusing "no verb" error. Such flags
+  (`--status`, `--limit`, `--execution`, `--pin`, `--n8n-version`, `--mock`,
+  `--filter`, `--search`, `--sort`) now refuse to eat a known verb and report
+  `--status needs a value (e.g. --status=success)` instead.
+
 ## [0.5.0] - 2026-07-21
 
 ### Changed
@@ -55,8 +88,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single batch — it runs twice (one batch pass + the final "done" pass) while
   every other node ran once — no longer hard-errors. The loop driver executes
   for real to reproduce the loop, and each node's one captured run pins exactly.
-  Multi-batch loops (any node ran more than once) stay out of scope, since
-  first-run-only pinning can't feed later iterations.
 
 ### Removed
 
