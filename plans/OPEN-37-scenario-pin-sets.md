@@ -68,6 +68,24 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
   self-contained (no hybrid "fixture overrides newest capture" precedence to
   reason about). `simulate --pin`'s job ("make a clean capture reproducible")
   is exactly `scenario create --execution <id>`; the flag is removed.
+- **Fold decisions (maintainer, 2026-07-22).**
+  1. *Legacy `fixtures/` files:* **hard drop** — no deprecation read-path.
+     A `fixtures/` dir encountered by `simulate`/`check` is a hard error
+     naming the replacement (`scenario create --execution`, then delete the
+     dir). Roads not taken: one-release deprecation read-path (prolongs the
+     two-artifact state); auto-folding fixtures into a scenario (per-node
+     fragments would have to merge onto a gitignored capture — commits data
+     the user never reviewed).
+  2. *Hybrid precedence:* scenarios are **always self-contained** — a run pins
+     from a named scenario *or* a capture, never a mix. The layering variant
+     (`--scenario` overlaid on a fresh capture, the old flaky-node `--pin`
+     use case) is deferred to [Plan 0](BACKLOG.md) ("Scenario layering over a
+     fresh capture").
+  3. *Old spelling:* **hard error** — `mock`/`--mock` fail naming
+     `scenario`/`--scenario`; no alias release (the template
+     allowlist/AGENTS.md teach the new word immediately, an alias would just
+     prolong mixed vocabulary). The `mocks/` → `scenarios/` dir migration
+     stays automatic and separate from the spelling.
 - **Per-node provenance.** The metadata block records where each node's items
   came from: `capture` (real data — can serve as diff baseline), `authored`
   (human/agent-filled), `scaffolded` (schema-guided fill). Consumers label
@@ -100,16 +118,16 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
 2. **Migration + compat.** On any verb touching the dir: auto-migrate
    `mocks/<slug>.json` → `scenarios/<slug>.json` (git-aware move semantics like
    pull's rename machinery; refuse on collision). Legacy `fixtures/` files:
-   read path retained for one release with a deprecation warning naming the
-   replacement (`scenario create --execution`); `check` surfaces them. No
-   silent behavior change: `--mock` errors with the new spelling (breaking,
-   0.x).
-3. **Fold fixtures.** Remove `simulate --pin` and the fixture-precedence merge
-   in `buildSimulation` (`readFixtures`/`itemsFor`); `warnStaleFixtures`
-   generalizes to scenario staleness (scenario records `workflowVersionId`,
-   warn when older than the draft — machinery exists). `Fixture`'s
-   `source: "capture" | "llm-guess"` semantics migrate into the per-node
-   provenance model.
+   **hard error** (fold decision 1) from `simulate` and `check` naming the
+   replacement (`scenario create --execution`, then delete `fixtures/`) — no
+   read path, no silent ignore. `mock`/`--mock` hard-error with the new
+   spelling (fold decision 3; breaking, 0.x).
+3. **Fold fixtures.** Remove `simulate --pin`, `readFixtures`, and the
+   fixture-precedence merge in `buildSimulation` (`itemsFor` reads one
+   source); `warnStaleFixtures` generalizes to scenario staleness (scenario
+   records `workflowVersionId`, warn when older than the draft — machinery
+   exists). `Fixture`'s `source: "capture" | "llm-guess"` semantics migrate
+   into the per-node provenance model.
 4. **Scaffold source.** `scenario create <slug> --scaffold`: calls MCP
    `prepare_test_pin_data` (input `{workflowId}`; output
    `nodeSchemasToGenerate` / `nodesWithoutSchema` / `nodesSkipped` /
@@ -145,8 +163,9 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
 ## Acceptance / verification
 
 - One committed artifact: `scenario create/check` + `--scenario` everywhere;
-  a legacy `mocks/` dir migrates automatically; legacy `fixtures/` warn with
-  the replacement; `--pin` and `--mock` are gone from help and docs.
+  a legacy `mocks/` dir migrates automatically; a legacy `fixtures/` dir is a
+  hard error naming the replacement; `--pin` and `--mock` are gone from help
+  and docs.
 - `--scaffold` writes a reviewable, schema-annotated scenario **without
   inventing values**; wire-log shows read-only calls only; the smoke suite
   asserts the live `prepare_test_pin_data` response shape against the
@@ -164,8 +183,9 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
 
 - **Breaking (0.x → minor at next release):** `mock` → `scenario` verbs,
   `--mock` → `--scenario`, `mocks/` → `scenarios/` (auto-migrated),
-  `simulate --pin` + `fixtures/` retired (deprecation read-path for one
-  release). Each gets its own **Breaking:** changelog line.
+  `simulate --pin` + `fixtures/` removed outright (a leftover `fixtures/` dir
+  hard-errors with the replacement). Each gets its own **Breaking:**
+  changelog line.
 - **Recorded-fact correction shipped with this plan PR** (not deferred to
   execution): PLAN.md's and AGENTS.md's `prepare_test_pin_data` notes said
   "server-generated synthetic data"; the tool returns schemas only. Corrected
