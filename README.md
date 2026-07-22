@@ -48,6 +48,10 @@ so nothing goes live until you `publish`. Workflow *structure* stays n8n's job
   API key or model call; the CLI stays fully offline.
 - **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
   tab via a local proxy.
+- **Agent guard-proxy** — `mcp serve` gives coding agents full n8n MCP access
+  through a localhost proxy holding decanter's credentials (the agent never
+  sees them), while technically blocking Code-node (`jsCode`) writes — the
+  one thing that belongs in this repo's files, not in ad-hoc MCP edits.
 - **Shared code and small libraries** — `.ts` nodes import helpers/types
   from `shared/` and opted-in npm packages; push bundles them into
   self-contained nodes that run anywhere, n8n Cloud included.
@@ -188,6 +192,11 @@ n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]
 n8n-decanter mock check <workflow> ["<slug>"]   # structurally validate a mock (offline)
 n8n-decanter list [--remote] [--json]   # pulled workflows: name, id, folder
                                     #   (--remote adds unpulled ones; --json for tooling)
+
+# Agent guard
+n8n-decanter mcp serve [--port N]   # localhost MCP guard-proxy for agents: full n8n
+                                    #   MCP access with decanter's credentials,
+                                    #   minus Code-node (jsCode) writes
 
 # Node
 n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node in n8n

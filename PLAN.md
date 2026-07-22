@@ -30,7 +30,8 @@ n8n-decanter/
                           #   watch | create | publish | unpublish |
                           #   archive | list | executions | data-tables |
                           #   simulate | completion + namespaces:
-                          #   node (create|rename|run), mock (create|check)
+                          #   node (create|rename|run), mock (create|check),
+                          #   mcp (serve)
   lib/                    # implementation: add, api, compile, config, datatables,
                           #   diff, executions, git, init, lifecycle, mcp, picker,
                           #   prompt, proxy, pull, push, rename, run, state, status,
@@ -480,6 +481,33 @@ Radically simplified by Plan 32 — the fast inner loop for a workflow's
 - **Browser live-reload (plans/5)** is untouched: same transparent proxy,
   same `notifyPushed` SSE contract, verified by `test/proxy.mts` and a
   dedicated e2e step.
+
+## MCP guard-proxy (`mcp serve`, plans/33)
+
+Technical enforcement of the Code-node boundary the template's `AGENTS.md`
+states in prose. `lib/mcpserve.mts`:
+
+- **Decanter is the sole credential holder.** The proxy authenticates agents
+  with a per-session random secret (printed once; also written with the
+  endpoint to a gitignored `.decanter-proxy.json` for tooling discovery) and
+  forwards upstream with the real bearer/OAuth token via
+  `McpClient.bearerToken()` — inheriting the refresh-race coordination; one
+  forced refresh on an upstream 401.
+- **Requests are parsed, responses pipe through untouched** (SSE included).
+  The single block rule: `tools/call` → `update_workflow` whose arguments
+  contain a `jsCode` key at any depth → answered in-band with an
+  instructive `isError` tool result ("edit the file + push"). Op types are
+  deliberately NOT enumerated — the op vocabulary churns; the key is the
+  contract. Unparseable bodies **fail closed** (403), bodies over 10 MB get
+  413 (drain-then-respond — destroying the socket would RST before the
+  client reads the answer), non-secret requests 401 without touching n8n.
+- Binds `127.0.0.1` only; default port 5680 (`--port`, `0` = ephemeral).
+  Blast radius is availability, not integrity: decanter's own sync never
+  routes through the proxy.
+- Template stack: `mcp-route-check.mjs` (SessionStart hook, shared script —
+  config-drift detector, not an op inspector) warns when an agent MCP config
+  in the sync dir reaches an n8n `/mcp-server/http` endpoint that isn't
+  loopback; `AGENTS.md.example` states the boundary proxy-first.
 
 ## Init flow (`n8n-decanter init [dir]`)
 

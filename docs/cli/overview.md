@@ -43,6 +43,9 @@ n8n-decanter list [--remote] [--json]
 n8n-decanter node create <workflow> "<Node name>" [--ts]        # scaffold a Code node in n8n
 n8n-decanter node rename <workflow> "<old node>" "<new node>"   # rename in n8n; local files follow
 n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node locally (offline)
+
+# Agent guard
+n8n-decanter mcp serve [--port N]   # localhost MCP guard-proxy: forwards to n8n, blocks jsCode writes
 ```
 
 ## Placeholder vocabulary
@@ -98,6 +101,7 @@ errors with *unknown verb*. Flags may still appear in any position.
 | `status`, `list --remote`, `executions`, `data-tables` | Read the remote, never write |
 | `pull`, `push`, `watch`, `create`, `publish`, `unpublish`, `rename`, `node create`, `node rename` | Read/write the live instance (pushes and structure acts land on the **draft**) |
 | `archive` | Read/write the live instance (not a draft act — it retires the whole workflow, unpublishing it first when live) |
+| `mcp serve` | Long-running localhost proxy — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward
 from the current directory) or the environment. `N8N_HOST` plus **MCP

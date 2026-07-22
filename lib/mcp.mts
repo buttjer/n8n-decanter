@@ -428,6 +428,16 @@ export class McpClient {
     return this.#refreshInFlight;
   }
 
+  /**
+   * The upstream bearer for the guard proxy (Plan 33): the static token, or a
+   * cached/refreshed OAuth access token — same path `callTool` uses, so the
+   * proxy inherits the refresh-race coordination. `forceRefresh` after an
+   * upstream 401.
+   */
+  bearerToken(forceRefresh = false): Promise<string> {
+    return this.#accessToken(forceRefresh);
+  }
+
   #cacheValid(data: McpAuthFile): boolean {
     return data.accessToken !== undefined && data.accessTokenExpiresAt !== undefined && new Date(data.accessTokenExpiresAt).getTime() > Date.now();
   }

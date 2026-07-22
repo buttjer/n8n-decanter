@@ -10,6 +10,7 @@ import { init, printBanner } from "./lib/init.mts";
 import { checkMocks, listMockSlugs, pinFixtures, runSimulation, writeMock, type SimulationReport } from "./lib/simulate.mts";
 import { archiveWorkflow, createWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, searchWorkflows } from "./lib/mcp.mts";
+import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
@@ -85,6 +86,9 @@ ${b("Node")}
   ${b("node rename")} <workflow> "<old node>" "<new node>"   ${d("rename a node in n8n; local files follow")}
   ${b("node run")} <node-file> [fixture.json] [--allow-env]  ${d("run a node locally (offline)")}
 
+${b("Agent guard")}
+  ${b("mcp serve")} [--port N]                    ${d("localhost MCP guard-proxy for agents: forwards to n8n, blocks jsCode writes")}
+
 A ${b("<workflow>")} is its id, name, unique name-prefix, or folder name (case-insensitive;
 ambiguity is an error). A ref verb with no ${b("<workflow>")} on a terminal opens the picker.
 An ${b("<execution-id>")} is an n8n execution id (numeric).
@@ -96,11 +100,13 @@ powers executions and data-tables.`;
 
 // Verb-first grammar (Plan 27): the command is positional[0]. `add`/`run` and
 // the node-rename overload moved under the `node` namespace (node create/rename/run).
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "list", "executions", "data-tables", "simulate", "mock", "publish", "unpublish", "create", "archive", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "list", "executions", "data-tables", "simulate", "mock", "mcp", "publish", "unpublish", "create", "archive", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["create", "rename", "run"]);
 /** Sub-verbs of the `mock` namespace; dispatched as internal `mock:<sub>` commands. */
 const MOCK_VERBS = new Set(["create", "check"]);
+/** Sub-verbs of the `mcp` namespace; dispatched as internal `mcp:<sub>` commands. */
+const MCP_VERBS = new Set(["serve"]);
 /** Verbs whose workflow arguments go through name resolution. */
 const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "publish", "unpublish", "archive"]);
 
@@ -139,7 +145,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version|mock|filter|search|sort)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|pin|n8n-version|mock|filter|search|sort|port)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -188,6 +194,14 @@ async function main() {
       throw new Error(`unknown mock command: ${sub ?? "(none)"} — try: n8n-decanter mock create|check`);
     }
     command = `mock:${sub}`;
+    rest = positional.slice(2);
+  } else if (command === "mcp") {
+    const sub = positional[1];
+    if (sub === undefined || !MCP_VERBS.has(sub)) {
+      console.log(usage());
+      throw new Error(`unknown mcp command: ${sub ?? "(none)"} — try: n8n-decanter mcp serve`);
+    }
+    command = `mcp:${sub}`;
     rest = positional.slice(2);
   }
 
@@ -245,8 +259,8 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push(...NODE_VERBS, ...MOCK_VERBS); // sub-verbs after `node` / `mock`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--help");
+    words.push(...NODE_VERBS, ...MOCK_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `mock` / `mcp`
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--ts", "--status=", "--limit=", "--allow-env", "--execution=", "--pin=", "--mock=", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -788,6 +802,22 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (ids.length !== 1) throw new Error("watch needs exactly one workflow id (pass it, or list a single workflow in decanter.config.json)");
       // the returned handle exists for tests; the CLI watches until Ctrl-C
       await watchWorkflow(mcp(), config, ids[0], { force }, log);
+      await new Promise(() => {});
+      break;
+    }
+    case "mcp:serve": {
+      const portRaw = valueFlags.get("port");
+      const port = portRaw !== undefined ? Number(portRaw) : DEFAULT_GUARD_PORT;
+      if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("--port must be a port number (0 for ephemeral)");
+      const handle = await startGuardProxy({ mcp: mcp(), host: config.host, configDir: config.configDir, port, log });
+      log.ok(`MCP guard-proxy listening on ${handle.url}`);
+      log.info(`  forwards to ${config.host} with decanter's credentials — the agent never sees them`);
+      log.info(`  blocks: update_workflow calls carrying jsCode (Code-node source is files + \`n8n-decanter push\`)`);
+      log.info("");
+      log.info("point your agent's MCP config at it (session secret rotates per run):");
+      log.info(style.dim(JSON.stringify({ mcpServers: { "n8n-instance": { type: "http", url: handle.url, headers: { Authorization: `Bearer ${handle.secret}` } } } }, null, 2)));
+      log.info("");
+      log.info(style.dim("Ctrl-C stops the proxy (decanter's own sync never routes through it)"));
       await new Promise(() => {});
       break;
     }

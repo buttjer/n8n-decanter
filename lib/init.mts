@@ -12,6 +12,7 @@ import {
   searchWorkflows,
   writeAuthFile,
 } from "./mcp.mts";
+import { PROXY_STATE_FILE } from "./mcpserve.mts";
 import { createPrompt, type Prompt } from "./prompt.mts";
 import { style } from "./style.mts";
 import { classifyTemplateFile, MANIFEST_FILE, readManifest, writeManifest, type TemplateOutcome } from "./template.mts";
@@ -329,18 +330,20 @@ export async function init(targetDir: string | undefined, { force = false }: { f
     // data-tables/ hold fetched data (may contain credentials/PII) —
     // belt-and-braces with the self-ignoring .gitignore each fetch verb
     // writes into pre-existing sync dirs
-    writeFileSync(gitignoreFile, `node_modules/\n.env\n${AUTH_FILE}\nworkflows/*/executions/\ndata-tables/\n`);
+    writeFileSync(gitignoreFile, `node_modules/\n.env\n${AUTH_FILE}\n${PROXY_STATE_FILE}\nworkflows/*/executions/\ndata-tables/\n`);
     log.info("wrote .gitignore");
   } else {
     const content = readFileSync(gitignoreFile, "utf8");
     const lines = content.split("\n").map((l) => l.trim());
     if (!lines.includes(".env")) log.warn(".gitignore exists but does not ignore .env — add it, the file holds credentials");
-    if (!lines.includes(AUTH_FILE)) {
-      // append rather than warn (Plan 33): the file holds the MCP refresh
-      // token — leaving it committable on a re-init is a real leak, and an
-      // append to a user's .gitignore is safely additive
-      writeFileSync(gitignoreFile, `${content}${content.endsWith("\n") || content === "" ? "" : "\n"}${AUTH_FILE}\n`);
-      log.info(`appended ${AUTH_FILE} to .gitignore — it holds your MCP refresh token`);
+    // append rather than warn (Plan 33): these files hold secrets (the MCP
+    // refresh token; the guard-proxy session secret) — leaving them
+    // committable on a re-init is a real leak, and an append to a user's
+    // .gitignore is safely additive
+    const missing = [AUTH_FILE, PROXY_STATE_FILE].filter((f) => !lines.includes(f));
+    if (missing.length > 0) {
+      writeFileSync(gitignoreFile, `${content}${content.endsWith("\n") || content === "" ? "" : "\n"}${missing.join("\n")}\n`);
+      log.info(`appended ${missing.join(" + ")} to .gitignore — credential-holding files`);
     }
   }
 
