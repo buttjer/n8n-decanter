@@ -1,7 +1,7 @@
 ---
 title: mock
 description: Create and validate committed execution mocks — named scenarios that fill simulate's gaps, edited locally, no LLM API.
-order: 15
+order: 16
 ---
 
 ```sh

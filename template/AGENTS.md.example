@@ -376,17 +376,56 @@ How to author good data:
   git (reproducible replays). The data you write is *mock*, but the copied
   capture around it can hold real payloads — don't commit secrets.
 
+## Data tables (`data-tables/` — temporary, gitignored)
+
+When a workflow reads or writes an n8n **data table** (the built-in
+project-scoped tables, n8n ≥ 2.x) and you need to see what's actually in it —
+its columns or its rows — fetch it instead of guessing:
+
+```sh
+n8n-decanter data-tables                                # every table: schema + rows
+n8n-decanter data-tables "Orders"                       # one table by name (or id)
+n8n-decanter data-tables "Orders" --filter '{"type":"and","filters":[{"columnName":"status","condition":"eq","value":"active"}]}'
+n8n-decanter data-tables "Orders" --search foo --sort total:desc --limit 50 --all
+```
+
+Data tables are **project-scoped, not owned by a workflow**, so they land in a
+single **top-level `data-tables/` dir** (next to `decanter.config.json`), not
+under a workflow folder. Each table becomes
+`data-tables/<table-slug>/{meta,columns,rows}.json` — `columns.json` is the
+schema, `rows.json` the (possibly filtered) rows, and `meta.json` records the id,
+name, and the applied filter/search/sort/limit + row count, so a filtered
+`rows.json` is never mistaken for the whole table.
+
+Rules:
+
+- **Read-only.** The CLI only ever *reads* data tables — it never creates,
+  updates, or deletes a table, column, or row.
+- **Temporary working data, never committed.** The dir is written self-ignoring
+  (`data-tables/.gitignore` containing `*`) because tables can hold PII — never
+  weaken that, and never copy secrets from it into code or fixtures.
+- **Pull a slice, not the whole table.** For large tables use `--filter` (a JSON
+  string of conditions, passed straight to the API), `--search` (free text),
+  and `--sort` (`col:asc|desc`) to narrow rows server-side; `--limit` caps a page
+  (default 100, max 250) and `--all` follows the cursor to exhaust the result.
+- **Clean up when done:** `n8n-decanter data-tables clean` (offline; removes the
+  whole `data-tables/` dir).
+- **Config-gated.** Available when `"dataTables"` is on in `decanter.config.json`
+  (its default); if it's `false` the fetch refuses (`clean` still works).
+
 ## Commands — who runs what
 
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
   `n8n-decanter node run <file> [fixture]`, `n8n-decanter node create <workflow> "<Node name>"`,
   `n8n-decanter node rename <workflow> …`, `n8n-decanter rename <workflow> …`,
   `n8n-decanter mock create <workflow>` / `mock check <workflow>` (fillable mock scenarios),
-  `n8n-decanter executions clean`. These never touch the network.
+  `n8n-decanter executions clean`, `n8n-decanter data-tables clean`. These never
+  touch the network.
 - **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line
-  diffs; exits 1 on conflict/remote drift) and `n8n-decanter executions <workflow>`
-  (fetches execution data, read-only) — safe to run, but they do contact the
-  instance.
+  diffs; exits 1 on conflict/remote drift), `n8n-decanter executions <workflow>`
+  (fetches execution data, read-only), and `n8n-decanter data-tables [table…]`
+  (fetches data-table schema + rows, read-only) — safe to run, but they do
+  contact the instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
   pull` / `push` / `watch` read/write the real instance and `push` deploys;
   `create "<name>"` adds a new workflow and `duplicate <workflow>` clones an existing

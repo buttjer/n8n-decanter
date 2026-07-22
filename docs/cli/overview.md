@@ -33,6 +33,8 @@ n8n-decanter status [workflow…] [--diff]
 n8n-decanter check [workflow…] [--no-typecheck]
 n8n-decanter executions [workflow…] [--status=…] [--limit=N]
 n8n-decanter executions [workflow…] clean
+n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=col:asc|desc] [--limit=N] [--all]
+n8n-decanter data-tables [table…] clean
 n8n-decanter simulate <workflow> [--execution <execution-id> | --mock <slug>] [--pin <execution-id>] [--network-none] [--json]
 n8n-decanter mock create <workflow> ["<slug>"] [--execution <id>]   # committed, gap-fillable mock scenario (offline)
 n8n-decanter mock check <workflow> ["<slug>"]                       # structurally validate a mock (offline)
@@ -91,8 +93,8 @@ errors with *unknown verb*. Flags may still appear in any position.
 
 | Verbs | Network |
 | --- | --- |
-| `check`, `rename`, `node create`, `node rename`, `node run`, `list`, `simulate`, `completion` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n API) |
-| `status`, `executions` | Read the remote, never write |
+| `check`, `rename`, `node create`, `node rename`, `node run`, `list`, `simulate`, `completion`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n API) |
+| `status`, `executions`, `data-tables` | Read the remote, never write |
 | `pull`, `push`, `watch`, `create`, `duplicate`, `publish`, `unpublish`, `delete` | Read/write the live instance |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward

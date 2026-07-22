@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **New `mock` namespace — fill `simulate` gaps with committed mock scenarios.**
+  A *gap* (a network node reached in the replay with no captured data) used to be
+  a dead end. `mock create <workflow> ["<slug>"] [--execution <id>]` promotes a
+  gitignored capture into a tracked, hand-editable **named scenario**
+  `workflows/<folder>/mocks/<slug>.json` (slug defaults to the execution id) and
+  flags which nodes to fill. You (or your IDE agent) add the nodes' `runData` —
+  **no API key, the CLI never calls a model** — and replay it with
+  `simulate --mock <slug>`. `mock check <workflow> ["<slug>"]` **structurally
+  validates** a mock (or all of them) **offline** — no Docker — with a node-named
+  error if an item is malformed or a flagged node is left empty; `simulate --mock`
+  runs the same check on load. n8n publishes no execution-data JSON Schema, so the
+  decanter checks the exact shape it replays. Committed → mocked replays are
+  reproducible for teammates and CI; `mock create` warns about PII and refuses to
+  overwrite an existing mock.
+- **`simulate` previews multi-batch loops in the viewer.** In an interactive
+  terminal, a genuine multi-batch loop (previously a hard error) now caps the
+  loop to its first batch and opens that single iteration in the browsable
+  viewer, clearly labeled *"iteration 1 of N — not a pass/fail check."* Headless
+  / `--json` / `--network-none` runs (scripts, CI) still hard-error, so an exit
+  code is never mistaken for a verified pass.
+
+## [0.5.0] - 2026-07-21
+
 ### Changed
 
 - **Breaking: verb-first grammar.** The verb now comes first —
@@ -28,6 +53,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`data-tables` verb** — a read-only fetch of n8n **data-table** schemas and
+  rows (the built-in project-scoped tables, n8n ≥ 2.x) into a top-level,
+  gitignored `data-tables/<table>/{meta,columns,rows}.json` dir, for developing
+  and debugging against real table contents offline. `--filter '<json>'`,
+  `--search`, and `--sort` pull only a slice of a large table server-side (the
+  applied filter is recorded in each table's `meta.json`); `--limit`/`--all`
+  control page size and exhaustion. It never writes a data table.
+  `data-tables clean` removes the dir (offline). Gated by the new **`dataTables`**
+  config key (default `true`); when off, the fetch refuses and the recommended
+  key needn't carry the data-table read scopes (`dataTable:list`,
+  `dataTable:read`, `dataTableColumn:read`, `dataTableRow:read`).
 - `.decanter.json` now caches the workflow's display **`name`** (refreshed on
   every pull), so the picker, `list`, and ref-resolution show the real name even
   though the folder is a kebab slug — and keep working if `workflow.json` is
@@ -42,26 +78,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single batch — it runs twice (one batch pass + the final "done" pass) while
   every other node ran once — no longer hard-errors. The loop driver executes
   for real to reproduce the loop, and each node's one captured run pins exactly.
-- **New `mock` namespace — fill `simulate` gaps with committed mock scenarios.**
-  A *gap* (a network node reached in the replay with no captured data) used to be
-  a dead end. `mock create <workflow> ["<slug>"] [--execution <id>]` promotes a
-  gitignored capture into a tracked, hand-editable **named scenario**
-  `workflows/<folder>/mocks/<slug>.json` (slug defaults to the execution id) and
-  flags which nodes to fill. You (or your IDE agent) add the nodes' `runData` —
-  **no API key, the CLI never calls a model** — and replay it with
-  `simulate --mock <slug>`. `mock check <workflow> ["<slug>"]` **structurally
-  validates** a mock (or all of them) **offline** — no Docker — with a node-named
-  error if an item is malformed or a flagged node is left empty; `simulate --mock`
-  runs the same check on load. n8n publishes no execution-data JSON Schema, so the
-  decanter checks the exact shape it replays. Committed → mocked replays are
-  reproducible for teammates and CI; `mock create` warns about PII and refuses to
-  overwrite an existing mock.
-- **`simulate` previews multi-batch loops in the viewer.** In an interactive
-  terminal, a genuine multi-batch loop (previously a hard error) now caps the
-  loop to its first batch and opens that single iteration in the browsable
-  viewer, clearly labeled *"iteration 1 of N — not a pass/fail check."* Headless
-  / `--json` / `--network-none` runs (scripts, CI) still hard-error, so an exit
-  code is never mistaken for a verified pass.
 
 ### Removed
 

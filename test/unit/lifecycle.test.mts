@@ -31,7 +31,7 @@ function capturingLog(): { log: Log; lines: string[] } {
 
 const baseConfig = (root: string, workflows: string[] = []): DecanterConfig => ({
   configDir: root, root, workflows, commitOnPush: false, commitOnPull: false,
-  browserReload: "off", proxyPort: 0, requestTimeoutMs: 30_000, host: "http://x", apiKey: "k",
+  browserReload: "off", proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: "http://x", apiKey: "k",
 });
 
 describe("publishWorkflow", () => {

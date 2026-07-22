@@ -14,6 +14,7 @@ credentials come from `.env` next to it or from the environment.
   "commitOnPush": true,
   "commitOnPull": true,
   "requestTimeoutMs": 30000,
+  "dataTables": true,
   "browserReload": "proxy",
   "proxyPort": 5679,
   "bundleDependencies": ["zod"]
@@ -27,6 +28,7 @@ credentials come from `.env` next to it or from the environment.
 | `commitOnPush` | `true` | Auto-commit the workflow folder after a successful push. |
 | `commitOnPull` | `true` | Same for pull. |
 | `requestTimeoutMs` | `30000` | n8n API request timeout — raise for slow instances. |
+| `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the recommended key needn't carry the data-table read scopes); `data-tables clean` still works. |
 | `browserReload` | off | `"proxy"` enables the [live-reload proxy](/docs/concepts/watch-live-reload/) during watch. |
 | `proxyPort` | `5679` | Port for that proxy. |
 | `bundleDependencies` | `[]` | npm packages `.ts` nodes may import; [bundled on push](/docs/concepts/typescript-nodes/). Pure-JS only. |
@@ -46,5 +48,8 @@ CLI actually uses:
 - `workflow:create`, `workflow:delete` — [create](/docs/cli/create/), [delete](/docs/cli/delete/)
 - `workflow:activate`, `workflow:deactivate` — [publish / unpublish](/docs/cli/publish/)
 - `execution:read`, `execution:list` — the [executions](/docs/cli/executions/) verb
+- `dataTable:list`, `dataTable:read`, `dataTableColumn:read`, `dataTableRow:read`
+  — the [data-tables](/docs/cli/data-tables/) verb (only needed while
+  `dataTables` is on, its default)
 
 `check`, `node run`, `rename`, `node create`, and plain `list` need no credentials at all.

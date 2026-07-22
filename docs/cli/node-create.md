@@ -1,7 +1,7 @@
 ---
 title: node create
 description: Scaffold a disconnected Code node into a workflow, atomically and offline.
-order: 17
+order: 18
 ---
 
 ```sh

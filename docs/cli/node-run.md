@@ -1,7 +1,7 @@
 ---
 title: node run
 description: Execute a Code node offline against a faked n8n context, with optional fixtures.
-order: 19
+order: 20
 ---
 
 ```sh

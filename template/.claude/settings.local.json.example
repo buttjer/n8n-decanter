@@ -13,6 +13,8 @@
       "Bash(n8n-decanter list:*)",
       "Bash(n8n-decanter executions)",
       "Bash(n8n-decanter executions:*)",
+      "Bash(n8n-decanter data-tables)",
+      "Bash(n8n-decanter data-tables:*)",
       "Bash(n8n-decanter completion:*)",
       "Bash(n8n-decanter help)",
       "Bash(npm run typecheck)",

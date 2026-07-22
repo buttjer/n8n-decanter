@@ -1,7 +1,7 @@
 ---
 title: simulate
 description: Replay a whole workflow through a real n8n engine offline — pure nodes run for real, network nodes pinned from a capture.
-order: 14
+order: 15
 ---
 
 ```sh

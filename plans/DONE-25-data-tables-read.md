@@ -1,7 +1,9 @@
 # Plan 25 — Read data tables (dev/debug)
 
 **Priority:** P2 (valuable, moderate scope; one live-verification gate)
-**Status:** Not started
+**Status:** Done (2026-07-21 — all tasks implemented, unit + e2e + smoke green,
+docs/changelog/PLAN.md updated; endpoints + scopes live-verified on n8n 2.30.7
+*and* 2.31.4)
 **Theme:** A read-only `data-tables` verb that pulls n8n data-table schemas and
 rows into local gitignored files so you can develop/debug workflows against the
 real table contents — config-gated (default on), with the read scopes added to
@@ -81,6 +83,14 @@ scoped-key permissions**.
      so it's left decision-gated in task 6 rather than assumed.
   Resolve which surface(s) before the allowlist part of task 6 is wired; (1) is
   taken as done regardless.
+
+  **Resolved (2026-07-21):** both surfaces. The tension in (2) dissolved because
+  the precedent flipped just before this plan ran — **PR #81 added `executions`
+  to the Claude allowlist** as a "safe read" (`Bash(n8n-decanter executions)` +
+  `:*`). `data-tables` is the same class (reads the remote, never writes,
+  gitignored), so it joined the allowlist the same way (`data-tables` + `:*`),
+  and `data-tables clean` is offline like `executions clean`. Surface (1) shipped
+  as planned.
 
 ## Tasks
 
@@ -203,20 +213,27 @@ verification** (see task 7) — same discipline as Plan 20.
      the `dataTables` config key, and the read-only-by-design stance (the CLI
      never writes data tables).
 
-## Scopes (to confirm in task 7)
+## Scopes (confirmed in task 7)
 
-Researched (n8n docs, 2026-07-21) — the minimal **read** set the verb needs:
+**Live-verified 2026-07-21 against `n8nio/n8n:2.31.4` and `2.30.7`** (facts saved
+to the plan25-datatables-api-facts memory). The minimal **read** set the verb
+needs — all present and enforced:
 
 - `dataTable:list`, `dataTable:read` — list/read tables
 - `dataTableColumn:read` — read columns (schema)
 - `dataTableRow:read` — read rows
 
-**Unverified:** whether current n8n names these `dataTable:*` (docs) or the
-older internal `dataStore:*`, and whether column/row reads have distinct scopes
-or fold into `dataTable:read`. Task 6 pins the exact strings before docs ship
-them as fact. Data-table endpoints require n8n **≥ 2.x** (community reports
-"working in 2.7.0"); on older instances the fetch will 404 — surface that as a
-friendly hint, and note that a full-access key still works.
+**Resolved:** current n8n names these **`dataTable:*`** (not the older internal
+`dataStore:*`), and column/row reads have **distinct** scopes
+(`dataTableColumn:read`, `dataTableRow:read`) — they don't fold into
+`dataTable:read`. A key lacking them 403s. Data-table endpoints are present
+across the supported matrix (2.30.7 → 2.31.4); the verb still feature-detects and
+surfaces a friendly "need n8n ≥ 2.x" hint on a 404 for older/other instances,
+and a full-access key works too. Verified endpoint/field shapes: list is
+`{data,nextCursor}` (inlines columns), `/columns` is a bare array, `/rows` is
+`{data,nextCursor}` with server-side `filter`/`search`/`sortBy`/`limit`+`cursor`;
+`sortBy`'s `col:dir` value must be URL-encoded (the CLI's `URLSearchParams`
+handles it); the table `id` is an alphanumeric token, not numeric.
 
 ## Acceptance / verification
 
