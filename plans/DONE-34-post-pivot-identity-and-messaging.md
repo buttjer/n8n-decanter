@@ -2,11 +2,13 @@
 
 **Priority:** P1 (website landing — live factual drift since the pivot merged) /
 P2 (the positioning layer)
-**Status:** Open — fully unblocked. Both gates cleared 2026-07-22:
-[Plan 32](DONE-32-mcp-native-code-layer.md) executed and merged (PR #97), and
-[Plan 33](DONE-33-post-mcp-pivot-wave.md) executed and merged (PR #101 —
-`archive`, `test`, `mcp serve`; `duplicate` dropped). Nothing left to wait
-for; see Rollout for ordering.
+**Status:** Done 2026-07-22 — executed across PR #104 (README hero + compare
+reframe, website landing, docs framing, package.json + GitHub metadata) and
+PR #108 (vendored demo-GIF recorder in `website/public/gifgen/` + re-recorded
+GIFs for the post-pivot flow). Both gates had cleared: [Plan 32](DONE-32-mcp-native-code-layer.md)
+(PR #97) and [Plan 33](DONE-33-post-mcp-pivot-wave.md) (PR #101 — `archive`,
+`test`, `mcp serve`; `duplicate` dropped). The name verdict stands:
+`n8n-decanter` stays.
 **Theme:** The outward identity — name verdict, taglines, README, website
 landing, docs framing, npm/GitHub metadata, comparison positioning — retold for
 the Code-node-layer scope. **The name `n8n-decanter` stays** (decision recorded

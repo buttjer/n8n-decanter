@@ -213,7 +213,7 @@ items not yet claimed by one. Recommended order:
     template override), `simulate` kept as a differentiator with `test` as the
     recommended default (decided 2026-07-22), and the AGENTS.md MCP-facts
     update. Proposed 2026-07-22.
-34. [Post-pivot identity & messaging](OPEN-34-post-pivot-identity-and-messaging.md) —
+34. [Post-pivot identity & messaging](DONE-34-post-pivot-identity-and-messaging.md) —
     retell the outward story for the Code-node-layer scope (#97 landed the
     *accuracy* layer; this owns the *positioning* layer): positioning kit
     **signed off 2026-07-22** ("The toolkit for building code-heavy n8n
@@ -225,7 +225,8 @@ items not yet claimed by one. Recommended order:
     the challenge (2026-07-22) concluded **`n8n-decanter` stays** — the pivot
     sharpens the decanting metaphor (the code is the pour; structure stays in
     the bottle), and a rename would stack breaking churn on the pivot for zero
-    capability. Proposed 2026-07-22.
+    capability. Proposed 2026-07-22. **Done 2026-07-22** — shipped across
+    PR #104 (copy/metadata) + PR #108 (vendored GIF recorder + re-recorded GIFs).
 35. [Blind agent field test](OPEN-35-blind-agent-field-test.md) — validate the
     post-pivot product the way it's actually consumed: **blind** Sonnet coding
     agents (headless `claude -p`, no knowledge they're being evaluated) act as

@@ -7,7 +7,7 @@ decided (move the outcome into the relevant plan).
 
 ## `preflight` verb — group `check`/`simulate`/`test` under one gate? (2026-07-22)
 
-- **Context:** [Plan 34](OPEN-34-post-pivot-identity-and-messaging.md) coins
+- **Context:** [Plan 34](DONE-34-post-pivot-identity-and-messaging.md) coins
   **"preflights"** as the marketing/docs umbrella for the verification surface
   (`check`, `simulate`, Plan 33's `test` — shipped in PR #101). Decided 2026-07-22:
   vocabulary only for now — no CLI surface. You flagged you'll consider going
