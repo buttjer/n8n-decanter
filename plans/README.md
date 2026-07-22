@@ -166,10 +166,9 @@ items not yet claimed by one. Recommended order:
     give `node run` an actual execution boundary so agent-generated code is
     **safe by default** (no host `process`/`fetch`/`import()`), with `--unsafe`
     to opt back into today's full-host-access behavior. Supersedes the
-    doc-only "narrow `run`" backlog item with enforcement; the isolation
-    mechanism (worker-thread scrubbed context vs. Node permission model) is the
-    one open decision. Breaking (default execution semantics change). Proposed
-    2026-07-22.
+    doc-only "narrow `run`" backlog item with enforcement. Mechanism decided:
+    `worker_threads` scrubbed context (option A), no A/B config toggle. Breaking
+    (default execution semantics change). Proposed 2026-07-22.
 
 ## Conventions
 

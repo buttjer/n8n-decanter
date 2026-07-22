@@ -40,30 +40,34 @@ capability.
 - Pairs with the `run` faked-context fidelity item (BACKLOG, `$jmespath`): the
   emulated-global surface is the *inside* of this boundary.
 
-## Design decision — the isolation mechanism (needs sign-off)
+## Design decision — the isolation mechanism (DECIDED: A, 2026-07-22)
 
 The boundary must block `process`/`fetch`/`import()`/`globalThis` while keeping
 the emulated n8n globals (`$input`, `$json`, `DateTime`, …) and the returned
-value. Options, cheapest first:
+value. **Decided: option A, single mechanism — no config toggle between A and
+B.** The two are not one code path with a setting; they are distinct execution
+backends (A runs the body in-process in a worker; B re-spawns the whole CLI as a
+child `node --permission …` and marshals node file/fixture/result across a
+process boundary), so "support both behind a config" would mean two full
+implementations + two test suites, not a small switch (user decision
+2026-07-22: not worth it → ship A only).
 
-- **A — `node:worker_threads` with a scrubbed context (recommended).** Run the
+- **A — `node:worker_threads` with a scrubbed context (CHOSEN).** Run the
   body in a worker whose globals are curated: no `process`, `require`, or
   `import`; `fetch`/network off; only the serialized `buildGlobals` payload
   injected. Structured-clone boundary means the fixture and return value cross
-  cleanly. Pure-JS, no new dep, no flag on the Node binary. Weaknesses: worker
-  startup cost per run; care needed that no capability leaks through the global
-  set.
-- **B — Node permission model (`--permission`/`--allow-fs-read` etc.).**
-  Re-spawn `run` as a child `node` with `--permission` denying fs/net. Stronger
-  (engine-enforced), but process-level: it constrains the *whole* re-spawned
-  CLI, complicating how we hand back the result, and the flag surface is still
-  stabilizing across Node 22/24.
+  cleanly. Pure-JS, no new dep, no flag on the Node binary. Accepted trade-offs:
+  worker startup cost per run; care needed that no capability leaks through the
+  global set; it raises the bar sharply but is **not** a hard VM/container jail
+  — that stays `simulate`'s Docker `--network none` job ([Plan 7](OPEN-7-engine-true-simulation-suite.md)).
+- **B — Node permission model (`--permission`/`--allow-fs-read` etc.).** Not
+  chosen. Re-spawn `run` as a child `node` with `--permission` denying fs/net —
+  engine-enforced and stronger, but process-level (constrains the *whole*
+  re-spawned CLI, complicating result hand-back) and the flag surface is still
+  stabilizing across Node 22/24. Kept here only as the rationale for A; revisit
+  only if A's boundary proves insufficient.
 - **C — `vm` module.** Rejected: `vm` is explicitly **not a security boundary**
   (Node docs) — `this.constructor.constructor("return process")()` escapes.
-
-**Recommendation: A**, with the boundary quality documented honestly (it raises
-the bar sharply but is not a hard VM/container jail — that's `simulate`'s
-Docker `--network none` job, Plan 7). Confirm before implementation.
 
 ## Tasks
 
@@ -121,6 +125,6 @@ Docker `--network none` job, Plan 7). Confirm before implementation.
 - **Breaking:** the default flips from "full host access" to "sandboxed," so a
   node relying on host `process`/`fetch` now needs `--unsafe`. While 0.x, a
   breaking change is a minor bump per AGENTS.md.
-- Mechanism (A vs B) is the one open decision — surface to the user before
-  implementing; record the outcome here and clear it from
-  [DECISIONS-NEEDED.md](DECISIONS-NEEDED.md) if it lands there.
+- Mechanism decided (2026-07-22): **option A only, no A/B config toggle** —
+  supporting both would be two backends + two test suites, not a small switch.
+  No open decisions remain; the plan is ready to implement.
