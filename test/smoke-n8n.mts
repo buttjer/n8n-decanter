@@ -149,7 +149,6 @@ const seedWorkflow = () => ({
 
 let wfId = "";
 let wfDir = ""; // resolved after the first pull
-let computeFile = "compute.js"; // tracked across rename/convert steps
 
 // ---------- run ----------
 try {
@@ -263,7 +262,6 @@ try {
       "interface Payload { n?: number }\nconst body = $input.first().json.body as Payload;\nconst n = Number(body.n ?? 0);\nreturn [{ json: { doubled: n * 2 } }];\n");
     writeFileSync(path.join(wfDir, "workflow.json"),
       read(wfDir, "workflow.json").replace("//@file:code/compute.js", "//@file:code/compute.ts"));
-    computeFile = "compute.ts";
     let r = await cli("push");
     assert.equal(r.code, 0, r.out);
     const remote = await api("GET", `/api/v1/workflows/${wfId}`);
@@ -292,7 +290,7 @@ try {
       "return [{ json: { doubled: double(n), plus: add(n, 100) } }];",
       "",
     ].join("\n"));
-    let r = await cli("push");
+    const r = await cli("push");
     assert.equal(r.code, 0, r.out);
     await api("POST", `/api/v1/workflows/${wfId}/activate`);
     const out = await webhook({ n: 21 }); // its own bounded poll covers webhook registration lag
@@ -799,7 +797,7 @@ try {
     // result matches the *recorded live output*.
     const page = await api("GET", `/api/v1/executions?includeData=true&status=success&limit=1&workflowId=${wfId}`);
     const runData = page.data[0].data.resultData.runData;
-    const input = runData["Webhook"][0].data.main[0];           // what the Code node received
+    const input = runData.Webhook[0].data.main[0];              // what the Code node received
     const recordedOut = runData["Ümläut Nödé"][0].data.main[0]; // what it produced live
     const n = Number(input[0].json.body.n ?? 0);
     const fixture = path.join(TMP, "captured.fixture.json");
