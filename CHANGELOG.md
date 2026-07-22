@@ -89,6 +89,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Scaffolded `.mcp.json` now uses n8n's official read-only docs MCP.**
+  `init` wires the first-party `n8n-docs` server
+  (`https://docs.n8n.io/~gitbook/mcp`, public, no auth) instead of the
+  community `n8n-mcp` server. It's docs-only and can't reach your instance,
+  so it can't bypass the `mcp serve` guard-proxy — live workflow access
+  goes through the proxy, and this server is just the no-instance knowledge
+  fallback. The scaffolded Claude Code allowlist pre-approves it
+  (`mcp__n8n-docs`) plus the offline/read verbs `pull`, `mock`, and
+  `simulate`; instance-mutating verbs still prompt.
 - **`create` validates before creating** — the generated Workflow-SDK
   expression now passes the server's `validate_workflow` gate before
   `create_workflow_from_code`, surfacing the server's errors and hint
