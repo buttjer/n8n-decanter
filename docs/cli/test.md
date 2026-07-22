@@ -25,9 +25,14 @@ trigger/network node with no captured output **aborts before anything
 runs** — an unpinned one would hit the real world. `--trigger <node>` picks
 the start trigger in multi-trigger workflows.
 
-## Which check when?
+## Preflights — which one when?
 
-| Check | Where it runs | What it needs | Reach for it when |
+**Preflights** are decanter's three ways to verify a workflow before you ship
+it: `check` (static, offline), `simulate` (offline engine replay), and `test`
+(instance-side pinned run). All are CI-gateable — the two runtime ones diff
+every node against a real capture and exit 1 on divergence.
+
+| Preflight | Where it runs | What it needs | Reach for it when |
 | --- | --- | --- | --- |
 | [check](/docs/cli/check/) | locally, static | nothing | every edit — layout + types, offline |
 | **`test`** (recommended) | **your instance**, runtime | MCP + a capture/mock | the default runtime check: instance-exact engine, community nodes, no Docker |
