@@ -528,12 +528,16 @@ try {
       // normalizes quotes), so match the value, not the source spelling
       assert.match(remote.nodes.find((n: any) => n.id === "c1").parameters.jsCode, /watched/, "draft carries the save");
       assert.equal(remote.activeVersionId, liveBefore, "…and the LIVE version is untouched (draft-only)");
-      // a workflow.json save warns once and pushes nothing
+      // a workflow.json save warns once and pushes nothing — assert the
+      // no-push half on the REAL server too (Plan 33): the draft versionId
+      // must not move, proving no update_workflow was issued
       const wfJson = path.join(wfDir, "workflow.json");
+      const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
       const logCount = logs.length;
       writeFileSync(wfJson, read(wfJson));
       await sleep(1500);
       assert.ok(logs.slice(logCount).some((m) => m.includes("read-only structure snapshot")), "snapshot warning:\n" + logs.join("\n"));
+      assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "workflow.json save pushed nothing — draft versionId unchanged");
     } finally {
       await handle.close();
     }
@@ -627,6 +631,9 @@ try {
     assert.match(r.out, /unpublished "Smoke Lifecycle" \([^)]+\) — draft only/);
     remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.active, false, "unpublish returned it to draft-only");
+    // Plan 33: assert the AFTER-unpublish shape too (only the born-unpublished
+    // case was pinned before) — the real server nulls activeVersionId
+    assert.equal(remote.activeVersionId, null, "unpublish clears activeVersionId on the real server");
 
     // archive needs a ref (never touches config)
     r = await cli("archive");

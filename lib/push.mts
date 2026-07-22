@@ -110,12 +110,14 @@ async function collectOps(
     if (codeDrift(remoteHash, hash, ns.lastPushedHash)) {
       problems.push(`node "${node.name}": remote code changed since last sync`);
     }
-    // A body-equal write is still needed when a freshly converted .ts node's
-    // marker hasn't landed remotely yet — pushing registers the node as
-    // TS-managed (PLAN.md's marker contract; makes pull's "the next push
-    // overwrites" warning true in the no-marker state).
+    // A body-equal write is still needed when the marker state disagrees with
+    // the file kind (Plan 33): a freshly converted .ts node whose marker
+    // hasn't landed yet pushes to REGISTER TS management, and a node
+    // re-pointed back to .js whose remote still carries a marker pushes to
+    // CLEAR it (otherwise the next pull would resurrect the node as .ts).
     const missingMarker = ns.file.endsWith(".ts") && remoteSplit.markerHash === null;
-    if (hash === remoteHash && !missingMarker) continue; // already in sync — no write needed
+    const strayMarker = ns.file.endsWith(".js") && remoteSplit.markerHash !== null;
+    if (hash === remoteHash && !missingMarker && !strayMarker) continue; // already in sync — no write needed
     ops.push({ type: "updateNodeParameters", nodeName: node.name, parameters: { jsCode } });
   }
   if (!onlyNodeIds) {

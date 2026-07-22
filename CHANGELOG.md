@@ -66,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.ts` node's compiled code already matches the remote but the marker is
   gone (e.g. rewritten in the UI), push writes the node anyway so it is
   recognized as TS-managed again (previously skipped as "in sync").
+- **Converting a `.ts` node back to `.js` is now supported symmetrically:**
+  replace the file, re-point its `//@file:` placeholder, and push — the
+  push clears the remote `@ts-n8n` marker even when the code is otherwise
+  identical, so the node stops being TS-managed (previously the stale
+  marker made the next pull resurrect the node as `.ts`).
 - **`mock create` strips the capture's embedded `workflowData`** — committed
   mocks no longer duplicate every Code node's source in git; the compliance
   guard warns about legacy mocks that still embed it, and it now also flags

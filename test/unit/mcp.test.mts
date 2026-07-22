@@ -17,6 +17,7 @@ import {
   readAuthFile,
   refreshAccessToken,
   resolveMcpAuth,
+  runOAuthConsent,
   writeAuthFile,
 } from "../../lib/mcp.mts";
 import type { Log } from "../../lib/types.mts";
@@ -556,6 +557,242 @@ describe("client resilience", () => {
       session = "sess-2"; // the re-handshake mints a new session
       const out = await mcp.callTool<{ ok: boolean }>("probe", {});
       assert.equal(out.ok, true, "one transparent re-initialize instead of the 404 error");
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("#rpc edge branches", () => {
+  it("skips malformed data: SSE lines and still finds the matching message", async () => {
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          res.writeHead(200, { "content-type": "text/event-stream" }).end(
+            `data: {broken json\n` +
+            `data: ${JSON.stringify({ jsonrpc: "2.0", id: 999999, result: { content: [{ type: "text", text: '{"wrong":true}' }] } })}\n` +
+            `data: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: '{"ok":true}' }] } })}\n\n`,
+          );
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      assert.deepEqual(await mcp.callTool("probe", {}), { ok: true }, "malformed + wrong-id lines skipped");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("surfaces a JSON-RPC error member and the no-response-message case", async () => {
+    let mode: "error" | "empty" = "error";
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          if (mode === "error") {
+            return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32000, message: "tool exploded" } }));
+          }
+          res.writeHead(200, { "content-type": "text/event-stream" }).end(": nothing but a comment\n\n");
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      await assert.rejects(mcp.callTool("probe", {}), /MCP tools\/call error: tool exploded/);
+      mode = "empty";
+      await assert.rejects(mcp.callTool("probe", {}), /MCP tools\/call: no response message/);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("maps a non-401/404/429 status to the generic failure with the body excerpt", async () => {
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/mcp-server/http") return false;
+        let body = "";
+        req.on("data", (c) => (body += c));
+        req.on("end", () => {
+          const msg = JSON.parse(body);
+          if (msg.method === "initialize") return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }));
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          res.writeHead(500).end("boom from n8n");
+        });
+        return true;
+      },
+    });
+    try {
+      const mcp = new McpClient({ host: srv.host, auth: { kind: "bearer", token: "x" } });
+      await assert.rejects(mcp.callTool("probe", {}), /MCP tools\/call failed: 500[\s\S]*boom from n8n/);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("runOAuthConsent (init's browser flow)", () => {
+  /**
+   * A scripted OAuth server: register mints a client id; the token endpoint
+   * verifies code+PKCE-verifier presence and answers a full token pair. The
+   * TEST plays the browser via the injectable `openBrowser` hook — it parses
+   * the authorize URL and drives the CLI's localhost callback.
+   */
+  async function consentServer(opts: { tokenOk?: boolean } = {}) {
+    const seen: { register?: Record<string, unknown>; token?: URLSearchParams } = {};
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url === "/.well-known/oauth-authorization-server") {
+          res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+            authorization_endpoint: "http://internal/mcp-oauth/authorize",
+            token_endpoint: "http://internal/mcp-oauth/token",
+            registration_endpoint: "http://internal/mcp-oauth/register",
+          }));
+          return true;
+        }
+        if (req.url === "/mcp-oauth/register") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            seen.register = JSON.parse(body);
+            res.writeHead(201, { "content-type": "application/json" }).end(JSON.stringify({ client_id: "client-1" }));
+          });
+          return true;
+        }
+        if (req.url === "/mcp-oauth/token") {
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            seen.token = new URLSearchParams(body);
+            if (opts.tokenOk === false) {
+              res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
+              return;
+            }
+            res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+              access_token: "acc-1", token_type: "Bearer", expires_in: 3600, refresh_token: "ref-1",
+            }));
+          });
+          return true;
+        }
+        return false;
+      },
+    });
+    return { srv, seen };
+  }
+
+  const silentLog: Log = { info() {}, ok() {}, warn() {}, error() {} };
+
+  it("happy path: register → browser consent → callback → PKCE token exchange", async () => {
+    const { srv, seen } = await consentServer();
+    try {
+      const { clientId, tokens } = await runOAuthConsent(srv.host, {
+        log: silentLog,
+        openBrowser: (url) => {
+          const u = new URL(url);
+          assert.equal(u.searchParams.get("client_id"), "client-1");
+          assert.equal(u.searchParams.get("code_challenge_method"), "S256");
+          const redirect = new URL(u.searchParams.get("redirect_uri")!);
+          redirect.searchParams.set("code", "auth-code-1");
+          redirect.searchParams.set("state", u.searchParams.get("state")!);
+          void fetch(redirect); // the browser "approving" consent
+        },
+      });
+      assert.equal(clientId, "client-1");
+      assert.equal(tokens.accessToken, "acc-1");
+      assert.equal(tokens.refreshToken, "ref-1");
+      assert.equal(seen.token!.get("grant_type"), "authorization_code");
+      assert.equal(seen.token!.get("code"), "auth-code-1");
+      assert.ok((seen.token!.get("code_verifier") ?? "").length >= 40, "PKCE verifier sent");
+      assert.deepEqual(seen.register!.grant_types, ["authorization_code", "refresh_token"], "refresh grant registered");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("rejects a state mismatch (CSRF) without exchanging the code", async () => {
+    const { srv, seen } = await consentServer();
+    try {
+      await assert.rejects(
+        runOAuthConsent(srv.host, {
+          log: silentLog,
+          openBrowser: (url) => {
+            const u = new URL(url);
+            const redirect = new URL(u.searchParams.get("redirect_uri")!);
+            redirect.searchParams.set("code", "auth-code-1");
+            redirect.searchParams.set("state", "attacker-state");
+            void fetch(redirect);
+          },
+        }),
+        /browser consent failed \(state mismatch\)/,
+      );
+      assert.equal(seen.token, undefined, "no token exchange on a bad state");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("surfaces an error redirect (user denied consent)", async () => {
+    const { srv } = await consentServer();
+    try {
+      await assert.rejects(
+        runOAuthConsent(srv.host, {
+          log: silentLog,
+          openBrowser: (url) => {
+            const u = new URL(url);
+            const redirect = new URL(u.searchParams.get("redirect_uri")!);
+            redirect.searchParams.set("error", "access_denied");
+            redirect.searchParams.set("state", u.searchParams.get("state")!);
+            void fetch(redirect);
+          },
+        }),
+        /browser consent failed \(access_denied\)/,
+      );
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("times out when the browser consent never arrives", async () => {
+    const { srv } = await consentServer();
+    try {
+      await assert.rejects(
+        runOAuthConsent(srv.host, { log: silentLog, openBrowser: () => {}, consentTimeoutMs: 80 }),
+        /timed out waiting for the browser consent.*N8N_MCP_TOKEN/s,
+      );
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("propagates a failed token exchange after a good consent", async () => {
+    const { srv } = await consentServer({ tokenOk: false });
+    try {
+      await assert.rejects(
+        runOAuthConsent(srv.host, {
+          log: silentLog,
+          openBrowser: (url) => {
+            const u = new URL(url);
+            const redirect = new URL(u.searchParams.get("redirect_uri")!);
+            redirect.searchParams.set("code", "auth-code-1");
+            redirect.searchParams.set("state", u.searchParams.get("state")!);
+            void fetch(redirect);
+          },
+        }),
+        /OAuth token exchange failed \(invalid_grant\)/,
+      );
     } finally {
       await srv.close();
     }

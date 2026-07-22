@@ -183,12 +183,17 @@ Task 1 (MCP re-expression; no hard delete in decanter).
    release, with named debts* — three sound layers: unit client coverage, 73
    e2e steps over a faithful dual REST+MCP mock incl. both SSE and plain-JSON
    parser branches, 28 smoke steps on the real container). Priority order:
+   *(Items 1–8 done 2026-07-22 except the one sub-item noted in 1; item 9
+   decided + implemented — see below.)*
    1. **OAuth consent flow** — the headline TTY auth path ships on **zero
       coverage** (`runOAuthConsent` referenced only by `init`); scripted
       `/mcp-oauth/register|authorize|token` server + the injectable
       `openBrowser` hook (built for tests, used by none): success,
       state-mismatch, error-redirect, consent-timeout, init's
-      fall-back-to-paste branch.
+      fall-back-to-paste branch. *(Done except the init fall-back-to-paste
+      branch: `createPrompt` binds `process.stdin` directly, so that 4-line
+      catch needs a prompt-injection seam in init — deferred as the one
+      remaining Task 3 debt rather than refactoring init mid-plan.)*
    2. **429 backoff unit test** — with/without Retry-After then 200; retry
       count, delay source, 5-retry cap. No test at any level sends a 429; the
       code ships on a "verified live" comment.
@@ -210,9 +215,13 @@ Task 1 (MCP re-expression; no hard delete in decanter).
       level (only the warning text is asserted; the no-push half lives in e2e).
    9. Decide + pin the ts→js reverse re-pointing story (js→ts is tested twice;
       the reverse is neither tested nor documented — support it or refuse it
-      in the guard). Optional: drive the OAuth kind once against the real
+      in the guard). *(Decided 2026-07-22: SUPPORTED symmetrically — a
+      body-equal push with a stray remote marker still writes, clearing the
+      marker; e2e-tested + documented with a "push before pulling again"
+      caveat.)* Optional: drive the OAuth kind once against the real
       container via the spike's headless consent, or record bearer-only smoke
-      as the accepted contract.
+      as the accepted contract. *(Optional half not taken: bearer-only smoke
+      remains the accepted contract.)*
 4. **Guard-proxy stack** — technical enforcement of the Code-node boundary
    (decided 2026-07-22; the landed contract is instructions-only). Three
    layers, shipped together:

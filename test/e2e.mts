@@ -1801,6 +1801,25 @@ await step("executions clean: removes the dirs, credentials-free", async () => {
   }
 });
 
+await step("requireApiKey at the CLI surface: an API-only verb without N8N_API_KEY exits 1, naming the verb", async () => {
+  const savedEnv = env;
+  env = { ...savedEnv };
+  delete env.N8N_API_KEY; // MCP credentials stay — only the REST key is absent
+  try {
+    let r = await cli("executions", "wf123");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /`executions` uses the n8n public REST API \(MCP does not cover it\) — set N8N_API_KEY/);
+    r = await cli("data-tables");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /`data-tables` uses the n8n public REST API/);
+    // the MCP-only path is untouched by the missing key
+    r = await cli("status", "wf123");
+    assert.equal(r.code, 0, "MCP verbs run without an API key: " + r.out);
+  } finally {
+    env = savedEnv;
+  }
+});
+
 const dtDir = path.join(TMP, "data-tables");
 
 await step("data-tables: fetches schema + rows into a self-gitignored top-level dir; filters narrow server-side", async () => {
@@ -2103,6 +2122,32 @@ await step("node create: Code node born in n8n over MCP (addNode), landed by pul
   assert.match(r.out, /node create needs exactly one node name/);
 
   assert.equal(db.get(id).nodes.filter((n: any) => n.type === "n8n-nodes-base.code").length, 3, "three code nodes live in n8n");
+});
+
+await step("convert a .ts node back to .js: re-point + body-equal push clears the remote marker (Plan 33)", async () => {
+  const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
+  const dir = wfDir("Authoring Demo");
+  const remoteJs = () => db.get(id).nodes.find((n: any) => n.name === "Typed Step").parameters.jsCode as string;
+  assert.match(remoteJs(), /\/\/ @ts-n8n sha256:/, "precondition: TS-managed remotely");
+  // the sharpest case: the new .js is byte-identical to the remote compiled
+  // body — only the marker state differs, and push must STILL write to clear it
+  const body = remoteJs().replace(/\/\/ @ts-n8n sha256:[0-9a-f]+\s*$/, "");
+  rmSync(path.join(dir, "code", "typed-step.ts"));
+  writeFileSync(path.join(dir, "code", "typed-step.js"), body);
+  const wf = JSON.parse(read(dir, "workflow.json"));
+  wf.nodes.find((n: any) => n.name === "Typed Step").parameters.jsCode = "//@file:code/typed-step.js";
+  writeFileSync(path.join(dir, "workflow.json"), JSON.stringify(wf, null, 2));
+  let r = await cli("push", id);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /pushed/, "body-equal stray-marker node is still written: " + r.out);
+  assert.equal(remoteJs(), body, "marker cleared, body verbatim");
+  // pull keeps the .js — no .ts resurrection once the marker is gone
+  r = await cli("pull", id);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(existsSync(path.join(dir, "code", "typed-step.js")), ".js survives the pull");
+  assert.ok(!existsSync(path.join(dir, "code", "typed-step.ts")), "no .ts resurrected");
+  r = await cli("check", id);
+  assert.equal(r.code, 0, "converted layout stays compliant: " + r.out);
 });
 
 await step("removed verbs: delete and duplicate are gone (Plan 33) — unknown-verb error, remote untouched", async () => {

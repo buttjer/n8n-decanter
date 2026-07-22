@@ -327,7 +327,9 @@ on the next `pull`.
   compiles it (esbuild, comments stripped) and appends a
   `// @ts-n8n sha256:...` marker line; `pull` never touches the `.ts`.
   To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
-  its `//@file:` placeholder in `workflow.json` to the `.ts` name.
+  its `//@file:` placeholder in `workflow.json` to the `.ts` name. Converting
+  back works the same way (`.ts` → plain `.js` + re-point); the next push
+  clears the remote marker — push before pulling again.
 - `shared/*.ts` — helpers and types **imported by `.ts` nodes** (values and
   types); push bundles the imports into the compiled node, so the pushed
   code is self-contained and runs anywhere — n8n Cloud included, no
