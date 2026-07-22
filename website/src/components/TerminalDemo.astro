@@ -45,7 +45,7 @@
       { name: "Invoice Sync", id: "wf_9pLx", pulled: true },
       { name: "Lead Enrichment", id: "wf_3mAz", pulled: false },
     ];
-    const verbs = ["status", "pull", "push", "watch", "check", "executions", "simulate"];
+    const verbs = ["status", "pull", "push", "watch", "check", "test", "executions", "simulate"];
 
     const prompt = (cmd: string, cur = false) =>
       `<div><span class="pmt">➜</span> <span class="dir">~/my-n8n</span> ${cmd}${cur ? '<span class="cur">█</span>' : ""}</div>`;
