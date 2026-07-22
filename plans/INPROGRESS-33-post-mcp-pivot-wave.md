@@ -10,7 +10,8 @@ the tasks below. Plan 32 / [DONE-32](DONE-32-mcp-native-code-layer.md) itself
 stays untouched.
 **Theme:** Everything queued behind the MCP pivot, now grounded in the *actual*
 execution: re-express the lifecycle verbs the execution kept on REST
-(**decided**: `archive` replaces `delete`, `duplicate` goes MCP), fix the
+(**decided**: `archive` replaces `delete`; `duplicate` dropped — revised
+2026-07-22 from "goes MCP"), fix the
 defects and close the test debts the review found, then ship the follow-up
 wave — the `test` verb, the guard-proxy stack, and the `simulate` keep/drop
 decision.
@@ -24,7 +25,7 @@ the diff (each finding adversarially re-verified) answered the review-gate
 questions this plan originally carried, so the gate is replaced by its
 **outcome** (below). What remains is: the maintainer's override of the two
 places the execution stayed on REST (decided 2026-07-22: MCP `archive`
-replaces `delete`, `duplicate` moves to the SDK-code path — Task 1), a set of
+replaces `delete`; `duplicate` dropped — Task 1), a set of
 verified defects/debts, and the follow-up features that only make sense on
 the MCP foundation.
 
@@ -95,7 +96,8 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 
 1. **Re-express lifecycle on MCP — DECIDED (maintainer 2026-07-22, overriding
    the execution's counter-rationales): `archive` replaces `delete`; `duplicate`
-   moves to the MCP SDK-code path. No hard delete in decanter.**
+   ~~moves to the MCP SDK-code path~~ **dropped** (revised mid-execution, see
+   its bullet). No hard delete in decanter.** *(Done 2026-07-22.)*
    - **`archive` replaces `delete` (Breaking: verb removed).** Drop the REST
      hard-delete verb entirely; new `archive` verb on MCP `archive_workflow`
      (same confirmation gate: TTY y/N naming workflow+id, non-TTY refuses
@@ -109,24 +111,26 @@ Task 1 (MCP re-expression; no hard delete in decanter).
      PLAN.md decision update. Side effect: the `docs/cli/overview.md`
      draft-acts grouping nit resolves itself (`archive` genuinely isn't a
      draft act either — give it its own annotation).
-   - **`duplicate` re-based on MCP:** local folder (incl. unpushed edits —
-     keep the executed property) → **generate n8n Workflow SDK code** (lean on
-     `get_sdk_reference`/`get_node_types`) → **`validate_workflow`
-     iterate-on-errors loop** (its `valid`/`warnings` (node name + parameter
-     path)/`errors`/`hint` output is shaped for exactly this) →
-     `create_workflow_from_code`. The executor's lossiness concern is
-     accepted as a *risk to manage, not a blocker*: anything the SDK bridge
-     cannot express fails loudly in the validate loop rather than cloning
-     silently wrong, and **fidelity is an acceptance criterion** (see
-     Acceptance: pull the clone back, compare code-stripped canonical
-     structure + byte-exact jsCode against the source folder). Wins: the copy
-     is **born `availableInMCP`** (the whole enable-MCP-on-the-copy guidance
-     flow disappears), and `duplicate` stops needing the API key — the
-     API-only surface shrinks to `executions` + `data-tables` fetches.
-   - **Route `create` through the same `validate_workflow` loop** once it
-     exists (cheap; makes AGENTS.md's "must pass validate_workflow first"
-     spike claim true instead of needing softening — adjust Task 7
-     accordingly).
+   - **`duplicate`: DROPPED entirely (decision revised mid-execution,
+     maintainer 2026-07-22).** The original re-base plan (generate SDK code →
+     `validate_workflow` loop → `create_workflow_from_code`, fidelity gate on
+     pull-back) hit a fork at execution time: the only faithful generator is
+     n8n's own `@n8n/workflow-sdk` npm package (`generateWorkflowCode`,
+     verified working) — but it is Sustainable-Use-licensed and drags a
+     ~20 MB dependency tree (incl. `n8n-workflow`) into the MIT CLI for one
+     verb, while a hand-rolled emitter risks silently-wrong wiring (the
+     restricted DSL has no documented explicit-connection syntax). Since a
+     **full JSON copy is impossible over MCP** (no full-JSON create tool),
+     the maintainer chose to drop the verb rather than keep the API
+     dependency or accept either bridge. The n8n UI duplicates natively;
+     decanter pulls the copy. Same win stands: the API-only surface shrinks
+     to `executions` + `data-tables` fetches.
+   - **Route `create` through `validate_workflow`** — done standalone (the
+     duplicate loop it was meant to reuse no longer exists): the minimal
+     `workflow('<slug>','<name>')` expression passes the server gate before
+     `create_workflow_from_code`; errors + `hint` surface verbatim. Makes
+     AGENTS.md's "must pass validate_workflow first" spike claim true —
+     adjust Task 7 accordingly.
 2. **Hardening fixes from the review** (each verified in the diff;
    file:line refs are PR-head):
    - **HIGH — refresh-token race (single-use rotation):** no in-process mutex
@@ -301,13 +305,11 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 ## Acceptance / verification
 
 - Task 1: `delete` gone, `archive` present (MCP `archive_workflow`), both with
-  **Breaking:** changelog entries and the full docs trio; `duplicate` runs the
-  SDK-code path with the `validate_workflow` loop and **passes the fidelity
-  check** — clone pulled back and compared against the source folder:
-  code-stripped canonical structure equal, every Code node's jsCode
-  byte-exact; `duplicate` no longer requires `N8N_API_KEY` (API-only surface
-  = `executions` + `data-tables` fetches); no surface (code, README, docs,
-  PLAN.md, template) left contradicting the decision.
+  **Breaking:** changelog entries and the full docs trio; `duplicate` gone
+  (**revised decision** — dropped entirely, Breaking changelog entry, docs
+  page removed); the API-only surface = `executions` + `data-tables` fetches;
+  `create` gated by `validate_workflow`; no surface (code, README, docs,
+  PLAN.md, template) left contradicting the decisions.
 - Task 2 HIGH fix verified by the Task 3.3 concurrent-refresh test; the
   remaining hardening items each land with a unit/e2e assertion where
   testable.

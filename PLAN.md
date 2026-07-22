@@ -27,8 +27,8 @@ n8n-decanter/
   decanter.config.json
   n8n-decanter.mts        # CLI entry (verb-first: `n8n-decanter <verb> …`):
                           #   init | pull | push | status | check | rename |
-                          #   watch | create | duplicate | publish | unpublish |
-                          #   delete | list | executions | data-tables |
+                          #   watch | create | publish | unpublish |
+                          #   archive | list | executions | data-tables |
                           #   simulate | completion + namespaces:
                           #   node (create|rename|run), mock (create|check)
   lib/                    # implementation: add, api, compile, config, datatables,
@@ -77,17 +77,24 @@ n8n-decanter/
   pull the result. The framing that keeps the boundary honest: sync verbs
   touch only Code-node source; ref verbs *relay deliberate user acts* to
   n8n — decanter still never owns structure.
-- **Per-verb API decisions (Plan 32 Task 4):** `publish`/`unpublish`/`create`
-  re-based onto MCP (`create_workflow_from_code` with the minimal
-  `workflow('<slug>', '<name>')` SDK expression; MCP-created workflows are
-  born `availableInMCP`, so the follow-up pull works). `duplicate` **stays on
-  the public API** — MCP's only creation path is SDK *code*, and re-expressing
-  an arbitrary pulled JSON graph as SDK code is a lossy transformation the
-  lossless `POST /workflows` avoids; the API-born copy is MCP-gated until the
-  user flips its flag (the CLI says so). `delete` **stays on the public API**
-  — MCP offers only `archive_workflow`, and the verb's contract is the real
-  hard delete. `executions` and `data-tables` stay on the API (no MCP row
-  reads; execution reads existed only partially at spike time).
+- **Per-verb API decisions (Plan 32 Task 4, revised by Plan 33):**
+  `publish`/`unpublish`/`create` re-based onto MCP
+  (`create_workflow_from_code` with the minimal `workflow('<slug>',
+  '<name>')` SDK expression, gated by `validate_workflow` since Plan 33;
+  MCP-created workflows are born `availableInMCP`, so the follow-up pull
+  works). `executions` and `data-tables` stay on the API (no MCP row reads).
+- **Plan 33 (2026-07-22, maintainer decision): no hard delete and no clone in
+  decanter.** The Plan 32 execution had kept `delete` (REST hard delete) and
+  `duplicate` (lossless REST `POST /workflows`); both verbs are **gone**.
+  `archive` (MCP `archive_workflow`) replaces `delete` with the same consent
+  gate — reversible in the n8n UI, which also owns permanent deletion.
+  `duplicate` was **dropped rather than re-based**: MCP has no lossless
+  full-JSON create (only SDK-code creation), and the candidate SDK-code
+  bridge — n8n's own `@n8n/workflow-sdk` npm generator — would have added a
+  ~20 MB Sustainable-Use-licensed dependency tree to an MIT CLI for one verb;
+  a hand-rolled emitter risked silent wiring divergence. The n8n UI
+  duplicates natively; decanter pulls the copy. Consequence: the API-only
+  surface is exactly `executions` + `data-tables` fetches.
 - **esbuild** compiles `.ts` node files (`bundle: false`, `format: "cjs"`,
   `target: node18`). Comments are stripped and lines shift — accepted.
   Consequence: instance-side edits on TS nodes can't be auto-merged back into
@@ -267,10 +274,10 @@ at 10 s), `dataTables` (default `true`, plans/25), `bundleDependencies`
 `5679`).
 
 Credentials (Plan 32): `N8N_HOST` is required for online verbs; MCP
-credentials (env token or auth file) power the sync/structure verbs;
-`N8N_API_KEY` is **optional** and guarded per-verb (`requireApiKey` names the
-verb in its error) — only `executions`, `data-tables`, `duplicate`, `delete`
-need it. `loadConfig`'s old `requireCredentials` became `requireHost`.
+credentials (env token or auth file) power the sync/structure/lifecycle
+verbs; `N8N_API_KEY` is **optional** and guarded per-verb (`requireApiKey`
+names the verb in its error) — only `executions` and `data-tables` need it
+(Plan 33). `loadConfig`'s old `requireCredentials` became `requireHost`.
 
 ## Workflow refs & CLI output (plans/11)
 
@@ -417,17 +424,22 @@ Typecheck gate: unchanged (see Type checking; scoping, template verify hook).
   no-op when `activeVersionId === versionId`; a diverged draft re-publishes.
 - **`create "<name>"`** → MCP `create_workflow_from_code` with
   `workflow("<kebab-slug>", "<name>")` (the minimal SDK expression — a bare
-  expression, top-level `return` is rejected by the SDK parser), then pull
-  (MCP-born workflows are auto-available). Born unpublished. The born-in-n8n
-  rule holds — the server assigns the id.
-- **`duplicate <workflow> ["<name>"]`** → public API `POST /workflows` with
-  the body assembled from the local folder (placeholders reconstituted,
-  `.ts` compiled — lossless, including unpushed edits), then a *tried* pull:
-  the API-born copy is MCP-gated, so the refusal becomes guidance ("enable,
-  then `pull <id>`") instead of an error. Needs `N8N_API_KEY`.
-- **`delete <workflow> [--force]`** → public API hard delete, unchanged
-  semantics (y/N prompt, `--force` for non-interactive, local folder kept,
-  stale config entry flagged). Needs `N8N_API_KEY`.
+  expression, top-level `return` is rejected by the SDK parser), gated by a
+  `validate_workflow` call first (Plan 33 — a rejected expression surfaces
+  the server's errors + hint and never reaches create), then pull (MCP-born
+  workflows are auto-available). Born unpublished. The born-in-n8n rule
+  holds — the server assigns the id.
+- **`archive <workflow> [--force]`** → MCP `archive_workflow` (Plan 33 — the
+  replacement for the API-era hard `delete`; `duplicate` was dropped
+  outright, see "Decisions made"). Same consent semantics the delete verb
+  had: TTY y/N prompt naming workflow + id (plus a "currently published —
+  archiving takes it offline" warning when live), `--force` for
+  non-interactive, local folder kept, stale config entry flagged, one
+  workflow per call. Reversible in the n8n UI (Archived filter), which also
+  owns permanent deletion. Archived workflows refuse all MCP access
+  (server-side archived-first gate: "archived and cannot be accessed"), so
+  the pre-archive `get_workflow_details` read doubles as the
+  not-already-archived check.
 
 ## Execution datasets (`executions`, plans/3 C) and data tables (plans/25)
 
@@ -483,8 +495,8 @@ Bootstraps a sync directory. Plan 32 made it OAuth-first:
    failure falls back to a paste-a-token prompt. Piped/non-TTY runs skip the
    browser and go straight to the token prompt — init stays scriptable
    (`printf "host\ntoken\nkey\n" | n8n-decanter init`).
-3. **Optional API key** prompt (Enter to skip) — executions / data-tables /
-   duplicate / delete only.
+3. **Optional API key** prompt (Enter to skip) — executions / data-tables
+   only (Plan 33).
 4. `.env` is rewritten preserving unknown keys (comments are not preserved);
    template copy (modification-aware manifest machinery, unchanged — see
    below), `decanter.config.json` scaffold, `.gitignore` (now also covering

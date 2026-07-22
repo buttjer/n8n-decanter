@@ -234,8 +234,8 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
 /**
  * Interactive bootstrap (Plan 32: OAuth-first): prompt for the host, run the
  * browser OAuth consent for MCP (the sync backend) with a paste-a-bearer
- * fallback, offer the OPTIONAL public API key (executions / data-tables /
- * duplicate / delete only), write .env + .decanter-auth.json, copy template/.
+ * fallback, offer the OPTIONAL public API key (executions / data-tables
+ * only), write .env + .decanter-auth.json, copy template/.
  */
 export async function init(targetDir: string | undefined, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
   printBanner(log);
@@ -292,7 +292,7 @@ export async function init(targetDir: string | undefined, { force = false }: { f
 
     // --- optional public API key (the REST-only surfaces)
     if (apiKey === "") {
-      apiKey = await ask("n8n public API key (optional — executions/data-tables/duplicate/delete) [Enter to skip]: ");
+      apiKey = await ask("n8n public API key (optional — executions/data-tables) [Enter to skip]: ");
     }
   } finally {
     rl?.close();

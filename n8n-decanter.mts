@@ -8,7 +8,7 @@ import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId } from "./lib/executions.mts";
 import { init, printBanner } from "./lib/init.mts";
 import { checkMocks, listMockSlugs, pinFixtures, runSimulation, writeMock, type SimulationReport } from "./lib/simulate.mts";
-import { createWorkflow, deleteWorkflow, duplicateWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
+import { archiveWorkflow, createWorkflow, publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, searchWorkflows } from "./lib/mcp.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { pullWorkflow } from "./lib/pull.mts";
@@ -62,8 +62,7 @@ ${b("Sync")} ${d("(over n8n's MCP server — Code-node source only; structure li
 
 ${b("Workflow lifecycle")}
   ${b("create")} "<name>"                         ${d("create a blank workflow in n8n, then pull it")}
-  ${b("duplicate")} <workflow> ["<name>"]         ${d("clone a workflow into a new one (needs the API key)")}
-  ${b("delete")} <workflow> [--force]             ${d("delete a workflow from the server (y/N; needs the API key)")}
+  ${b("archive")} <workflow> [--force]            ${d("archive a workflow in n8n (y/N; restore/delete via the n8n UI)")}
   ${b("rename")} <workflow> "<new name>"          ${d("rename the workflow in n8n")}
 
 ${b("Inspect & test")}
@@ -92,18 +91,18 @@ An ${b("<execution-id>")} is an n8n execution id (numeric).
 
 Config: decanter.config.json (searched upward from cwd). Credentials: N8N_HOST +
 MCP (OAuth via ${b("init")}, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional)
-powers executions, data-tables, duplicate, and delete.`;
+powers executions and data-tables.`;
 };
 
 // Verb-first grammar (Plan 27): the command is positional[0]. `add`/`run` and
 // the node-rename overload moved under the `node` namespace (node create/rename/run).
-const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "duplicate", "watch", "list", "executions", "data-tables", "simulate", "mock", "publish", "unpublish", "create", "delete", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "rename", "watch", "list", "executions", "data-tables", "simulate", "mock", "publish", "unpublish", "create", "archive", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["create", "rename", "run"]);
 /** Sub-verbs of the `mock` namespace; dispatched as internal `mock:<sub>` commands. */
 const MOCK_VERBS = new Set(["create", "check"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "publish", "unpublish", "delete"]);
+const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "publish", "unpublish", "archive"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -393,8 +392,8 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   // simulate reads local captures + drives a throwaway engine — it never calls
   // n8n, so no credentials are required. Since Plan 32 the sync verbs (and the
   // rename/node namespace, which forward structure acts to n8n) go over MCP;
-  // only executions/data-tables fetches, duplicate, and delete still use the
-  // REST API (requireApiKey at the verb).
+  // only the executions/data-tables fetches still use the REST API
+  // (requireApiKey at the verb).
   const offline = command === "check" || command === "simulate"
     || command === "mock:create" || command === "mock:check"
     || (command === "list" && !remoteFlag)
@@ -439,7 +438,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   if (REF_VERBS.has(command)) {
     refs = [];
     for (const r of rest) refs.push(await resolveRef(r));
-  } else if ((command === "rename" || command === "node:create" || command === "node:rename" || command === "duplicate"
+  } else if ((command === "rename" || command === "node:create" || command === "node:rename"
       || command === "mock:create" || command === "mock:check") && rest.length > 0) {
     // ref-plus-literals verbs: only the first argument is a workflow ref;
     // the rest are names (node names, a new workflow name, a mock slug) — not resolved.
@@ -740,12 +739,12 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       await createWorkflow(mcp(), config, rest[0], log);
       break;
     }
-    case "delete": {
+    case "archive": {
       // Deliberately never falls back to config.workflows — a ref is required,
       // one workflow per call (no cascade, too much blast radius for a default).
-      if (refs.length === 0) throw new Error("delete needs a workflow ref: n8n-decanter <ref> delete");
-      if (refs.length > 1) throw new Error("delete takes exactly one workflow — delete them one at a time");
-      await deleteWorkflow(api("delete"), config, refs[0], { force }, log);
+      if (refs.length === 0) throw new Error("archive needs a workflow ref: n8n-decanter archive <workflow>");
+      if (refs.length > 1) throw new Error("archive takes exactly one workflow — archive them one at a time");
+      await archiveWorkflow(mcp(), config, refs[0], { force }, log);
       break;
     }
     case "rename": {
@@ -767,13 +766,6 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (!id) throw new Error('node rename needs a workflow and two node names: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
       if (names.length !== 2) throw new Error('node rename needs the old and new node name: n8n-decanter node rename <workflow> "<old node>" "<new node>"');
       await renameNode(mcp(), config, id, names[0], names[1], log);
-      break;
-    }
-    case "duplicate": {
-      const [id, ...names] = refs;
-      if (!id) throw new Error('duplicate needs a workflow ref: n8n-decanter <ref> duplicate ["<new name>"]');
-      if (names.length > 1) throw new Error('duplicate takes at most one new name: n8n-decanter <ref> duplicate ["<new name>"]');
-      await duplicateWorkflow(api("duplicate"), mcp(), config, id, names[0], log);
       break;
     }
     case "watch": {

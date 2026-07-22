@@ -111,9 +111,8 @@ ids to `decanter.config.json`:
   API key). For CI and headless setups; rotating it in n8n invalidates the old
   one.
 - **Public API key (optional)** — `N8N_API_KEY`, only needed for the verbs MCP
-  cannot serve: `executions`, `data-tables`, `duplicate`, `delete`. Scope it to
-  `execution:read`, `execution:list`, `workflow:read`, `workflow:create`,
-  `workflow:delete`, and the `dataTable:*` read scopes.
+  cannot serve: `executions` and `data-tables`. Scope it to `execution:read`,
+  `execution:list`, `workflow:read`, and the `dataTable:*` read scopes.
 
 After every successful push **and pull**, the workflow's folder is
 git-committed automatically (scoped to that folder; outside a git repo it
@@ -155,8 +154,7 @@ n8n-decanter unpublish [workflow…]  #   (unpublish returns to draft-only)
 
 # Workflow lifecycle
 n8n-decanter create "<name>"                 # create a blank workflow in n8n, then pull it
-n8n-decanter duplicate <workflow> ["<name>"] # clone a workflow (API; enable MCP on the copy to pull)
-n8n-decanter delete <workflow> [--force]     # delete from the server (API; folder kept)
+n8n-decanter archive <workflow> [--force]    # archive in n8n (reversible there; folder kept)
 n8n-decanter rename <workflow> "<new name>"  # rename the workflow in n8n (folder stays)
 
 # Inspect & test
@@ -296,9 +294,10 @@ already run, so Claude Code on a Claude subscription needs no extra API tokens.
   server (~2.20+), MCP access enabled instance-wide, and a per-workflow
   "Available in MCP" flag. Workflows without the flag are visible in
   `list --remote` and the picker but can't be pulled until you enable them —
-  the CLI tells you where the switch lives. `executions`, `data-tables`,
-  `duplicate`, and `delete` still use the public API key (MCP has no execution
-  read, no data-table row read, no lossless clone, and no hard delete).
+  the CLI tells you where the switch lives. `executions` and `data-tables`
+  still use the public API key (MCP has no execution read and no data-table
+  row read). Duplicating and hard-deleting workflows are n8n-UI jobs — the
+  API-era `duplicate`/`delete` verbs were dropped in favor of `archive`.
 - **Structure edits don't sync from here.** `workflow.json` is a read-only
   snapshot: editing it changes nothing in n8n and the next `pull` overwrites
   it. Wire nodes, change parameters like a Code node's `mode`, and arrange the

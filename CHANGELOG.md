@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`archive` verb** — archive a workflow on the server over MCP
+  (`archive_workflow`): the workflow moves to n8n's Archived filter
+  (reversible there; a published one is unpublished first), with the same
+  consent gate the old `delete` had (TTY `y/N` naming workflow + id;
+  non-interactive runs need `--force`). The local folder is never touched and
+  a stale `decanter.config.json` entry is flagged. Permanent deletion is
+  deliberately not a decanter surface — the n8n UI owns it.
+
+### Removed
+
+- **Breaking: the `delete` verb is gone** — replaced by `archive`. Decanter
+  no longer offers a hard delete; permanently removing a workflow is an
+  n8n-UI act (archive it first, then delete it there).
+- **Breaking: the `duplicate` verb is gone.** MCP has no lossless full-JSON
+  create, so a faithful clone required the public API — rather than keep the
+  API dependency or ship a lossy SDK-code re-expression, the verb was
+  dropped. Duplicate workflows from the n8n UI and `pull` the copy.
+
 ### Changed
+
+- **`create` validates before creating** — the generated Workflow-SDK
+  expression now passes the server's `validate_workflow` gate before
+  `create_workflow_from_code`, surfacing the server's errors and hint
+  verbatim when rejected.
+- **`N8N_API_KEY` now powers only `executions` and `data-tables`** — the last
+  lifecycle verbs left the REST API, so the recommended key scopes shrink to
+  `workflow:list`, `execution:read`, `execution:list`, and the `dataTable:*`
+  read scopes (`template/.env.example` was rewritten OAuth-first to match).
 
 - **Breaking: the workflow code path now syncs over n8n's built-in MCP server —
   decanter is the Code-node code layer, n8n owns structure (Plan 32).**

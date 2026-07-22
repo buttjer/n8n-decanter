@@ -583,7 +583,7 @@ try {
     assert.equal(remote.activeVersionId, remote.versionId, "published & in sync: live version == draft");
   });
 
-  await step("lifecycle verbs: create → push → publish → unpublish → delete round-trip", async () => {
+  await step("lifecycle verbs: create → push → publish → unpublish → archive round-trip", async () => {
     // create a blank draft on the server via the CLI, born unpublished
     let r = await cli("create", "Smoke Lifecycle");
     assert.equal(r.code, 0, r.out);
@@ -628,25 +628,34 @@ try {
     remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.active, false, "unpublish returned it to draft-only");
 
-    // delete needs a ref (never touches config)
-    r = await cli("delete");
+    // archive needs a ref (never touches config)
+    r = await cli("archive");
     assert.equal(r.code, 1);
-    assert.match(r.out, /delete needs a workflow ref/);
-    // delete --force → hard delete even after publish/unpublish; local folder kept
-    r = await cli("delete", lifeId, "--force");
+    assert.match(r.out, /archive needs a workflow ref/);
+    // archive --force → MCP archive_workflow; the workflow survives on the
+    // server (isArchived), it is NOT hard-deleted; local folder kept
+    r = await cli("archive", lifeId, "--force");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /deleted "Smoke Lifecycle" \([^)]+\) from the server/);
-    const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
-    assert.equal(gone.status, 404, "hard delete: workflow gone from the server");
+    assert.match(r.out, /archived "Smoke Lifecycle" \([^)]+\) — restore or permanently delete it from the n8n UI/);
+    remote = await api("GET", `/api/v1/workflows/${lifeId}`);
+    assert.equal(remote.isArchived, true, "archived on the server");
+    assert.equal(remote.active, false, "stays unpublished");
     assert.ok(existsSync(path.join(lifeDir, ".decanter.json")), "local folder left untouched as the git record");
+    // archived workflows refuse MCP access (archived-first gate, real server text)
+    r = await cli("pull", lifeId);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /is archived and cannot be accessed/);
+    // tidy up: the public API hard delete still works for cleanup (not a CLI surface)
+    await api("DELETE", `/api/v1/workflows/${lifeId}`);
+    const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
+    assert.equal(gone.status, 404, "cleanup delete succeeded");
   });
 
-  // Plan 21 authoring verbs against real n8n. Dedicated workflows (not the
+  // Plan 21 authoring verbs against real n8n. A dedicated workflow (not the
   // heavily-mutated Smoke WF) so the assertions stay clean, torn down at the
-  // end. `authId`/`authDir`/`cloneId` thread from the add step into duplicate.
+  // end of the step. (The duplicate verb died in Plan 33 — no clone step.)
   let authId = "";
   let authDir = "";
-  let cloneId = "";
 
   await step("add: a scaffolded Code node executes in the real n8n sandbox", async () => {
     // fresh Webhook -> Respond skeleton (no code node yet); add mints the node
@@ -698,43 +707,8 @@ try {
     const out = await webhook({ n: 21 }, "smoke-auth-hook");
     assert.equal(out[0]?.myNewField, 1, "default scaffold body executed in the sandbox: " + JSON.stringify(out).slice(0, 300));
     assert.equal(out[0]?.body?.n, 21, "scaffold was correctly wired between Webhook and Respond");
-  });
 
-  await step("duplicate: real POST clone — born unpublished from a published source, independent", async () => {
-    const source = await api("GET", `/api/v1/workflows/${authId}`);
-    assert.equal(source.active, true, "source is published from the add step's publish");
-
-    let r = await cli("duplicate", authId, "Smoke Authoring Copy");
-    assert.equal(r.code, 0, r.out);
-    cloneId = r.out.match(/duplicated "Smoke Authoring" -> "Smoke Authoring Copy" \(([^)]+)\)/)?.[1] ?? "";
-    assert.ok(cloneId, "duplicate printed the new id: " + r.out);
-    assert.notEqual(cloneId, authId, "distinct new id");
-    // the clone is API-born → MCP-gated: duplicate surfaces guidance, then the
-    // n8n-side opt-in admits the pull
-    assert.match(r.out, /not yet available in MCP/, "gate guidance surfaced: " + r.out);
-    await enableMcpAccess(cloneId);
-    r = await cli("pull", cloneId);
-    assert.equal(r.code, 0, r.out);
-
-    const clone = await api("GET", `/api/v1/workflows/${cloneId}`);
-    assert.equal(clone.active, false, "clone born unpublished even though the source is published");
-    assert.equal(clone.nodes.length, source.nodes.length, "clone carries the source's nodes");
-    assert.deepEqual(clone.connections, source.connections, "clone preserves the connections");
-    const cloneDir = path.join(ROOT, "smoke-authoring-copy");
-    assert.ok(existsSync(path.join(cloneDir, ".decanter.json")), "clone pulled into a folder");
-    // the .js Code node round-trips byte-clean into the clone
-    assert.equal(read(cloneDir, "code", "enrich.js"), read(authDir, "code", "enrich.js"), "clone's enrich.js is byte-identical");
-
-    // independence: edit + push the clone; the source's remote code is untouched
-    const before = (await api("GET", `/api/v1/workflows/${authId}`)).nodes.find((n: any) => n.name === "Enrich").parameters.jsCode;
-    writeFileSync(path.join(cloneDir, "code", "enrich.js"), "return [{ json: { cloneOnly: true } }];\n");
-    r = await cli("push", cloneId);
-    assert.equal(r.code, 0, r.out);
-    const after = (await api("GET", `/api/v1/workflows/${authId}`)).nodes.find((n: any) => n.name === "Enrich").parameters.jsCode;
-    assert.equal(after, before, "editing the clone must not change the source workflow");
-
-    // tidy up both authoring workflows (the container is ephemeral, but keep it clean)
-    await api("DELETE", `/api/v1/workflows/${cloneId}`);
+    // tidy up the authoring workflow (the container is ephemeral, but keep it clean)
     await api("DELETE", `/api/v1/workflows/${authId}`);
   });
 

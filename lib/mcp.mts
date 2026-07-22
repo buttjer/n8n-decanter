@@ -525,11 +525,46 @@ export async function unpublishWorkflowMcp(mcp: McpClient, id: string): Promise<
 }
 
 /**
+ * Archive a workflow (MCP `archive_workflow`, Plan 33 — the replacement for
+ * the API-era hard delete). Reversible: n8n keeps it under the workflows
+ * list's "Archived" filter; restoring and permanent deletion live in the n8n
+ * UI. Refuses workflows not opted into MCP, and already-archived ones
+ * ("archived and cannot be accessed"). Verified shape (n8n 2.30.7):
+ * `{workflowId}` in, `{archived, workflowId, name}` out, errors in-band.
+ */
+export async function archiveWorkflowMcp(mcp: McpClient, id: string): Promise<{ archived: boolean; workflowId: string; name: string }> {
+  return mcp.callTool<{ archived: boolean; workflowId: string; name: string }>("archive_workflow", { workflowId: id });
+}
+
+/** `validate_workflow`'s result shape (n8n 2.30.7) — warnings name the node + parameter path. */
+export interface McpValidationResult {
+  valid: boolean;
+  nodeCount?: number;
+  warnings?: Array<{ code: string; message: string; nodeName?: string; parameterPath?: string }>;
+  errors?: string[];
+  /** Server-provided recovery hint — surface it verbatim when present. */
+  hint?: string;
+}
+
+/** Validate n8n Workflow SDK code server-side (read-only, no workflow touched). */
+export async function validateWorkflowCode(mcp: McpClient, code: string): Promise<McpValidationResult> {
+  return mcp.callTool<McpValidationResult>("validate_workflow", { code });
+}
+
+/**
  * Create a workflow from n8n Workflow SDK code. The decanter only ever sends
  * the minimal `workflow('<slug>', '<name>')` expression (a blank workflow) —
  * MCP-created workflows are born `availableInMCP`, so the follow-up pull works.
+ * The code passes the server's `validate_workflow` gate first (Plan 33): a
+ * rejected expression never reaches `create_workflow_from_code`, and the
+ * server's errors + hint surface verbatim.
  */
 export async function createWorkflowFromCode(mcp: McpClient, name: string, slug: string): Promise<{ workflowId: string; name: string }> {
   const code = `workflow(${JSON.stringify(slug)}, ${JSON.stringify(name)})`;
+  const v = await validateWorkflowCode(mcp, code);
+  if (v.valid !== true) {
+    const reasons = (v.errors ?? []).join("; ") || "invalid workflow code";
+    throw new McpToolError("validate_workflow", `${reasons}${v.hint ? ` — ${v.hint}` : ""}`);
+  }
   return mcp.callTool<{ workflowId: string; name: string }>("create_workflow_from_code", { code });
 }

@@ -24,7 +24,7 @@ This document is the contract for creating and editing these files.
   and the next `pull` overwrites it. Make structure changes in the n8n editor
   or through n8n's own MCP tools — or use the decanter verbs that forward a
   structure act for you: `node create`, `node rename`, `rename`, `create`,
-  `duplicate`, `delete`.
+  `archive`.
 - **Never hand-edit `.decanter.json`, and never write a `// @ts-n8n sha256:`
   marker.** These are machine-owned; touching them corrupts sync state and the
   CLI blocks it at `push`.
@@ -71,11 +71,11 @@ is **wrong** about how Code-node code is stored and edited here. The deviations:
    `.ts` sources follow automatically. See "Renaming a node" below.
 8. **New workflows are born on the server, not from a repo folder.** There is no
    id-less folder that becomes a workflow on push. Use `n8n-decanter create
-   "<name>"` (born in n8n over MCP, immediately pullable),
-   `n8n-decanter duplicate <workflow>` to clone one, or create it in the n8n UI
-   and `pull`. Then add its id to `decanter.config.json`. A created workflow is
-   **unpublished**; `publish` takes it live, `unpublish` returns it to
-   draft-only, and `delete <workflow>` removes one from the server (the local
+   "<name>"` (born in n8n over MCP, immediately pullable), or create — or
+   duplicate — it in the n8n UI and `pull`. Then add its id to
+   `decanter.config.json`. A created workflow is **unpublished**; `publish`
+   takes it live, `unpublish` returns it to draft-only, and
+   `archive <workflow>` retires one in n8n (reversible there; the local
    folder is kept).
 9. **Every push lands on the workflow's DRAFT.** The live (published) version
    never changes until an explicit `publish` / `push --publish` — n8n keeps
@@ -462,21 +462,22 @@ Rules:
   run, but they do contact the instance.
 - **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
   pull` / `push` / `watch` sync code with the real instance (pushes land on
-  the **draft**); `create "<name>"` adds a new workflow, `duplicate <workflow>`
-  clones one, `node create` / `node rename` / `rename` forward structure acts
-  to n8n; `publish` / `unpublish` change what is live (`publish` takes the
-  draft live, `unpublish` returns it to draft-only; `push --publish` combines
-  the two). Otherwise finish edits, verify with `check` + `run`, and report
-  that the change is ready to push (or publish).
-- **Destructive — never without an explicit instruction:** `n8n-decanter <ref>
-  delete` removes a workflow from the server (hard delete via the public API,
-  even if published; the local folder is kept as the git record). Run it only
-  when the user has clearly asked to delete that specific workflow; it prompts
-  for `y/N` and needs `--force` to run non-interactively.
+  the **draft**); `create "<name>"` adds a new workflow, `node create` /
+  `node rename` / `rename` forward structure acts to n8n; `publish` /
+  `unpublish` change what is live (`publish` takes the draft live,
+  `unpublish` returns it to draft-only; `push --publish` combines the two).
+  Otherwise finish edits, verify with `check` + `run`, and report that the
+  change is ready to push (or publish).
+- **Outward-facing — never without an explicit instruction:** `n8n-decanter
+  archive <workflow>` archives a workflow in n8n (it leaves the active list;
+  a published one goes offline; restore — or permanently delete — it in the
+  n8n UI; the local folder is kept as the git record). Run it only when the
+  user has clearly asked to archive that specific workflow; it prompts for
+  `y/N` and needs `--force` to run non-interactively.
 - Never use `--force` on push without the user's explicit instruction — it
   overrides the per-node drift guard that protects code edits made on the
-  instance. (On `delete`, `--force` instead means "skip the confirmation" —
+  instance. (On `archive`, `--force` instead means "skip the confirmation" —
   same rule: only on an explicit instruction.)
-- **Credentials:** MCP (OAuth via `init`, or `N8N_MCP_TOKEN`) powers the sync
-  and structure verbs; the optional public API key (`N8N_API_KEY`) powers
-  `executions`, `data-tables`, `duplicate`, and `delete`.
+- **Credentials:** MCP (OAuth via `init`, or `N8N_MCP_TOKEN`) powers the sync,
+  structure, and lifecycle verbs; the optional public API key (`N8N_API_KEY`)
+  powers `executions` and `data-tables`.

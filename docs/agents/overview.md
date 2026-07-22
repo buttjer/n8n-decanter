@@ -41,9 +41,9 @@ spells out how that boundary interacts with the official n8n skills pack.
 | --- | --- |
 | `check`, `node run`, `mock` | Offline and safe — run freely. |
 | `status`, `list --remote` | Read the remote, no writes — safe, but they do contact the instance. |
-| `pull`, `push`, `watch`, `create`, `duplicate`, `rename`, `node create`, `node rename`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks. Pushes land on the **draft**; `publish` (or `push --publish`) takes it live. |
-| `delete` | **Destructive** — removes a workflow from the server (hard delete, even if published). Never without an explicit instruction to delete *that* workflow. |
-| `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. (On `delete`, `--force` instead skips the confirmation — same rule.) |
+| `pull`, `push`, `watch`, `create`, `rename`, `node create`, `node rename`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks. Pushes land on the **draft**; `publish` (or `push --publish`) takes it live. |
+| `archive` | **Outward-facing** — archives a workflow in n8n (it leaves the active list; a published one goes offline). Reversible only in the n8n UI. Never without an explicit instruction to archive *that* workflow. |
+| `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. (On `archive`, `--force` instead skips the confirmation — same rule.) |
 
 The default loop for an agent: edit → verify offline → report that the change
 is ready to push. See [The offline feedback loop](/docs/agents/offline-loop/).

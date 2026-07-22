@@ -19,7 +19,9 @@ the n8n UI.
 The server assigns the id and owns the workflow's birth — there is no id-less
 repo folder that becomes a workflow on push. `create` just triggers the birth
 from the CLI; the same as creating a blank workflow in the UI and pulling it,
-one step shorter.
+one step shorter. Under the hood the generated Workflow-SDK expression passes
+the server's `validate_workflow` gate before `create_workflow_from_code` runs,
+so a rejected expression never half-creates anything.
 
 Duplicate names are allowed (n8n does not require unique workflow names); the
 new folder is named after the workflow, with pull's usual collision handling.

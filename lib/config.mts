@@ -17,9 +17,9 @@ export function parseEnvFile(file: string): Record<string, string> {
 }
 
 /**
- * Guard for the REST-API-only verbs (executions, data-tables, duplicate,
- * delete — the surfaces MCP cannot serve). Names the verb so the error says
- * *why* an API key is suddenly needed in an otherwise MCP-only setup.
+ * Guard for the REST-API-only verbs (executions and data-tables — the
+ * surfaces MCP cannot serve). Names the verb so the error says *why* an API
+ * key is suddenly needed in an otherwise MCP-only setup.
  */
 export function requireApiKey(config: DecanterConfig, verb: string): DecanterConfig {
   if (config.apiKey === "") {
