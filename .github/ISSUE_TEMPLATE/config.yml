@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security report
+    url: https://github.com/buttjer/n8n-decanter/security/advisories/new
+    about: Report a vulnerability privately (see SECURITY.md) — please don't open a public issue.
