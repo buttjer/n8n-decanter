@@ -114,10 +114,11 @@ drift**. A user-facing change (any CLI command/flag, sync behavior, data model,
 guard, or config a user would look up) updates **every one in the same PR** —
 not just the one you happened to think of:
 
-1. **`README.md`** — the `## Commands` block **and** the feature-bullet list up
-   top. A new verb needs a command line; a notable capability needs a feature
-   bullet. *(This is the one most easily forgotten — it's not generated from the
-   others.)*
+1. **`README.md`** — the `## Commands` verb-index table **and** the
+   feature-bullet list up top. A new verb needs a one-line table row (verb +
+   what it does — no flag signatures; those live in `--help` and `/docs`); a
+   notable capability needs a feature bullet. *(This is the one most easily
+   forgotten — it's not generated from the others.)*
 2. **`/docs`** (plain Markdown, rendered by the site in `website/`) — the
    matching `docs/cli/*` page(s) **and** the [overview](docs/cli/overview.md)
    command surface. New verb → new page.
