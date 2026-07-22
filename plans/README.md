@@ -266,9 +266,11 @@ items not yet claimed by one. Recommended order:
     README to the document a first-time GitHub/npm visitor actually reads:
     deep sections and the 69-line flag reference move to `/docs` behind a
     strict no-information-loss delta audit; sizing decisions (target depth,
-    verb-index vs full Commands block, compare-table fate) pending in the
-    plan's menu. Best sequenced before Plans 36/37 execute (both would churn
-    the long README again). Proposed 2026-07-22.
+    verb-index vs full Commands block, compare-table fate) decided 2026-07-22:
+    ~150-line shop window, verb index (three-surfaces rule relaxed to
+    verb + one-liner), compare table kept whole. Best sequenced before
+    Plans 36/37 execute (both would churn the long README again). Proposed
+    2026-07-22.
 
 ## Conventions
 

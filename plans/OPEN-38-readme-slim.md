@@ -2,7 +2,7 @@
 
 **Priority:** P1 (small, offline, clearly right — and it shrinks every future
 PR's docs burden)
-**Status:** Not started — **sizing decisions pending** (see the menu below)
+**Status:** Not started — sizing decided (maintainer, 2026-07-22: 1a/2a/3a)
 **Model:** Sonnet (editorial work against an existing docs corpus; Opus not
 needed once the decisions are made).
 **Theme:** The README has grown into a second manual (473 lines) that
@@ -31,22 +31,22 @@ strict **no-information-loss audit**: every cut line either already lives in
   the first impression — GitHub visitors and the npm page — which the current
   wall of detail serves worse than a tight pitch would.
 
-## Sizing decisions (menu — maintainer to pick)
+## Sizing decisions (maintainer, 2026-07-22 — all three decided)
 
-1. **Target depth.** **(a) Shop window, ~150 lines** *(recommended)*: hero +
-   feature bullets (tightened) + GIFs + quickstart + skills pairing (short) +
-   compare + caveats (short) + docs pointer; the deep sections (node files,
+1. **Target depth: (a) shop window, ~150 lines.** Hero + feature bullets
+   (tightened) + GIFs + quickstart + skills pairing (short) + compare +
+   caveats (short) + docs pointer; the deep sections (node files,
    live-reload, type checking, setup gotchas, post-Commands prose) move to
-   `/docs` after a delta audit. **(b) Moderate, ~250–300 lines**: keep every
-   section, compress prose in place.
-2. **Commands section.** **(a) Verb index** *(recommended)*: one line per
-   verb (name + what it does), no flag signatures — flags live in `--help`
-   and `/docs`; loosens the AGENTS.md three-surfaces rule to "README lists
-   the verb + one-liner" (rule text updated in the same PR). **(b) Keep the
-   full flag reference** as today.
-3. **Compare table.** **(a) Keep it whole** *(recommended)*: it's the Plan 34
-   positioning asset and earns its ~45 lines on the npm page. **(b) Replace
-   with the bottom-line paragraph + a docs link.**
+   `/docs` after a delta audit. *(Road not taken: moderate ~250–300 lines,
+   compress in place — keeps two homes for the same facts.)*
+2. **Commands section: (a) verb index.** One line per verb (name + what it
+   does), no flag signatures — flags live in `--help` and `/docs`; loosens
+   the AGENTS.md three-surfaces rule to "README lists the verb + one-liner"
+   (rule text updated in the same PR). *(Road not taken: keep the full flag
+   reference — maximum drift surface.)*
+3. **Compare table: (a) keep it whole.** It's the Plan 34 positioning asset
+   and earns its ~45 lines on the npm page. *(Road not taken: bottom-line
+   paragraph + docs link.)*
 
 ## Tasks
 
@@ -55,11 +55,12 @@ strict **no-information-loss audit**: every cut line either already lives in
    `SyntaxError` gotcha, the `npm link`/build note, `engine-strict`,
    live-reload https caveat, `$env` isolation prose) into the right docs
    page(s) first.
-2. **Rewrite the README** per the picked options; feature bullets tightened
-   (14 → ~8, one line each where possible); Setup reduced to
-   install + `init` + config + a credentials pointer.
-3. **AGENTS.md rule update** (if 2a): reword the three-surfaces README bullet
-   to the verb-index contract; keep the pre-PR grep checklist.
+2. **Rewrite the README** per the decisions above (~150 lines, verb index,
+   compare table kept whole); feature bullets tightened (14 → ~8, one line
+   each where possible); Setup reduced to install + `init` + config + a
+   credentials pointer.
+3. **AGENTS.md rule update:** reword the three-surfaces README bullet to the
+   verb-index contract; keep the pre-PR grep checklist.
 4. **Bookkeeping.** No CHANGELOG entry (docs-only). Check the website landing
    doesn't hotlink removed README anchors.
 
