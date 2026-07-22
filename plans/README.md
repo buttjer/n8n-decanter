@@ -209,8 +209,9 @@ items not yet claimed by one. Recommended order:
     `test` verb (pinned-data run + client-side diff, prompt-driven, draft
     restore via `restore_workflow_version`), the guard-proxy stack (localhost
     MCP proxy as sole token holder + slim config-drift hooks + proxy-first
-    template override), a `simulate` keep/drop decision, and the AGENTS.md
-    MCP-facts update. Proposed 2026-07-22.
+    template override), `simulate` kept as a differentiator with `test` as the
+    recommended default (decided 2026-07-22), and the AGENTS.md MCP-facts
+    update. Proposed 2026-07-22.
 
 ## Conventions
 

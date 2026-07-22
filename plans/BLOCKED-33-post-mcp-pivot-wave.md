@@ -262,18 +262,24 @@ Task 1 (MCP re-expression; no hard delete in decanter).
      `n8n-decanter push` first". Choices are verb composition. Selector flags
      (`--execution`/`--mock`/`--trigger`) mirror `simulate` and stay.
    - **Docs:** taxonomy table — `check` = static/offline, `test` =
-     instance-side runtime, `simulate` = local/offline runtime. Requirements:
-     MCP-backed (OAuth, `availableInMCP`, version floor). Docs trio + backlog
-     distinctive-features entry.
-6. **`simulate`/Docker keep-or-drop** — open maintainer decision; the
-   3-bullet functional case for keeping (legacy ruled out as a reason):
-   pre-push verification of uncommitted local state (`test` can only run
-   what's on the draft); CI without instance/credentials/opt-in/timeout;
-   `--network-none` isolation + engine-version rehearsal. `test`'s unique
-   edges: no Docker, instance-exact env (community nodes, env vars). Verdict
-   candidate: complementary — `test` lightweight default, `simulate` for
-   pre-push/CI/isolation. Decide, then document the split (folds into
-   Task 5's taxonomy table).
+     instance-side runtime (**the recommended default**, per Task 6),
+     `simulate` = local/offline runtime (pre-push/CI/isolation/
+     version-rehearsal). Requirements: MCP-backed (OAuth, `availableInMCP`,
+     version floor). Docs trio + backlog distinctive-features entry.
+6. **`simulate`/Docker: KEEP — DECIDED (maintainer 2026-07-22). `test` becomes
+   the primary/recommended way; `simulate` stays as a differentiator
+   (potential USP).** The functional case that carried it (legacy ruled out as
+   a reason): pre-push verification of uncommitted local state (`test` can
+   only run what's on the draft); CI without
+   instance/credentials/opt-in/timeout; `--network-none` isolation +
+   engine-version rehearsal. Work: document the split everywhere `simulate`
+   is introduced — **recommend `test` first** (no Docker, instance-exact
+   engine incl. community nodes), reach for `simulate` for
+   pre-push/offline/CI/isolation/version-rehearsal — via Task 5's taxonomy
+   table, `docs/cli/simulate.md`, the agents docs, and the template
+   `AGENTS.md` loop guidance. Keeping it as a USP strengthens the case for
+   [Plan 26](OPEN-26-npx-engine-backend.md) (npx backend — drops `simulate`'s
+   Docker dependency), which stays independent.
 7. **AGENTS.md MCP-facts + docs update pass:** the `validate_workflow` spike
    claim ("must pass validate_workflow first") becomes TRUE once Task 1 routes
    create/duplicate through the loop — verify the wording then, instead of
