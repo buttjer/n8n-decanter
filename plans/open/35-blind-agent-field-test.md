@@ -1,10 +1,11 @@
 # Plan 35 — Blind agent field test: Sonnet "users" on a real Docker n8n
 
 **Priority:** P1 — Plans 32+33 **and the skills-first wave (#107)** shipped a
-Breaking rework of the entire agent-facing surface; this validates it the way it
-will actually be consumed, before the next release is cut.
+Breaking rework of the entire agent-facing surface, **now released in 0.6.0
+(2026-07-23, #133)**; this validates it the way it will actually be consumed,
+before further releases build on it untested.
 **Status:** Not started
-**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
+**Snapshot:** 2026-07-23T14:05Z @ 7995d22
 **Theme:** Put the whole product — `init` → skills/MCP structure work →
 Code-node authoring → `push` → runs — in front of **blind** Sonnet coding
 agents acting as typical users against a real n8n in Docker, and grade what
@@ -12,9 +13,12 @@ happens. A UX/contract field test, not a CI suite.
 **Model:** Opus for the orchestrator + graders (this plan's executor);
 **Sonnet is fixed for the blind user agents** (by design, maintainer's call).
 
-> **Post-#107 review (2026-07-23) — the design is sound and unbuilt
+> **Post-#107 review (2026-07-23), refreshed 2026-07-23 for the backlog reorg
+> (#122), the watch-proxy removal (#128), and 0.6.0's live-mirror + `backup`
+> wave (#125, released as 0.6.0 in #133) — the design is sound and unbuilt
 > (`scripts/field-test/` does not exist), but the agent surface it tests was
-> rebuilt after this plan was written; five corrections before executing.**
+> rebuilt after this plan was written; the corrections below apply before
+> executing.**
 > 1. **The guard is now stdio `mcp connect`, auto-wired — not a human-started
 >    `mcp serve` proxy.** The scaffolded `.mcp.json` carries `n8n-instance` =
 >    `{"command":"n8n-decanter","args":["mcp","connect"]}`; the agent's harness
@@ -27,7 +31,8 @@ happens. A UX/contract field test, not a CI suite.
 >    a blocked `jsCode` write is a single **stderr warn-line** of the
 >    agent-spawned `mcp connect` process, and successful forwards are unlogged.
 >    Replace every "proxy log" mention (Why, invariants, artifacts, acceptance,
->    the Plan 0 authoring-skill evidence tie-in) with a **designed capture
+>    the [Plan 50](../draft/50-code-node-authoring-skill.md) authoring-skill
+>    evidence tie-in) with a **designed capture
 >    channel** (stage-scaffold the `.mcp.json` command with a stderr redirect,
 >    e.g. `sh -c 'n8n-decanter mcp connect 2>>guard.log'`) plus **instance-state
 >    verification** (`get_workflow_history` version trail + remote-file
@@ -52,8 +57,7 @@ happens. A UX/contract field test, not a CI suite.
 >    "test/scenario/…" vocabulary now **collides with the shipped `test` and
 >    `scenario` verbs** the agent will see in `--help`/docs — rescope the ban to
 >    harness-authored artifacts (prompts, dir/container/workflow names, git
->    author) with product vocabulary whitelisted. Also update the **`plans/README.md`
->    index blurb**, which repeats the stale guard-proxy/proxy-log story.
+>    author) with product vocabulary whitelisted.
 > 6. **`preflight` is now the shipped pre-push gate (Plan 36 merged,
 >    #117).** It joins the picker menu and is billed as *"the single gate an
 >    agent runs before push."* Make it a first-class surface under test: the
@@ -61,6 +65,43 @@ happens. A UX/contract field test, not a CI suite.
 >    (vs. running `check`/`test`/`simulate` piecemeal or skipping verification),
 >    and it's a natural pre-`push`/`publish` step in S1/S2's checklists. It is
 >    read-only, so it never trips the drift guard.
+> 7. **Post-review drift reconciled (2026-07-23, since @710d3f1).** The backlog
+>    reorg (#122) retired `plans/README.md`/`BACKLOG.md` — there is **no index
+>    file to update** (the `ls plans/*/` dir listing is the index; conventions
+>    live in `plans/AGENTS.md`), and the old **"Plan 0" grab-bag placeholder is
+>    gone**: this plan's authoring-skill tie-in is now the concrete
+>    [Plan 50](../draft/50-code-node-authoring-skill.md). The **watch
+>    browser-reload proxy was removed** (#128 / Plan 52) — `watch` no longer
+>    injects a reload proxy; n8n's editor reflects MCP draft edits natively and
+>    `watch` just prints the editor deep link, so S5's "just show up in n8n" is
+>    now n8n-native, not a decanter surface (S5 reframed below). And the template
+>    `settings.local.json.example` pre-approves the read verbs but **not
+>    `preflight`** — the harness allow-list extension must add it (read-only) so
+>    headless runs don't stall on the very gate point 6 wants graded.
+> 8. **[Plan 51](../done/51-live-mirror-and-backups.md) (#125) shipped in 0.6.0
+>    and changes the very guard surface under test — reconcile before executing.**
+>    *(A) On-by-default live `workflow.json` mirror (Part A):* after the guard
+>    **forwards** a non-blocked structure edit (either transport), it schedules a
+>    **debounced background `pull`** of that **tracked** workflow — refreshing
+>    `workflow.json` + `code/` files (incl. born-empty `addNode` files and
+>    `renameNode` moves) and **auto-committing** (safety-commit before,
+>    commit-on-pull after). So the **block→pull→seed loop of point 4 / S1 / S2 no
+>    longer needs a *manual* `pull`** for a tracked workflow — the empty `code/`
+>    file materializes on its own (a freshly `create_workflow_from_code`'d,
+>    still-untracked workflow keeps the manual `pull <id>` hint). Grade the
+>    automatic refresh as a **first-class surface** (helpful, or a confusing race
+>    against the agent's own edits?), keep `liveMirror` **on** (the default a real
+>    user gets — `liveMirror:false` is the CI/determinism escape hatch, not the
+>    honest field-test config), and make `verify.mts`'s git-log invariant
+>    **expect the mirror's background safety/pull commits** (still CLI
+>    auto-commits — recognizable by message, e.g. "mirrored `<name>`", not
+>    hand-crafted state). *(B) The `backup create`/`restore`/`list` verbs (Part B,
+>    REST-only → `N8N_API_KEY`, committed `workflows/<slug>/backups/<ts>.<id>.json`
+>    artifact):* **out of scope** for round-1 scenarios (git-native disaster
+>    recovery is orthogonal to the authoring/guard surface), but a blind agent
+>    reaching for `backup` under S4's "we don't need X anymore" wording is
+>    **signal** worth logging; if any scenario does exercise it, add `backup` to
+>    the allow-list extension and have the stage mint the scoped public API key.
 
 ## Why
 
@@ -77,9 +118,10 @@ skill nudging it to write `jsCode` via MCP, a doc gap that stalls a session.
 A **blind** test — the agent doesn't know it's being evaluated — is the only
 honest read: an agent that knows it's a test run performs the contract instead
 of using the product. Side benefit: the **captured guard-stderr** evidence the
-[Plan 0](../draft/) authoring-skill entry explicitly waits on (does "the n8n
-skills' routing nudge bite agents in practice" — visible as blocked-`jsCode`
-warn-lines from the `mcp connect` guard).
+[Plan 50](../draft/50-code-node-authoring-skill.md) authoring-skill entry
+explicitly waits on (does "the n8n skills' routing nudge bite agents in
+practice" — visible as blocked-`jsCode` warn-lines from the `mcp connect`
+guard).
 
 ## Source
 
@@ -92,8 +134,8 @@ warn-lines from the `mcp connect` guard).
 - [Plan 33](../done/33-post-mcp-pivot-wave.md) Task 4 (the HTTP `mcp serve` guard)
   **and the skills-first wave (#107)** — which made the stdio **`mcp connect`**
   guard the auto-wired default that this test actually exercises;
-  [Plan 0](../draft/) distinctive-features → authoring-skill entry (consumes
-  this plan's captured guard-stderr evidence).
+  [Plan 50](../draft/50-code-node-authoring-skill.md) distinctive-features →
+  authoring-skill entry (consumes this plan's captured guard-stderr evidence).
 
 ## Design
 
@@ -123,11 +165,13 @@ warn-lines from the `mcp connect` guard).
 - **Permissions:** the scratch dir gets the template
   `settings.local.json` (already pre-approves the read/offline verbs —
   `pull`/`check`/`node`/`status`/`list`/`executions`/`data-tables`/`scenario`/
-  `simulate` + `mcp__n8n-docs`) **plus** a small allow-list extension for the
-  mutating verbs a consenting user would approve interactively
-  (`init`/`push`/`publish`/`test`/`watch`, + git/npm as needed) so headless
-  runs don't stall — the template **deny rules stay active** (the four
-  `push --force` variants, `.decanter.json` edits, `.env` read/edit): those
+  `simulate` + `mcp__n8n-docs`) **plus** a small allow-list extension so
+  headless runs don't stall: the mutating verbs a consenting user would approve
+  interactively (`init`/`push`/`publish`/`test`/`watch`, + git/npm as needed),
+  **and `preflight`** — read-only, but **not yet in the template allow-list**
+  (Plan 36 shipped the verb without templating it), so the gate point 6 wants
+  graded would otherwise prompt. The template **deny rules stay active** (the
+  four `push --force` variants, `.decanter.json` edits, `.env` read/edit): those
   guards are part of what's under test. *(`create`/`archive` are no longer
   verbs — #107.)* Permission-prompt UX itself is out of scope.
 - **Execution environment:** blind sessions run **unsandboxed** (nested
@@ -213,7 +257,11 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
   reconciliation machinery — its most valuable role. *(No decanter
   rename/archive/node-rename verbs exist anymore.)*
 - **S5 (optional, unsandboxed only) — watch loop.** "I want my edits to just
-  show up in n8n" → `watch`, a few edit-save-push cycles. Defer if flaky.
+  show up in n8n" → `watch`, a few edit-save-push cycles. Note the
+  **browser-reload proxy is gone** (#128 / Plan 52): `watch` no longer serves a
+  reload proxy — it pushes on save and prints the editor deep link, relying on
+  n8n's **native** reflection of MCP draft edits, so "just show up" is now n8n's
+  behavior to observe, not a decanter surface to grade. Defer if flaky.
 
 ### Observation & grading
 
@@ -260,8 +308,10 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
    list; each accepted one becomes a backlog/plan item **by the
    maintainer's call** — this plan changes no product code.
 6. **Repo hygiene:** AGENTS.md gets a short "field test harness" note under
-   Commands (dev-only, like `test:smoke`); plans/README.md index entry; no
-   changelog (internal tooling — no user-facing surface).
+   Commands (dev-only, like `test:smoke`); **no `plans/README.md` index entry** —
+   that file was retired (#122); the `ls plans/*/` listing is the index and
+   `plans/AGENTS.md` holds the conventions; no changelog (internal tooling — no
+   user-facing surface).
 
 ## Acceptance / verification
 
@@ -273,7 +323,7 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
   events, and a ranked findings list the maintainer can triage 1:1.
 - The captured-guard-stderr evidence question is answered explicitly (did the
   skills' routing nudge bite, yes/no + examples) and cross-referenced from the
-  [Plan 0](../draft/) authoring-skill entry.
+  [Plan 50](../draft/50-code-node-authoring-skill.md) authoring-skill entry.
 - Blind sessions produced no changes to this repo, and no scratch artifacts
   were committed.
 
@@ -294,6 +344,10 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
 - **CHANGELOG:** none (internal dev tooling + plan). **PLAN.md:** no design
   change; a post-run observation note only if round 1 surfaces one worth
   recording.
+- **[Plan 39](../done/39-docs-drift-refresh.md) landed (#123):** the verb-last
+  command hints a blind agent would have tripped on are fixed, so that
+  anticipated friction source is already retired — the field test measures the
+  current, corrected surface, not that known gap.
 - **Cost envelope round 1:** ~4–6 Sonnet sessions (multi-turn) + Opus
   grading — small next to the 16-agent Plan 33 review.
 - The blind-agent mechanism (`claude -p` in a foreign dir, in-character
