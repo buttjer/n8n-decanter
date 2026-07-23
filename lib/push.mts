@@ -3,9 +3,9 @@ import path from "node:path";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
 import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
-import { findWorkflowDir, readState, writeState } from "./state.mts";
+import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
-import { isJsCodeNode, placeholderFile, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
+import { isJsCodeNode, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
 import { validateNodeFile, validateWorkflowDir, type ValidationResult } from "./validate.mts";
 
 /** Layout-compliance gate: warnings pass through, errors abort the push. */
@@ -151,17 +151,9 @@ export async function pushWorkflow(
 
   // The snapshot's //@file: placeholders stay the human-visible file map:
   // re-pointing one (e.g. .js → .ts conversion) updates the id-keyed state
-  // here, exactly as the API-era push did.
-  try {
-    const snapshot = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as Workflow;
-    for (const node of snapshot.nodes ?? []) {
-      if (!isJsCodeNode(node)) continue;
-      const file = placeholderFile(node);
-      if (file !== null && state.nodes[node.id] !== undefined) state.nodes[node.id].file = file;
-    }
-  } catch {
-    // unreadable snapshot — the compliance guard above already reported it
-  }
+  // here, exactly as the API-era push did. Pull runs the same reconcile so a
+  // background live-mirror pull can't revert the conversion (Plan 35 finding).
+  reconcileFileMapFromSnapshot(dir, state);
 
   const remote = await getWorkflowDetails(mcp, id);
   const { ops, problems } = await collectOps(dir, state, remote, null, log);

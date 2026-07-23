@@ -3,7 +3,7 @@ import path from "node:path";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
 import { getWorkflowDetails, type McpClient } from "./mcp.mts";
-import { findWorkflowDir, readState, renameNodeFilePair, writeState } from "./state.mts";
+import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, renameNodeFilePair, writeState } from "./state.mts";
 import type { DecanterState, Log, NodeState, Workflow, WorkflowNode } from "./types.mts";
 import {
   CODE_DIR,
@@ -81,6 +81,12 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
   state.nodes ??= {};
   // structural hashing died with Plan 32 — scrub the legacy field on rewrite
   delete (state as unknown as Record<string, unknown>).lastPulledWorkflowHash;
+  // Honor a re-pointed //@file: placeholder (e.g. an `.js`→`.ts` conversion the
+  // agent just made) before deriving files from node names — otherwise this
+  // pull would treat the stale `.js` map entry as authoritative and rewrite the
+  // placeholder back to `.js` (Plan 35 field-test finding). Same reconcile push
+  // runs, so the two stay symmetric.
+  reconcileFileMapFromSnapshot(dir, state);
   const usedNames = new Set<string>();
   const placeholders = new Map<string, string>(); // node id -> file name
 
@@ -113,8 +119,11 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
       }
     } else if (nodeState.file?.endsWith(".ts") || existsSync(path.join(dir, CODE_DIR, base + ".ts"))) {
       // Local .ts exists but remote carries no marker: never clobber TS source
-      // and don't drop a competing .js next to it.
-      const tsFile = nodeState.file ?? `${CODE_DIR}/${base}.ts`;
+      // and don't drop a competing .js next to it. Pick the actual `.ts` path —
+      // a `nodeState.file` still ending in `.js` is a not-yet-reconciled
+      // pre-conversion entry, so fall to the detected `<base>.ts` instead of
+      // parroting the deleted `.js` (Plan 35 field-test finding).
+      const tsFile = nodeState.file?.endsWith(".ts") ? nodeState.file : `${CODE_DIR}/${base}.ts`;
       log.warn(`${wf.name} / ${node.name}: local ${tsFile} exists but remote code has no @ts-n8n marker (not pushed from TS yet?) — keeping your .ts; the next push overwrites the remote code`);
       placeholders.set(node.id, tsFile);
       state.nodes[node.id] = { ...nodeState, file: tsFile, lastPushedHash: remoteHash, name: node.name };

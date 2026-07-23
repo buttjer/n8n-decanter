@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `.js`→`.ts` conversion is no longer reverted by a pull that fires before
+  the first TS push.** Re-pointing a node's `//@file:` placeholder to a `.ts`
+  file and swapping the source is the sanctioned way to convert a node, but a
+  `pull` landing in the window before the first TS `push` — notably the
+  on-by-default live-mirror background refresh after a structure edit — rewrote
+  the placeholder back to `.js` and left `.decanter.json` pointing at the
+  deleted `.js` file, so the next push failed with `referenced node file
+  missing`. Pull now honors the re-pointed placeholder exactly as push does
+  (they share one reconcile step). *(Plan 35 field-test finding.)*
+
 ### Added
 
 - **`node run` now emulates `$jmespath`.** A Code node that calls

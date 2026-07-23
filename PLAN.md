@@ -390,7 +390,13 @@ For each configured workflow:
 2. Locate the local folder by id (scan `.decanter.json`s under root). An
    existing folder is kept as-is (sticky, Plan 27); a new one gets the
    kebab slug (`<slug>-<id8>` + warn on collision). Cache the display name.
-3. For each JS Code node (`n8n-nodes-base.code`), matched by node id:
+3. Refresh the id→file map from the snapshot's `//@file:` placeholders — the
+   **same** reconcile push runs (§ Push flow 1). This makes a re-pointed
+   placeholder (a `.js`→`.ts` conversion) survive a pull that fires before the
+   first TS push — notably the live-mirror background refresh after a structure
+   edit, which otherwise treated the stale `.js` map entry as authoritative and
+   rewrote the placeholder back to `.js` (Plan 35 field-test finding).
+4. For each JS Code node (`n8n-nodes-base.code`), matched by node id:
    - **Marker present** → TS-managed: compare `hash(remote body)` vs
      `hash(compile(local .ts))` — in sync → nothing; local == lastPushedHash
      → **instance-side edit**: warn (inspect via `status --diff`), `.ts`
@@ -402,11 +408,11 @@ For each configured workflow:
      body (git is the safety net; a warning flags when that clobbers
      unpushed local edits).
    - Node renamed → rename the file (id-keyed map), update state.
-4. Write the `workflow.json` snapshot (placeholders substituted; derived
+5. Write the `workflow.json` snapshot (placeholders substituted; derived
    fields stripped — see layout).
-5. Update `.decanter.json`: per-node `lastPushedHash` (= remote body hash),
+6. Update `.decanter.json`: per-node `lastPushedHash` (= remote body hash),
    per-node `name`, workflow `name`; scrub the legacy structure hash.
-6. Optional auto-commit (`commitOnPull`).
+7. Optional auto-commit (`commitOnPull`).
 
 ## Push flow (`n8n-decanter push [id…] [--force] [--publish]`)
 
@@ -416,7 +422,8 @@ Guard errors abort and are *not* bypassable with `--force`.
 
 1. Refresh the id→file map from the snapshot's `//@file:` placeholders (the
    human-visible file map — this is what makes a local `.js` → `.ts`
-   re-point take effect).
+   re-point take effect). Pull runs the **same** reconcile (§ Pull flow 3), so
+   a conversion survives an intervening pull.
 2. MCP `get_workflow_details` (fresh read). For each tracked node id: resolve
    its **current remote name** (the name↔id reconciliation — renames made
    anywhere are absorbed here), build the local payload (`.js` verbatim;
