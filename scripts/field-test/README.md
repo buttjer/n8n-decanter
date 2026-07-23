@@ -2,7 +2,7 @@
 
 Dev-only harness that puts the **whole product** — `init` → skills/MCP structure
 work → Code-node authoring → `push` → runs — in front of **blind** Sonnet coding
-agents acting as typical users against a real n8n in Docker, and grades what
+agents acting as typical users against a real n8n in Docker, and captures what
 happens. A UX/contract field test, **not** a CI suite (cost + nondeterminism
 rule that out). Never part of `npm test`.
 
@@ -10,71 +10,86 @@ rule that out). Never part of `npm test`.
 
 | File | Role |
 | --- | --- |
-| `stage.mts` | Boots + provisions a throwaway n8n (or targets `FIELD_N8N_URL`), seeds realism workflows + an S1 skeleton, scaffolds a **neutral** scratch project (git, skills pack), prints a **manifest**. |
-| `skills-install.mts` | Installs the official n8n skills pack (`n8n-io/skills`) into the scratch project the way a real user would. |
-| `scenarios/S1–S5.md` | Persona / goal / adaptive beats / success checklist + a machine-readable `## Orchestration` turn spine. `STYLE.md` = the blinding rules. |
-| `run.mts` | Orchestrator: replays each scenario's scripted turns as headless `claude -p --model sonnet` sessions, captures transcripts + the guard's stderr, runs `verify.mts` after each. |
-| `verify.mts` | Scripted invariant checks (no LLM): byte-equality, placeholders, TS marker-hash relation, `.decanter.json` git-history — exit 1 on any violation. |
+| `stage.mts` | Boots + provisions a throwaway n8n (or `FIELD_N8N_URL`), seeds workflows + an S1 skeleton, scaffolds a **neutral** scratch project: `git init`, **`npm link`s OUR built CLI**, **pre-seeds a correct `.env`**, disables the nested session's sandbox, vendors the n8n skills pack (`skills-install.mts`). Prints a **manifest**. |
+| `run.mts` | Orchestrator: replays each scenario's scripted turns as headless `claude -p --model sonnet` sessions (`--resume` per turn); post-init wires guard-stderr capture + the allow-extension; runs `verify.mts` after each. Diagnostics: `--smoke`, `--netcheck`, `--dry-run`. |
+| `verify.mts` | Scripted invariant oracle (no LLM): placeholder integrity, `.js` byte-equality, `.ts` marker-hash relation, `.decanter.json` git-history, `get_workflow_history` evidence. Exit 1 on any violation. |
+| `report.mts` | **Renders a run's transcripts into ONE self-contained HTML report** — a chat-style timeline of each blind session (prompts, agent reasoning, every tool call + result, guard log, verdicts). Secrets redacted. This is how you *see what happened in the agentic part*. |
+| `scenarios/S1–S5.md` + `STYLE.md` | Persona / goal / adaptive-beats / checklist + a machine-readable `## Orchestration` turn spine; blinding rules verbatim. |
 
 ## Run it (UNSANDBOXED)
 
-Nested `claude` needs the Anthropic API and `fs.watch`/FSEvents dies under a
-sandbox — **run the whole thing in a normal terminal**, not a sandboxed agent
-shell. A coding agent running this must run it outside its command sandbox.
+Nested `claude` needs the Anthropic API and must reach the local n8n, and
+`fs.watch` dies under a sandbox — **run in a normal terminal**. If you drive this
+from a coding agent whose Bash is sandboxed, exclude the field-test commands from
+its sandbox (e.g. Claude Code `sandbox.excludedCommands`:
+`node scripts/field-test/run.mts *`, `node scripts/field-test/stage.mts *`).
 
 ```sh
-# 1. stage — boots n8n in Docker (needs a running Docker daemon), prints a manifest
-npm run field-test:stage
-#    → MANIFEST=/…/ftrun-<pid>/manifest.json   (last line)
-
-# 2. round 1 — blind Sonnet sessions for S1–S4 (or name scenarios)
-node scripts/field-test/run.mts /…/manifest.json            # S1 S2 S3 S4
-node scripts/field-test/run.mts /…/manifest.json S1 --dry-run   # print turns, spawn nothing
-
-# 3. invariants (run.mts already calls this per scenario; re-run any time)
-npm run field-test:verify /…/manifest.json
-
-# 4. teardown — removes the container + scratch dirs
-node scripts/field-test/stage.mts --down /…/manifest.json
+npm run field-test:stage                       # boots n8n, links our CLI, prints MANIFEST=<path>
+node scripts/field-test/run.mts <manifest> --smoke      # (debug) one claude turn works? → READY
+node scripts/field-test/run.mts <manifest> --netcheck   # (debug) can the agent reach n8n? → 200
+node scripts/field-test/run.mts <manifest> S1 S2 S3 S4  # the blind round (or a subset)
+npm run field-test:report <manifest>           # → <harnessRoot>/report.html  (open it)
+npm run field-test:verify <manifest>           # re-run the invariant checks any time
+node scripts/field-test/stage.mts --down <manifest>     # teardown (container + scratch dirs)
 ```
 
-Target an already-running local instance instead of booting one:
+`run.mts <manifest> S1 --dry-run` prints the filled turns and spawns nothing.
 
-```sh
-FIELD_N8N_URL=http://127.0.0.1:5678 FIELD_MCP_TOKEN=<tok> FIELD_API_KEY=<key> \
-  npm run field-test:stage
-```
+## Debugging
 
-Env knobs: `FIELD_N8N_TAG` (image; default matches `test/smoke-n8n.mts`),
-`FIELD_N8N_URL`/`FIELD_MCP_TOKEN`/`FIELD_API_KEY` (external instance),
-`FIELD_KEEP=1` (keep the container on `--down`).
+- **Diagnostics first.** `--smoke` proves headless `claude -p` works (auth, flags,
+  stream parsing); `--netcheck` proves the blind session can reach n8n. Run both
+  before a full round when something looks off.
+- **Artifacts** (in `<harnessRoot>`, a sibling dir the agent never enters):
+  `transcripts/<S>/turn-N.jsonl` (stream-json), `verify-<S>.json`, `guard.log`,
+  and `report.html`. The **report** is the fastest way to read a session.
+- **Guard evidence** (`guard.log`): a blocked `jsCode`-over-MCP write shows as a
+  guard warn-line; an empty/connection-only log means the agent went file-first.
 
-## After a run — grade + report (Opus, unblinded)
+## Env knobs
 
-`run.mts` produces the artifacts; **grading is a separate Opus pass** (it needs
-judgment `verify.mts` can't give):
+| Var | Effect |
+| --- | --- |
+| `FIELD_N8N_TAG` | n8n image (default matches `test/smoke-n8n.mts`). |
+| `FIELD_N8N_URL` / `FIELD_MCP_TOKEN` / `FIELD_API_KEY` | target an existing instance instead of booting one. |
+| `FIELD_DECANTER_SPEC` | install a published version / tarball / git ref instead of `npm link`ing the local repo. |
+| `FIELD_NO_SEED_ENV=1` | omit the pre-seeded `.env` to exercise `init`'s cold host-prompt path (reproduces the https finding). |
+| `FIELD_TURN_TIMEOUT_MS` | per-turn kill timeout (default 15 min). |
+| `FIELD_KEEP=1` | keep the container on `--down`. |
 
-1. **Contamination check** — scan each transcript for signs the agent inferred
-   an evaluation (judging *intent*, not the mere presence of the `test`/
-   `scenario` verbs). A suspected-leak run is flagged + re-run, **not graded**.
-2. **Rubric** — task success per each scenario's checklist; process conformance
-   (code via files+push, structure via MCP, orient-before-edit); guard events
-   classified (working-as-intended vs confusing); friction log (each item tied
-   to the exact CLI/docs surface); turns/time to done. Record **whether agents
-   discover + use `preflight`**.
-3. **Evidence** — from `guard.log`: did the skills' routing nudge bite? (agents
-   attempting `jsCode` over MCP → guard block warn-line) — cross-reference from
-   [Plan 50](../../plans/draft/50-code-node-authoring-skill.md).
-4. **Report** — append `## Run report — round 1` to
-   [plans/open/35-blind-agent-field-test.md](../../plans/open/35-blind-agent-field-test.md):
-   per-scenario verdicts, invariant results, ranked findings (severity ×
-   surface). Findings → **maintainer triage** (this plan changes no product
-   code).
+## Round-1 findings (preliminary — full grading deferred)
+
+First blind round (Sonnet, 2026-07-23) against real n8n 2.30.7. **S1 and S2
+passed cleanly** — a blind agent ran the full `init → pull → author → push →
+publish` flow (S1) and **built an entire 6-node workflow with structure via the
+guard and every Code node via files+push, byte-equal, zero rogue `jsCode`** (S2).
+Contamination check clean (no agent inferred an evaluation). Findings surfaced
+along the way, ranked for the maintainer's triage:
+
+1. **Discoverability (P1).** With no project-level `n8n-decanter`, a blind agent
+   never finds it — it hand-rolls raw n8n MCP instead. *(Harness now `npm link`s
+   the CLI so the project has the breadcrumb; the underlying discoverability gap
+   is the finding.)*
+2. **`init` writes `https://` for a local `http://` host (P1, product).** Breaks
+   the guard (which reads `.env` directly → `upstream request failed`) and the
+   CLI. Reproduce with `FIELD_NO_SEED_ENV=1`.
+3. **`init` is hard for agents to drive (P2, product).** The interactive stdin
+   prompts took 20+ attempts to get through; no non-interactive flag path.
+4. **`.js → .ts` conversion leaves `.decanter.json` stale (P2, product).** The
+   agent swapped the file + re-pointed the `//@file:` placeholder correctly, but
+   the node→file map still pointed at the deleted `.js` (needs a `pull` reconcile,
+   or push should re-key it).
+5. **Positive:** decanter's scaffolded `AGENTS.md` steered the agent **file-first**
+   for code before it ever tried `jsCode` over MCP — the guard never needed to
+   block (answers Plan 50's "does the nudge bite?" — the contract pre-empts it).
+
+Detailed per-turn grading + the S3 drift-guard scenario (its preHook/prompt
+alignment was fixed after round-1b) are the next exploration pass.
 
 ## Layout (blinding)
 
-The agent's cwd is `workDir` (neutral name). All harness artifacts — manifest,
-transcripts, `guard.log` — live in a **sibling** `harnessRoot` the agent never
-enters, so the manifest's metadata (seeded kinds, "field test", …) can't leak
-into a blind session. `git init` in `workDir` stops CLAUDE.md discovery there,
-so the decanter repo can't leak in either.
+The agent's cwd is `workDir` (neutral name). All harness artifacts live in a
+**sibling** `harnessRoot` the agent never enters, so the manifest's metadata
+can't leak into a blind session. `git init` in `workDir` stops CLAUDE.md
+discovery there, so the decanter repo can't leak in either.

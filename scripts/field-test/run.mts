@@ -132,16 +132,22 @@ async function remoteDrift(): Promise<void> {
 }
 
 // ---------- one blind claude -p turn ----------
+const TURN_TIMEOUT_MS = Number(process.env.FIELD_TURN_TIMEOUT_MS ?? 900_000); // 15 min/turn safety net
 async function claudeTurn(msg: string, turnIndex: number, resumeId: string | undefined, transcript: string): Promise<{ sessionId: string | undefined; resultText: string }> {
   const args = ["-p", msg, "--model", "sonnet", "--output-format", "stream-json", "--verbose"];
   if (resumeId) args.push("--resume", resumeId);
-  else args.push("--allowedTools", "Bash,Read,Edit,Write,Glob,Grep,TodoWrite,mcp__n8n-instance,mcp__n8n-docs");
+  // Broad "consenting user" grant on EVERY turn (permission-UX is out of scope,
+  // Plan 35). The settings.local.json DENY rules still win (push --force,
+  // .decanter.json, .env) once init scaffolds them, and the jsCode-over-MCP block
+  // is enforced by the mcp connect guard itself, not by permissions.
+  args.push("--allowedTools", "Bash,Read,Edit,Write,Glob,Grep,TodoWrite,mcp__n8n-instance,mcp__n8n-docs");
   return await new Promise((resolve, reject) => {
     const proc = spawn("claude", args, { cwd: WORKDIR, env: { ...process.env } });
     let buf = "";
     let sessionId: string | undefined;
     let resultText = "";
     const lines: string[] = [];
+    const timer = setTimeout(() => { lines.push(`[harness] turn ${turnIndex} exceeded ${TURN_TIMEOUT_MS}ms — killing`); proc.kill("SIGKILL"); }, TURN_TIMEOUT_MS);
     proc.stdout.on("data", (c: Buffer) => {
       buf += c.toString();
       while (true) {
@@ -158,8 +164,9 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
       }
     });
     proc.stderr.on("data", (c: Buffer) => lines.push(`[stderr] ${c.toString().trimEnd()}`));
-    proc.on("error", reject);
+    proc.on("error", (err) => { clearTimeout(timer); reject(err); });
     proc.on("close", (code) => {
+      clearTimeout(timer);
       writeFileSync(transcript, lines.join("\n") + "\n");
       if (code !== 0 && !resultText) reject(new Error(`claude turn ${turnIndex} exited ${code} (see ${transcript})`));
       else resolve({ sessionId, resultText });
@@ -208,6 +215,41 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
 
 // ---------- main ----------
 if (!existsSync(WORKDIR)) { console.error(`workDir missing: ${WORKDIR} — run stage.mts first`); process.exit(2); }
+
+// --netcheck: prove the blind session can actually REACH the local n8n (i.e. the
+// nested Bash sandbox is off). One claude turn that curls n8n's /healthz.
+if (argv.includes("--netcheck")) {
+  mkdirSync(path.join(HARNESS, "transcripts"), { recursive: true });
+  console.log(`netcheck: asking a claude -p turn to curl ${manifest.host}/healthz …`);
+  try {
+    const { resultText } = await claudeTurn(`Run exactly this shell command and reply with ONLY its raw output and nothing else: curl -s -o /dev/null -w '%{http_code}' ${manifest.host}/healthz`, 0, undefined, path.join(HARNESS, "netcheck.jsonl"));
+    const ok = /200/.test(resultText);
+    console.log(`netcheck: n8n /healthz -> ${JSON.stringify(resultText.trim()).slice(0, 120)} — ${ok ? "REACHABLE (sandbox off)" : "NOT reachable (still fenced)"}`);
+    process.exit(ok ? 0 : 1);
+  } catch (err) {
+    console.error(`netcheck FAILED: ${(err as Error).message}`);
+    process.exit(1);
+  }
+}
+
+// --smoke: cheapest possible validation that a headless claude -p turn works at
+// all (auth, --model, stream-json parsing, session_id capture) before spending a
+// full scenario. No MCP / tools needed — a pure text reply.
+if (argv.includes("--smoke")) {
+  mkdirSync(path.join(HARNESS, "transcripts"), { recursive: true });
+  console.log(`smoke: spawning one claude -p turn in ${WORKDIR} …`);
+  try {
+    const { sessionId, resultText } = await claudeTurn("Reply with exactly the word READY and nothing else.", 0, undefined, path.join(HARNESS, "smoke.jsonl"));
+    const ok = !!sessionId && /READY/i.test(resultText);
+    console.log(`smoke: session=${sessionId ?? "(none)"} result=${JSON.stringify(resultText).slice(0, 160)}`);
+    console.log(ok ? "smoke OK — headless claude works; safe to run scenarios" : "smoke INCONCLUSIVE — inspect " + path.join(HARNESS, "smoke.jsonl"));
+    process.exit(ok ? 0 : 1);
+  } catch (err) {
+    console.error(`smoke FAILED: ${(err as Error).message}`);
+    process.exit(1);
+  }
+}
+
 console.log(`orchestrating ${scenarioIds.join(", ")} against ${manifest.host}\n  workDir ${WORKDIR}\n  guard.log ${GUARD_LOG}`);
 const summary: Array<{ id: string; verifyExit: number | null; turns: number }> = [];
 for (const id of scenarioIds) summary.push(await runScenario(id));

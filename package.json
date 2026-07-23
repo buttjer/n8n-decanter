@@ -45,7 +45,8 @@
     "test:sim": "node test/sim.mts",
     "field-test:stage": "node scripts/field-test/stage.mts",
     "field-test:run": "node scripts/field-test/run.mts",
-    "field-test:verify": "node scripts/field-test/verify.mts"
+    "field-test:verify": "node scripts/field-test/verify.mts",
+    "field-test:report": "node scripts/field-test/report.mts"
   },
   "engines": {
     "node": ">=22.18"

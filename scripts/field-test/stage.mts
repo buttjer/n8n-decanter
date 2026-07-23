@@ -30,10 +30,13 @@ import { execFile as execFileCb } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { installSkillsPack, type SkillsInstall } from "./skills-install.mts";
 
 const execFile = promisify(execFileCb);
+/** The n8n-decanter repo this stage lives in — the CLI under test (scripts/field-test/ → ../..). */
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const docker = (...args: string[]) => execFile("docker", args, { encoding: "utf8" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -209,7 +212,7 @@ async function provision(): Promise<{ container: string | null; seeded: SeedResu
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall }> {
+async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean }> {
   const base = os.tmpdir();
   const workDir = path.join(base, `flows-ops-${PID}`);
   const harnessRoot = path.join(base, `ftrun-${PID}`);
@@ -218,15 +221,63 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   mkdirSync(workDir, { recursive: true });
   mkdirSync(path.join(harnessRoot, "transcripts"), { recursive: true });
 
+  // The blind session runs UNSANDBOXED (Plan 35 §Cast — nested claude needs to
+  // reach the local n8n; the default Claude Code Bash sandbox allowlists only
+  // npm/GitHub egress and would refuse 127.0.0.1:<n8n port>, forcing the agent
+  // offline). Disable the nested session's sandbox via a workDir settings.json
+  // (separate from the settings.local.json init scaffolds + run.mts extends).
+  mkdirSync(path.join(workDir, ".claude"), { recursive: true });
+  writeFileSync(path.join(workDir, ".claude", "settings.json"), JSON.stringify({ sandbox: { enabled: false } }, null, 2) + "\n");
+
   // a git repo from the start (a real user "keeps flows in a git folder"); neutral author
   await execFile("git", ["-C", workDir, "init", "-q"]);
   await execFile("git", ["-C", workDir, "config", "user.email", OWNER.email]);
   await execFile("git", ["-C", workDir, "config", "user.name", "Priya Ops"]);
   await execFile("git", ["-C", workDir, "config", "commit.gpgsign", "false"]);
 
+  // Pre-seed a CORRECT .env (the user already configured their creds — realistic
+  // for a returning project) so every session/guard can actually REACH n8n. The
+  // agent still runs `n8n-decanter init` to scaffold the template (.mcp.json
+  // guard, AGENTS.md, config); init detects this .env and reuses the host without
+  // re-prompting. This sidesteps round-1a's product FINDING that `init` writes
+  // https:// for a local http instance (breaking the guard, which reads .env
+  // directly) — that finding is logged for triage, not masked. `FIELD_NO_SEED_ENV=1`
+  // omits this to exercise init's cold host-prompt path (and reproduce the bug).
+  if (process.env.FIELD_NO_SEED_ENV !== "1") {
+    writeFileSync(path.join(workDir, ".env"), `N8N_HOST=${HOST}\nN8N_MCP_TOKEN=${MCP}\nN8N_API_KEY=${KEY}\n`);
+  }
+
+  // Put OUR version of the CLI in the project — the code under test, not whatever
+  // is published to npm. This is also what makes the CLI DISCOVERABLE (package.json
+  // + node_modules/.bin, so `npx n8n-decanter` works) to a blind agent; a global
+  // PATH binary it has no reason to know about is NOT enough (round-1 finding:
+  // without this breadcrumb the agent never used decanter at all).
+  //
+  // Default: build + `npm link` the local repo (Plan 35 §Stage: "Build + npm link
+  // the CLI"; Node won't type-strip .mts under node_modules, so the built dist/ is
+  // the bin that runs). FIELD_DECANTER_SPEC overrides with an npm spec (a published
+  // version, tarball, or git ref) when you deliberately want that instead.
+  const spec = process.env.FIELD_DECANTER_SPEC;
+  writeFileSync(path.join(workDir, "package.json"), JSON.stringify({ name: "flows-ops", private: true, dependencies: { "n8n-decanter": spec ?? "^0.6.0" } }, null, 2) + "\n");
+  let decanterInstalled = false;
+  try {
+    if (spec) {
+      await execFile("npm", ["install", "--no-audit", "--no-fund", spec], { cwd: workDir });
+      console.log(`installed n8n-decanter (${spec}) into the project`);
+    } else {
+      await execFile("npm", ["run", "build"], { cwd: PACKAGE_ROOT });     // dist/ — the bin Node actually runs
+      await execFile("npm", ["link"], { cwd: PACKAGE_ROOT });             // register the local repo globally
+      await execFile("npm", ["link", "n8n-decanter"], { cwd: workDir });  // workDir/node_modules -> the local repo
+      console.log(`built + linked local n8n-decanter (${PACKAGE_ROOT}) into the project`);
+    }
+    decanterInstalled = true;
+  } catch (err) {
+    console.warn(`providing n8n-decanter failed (${(err as Error).message.split("\n")[0]}) — the agent may not discover the CLI`);
+  }
+
   // install the official n8n skills pack the way a real user would
   const skills = await installSkillsPack(workDir);
-  return { workDir, harnessRoot, skills };
+  return { workDir, harnessRoot, skills, decanterInstalled };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -235,6 +286,7 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
 // The template DENY rules stay active (push --force, .decanter.json, .env) —
 // deny wins over allow, so the guards under test hold.
 const ALLOW_EXTENSION = [
+  "Bash(npx n8n-decanter:*)", "Bash(npx n8n-decanter *)",
   "Bash(n8n-decanter init)", "Bash(n8n-decanter init:*)",
   "Bash(n8n-decanter push)", "Bash(n8n-decanter push:*)",
   "Bash(n8n-decanter publish)", "Bash(n8n-decanter publish:*)",
@@ -251,7 +303,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, harnessRoot, skills } = await scaffold();
+  const { workDir, harnessRoot, skills, decanterInstalled } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -264,6 +316,7 @@ try {
     workDir,
     root: "workflows",
     skills,
+    decanterInstalled,
     seeded,
     allowExtension: ALLOW_EXTENSION,
   };

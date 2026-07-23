@@ -396,11 +396,14 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   manifest. `field-test:run <manifest>` drives blind
                       #   `claude -p --model sonnet` sessions per the S*.md
                       #   scenarios — run UNSANDBOXED (nested claude needs the
-                      #   Anthropic API; fs.watch/FSEvents dies sandboxed) — and
-                      #   `field-test:verify <manifest>` runs the scripted
-                      #   invariant checks. Never part of npm test; round-1 grading
-                      #   is a separate Opus pass. Teardown:
-                      #   `field-test:stage --down <manifest>`.
+                      #   Anthropic API + must reach the local n8n; fs.watch dies
+                      #   sandboxed). `run.mts --smoke`/`--netcheck` are debug
+                      #   probes; `field-test:verify <manifest>` runs the scripted
+                      #   invariant checks; `field-test:report <manifest>` renders
+                      #   a self-contained HTML timeline of the agentic sessions.
+                      #   The stage npm-links OUR built CLI + pre-seeds a correct
+                      #   .env. Never part of npm test; grading is a separate pass.
+                      #   Teardown: `field-test:stage --down <manifest>`.
 
 node n8n-decanter.mts <init|pull|push|status|check|watch> …
 ```

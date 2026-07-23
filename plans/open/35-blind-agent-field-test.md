@@ -4,10 +4,11 @@
 Breaking rework of the entire agent-facing surface, **now released in 0.6.0
 (2026-07-23, #133)**; this validates it the way it will actually be consumed,
 before further releases build on it untested.
-**Status:** In progress — **harness built + validated** (2026-07-23,
-`scripts/field-test/`); Tasks 1–3 + 6 done, **round-1 blind execution (Task 4)
-pending** as a maintainer-run, UNSANDBOXED step (nested `claude` is
-sandbox-blocked; see "Harness status" below).
+**Status:** In progress — **harness built + stabilized, and round-1 blind
+execution RUN** (2026-07-23, `scripts/field-test/`). Tasks 1–3 + 6 done; **S1 +
+S2 passed** (full flow + a blind-built 6-node workflow, all Code via files+push);
+5 findings captured (see "Round-1" below). **Detailed per-turn grading + a full
+Task-4 run report are the next pass** (Task 5 triage still pending).
 **Snapshot:** 2026-07-23T14:05Z @ 7995d22
 **Theme:** Put the whole product — `init` → skills/MCP structure work →
 Code-node authoring → `push` → runs — in front of **blind** Sonnet coding
@@ -316,7 +317,52 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
    `plans/AGENTS.md` holds the conventions; no changelog (internal tooling — no
    user-facing surface).
 
-## Harness status — round 1 pending (2026-07-23)
+## Round-1 results — preliminary (2026-07-23)
+
+First blind round ran end-to-end (Sonnet, headless `claude -p`, real n8n 2.30.7
+in Docker). Getting a *valid* run took four harness corrections, each itself a
+finding; the fixes are in `scripts/field-test/`. **S1 + S2 passed**; the full
+per-turn grading + Task-4 run report are the next pass.
+
+**Per-scenario (round-1b):**
+- **S1 — PASS.** `init` (on a pre-seeded `.env`) → `pull` → author `normalize.js`
+  → `push` → `publish`, verified on the instance. `verify.mts` 5/5 across 3
+  pulled workflows.
+- **S2 — PASS (headline).** The blind agent **built a 6-node workflow** (schedule
+  → generate → IF → tag-high/tag-low → merge → summarize): **structure via the
+  guarded MCP, every Code node via files+push, all byte-equal, zero rogue
+  `jsCode`**. `verify.mts` clean across 4 workflows. Core value prop validated.
+- **S3 — inconclusive (harness bug, since fixed).** The drift preHook edited
+  *Contact normalizer* while the prompt targeted the *orders* workflow → the
+  agent fixed the undrifted flow and the drift guard was never exercised. Prompt
+  realigned to the drifted node for the next run.
+- **S4 — mixed.** `archive_workflow` via MCP **worked** (confirmed archived);
+  node-rename handled; the `.js→.ts` conversion exposed finding 4 below.
+
+**Findings (ranked, for maintainer triage — Task 5):**
+1. **Discoverability (P1).** No project-level `n8n-decanter` ⇒ a blind agent
+   never finds it and hand-rolls raw n8n MCP. Harness now `npm link`s the CLI so
+   the project carries the breadcrumb; the gap itself is the finding.
+2. **`init` writes `https://` for a local `http://` host (P1, product).** Breaks
+   the guard (reads `.env` directly → `upstream request failed: fetch failed`)
+   and the CLI. Repro: `FIELD_NO_SEED_ENV=1`.
+3. **`init` is hard for agents to drive (P2, product).** Interactive stdin took
+   20+ attempts; no non-interactive flag path.
+4. **`.js→.ts` conversion leaves `.decanter.json` stale (P2, product).** Agent
+   swapped the file + re-pointed the `//@file:` placeholder correctly, but the
+   node→file map still pointed at the deleted `.js`.
+5. **Positive.** Decanter's scaffolded `AGENTS.md` steered the agent **file-first**
+   for code before it ever tried `jsCode` over MCP — the guard never had to block
+   (Plan 50 evidence: the contract pre-empts the nudge). Contamination check
+   clean (no agent inferred an evaluation).
+
+**Harness hardening this round:** `stage` now `npm link`s our built CLI (not a
+published version), pre-seeds a correct `.env`, disables the nested session's
+sandbox (so the agent can reach the local n8n); `run.mts` gained a per-turn
+timeout + `--smoke`/`--netcheck`/`--dry-run` probes; `report.mts` renders a
+self-contained HTML timeline of the agentic sessions.
+
+## Harness status — capabilities (2026-07-23)
 
 **Built (Tasks 1–3 + 6), in `scripts/field-test/`:**
 
