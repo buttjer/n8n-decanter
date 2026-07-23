@@ -19,26 +19,22 @@ don't let either drift from the code.
 - Prefer bullet points over paragraphs.
 - **Highlight** important things and decisions so they stand out.
 
-## Session labels: tag Plan work `[Plan NN] Planning` / `[Plan NN] Executing`
+## Session labels: `[NN] short name` (plan work) / `[MISC] short name`
 
-When a session's task maps to a numbered backlog Plan (`plans/…`, "Plan NN"),
-the session should be labeled for that plan and phase so concurrent sessions
-stay legible:
+Every session gets a label so concurrent sessions stay legible:
 
-- **Planning** that plan → **`[Plan NN] Planning`**
-- **Executing** that plan → **`[Plan NN] Executing`**
+- Task maps to a numbered backlog Plan → **`[NN] <name>`** — the bare plan
+  number in brackets (e.g. `[30] agent ergonomics`).
+- Task has no plan → **`[MISC] <name>`** (e.g. `[MISC] plans reorg`).
+
+`<name>` is **very short and precise — 2–5 words** describing the actual work.
 
 **An agent can't rename its own session** — there is no model-invokable rename
 in Claude Code (`/rename` is a human-only slash command). So the agent's job is
-to **surface the exact command for the user to paste**: as soon as the plan
-number and phase are known, print a one-liner such as — Run
-`/rename [Plan 30] Executing` — so the human can apply it in one keystroke.
-Re-prompt when the phase or round number changes.
-
-Append a round number `(2)`…`(99)` for repeat passes; the **first round carries
-no number**. E.g. `[Plan 30] Planning` → `[Plan 30] Planning (2)` after a
-revision; `[Plan 30] Executing` → `[Plan 30] Executing (2)` for a second exec
-pass. Work that doesn't map to a numbered Plan gets no such label.
+to **surface the exact command for the user to paste**: as soon as the label is
+known, print a one-liner such as — Run `/rename [30] agent ergonomics` — so the
+human can apply it in one keystroke. Re-prompt when the work shifts enough that
+the name no longer fits.
 
 ## What this is
 
@@ -185,15 +181,16 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   `<type>/plan-NN-<slug>` and the **worktree dir** `<type>-plan-NN-<slug>` inside
   your default worktree dir (e.g. branch `feat/plan-27-verb-grammar`, worktree
   `.claude/worktrees/feat-plan-27-verb-grammar`), and **tell the user to label
-  the session** by pasting `/rename [Plan 27] …` (an agent can't rename its own
-  session — see below). This ties the session, branch, worktree, and PR back to
+  the session** by pasting `/rename [27] <short name>` (an agent can't rename its
+  own session — see the "Session labels" rule above). This ties the session, branch, worktree, and PR back to
   the plan at a glance. The plan number is often known
   only *after* work has started (planning surfaces it, or an existing plan gets
   claimed mid-task) — **when it becomes known, it's worth a rename**: create a
   correctly-named worktree/branch and move the work over (see "One worktree per
   task" for the move-files recipe), and rename the session. Zero-padding is
-  optional (`plan-7` and `plan-07` are both fine); when the item is Plan 0 /
-  BACKLOG with no number of its own, use the ordinary `<type>/<slug>` form.
+  optional (`plan-7` and `plan-07` are both fine); when the work has no plan
+  number of its own (a `draft/` note not yet graduated, or misc work), use the
+  ordinary `<type>/<slug>` form and a `[MISC] <short name>` session label.
 - **Feature PRs are decoupled from releases — merging one is never a release.**
   A user-facing PR only appends its entry under `[Unreleased]` (per the
   Changelog rules); it does **not** bump `package.json`, tag, or cut a Release.
