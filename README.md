@@ -51,7 +51,15 @@ clean git diffs.
   tab via a local proxy.
 - **Guarded agent access to n8n's MCP — wired by default** — the scaffolded
   `.mcp.json` spawns `mcp connect`, forwarding the full n8n MCP surface
-  except writes to a Code node's `jsCode`; no secret to manage.
+  except writes to a Code node's `jsCode`; no secret to manage. The read-only
+  `workflow.json` snapshot then **refreshes itself** after an agent
+  restructures the workflow through the guard — no manual `pull`
+  (`liveMirror`, on by default).
+- **Git-native disaster recovery** — `backup create` captures a versioned,
+  redeployable full export into a committed `backups/` store (fidelity MCP
+  can't give — credential refs kept, code stays a placeholder); `backup
+  restore` redeploys it as a new workflow with **node ids preserved**, a
+  second version history that outlives the instance.
 - **Shared code and small libraries** — `.ts` nodes import helpers/types from
   `shared/` and opted-in npm packages, bundled on push into self-contained
   nodes that run anywhere, n8n Cloud included.
@@ -82,8 +90,8 @@ it lands in `workflows/<slug>/`. Know the id already? `n8n-decanter pull
 set a bare `pull`/`push`/`status` acts on.)
 
 **Credentials:** OAuth by default (via `init`); `N8N_MCP_TOKEN` for
-headless/CI; `N8N_API_KEY` is optional, needed only for `executions` and
-`data-tables`. Details: [Installation](docs/getting-started/installation.md),
+headless/CI; `N8N_API_KEY` is optional, needed only for `executions`,
+`data-tables`, and `backup`. Details: [Installation](docs/getting-started/installation.md),
 [init](docs/cli/init.md), [Configuration](docs/concepts/configuration.md).
 
 ## Works with n8n's official skills
@@ -121,6 +129,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `simulate <workflow>` | Offline engine replay (Docker); diffs vs a capture |
 | `preflight [workflow…]` | The whole verification ladder as one scored, read-only gate (exits 1 on *not ready*) |
 | `scenario create` / `scenario check` | Build / validate a committed scenario (captured and/or schema-scaffolded) |
+| `backup create` / `restore` / `list` | Git-native disaster recovery — capture / redeploy / list versioned full-export backups |
 | `list [--remote]` | Pulled workflows (`--remote` adds unpulled ones) |
 | `mcp connect` / `mcp serve` | Guarded MCP access for coding agents |
 | `node run <node-file>` | Run a Code node offline, print its items |

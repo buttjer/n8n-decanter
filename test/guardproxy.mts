@@ -62,8 +62,13 @@ const mcpStub = {
   },
 } as unknown as McpClient;
 
+// Recording mirror (Plan 51 Part A): the guard calls schedule(id) after
+// forwarding a non-blocked update_workflow; assert the hook fires correctly.
+const scheduled: string[] = [];
+const mirrorStub = { schedule: (id: string) => scheduled.push(id), drain: async () => {} };
+
 const configDir = mkdtempSync(path.join(os.tmpdir(), "decanter-guard-"));
-const handle = await startGuardProxy({ mcp: mcpStub, host: upstreamHost, configDir, port: 0, log });
+const handle = await startGuardProxy({ mcp: mcpStub, host: upstreamHost, configDir, port: 0, mirror: mirrorStub, log });
 const auth = { authorization: `Bearer ${handle.secret}` };
 
 const rpc = (over: Record<string, unknown> = {}) =>
@@ -106,14 +111,28 @@ await step("structure ops pass: update_workflow WITHOUT jsCode forwards", async 
   assert.match(r.text, /"echo":"update_workflow"/, "reached the upstream");
 });
 
+await step("live mirror: a forwarded (non-blocked) update_workflow schedules a refresh of its workflowId", async () => {
+  scheduled.length = 0;
+  await post(rpc({ params: { name: "update_workflow", arguments: { workflowId: "wf-mirror", operations: [{ type: "renameNode", oldName: "A", newName: "B" }] } } }));
+  assert.deepEqual(scheduled, ["wf-mirror"], "structure edit → snapshot refresh scheduled");
+});
+
+await step("live mirror: non-update_workflow tools do NOT schedule a refresh", async () => {
+  scheduled.length = 0;
+  await post(rpc({ params: { name: "search_workflows", arguments: {} } }));
+  assert.deepEqual(scheduled, [], "reads never trigger a mirror");
+});
+
 await step("the guard: update_workflow carrying jsCode (any depth) is blocked with instructive guidance", async () => {
   const before = seen.length;
+  scheduled.length = 0;
   const r = await post(rpc({ params: { name: "update_workflow", arguments: { workflowId: "wf1", operations: [{ type: "updateNodeParameters", nodeName: "Transform", parameters: { jsCode: "hacked" } }] } } }));
   assert.equal(r.status, 200, "answered in-band, not a transport error");
   const msg = JSON.parse(r.text);
   assert.equal(msg.result.isError, true);
   assert.match(msg.result.content[0].text, /guard-proxy.*n8n-decanter push/s);
   assert.equal(seen.length, before, "the write never reached n8n");
+  assert.deepEqual(scheduled, [], "a blocked write never schedules a mirror refresh");
   assert.ok(logs.some((l) => l.includes("blocked a jsCode write")), "operator log line");
 });
 
@@ -180,7 +199,7 @@ await step("close removes the discovery file", async () => {
 function startStdio(host = upstreamHost) {
   const input = new PassThrough();
   const output = new PassThrough();
-  const done = runStdioGuard({ mcp: mcpStub, host, timeoutMs: 5000, log, input, output });
+  const done = runStdioGuard({ mcp: mcpStub, host, timeoutMs: 5000, mirror: mirrorStub, log, input, output });
   let buf = "";
   const lines: string[] = [];
   const waiters: Array<(l: string) => void> = [];
@@ -240,6 +259,22 @@ await step("stdio guard: a jsCode write is answered locally, upstream untouched"
   assert.equal(msg.result.isError, true);
   assert.match(msg.result.content[0].text, /guard-proxy.*n8n-decanter push/s);
   assert.equal(seen.length, before, "the write never reached n8n");
+});
+
+await step("stdio live mirror: a forwarded update_workflow schedules a refresh; a blocked jsCode write does not", async () => {
+  // the stdio guard schedules AFTER forward() returns (a tick past the response
+  // line), so settle microtasks before asserting the fire-and-forget schedule
+  const settle = () => new Promise((r) => setImmediate(r));
+  scheduled.length = 0;
+  stdio.send({ jsonrpc: "2.0", id: 40, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: "wf-stdio", operations: [{ type: "renameNode", oldName: "A", newName: "B" }] } } });
+  await stdio.next();
+  await settle();
+  assert.deepEqual(scheduled, ["wf-stdio"], "structure edit scheduled after forward");
+  scheduled.length = 0;
+  stdio.send({ jsonrpc: "2.0", id: 41, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: "wf-stdio", operations: [{ type: "updateNodeParameters", nodeName: "T", parameters: { jsCode: "x" } }] } } });
+  await stdio.next();
+  await settle();
+  assert.deepEqual(scheduled, [], "blocked jsCode write never schedules");
 });
 
 await step("stdio fail closed: an unparseable line gets a -32700 error, nothing forwarded", async () => {
