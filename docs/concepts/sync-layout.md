@@ -17,9 +17,10 @@ workflows/
 ```
 
 The split of responsibilities (since the MCP-native sync): **Code-node source
-lives here, in git, and decanter syncs it. Workflow structure lives in n8n**
-— the editor or n8n's own MCP tools own it, and decanter mirrors it into the
-read-only snapshot on every pull.
+lives here, in git, as the files decanter syncs. Workflow structure lives in
+n8n** — you change it in the editor or over n8n's MCP tools (reached through
+decanter's guarded proxy), and decanter mirrors it into the read-only snapshot
+on every pull.
 
 ## Folder names
 

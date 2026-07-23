@@ -18,10 +18,10 @@ of the live version (pushes land on the draft, and UI edits do too), `status`
 says so — *live version is older than the draft ("publish" to go live)* — so
 you know a [publish](/docs/cli/publish/) is pending.
 
-Structure is n8n's job: when the workflow's structure changed remotely,
-`status` prints an informational *structure snapshot out of date — pull to
-refresh* line. That is a hint to refresh `workflow.json`, not drift — it
-doesn't affect the exit code.
+Structure is mirrored, not guarded: when the workflow's structure changed
+remotely, `status` prints an informational *structure snapshot out of date —
+pull to refresh* line. That is a hint to refresh `workflow.json`, not drift —
+it doesn't affect the exit code.
 
 ## Exit codes
 

@@ -44,6 +44,23 @@ entries carry no priority field) — adjust freely.
       rest live-fresh). Rejected for Plan 37 v1 to keep one precedence rule
       (a run pins from a named scenario *or* a capture, never a mix); revisit
       if the flaky-node workflow is missed in practice.
+- [ ] **Auto-refresh `workflow.json` after structure edits over MCP — snapshot
+      freshness without an explicit `pull`** (2026-07-23). Today `workflow.json`
+      is written **only** by `pull` (`lib/pull.mts`; `watch` refreshes it only
+      because it pulls). So after an agent restructures a workflow over the
+      guarded MCP proxy (`mcp connect`/`serve`: create/rename/add-node/wire),
+      the local read-only snapshot is **stale** until the next manual `pull`,
+      and the "structural changes show up as clean git diffs" story lags behind
+      what the agent just did. Investigate two variants: (a)
+      **guard-proxy-triggered refresh** — the proxy already sees every
+      `update_workflow`/create/rename call (`lib/mcpserve.mts`); on a
+      structure-mutating op it could pull that workflow to rewrite
+      `workflow.json` (and auto-commit); (b) **broader auto-pull on every
+      change** — a general "keep the mirror live" mode. Design questions: which
+      ops count as structure-mutating, debounce/races against concurrent local
+      edits and `push`, git-commit churn, draft-vs-tip timing, and
+      on-by-default vs. opt-in (like `browserReload`). Decide whether it's worth
+      it or whether explicit `pull` stays the model. Severity: low/medium.
 - [x] **Modification-aware template refresh** — conffile-style: record
       copy-time hashes of template files in a manifest at init; on re-init
       update pristine files (after confirm), never touch user-modified ones,
