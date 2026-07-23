@@ -154,6 +154,20 @@ export interface DecanterConfig {
    * so pinning this to the running version is recommended (Plan 7).
    */
   n8nVersion?: string;
+  /**
+   * Keep the read-only `workflow.json` snapshot auto-fresh after an agent
+   * restructures a workflow through the guard (`mcp connect`/`serve`, Plan 51
+   * Part A). Default `true`; `false` disables the background refresh (CI /
+   * deterministic setups). The refresh is fire-and-forget, git-gated, and
+   * tracked-only — see lib/mirror.mts.
+   */
+  liveMirror: boolean;
+  /**
+   * Cap on the retained `backups/` working set per workflow (Plan 51 Part B).
+   * Default `20`; `0` keeps all. Each `backup create` appends one file and
+   * rolling-prunes the oldest beyond this count.
+   */
+  backupLimit: number;
   host: string;
   /**
    * n8n public API key — OPTIONAL since Plan 32: the workflow code path syncs

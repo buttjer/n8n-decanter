@@ -17,7 +17,8 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { MCP_PATH, type McpClient } from "./mcp.mts";
-import { guardMessage } from "./mcpserve.mts";
+import { guardMessage, mirrorTargetId } from "./mcpserve.mts";
+import type { Mirror } from "./mirror.mts";
 import type { Log } from "./types.mts";
 
 /** JSON-RPC error codes used by the bridge (server-defined range). */
@@ -29,6 +30,12 @@ interface StdioGuardOptions {
   host: string;
   /** Per-request upstream timeout (decanter.config.json `requestTimeoutMs`). */
   timeoutMs: number;
+  /**
+   * Live snapshot mirror (Plan 51 Part A): scheduled after a forwarded,
+   * non-blocked `update_workflow` so the local snapshot refreshes without a
+   * manual `pull`. Omit / undefined to disable.
+   */
+  mirror?: Mirror;
   /** stderr-only logger — the output stream belongs to the protocol. */
   log: Log;
   /** Protocol streams — default stdio; tests pass PassThrough pairs. */
@@ -47,7 +54,7 @@ function rpcError(id: unknown, code: number, text: string): Record<string, unkno
  * responses anyway, and ordering keeps the initialize → session-id capture
  * race-free.
  */
-export async function runStdioGuard({ mcp, host, timeoutMs, log, input = process.stdin, output = process.stdout }: StdioGuardOptions): Promise<void> {
+export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input = process.stdin, output = process.stdout }: StdioGuardOptions): Promise<void> {
   const upstream = host + MCP_PATH;
   let sessionId: string | undefined;
 
@@ -145,6 +152,7 @@ export async function runStdioGuard({ mcp, host, timeoutMs, log, input = process
     }
     const messages = Array.isArray(parsed) ? parsed : [parsed];
     const ids: unknown[] = [];
+    const mirrorIds: string[] = []; // forwardable update_workflow targets to refresh
     for (const msg of messages) {
       if (msg === null || typeof msg !== "object") {
         return emit(rpcError(null, PARSE_ERROR, "decanter guard: malformed JSON-RPC message — refusing to forward (fail closed)"));
@@ -156,8 +164,14 @@ export async function runStdioGuard({ mcp, host, timeoutMs, log, input = process
         return emit(Array.isArray(parsed) ? [blocked] : blocked);
       }
       if (record.id !== undefined) ids.push(record.id);
+      // Live mirror (Plan 51 Part A): a forwardable structure edit — refresh the
+      // local snapshot after it lands (none reach here blocked; a block returns).
+      const target = mirror ? mirrorTargetId(record) : null;
+      if (target !== null) mirrorIds.push(target);
     }
     await forward(parsed, ids);
+    // Optimistic on forward: schedule once forwarded — non-blocking, debounced.
+    for (const id of mirrorIds) mirror?.schedule(id);
   };
 
   // Strictly ordered processing: chain each line onto the previous one.
@@ -170,4 +184,5 @@ export async function runStdioGuard({ mcp, host, timeoutMs, log, input = process
     rl.on("close", () => resolve());
   });
   await queue; // drain in-flight work before exiting with the agent
+  await mirror?.drain(); // let a pending snapshot refresh finish before exit
 }
