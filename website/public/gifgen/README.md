@@ -46,7 +46,7 @@ off early or double-captures. Current cycles:
 | Demo | Component array | Cycle | `loopMs` in `record.js` |
 | --- | --- | --- | --- |
 | terminal | `frames: [html, ms][]` | **12450 ms** (700 + 12×130 typing + 900 + 2×950 + 820+820+900 + 850 + 2400 + 1600) | 13230 (over by ~780 ms → wraps a hair into the next cycle, fine) |
-| agent | `steps: [html, ms][]` | **11400 ms** (1400+1200+1500+1600+1500+1600+2600) | 11400 (exact) |
+| agent | `steps: [html, ms][]` | **12100 ms** (1400+1200+1500+1600+2200+1600+2600) | 12100 (exact) |
 
 If you change any frame/step `ms` in a component, recompute its cycle and update
 `loopMs`. Adding/removing a **verb** (TerminalDemo `verbs`) or editing step

@@ -632,6 +632,51 @@ verb uses a dedicated client with a ≥320 s timeout):
   verification of uncommitted code, CI without an instance, isolation,
   version rehearsal — docs recommend `test` first everywhere.
 
+## Preflight — the scored verification gate (`preflight`, plans/36)
+
+`lib/preflight.mts` orchestrates the whole ladder into one read-only, scored
+verdict. It adds **zero execution paths** — it reuses `check`/`status`/`test`/
+`simulate`/`executions` quietly (a silent `Log`) and scores their returned
+facts. Nothing it does mutates (no push/publish/restore/draft write).
+
+- **Ladder (stable check ids agents key on), fast → slow:** static `layout`
+  (`validateWorkflowDir`), `types` (`runTypecheckResult`); sync `connect` +
+  `access` (one `getWorkflowDetails` — a reach-and-auth success is `connect`
+  pass, an `isUnavailableInMcp` refusal is `connect` pass + `access` fail, any
+  other error is `connect` fail), `parity`/`drift`/`snapshot` (from
+  `computeSyncFacts` — a per-node code-sync core **extracted from**
+  `statusWorkflow`, which is now a thin renderer over it so `status` stays
+  byte-identical), `lifecycle` (`publicationState`/`publishedVersionLagsDraft`),
+  `history` (production-run health), `capture` (a pin source exists + matches
+  the draft); runtime `test` (`runTest` in a new **`neverMutate`** mode) and
+  `simulate` (`runSimulation` headless, `networkNone` forced).
+- **Profiles** (deterministic, no auto-escalation): `--quick` = static+sync,
+  default = +`test`, `--full` = +`simulate`, `--offline` = static+`simulate`
+  (no instance — joins the dispatcher's `offline` set so `loadConfig` skips
+  `requireHost`). A check outside the active profile is a `skip` with an unlock.
+- **Scoring/verdict/coverage are pure functions** (unit-tested without IO):
+  score starts at 100, each `fail` −40 (a `CONFLICT` `drift` −30), each `warn`
+  −10, floor 0. Verdict: any `fail` → `not ready` (exit 1); else any `warn` →
+  `caution` (exit 0, `--fail-on=warn` → 1); else `ready`. `--require=<ids>`
+  promotes a skip of a named check to a `fail` at emit time (so the streamed
+  line, the summary, and `--fail-fast` all agree). `--json` emits the report
+  (single object, or an array for a multi-ref run); `--fail-fast` stops after
+  the first failure.
+- **Executions in the gate:** before the runtime tier, a `capture`-source run
+  with no explicit `--execution` auto-fetches the newest capture when
+  `N8N_API_KEY` is set and the local one is missing/stale (`--no-fetch` opts
+  out; read-only, gitignored). `history` reads recent production runs via a new
+  MCP `searchExecutions` wrapper (`search_executions` — shape source-verified
+  and smoke-asserted on 2.30.7: `{data:[{id,workflowId,status,mode,startedAt,
+  stoppedAt}],count,estimated}`) with a REST `listExecutions({includeData:
+  false})` fallback (a new lightweight variant — the old one always pulled full
+  run data); a live workflow that's been failing is a `warn`, never a `fail`.
+- **Seams added (all behavior-preserving):** `runTypecheckResult` (fact core
+  under `runTypecheck`), `computeSyncFacts` (fact core under `statusWorkflow`),
+  `runTest({neverMutate})`, `api.listExecutions({includeData})`,
+  `mcp.searchExecutions`. Multi-ref like `pull`/`push`/`status` (no-ref TTY →
+  picker; piped → config workflows; aggregate exit).
+
 ## Init flow (`n8n-decanter init [dir]`)
 
 Bootstraps a sync directory. Plan 32 made it OAuth-first:

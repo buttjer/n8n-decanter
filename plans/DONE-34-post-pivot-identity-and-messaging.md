@@ -97,7 +97,7 @@ The decisions behind the strings:
   an edit to Plan 33. **Scope (decided 2026-07-22): marketing/docs vocabulary
   only** — no CLI surface; a possible `preflight` verb grouping the gate is
   parked in [DECISIONS-NEEDED](DECISIONS-NEEDED.md). *(Since unparked, same
-  day: [Plan 36](OPEN-36-preflight-verb.md) builds the verb — once it lands,
+  day: [Plan 36](DONE-36-preflight-verb.md) builds the verb — once it lands,
   the preflight card points at one command.)*
 - **Draft-first is deliberately NOT in the hero** (maintainer): expected
   behavior isn't a feature — a sane tool doesn't celebrate

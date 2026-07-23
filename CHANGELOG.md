@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`preflight` — the whole verification ladder as one scored, read-only
+  gate.** `n8n-decanter preflight [workflow…]` runs every safe check there
+  is — local static (`layout`, `types`) → instance read-only (`connect`,
+  `access`, `parity`, `drift`, `snapshot`, `lifecycle`, `history`,
+  `capture`) → pinned draft runs (`test`, `simulate`) — ordered fast→slow,
+  streaming each result, and condenses them into a **score (0–100)** and a
+  **verdict** (`ready` / `caution` / `not ready`, exit 0/1) with per-check
+  remediation. Profiles are explicit and deterministic: `--quick` (static +
+  sync), default (+ `test`), `--full` (+ `simulate`), `--offline` (static +
+  `simulate`, no instance). It brings **executions into the gate** — auto-
+  fetching the newest capture when `N8N_API_KEY` is set (`--no-fetch` opts
+  out) and reading production run health (`history`, via MCP
+  `search_executions` or the REST fallback). Coverage is first-class: every
+  skip names its unlock, and `--require=<ids>` turns a skipped check into a
+  hard fail; `--fail-on=warn` promotes a caution to exit 1; `--fail-fast`
+  stops at the first failure. `--json` emits the full report (stable check
+  ids + remediation strings — the agent contract). **`preflight` never
+  mutates** in any profile: no push, publish, restore, or draft write —
+  `test` runs in a never-mutate mode and `simulate` headless with
+  `--network-none` forced on. The single gate to run before `push`/`publish`.
 - **`test` — instance-side pinned test runs (the recommended runtime
   check).** `n8n-decanter test <workflow>` runs the workflow on your
   instance via MCP `test_workflow`: the trigger and network/credentialed

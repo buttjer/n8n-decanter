@@ -160,3 +160,8 @@ n8n-decanter <workflow> simulate --scenario <slug>                  # replay the
   the exit code as verified.
 - The trigger is always a pinned replay of the captured trigger output — no
   live webhook/schedule semantics.
+
+`simulate` is the local-engine rung of the ladder
+[`preflight`](/docs/cli/preflight/) runs (as its `--full`/`--offline` runtime
+check) — reach for `preflight` to score it alongside `check` and `test` in one
+gate.

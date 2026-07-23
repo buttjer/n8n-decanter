@@ -698,6 +698,36 @@ export async function prepareTestPinData(mcp: McpClient, id: string): Promise<Pi
   return mcp.callTool<PinDataScaffold>("prepare_test_pin_data", { workflowId: id });
 }
 
+/** One execution row from `search_executions` — metadata only, never run data. */
+export interface McpExecutionSummary {
+  id: string;
+  workflowId?: string;
+  /** n8n execution status: `success` | `error` | `running` | `waiting` | … */
+  status?: string;
+  mode?: string;
+  startedAt?: string | null;
+  stoppedAt?: string | null;
+}
+
+/**
+ * Recent executions of a workflow — **metadata only** (status/timing, no run
+ * data; `readOnlyHint`/`idempotentHint`), over MCP `search_executions` (n8n
+ * ≥ ~2.30, shape source-verified 2026-07-22). The health signal behind
+ * `preflight`'s `history` check. The tool doesn't guarantee an order — the
+ * caller sorts/interprets. Throws (in-band `error` or an MCP `isError`) when the
+ * server lacks the tool or refuses access, so the caller can fall back to the
+ * REST executions API.
+ */
+export async function searchExecutions(mcp: McpClient, { workflowId, status, limit }: { workflowId?: string; status?: string[]; limit?: number }): Promise<McpExecutionSummary[]> {
+  const res = await mcp.callTool<{ data?: McpExecutionSummary[]; error?: string }>("search_executions", {
+    ...(workflowId !== undefined && { workflowId }),
+    ...(status !== undefined && { status }),
+    ...(limit !== undefined && { limit }),
+  });
+  if (res.error !== undefined) throw new McpToolError("search_executions", res.error);
+  return res.data ?? [];
+}
+
 /**
  * Take the draft live. n8n reports failure in-band (`success: false` with the
  * reason, e.g. the not-available refusal) — normalized to a throw here.

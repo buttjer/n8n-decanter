@@ -39,12 +39,15 @@ unchanged. `--json` adds `syntheticPins: boolean` and `provenance`.
 it: `check` (static, offline), `simulate` (offline engine replay), and `test`
 (instance-side pinned run). All are CI-gateable — the two runtime ones diff
 every node against a real capture and exit 1 on divergence.
+[**`preflight`**](/docs/cli/preflight/) runs the whole ladder as one scored,
+read-only gate — reach for it (not the three individually) as the pre-push gate.
 
 | Preflight | Where it runs | What it needs | Reach for it when |
 | --- | --- | --- | --- |
 | [check](/docs/cli/check/) | locally, static | nothing | every edit — layout + types, offline |
 | **`test`** (recommended) | **your instance**, runtime | MCP + a capture/scenario | the default runtime check: instance-exact engine, community nodes, no Docker |
 | [simulate](/docs/cli/simulate/) | local engine, runtime | Docker + a capture/scenario | pre-push verification of *uncommitted local* code, CI without an instance, `--network-none` isolation, engine-version rehearsal |
+| [**preflight**](/docs/cli/preflight/) | all of the above, scored | as available | the one-command pre-publish gate — a single verdict over the whole ladder |
 
 ## What gets tested — local code or the draft?
 

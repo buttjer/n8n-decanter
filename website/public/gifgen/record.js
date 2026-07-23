@@ -61,6 +61,6 @@ const INTERVAL = 0;   // ms between captures (0 = back-to-back)
     });
   }
   await recordGif("term-demo-body", { loopMs: 13230, filename: "terminal-demo.gif" });
-  await recordGif("agent-demo-body", { loopMs: 11400, filename: "agent-demo.gif" });
+  await recordGif("agent-demo-body", { loopMs: 12100, filename: "agent-demo.gif" });
   console.log("✅ All done — check your Downloads folder.");
 })();
