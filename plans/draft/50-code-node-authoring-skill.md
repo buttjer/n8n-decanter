@@ -21,8 +21,8 @@ same intent with files+push at the layer agents actually consult; (2) portable
 procedural knowledge without bloating the always-loaded sync-dir `AGENTS.md`;
 (3) skills.sh discoverability as an adoption channel. Its *defensive* role is
 already covered by Plan 33's guard-proxy stack, so this is ergonomics/reach, not
-safety — pick up if Plan 33's proxy logs show the n8n skills' routing nudge
-biting agents in practice, or when the adoption channel becomes worth it.
+safety — pick up if the guard's captured stderr shows the n8n skills' routing
+nudge biting agents in practice, or when the adoption channel becomes worth it.
 
 (2026-07-23 note: the loop's first step moved — `node create` was retired in the
 skills-first wave (#107); a Code node is now born over MCP `addNode` through the
