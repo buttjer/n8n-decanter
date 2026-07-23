@@ -65,13 +65,18 @@ function loadScenario(id: string): Scenario {
   return JSON.parse(m[1]) as Scenario;
 }
 
-function fill(text: string): string {
+// Non-secret placeholders — safe to log / dry-run print / store in the turns
+// array. The credential placeholders stay UNfilled here so no log path ever
+// emits them in clear text.
+function fillPublic(text: string): string {
   const oldFlow = manifest.seeded.find((s) => s.kind === "s4-archive-target")?.name ?? "Old contact import";
-  return text
-    .replaceAll("{{HOST}}", manifest.host)
-    .replaceAll("{{MCP_TOKEN}}", manifest.mcpToken)
-    .replaceAll("{{API_KEY}}", manifest.apiKey || "(none — skip it)")
-    .replaceAll("{{OLD_FLOW_NAME}}", oldFlow);
+  return text.replaceAll("{{HOST}}", manifest.host).replaceAll("{{OLD_FLOW_NAME}}", oldFlow);
+}
+// Credential placeholders — substituted ONLY at the moment of spawning claude,
+// on a string that is never logged or stored (avoids clear-text-logging of the
+// MCP token / API key that the S1 prompt carries).
+function fillSecrets(text: string): string {
+  return text.replaceAll("{{MCP_TOKEN}}", manifest.mcpToken).replaceAll("{{API_KEY}}", manifest.apiKey || "(none — skip it)");
 }
 
 // ---------- post-init scaffolding tweaks (guard-log capture + allow extension) ----------
@@ -167,7 +172,7 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   const scn = loadScenario(id);
   const outDir = path.join(HARNESS, "transcripts", id);
   mkdirSync(outDir, { recursive: true });
-  const turns = scn.turns.map(fill);
+  const turns = scn.turns.map(fillPublic); // credential placeholders stay unfilled (never logged)
   console.log(`\n########## ${id} — ${scn.persona ?? ""} ##########`);
   if (dryRun) {
     turns.forEach((t, i) => { console.log(`\n--- turn ${i + 1} ---\n${t}`); });
@@ -180,7 +185,7 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   for (let i = 0; i < turns.length; i++) {
     console.log(`\n[${id}] turn ${i + 1}/${turns.length} ${sessionId ? `(resume ${sessionId.slice(0, 8)})` : "(new session)"}`);
     const transcript = path.join(outDir, `turn-${i + 1}.jsonl`);
-    const { sessionId: sid, resultText } = await claudeTurn(turns[i], i + 1, sessionId, transcript);
+    const { sessionId: sid, resultText } = await claudeTurn(fillSecrets(turns[i]), i + 1, sessionId, transcript);
     sessionId ??= sid;
     console.log(`  → ${resultText.slice(0, 200).replace(/\n/g, " ")}${resultText.length > 200 ? "…" : ""}`);
     if (i === 0) applyPostInit(); // init scaffolded .claude/ + .mcp.json — wire capture + allows now
