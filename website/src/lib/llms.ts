@@ -3,7 +3,7 @@ import { docsNav, flatDocs } from "./nav";
 
 /** One-line project summary used as the `>` blockquote in both files. */
 const SUMMARY =
-  "The toolkit for building code-heavy n8n workflows — agent-first, MCP-native. Every Code node's source becomes its own .js/.ts file in git: typed TypeScript with shared libraries, verified by preflights (offline check/simulate, instance-side test, or the preflight gate that scores the whole ladder), and synced draft-first over n8n's built-in MCP server. Workflow structure stays n8n's job, mirrored into a read-only snapshot.";
+  "The toolkit for building code-heavy n8n workflows — agent-first, MCP-native. Every Code node's source becomes its own .js/.ts file in git: typed TypeScript with shared libraries, verified by preflights (offline check/simulate, instance-side test, or the preflight gate that scores the whole ladder), and synced draft-first over n8n's built-in MCP server. It also guards your agent's access to n8n's full MCP surface — create, read, update, and rename whole workflows through it, with only Code-node writes redirected to files — and mirrors each workflow's structure into a read-only snapshot.";
 
 /** Absolutize a base-prefixed path against the deploy origin, when known. */
 function abs(site: URL | undefined, path: string): string {

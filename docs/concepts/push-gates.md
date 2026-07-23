@@ -27,7 +27,8 @@ If a Code node's **remote code** changed since the last sync (and differs
 from what you're about to push), push aborts with `pull first`. This is the
 only gate `--force` bypasses — it exists so you don't silently clobber code
 edited on the instance. Remote **structure** changes never block a push:
-structure is n8n's job, and pushes write only `jsCode`.
+pushes write only `jsCode`, and the structure snapshot is mirrored (read-only),
+never pushed from here.
 
 The interplay with pull matters: **pulling records the remote code as the
 new sync base**, so after a warned pull the next push overwrites the surfaced

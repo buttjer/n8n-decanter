@@ -21,9 +21,12 @@ versions until v1.0.**
 n8n-decanter puts your n8n **Code-node source** in git: a folder per workflow,
 every Code node's source its own `.js` or `.ts` file, editable in your IDE or
 by your agent, and synced back over **n8n's built-in MCP server** — draft-first,
-so nothing goes live until you `publish`. Workflow *structure* stays n8n's job
-(the editor, or n8n's own MCP tools); decanter keeps a read-only
-`workflow.json` snapshot for review diffs.
+so nothing goes live until you `publish`. decanter is your agent's **guarded
+gateway** to that full MCP surface: it can create, read, update, and rename
+whole workflows through it — blocking only one thing, writes to a Code node's
+source, which decanter owns as files instead. It also mirrors each workflow's
+structure into a read-only `workflow.json`, so structural changes show up as
+clean git diffs.
 
 ![Terminal demo — the interactive picker: filter workflows, choose a verb, sync](./docs/terminal-demo.gif)
 
@@ -161,7 +164,7 @@ whole-workflow authoring toolkit.
 | **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs incl. a pre-wired `mcp connect` guard holding the credentials; offline `check`/`node run` loop |
 | **Model ownership** | ❌ locked to n8n's own hosted AI; can't use your Claude subscription | 🟡 beta Claude Code plugin uses your subscription; flagship Workbench needs an Anthropic key for Claude | ✅ never calls an LLM itself — your agent/subscription does 100%, no key or model config ever |
 | **Agentic workflow creation** | 🟡 AI Workflow Builder (natural language), but Cloud / plan-gated — credits, self-host needs setup | ✅ 537 node schemas + 7,700+ templates + skills | ✅ your agent builds structure over n8n's MCP (through the pre-wired `mcp connect` guard); decanter owns the Code-node source (files + `push`) |
-| **Whole-workflow authoring** | ❌ | ✅ `.workflow.ts` decorator classes (structure + links) | ❌ by design — structure stays n8n's (read-only `workflow.json` snapshot) |
+| **Whole-workflow authoring** | ❌ | ✅ `.workflow.ts` decorator classes (structure + links) | ❌ not as repo code — Code-node source only; your agent builds structure live over MCP (row above), mirrored to a read-only `workflow.json` |
 | **Multi-environment promotion** | 🟡 Enterprise source control / environments | ✅ `promote` remaps creds + refs Dev→Prod | 🟡 separate sync dir per instance, but no `promote` (IDs/creds/refs not remapped) |
 
 Legend: ✅ first-class · 🟡 partial or indirect · ❌ not supported.

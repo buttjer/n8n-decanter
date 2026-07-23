@@ -8,7 +8,7 @@ const features = [
   {
     icon: "⎇",
     title: "Code nodes as files, in git",
-    text: "A folder per workflow, every Code node its own .js or .ts file — real diffs, PRs, and blame at the code level, with every push and pull auto-committed. Workflow structure stays n8n's job; decanter keeps a read-only snapshot for review.",
+    text: "A folder per workflow, every Code node its own .js or .ts file — real diffs, PRs, and blame at the code level, with every push and pull auto-committed. Workflow structure is mirrored into a read-only snapshot, so structural changes show up as clean diffs too.",
   },
   {
     icon: "{ }",
@@ -51,7 +51,7 @@ const compareRows = [
   ["Agent-native tooling", "🟡 n8n's own canvas AI, not your agent", "✅ Workbench, skills, MCP, plugins", "✅ scaffolds Claude/Cursor/Codex + guard-proxy; offline loop"],
   ["Model ownership", "❌ locked to n8n's hosted AI", "🟡 plugin uses your sub; Workbench needs a key", "✅ never calls an LLM — your agent/subscription does 100%"],
   ["Agentic workflow creation", "🟡 AI Builder, Cloud / plan-gated", "✅ node schemas + templates + skills", "✅ agent builds structure over n8n's MCP (guard-proxied); decanter owns the code"],
-  ["Whole-workflow authoring", "❌", "✅ .workflow.ts decorator classes", "❌ by design — structure stays n8n's (read-only snapshot)"],
+  ["Whole-workflow authoring", "❌", "✅ .workflow.ts decorator classes", "❌ not as repo code — built live over MCP, mirrored read-only"],
   ["Multi-environment promotion", "🟡 Enterprise environments", "✅ promote remaps creds + refs", "🟡 a sync dir per instance, no promote yet"],
 ];
 ---
@@ -67,7 +67,7 @@ const compareRows = [
         Code nodes as files in git: write <strong class="font-medium text-zinc-700 dark:text-zinc-300">TypeScript</strong>{" "}
         with shared helpers &amp; types, verify with <strong class="font-medium text-zinc-700 dark:text-zinc-300">preflights</strong>{" "}
         offline or on your instance, and sync <strong class="font-medium text-zinc-700 dark:text-zinc-300">draft-first</strong>{" "}
-        over n8n's built-in MCP server. Structure stays n8n's job; decanter owns the code.
+        over n8n's built-in MCP server. decanter owns the code; your agent drives the rest over n8n's guarded MCP.
       </p>
       <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
         <a

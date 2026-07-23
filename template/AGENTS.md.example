@@ -19,8 +19,10 @@ This document is the contract for creating and editing these files.
 - **Code-node source is authored HERE and synced by decanter — never edited on
   the n8n instance directly** (not in the UI, not via MCP tools, not via n8n
   skills). The git files are the single source of truth for code.
-- **Workflow structure lives in n8n, not here.** `workflow.json` is a read-only
-  snapshot for review and offline tooling; editing it changes nothing remotely
+- **Workflow structure has no editable file here — it lives in n8n.**
+  `workflow.json` is a read-only snapshot for review and offline tooling; you
+  restructure a workflow over the guarded MCP surface (below), not by editing
+  it — editing it changes nothing remotely
   and the next `pull` overwrites it. Make structure changes in the n8n editor
   or through n8n's own MCP tools (the scaffolded `n8n-instance` MCP server is
   the guarded route) — creating and renaming workflows, adding/renaming/wiring
