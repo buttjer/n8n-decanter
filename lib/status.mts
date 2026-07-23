@@ -52,6 +52,13 @@ export interface NodeSync {
   /** The draft body and local build, kept for `--diff` rendering. */
   remoteBody?: string;
   localBody?: string | null;
+  /**
+   * `compileTs` warnings raised while building this node's local body (`.ts`
+   * lazy-wrapped modules / oversized bundles). Captured, not printed, so the
+   * fact computation is silent; `statusWorkflow` replays them per node to keep
+   * its output byte-identical to before the extraction.
+   */
+  warnings?: string[];
 }
 
 /** A local state node whose id no longer exists on the remote. */
@@ -79,9 +86,12 @@ export interface SyncFacts {
  * per-node parity/drift ladder, the structure-snapshot freshness, and the
  * deleted-remotely set. Both `statusWorkflow` (which renders these to the log)
  * and `preflight` (which scores them) consume this, so the two can't drift.
- * Caller supplies the already-fetched `remote` — no second MCP read.
+ * Caller supplies the already-fetched `remote` — no second MCP read. Silent by
+ * construction: per-node `compileTs` warnings are captured onto
+ * {@link NodeSync.warnings}, not printed, so the caller decides whether to
+ * surface them (`statusWorkflow` replays them; `preflight` ignores them).
  */
-export async function computeSyncFacts(remote: Workflow, dir: string, log?: Log): Promise<SyncFacts> {
+export async function computeSyncFacts(remote: Workflow, dir: string): Promise<SyncFacts> {
   const state = readState(dir)!;
   const nodes: NodeSync[] = [];
   const deleted: DeletedNode[] = [];
@@ -110,7 +120,12 @@ export async function computeSyncFacts(remote: Workflow, dir: string, log?: Log)
     }
     const remoteBody = splitMarker(node.parameters.jsCode).body;
     const remoteHash = sha256(remoteBody);
-    const body = await localBody(dir, nodeState.file, log);
+    // Capture compileTs warnings instead of printing them, so the fact
+    // computation is silent; statusWorkflow replays them per node (preserving
+    // the pre-extraction order), preflight drops them.
+    const warnings: string[] = [];
+    const capture: Log = { info() {}, ok() {}, warn: (m) => warnings.push(m), error() {} };
+    const body = await localBody(dir, nodeState.file, capture);
     const local = body === null ? null : sha256(body);
     const last = nodeState.lastPushedHash;
     let s: NodeSyncState;
@@ -124,7 +139,7 @@ export async function computeSyncFacts(remote: Workflow, dir: string, log?: Log)
       s = "conflict";
       remoteDrift = true;
     }
-    nodes.push({ id: node.id, name: node.name, file: nodeState.file, state: s, remoteBody, localBody: body });
+    nodes.push({ id: node.id, name: node.name, file: nodeState.file, state: s, remoteBody, localBody: body, warnings: warnings.length > 0 ? warnings : undefined });
   }
 
   for (const [nodeId, nodeState] of Object.entries(state.nodes)) {
@@ -153,7 +168,7 @@ export async function statusWorkflow(mcp: McpClient, root: string, id: string, l
     : pub ? `  ${pub}` : "";
   log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]${pubNote}`);
 
-  const facts = await computeSyncFacts(remote, dir, log);
+  const facts = await computeSyncFacts(remote, dir);
 
   if (facts.snapshot === "stale") {
     log.info("  structure snapshot out of date — pull to refresh workflow.json (structure is managed in n8n)");
@@ -163,6 +178,9 @@ export async function statusWorkflow(mcp: McpClient, root: string, id: string, l
 
   for (const node of facts.nodes) {
     const label = `  ${node.name}`;
+    // Replay this node's captured compileTs warnings before its state line —
+    // the exact position they were emitted at before the fact extraction.
+    for (const w of node.warnings ?? []) log.warn(w);
     // --diff: the same bodies the hashes compare — for .ts that is the
     // compiled JS, which is what push would put on the remote
     const printDiff = (): void => {

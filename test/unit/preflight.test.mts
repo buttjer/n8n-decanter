@@ -116,15 +116,21 @@ describe("runPreflight (stubbed)", () => {
     return dir;
   }
 
-  function stub(remote: Workflow, ranData: Record<string, unknown>, opts: { history?: Array<{ id: string; status: string }>; testStatus?: string } = {}) {
+  function stub(remote: Workflow, ranData: Record<string, unknown>, opts: { history?: Array<{ id: string; status: string }>; testStatus?: string; detailsError?: Error; searchThrows?: boolean } = {}) {
     const calls: string[] = [];
     const mcp = {
       callTool: async (name: string, _args: any) => {
         calls.push(name);
-        if (name === "get_workflow_details") return { workflow: structuredClone(remote) };
+        if (name === "get_workflow_details") {
+          if (opts.detailsError) throw opts.detailsError;
+          return { workflow: structuredClone(remote) };
+        }
         if (name === "test_workflow") return { executionId: opts.testStatus === "error" ? null : "exec-1", status: opts.testStatus ?? "success" };
         if (name === "get_execution") return { execution: {}, data: { resultData: { runData: ranData } } };
-        if (name === "search_executions") return { data: opts.history ?? [{ id: "9", status: "success" }], count: (opts.history ?? []).length, estimated: false };
+        if (name === "search_executions") {
+          if (opts.searchThrows) throw new Error("search_executions is not supported on this instance");
+          return { data: opts.history ?? [{ id: "9", status: "success" }], count: (opts.history ?? []).length, estimated: false };
+        }
         throw new Error("unexpected tool " + name);
       },
     } as unknown as McpClient;
@@ -223,5 +229,101 @@ describe("runPreflight (stubbed)", () => {
     const log: Log = { info: (m) => lines.push(m), ok() {}, warn() {}, error() {} };
     renderPreflightSummary(report, log);
     assert.ok(lines.some((l) => /verdict:/.test(l)));
+  });
+
+  it("stays read-only even on a TTY where local differs (the neverMutate seam)", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp, "return [{json:{x:999}}];\n"); // local ahead of the (unpublished) draft
+    const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
+    // force interactive: without neverMutate, runTest would push local to the
+    // unpublished draft here (no prompt) — the safety seam must prevent it.
+    const origIn = process.stdin.isTTY;
+    const origOut = process.stdout.isTTY;
+    try {
+      (process.stdin as any).isTTY = true;
+      (process.stdout as any).isTTY = true;
+      const report = await runPreflight(baseCtx(dir, tmp, mcp));
+      assert.equal(report.checks.find((c) => c.id === "test")?.status, "pass", "tested the draft as-is");
+      assert.ok(!calls.some((c) => /update_workflow|publish|restore/.test(c)), "no mutation on a TTY: " + calls.join(","));
+    } finally {
+      (process.stdin as any).isTTY = origIn;
+      (process.stdout as any).isTTY = origOut;
+    }
+  });
+
+  it("connect failure fails the gate and skips the sync + runtime tiers", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    const { mcp } = stub(wf(), {}, { detailsError: new Error("connect ECONNREFUSED 127.0.0.1:5678") });
+    const report = await runPreflight(baseCtx(dir, tmp, mcp));
+    const byId = new Map(report.checks.map((c) => [c.id, c]));
+    assert.equal(byId.get("connect")?.status, "fail");
+    for (const id of ["access", "parity", "drift", "history"] as const) assert.equal(byId.get(id)?.status, "skip", `${id} skipped after connect fail`);
+    assert.equal(byId.get("test")?.status, "skip", "test skipped — instance unreachable");
+    assert.equal(report.verdict, "not ready");
+  });
+
+  it("an unavailable-in-MCP workflow passes connect, fails access, skips parity/drift/test", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    const { mcp } = stub(wf(), {}, { detailsError: new Error("Workflow is not available in MCP.") });
+    const report = await runPreflight(baseCtx(dir, tmp, mcp));
+    const byId = new Map(report.checks.map((c) => [c.id, c]));
+    assert.equal(byId.get("connect")?.status, "pass", "reached + authed the server");
+    assert.equal(byId.get("access")?.status, "fail", "the workflow is not opted into MCP");
+    for (const id of ["parity", "drift", "snapshot", "lifecycle"] as const) assert.equal(byId.get(id)?.status, "skip");
+    assert.equal(byId.get("test")?.status, "skip", "no remote → the test stage can't run");
+    assert.equal(report.verdict, "not ready");
+  });
+
+  it("history falls back to the REST executions API when search_executions is unavailable", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) }, { searchThrows: true });
+    let restLimit: number | undefined;
+    let restIncludeData: boolean | undefined;
+    const api = () => ({
+      listExecutions: async (o: any) => {
+        restLimit = o.limit;
+        restIncludeData = o.includeData;
+        return [{ status: "success" }, { status: "error" }, { status: "success" }];
+      },
+    }) as any;
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { hasApiKey: true, api }));
+    const hist = report.checks.find((c) => c.id === "history");
+    assert.equal(hist?.status, "warn", "the REST fallback surfaced the failed run");
+    assert.match(hist!.message, /1 of 3 recent runs failed/);
+    assert.equal(restIncludeData, false, "history probe is metadata-only (includeData:false)");
+    assert.equal(restLimit, 20);
+  });
+
+  it("auto-fetches the newest capture before the runtime tier when a key is set", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    rmSync(path.join(dir, "executions", "301.json")); // no local capture → must auto-fetch
+    const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
+    let fetched = false;
+    const api = () => ({
+      listExecutions: async () => {
+        fetched = true;
+        return [{ id: 305, workflowId: "wf1", data: { resultData: { runData: { Hook: runData([{ n: 1 }]), Compute: runData([{ x: 1 }]) } } } }];
+      },
+    }) as any;
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { hasApiKey: true, noFetch: false, api }));
+    assert.equal(fetched, true, "auto-fetch ran");
+    const capture = report.checks.find((c) => c.id === "capture");
+    assert.match(capture!.message, /auto-fetched/);
+    assert.equal(report.checks.find((c) => c.id === "test")?.status, "pass", "the fetched capture pinned the test run");
+  });
+
+  it("a missing --execution id warns on capture and skips the runtime tier (no throw)", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { executionId: "99999" }));
+    const capture = report.checks.find((c) => c.id === "capture");
+    assert.equal(capture?.status, "warn");
+    assert.match(capture!.message, /#99999 not found/);
+    assert.equal(report.checks.find((c) => c.id === "test")?.status, "skip", "runtime skips cleanly, no mid-run throw");
   });
 });

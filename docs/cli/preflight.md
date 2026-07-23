@@ -7,8 +7,14 @@ order: 9
 ```sh
 n8n-decanter preflight [workflow…] [--quick|--full|--offline] [--json]
                        [--fail-on=warn] [--fail-fast] [--require=<ids>]
-                       [--execution <id> | --scenario <slug>] [--trigger <node>] [--no-fetch]
+                       [--execution <id> | --scenario <slug>] [--trigger <node>]
+                       [--no-fetch] [--n8n-version <ver>]
 ```
+
+The `--execution` / `--scenario` / `--trigger` / `--n8n-version` flags pass
+through to the runtime tier exactly as in [test](/docs/cli/test/) and
+[simulate](/docs/cli/simulate/) (`--n8n-version` only affects the `simulate`
+engine, under `--full`/`--offline`).
 
 **`preflight` runs every safe check there is** — local static → instance
 read-only → pinned draft runs — ordered fast→slow, and condenses them into a

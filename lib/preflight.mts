@@ -273,7 +273,7 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
       if (remote !== undefined) {
         subject.draftVersionId = typeof remote.versionId === "string" ? remote.versionId : undefined;
         subject.publishedVersionId = remote.activeVersionId ?? undefined;
-        facts = await computeSyncFacts(remote, ctx.dir, SILENT);
+        facts = await computeSyncFacts(remote, ctx.dir);
 
         await run("parity", "sync", async () => {
           const off = facts!.nodes.filter((n) => n.state === "push-pending" || n.state === "local-missing");
@@ -394,6 +394,13 @@ async function resolveSource(ctx: PreflightContext, remote: Workflow | undefined
     return { source: "capture", finding: { status: runtimeActive ? "warn" : "info", message, remediation: bothPaths, reason: message, unlock: bothPaths } };
   }
   const stale = captureStaleness(ctx.dir, ref, "capture", remote);
+  if (stale === "missing") {
+    // an explicit --execution id with no local capture file: warn and drop the
+    // ref so the runtime tier skips cleanly instead of throwing mid-run.
+    const message = `capture #${ref} not found under executions/`;
+    const unlock = `n8n-decanter executions ${ctx.name} --limit=1  (or drop --execution to use the newest)`;
+    return { source: "capture", finding: { status: runtimeActive ? "warn" : "info", message, remediation: unlock, reason: message, unlock } };
+  }
   const fresh = staleFinding(`capture #${ref}${autoFetched ? " (auto-fetched)" : ""}`, stale, ctx);
   return { source: "capture", ref, finding: fresh };
 }

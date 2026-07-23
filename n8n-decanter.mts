@@ -822,7 +822,10 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         }
         if (exitCodeOf(report.verdict, { failOnWarn }) === 1) failed = true;
       }
-      if (jsonFlag) console.log(JSON.stringify(reports.length === 1 ? reports[0] : reports, null, 2));
+      // shape keyed on workflows TARGETED (not reports produced): a multi-ref
+      // run stays an array even if some ids didn't resolve (the documented
+      // agent contract); a lone unresolved id emits null, not undefined.
+      if (jsonFlag) console.log(JSON.stringify(total === 1 ? (reports[0] ?? null) : reports, null, 2));
       if (failed) process.exitCode = 1;
       break;
     }
