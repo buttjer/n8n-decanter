@@ -258,7 +258,7 @@ Bring it back in step:
   website/`AGENTS.md` tasks, **reconcile the `mcp serve`→`mcp connect` wording
   with #118's new gateway copy** rather than the pre-#118 text, and re-resolve
   anchors again (they shifted in all six files). Plan still stands whole.
-- **This plan is the one-time cleanup; [Plan 40](../open/40-docs-surface-drift-guardrail.md)
+- **This plan is the one-time cleanup; [Plan 40](40-docs-surface-drift-guardrail.md)
   is the ratchet** that stops the verb-last / surface-mismatch class recurring.
   Land this plan's grammar fixes first (or together) so Plan 40's CI check goes
   green.

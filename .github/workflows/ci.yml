@@ -29,6 +29,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run check:docs
       - run: npm test
 
   # Dev-only integration smoke against a real n8n in Docker (plans/15).

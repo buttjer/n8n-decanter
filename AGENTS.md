@@ -131,6 +131,19 @@ not just the one you happened to think of:
 Same bar throughout: user-facing → update all three; internal refactors and
 test-only changes → none.
 
+**`npm run check:docs` mechanically enforces the *structural* half of this rule
+(Plan 40).** It parses the verb sets straight from `n8n-decanter.mts` and proves
+every verb has a `docs/cli/*` page, a README `## Commands` row, and an
+`overview.md` entry — and that no `docs/**`, `template/**`, or CLI usage string
+ships a copy-paste-broken **verb-last** command (`n8n-decanter <ref> <verb>`,
+which the verb-first CLI rejects). CI runs it after `typecheck`, so the cross-PR
+drift the per-PR grep below can't catch now fails the build instead. It is
+**structural, not semantic**: a green check does NOT mean a flag's *prose* is
+current — that stays human/agent review (and the periodic audit that produced
+[Plan 39](plans/done/39-docs-drift-refresh.md)). A verb rename/retire that the
+check flags is fixed by updating the surfaces, or the small maintained map in
+`scripts/check-docs-surface.mts` (its only per-verb manual touch).
+
 **Before opening a user-facing PR, grep the verb name across `README.md`,
 `docs/`, and `CHANGELOG.md`** — every surface that lists sibling verbs should
 list yours too. (The `simulate` verb once shipped in `/docs` + changelog but not
@@ -348,6 +361,12 @@ npm run lint          # Biome linter (biome.json); CI gates on it. Config
                       #   noTemplateCurlyInString). `npm run lint:fix` autofixes.
 npm run typecheck     # tsc -p tsconfig.cli.json (CLI sources) + scripts/
                       #   typecheck.mts (node files — NOT plain tsc, see below)
+npm run check:docs    # Plan 40: STRUCTURAL docs-surface guardrail — proves every
+                      #   verb has a docs/cli page + README ## Commands row +
+                      #   overview.md entry, and that no doc/template ships a
+                      #   copy-paste-broken verb-last command. Offline, no deps;
+                      #   CI runs it after typecheck. Structural only — a green run
+                      #   does NOT mean the prose is current (that stays manual).
 npm run test:smoke    # OPT-IN, dev-only: real n8n in Docker (test/smoke-n8n.mts,
                       #   plans/15); needs a running Docker daemon; never part
                       #   of npm test
@@ -618,7 +637,10 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    `/docs`, `CHANGELOG.md` `[Unreleased]`, and `PLAN.md`. Any user-facing CLI /
    sync / data-model / guard / config change that landed without its docs +
    changelog entry gets one now (rules: "Changelog" and "Documentation site"
-   above). PLAN.md must not have drifted from the code.
+   above). PLAN.md must not have drifted from the code. `npm run check:docs`
+   mechanically catches the *structural* drift (a verb missing a page/README/
+   overview entry, or a verb-last command) — but the *semantic* prose check
+   (does a flag's description still match its behavior?) stays this manual pass.
 3. **Release check** — releases are decoupled from feature PRs (see "Git
    workflow & releases" above), so a non-empty `[Unreleased]` is normal: it
    accumulates until the maintainer decides to cut a release, and is **not** by

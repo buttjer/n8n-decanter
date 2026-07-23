@@ -1,10 +1,12 @@
 # Plan 40 — Docs-surface drift guardrail (CI check)
 
 **Priority:** P2 (the backlog logged it "low", but the drift it prevents has
-now recurred across #107/#114/#115 — cleaned up by hand in [Plan 39](../done/39-docs-drift-refresh.md)
+now recurred across #107/#114/#115 — cleaned up by hand in [Plan 39](39-docs-drift-refresh.md)
 — and again in #118; a cheap mechanical gate is overdue). Mechanical, offline,
 no new deps.
-**Status:** Not started
+**Status:** Done — executed in PR #135 (2026-07-23):
+`scripts/check-docs-surface.mts` + `npm run check:docs` CI step +
+`test/unit/check-docs-surface.test.mts` + AGENTS.md dev notes.
 **Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** A CI-run script that mechanically verifies the CLI's **command
 surface** is reflected across the three doc surfaces (README verb table, `docs/cli/*`,
@@ -22,7 +24,7 @@ rule + the pre-PR grep). It cannot catch drift that spans PRs: a behavior lands
 in one PR and its docs lag in another, and because they touch *different files*
 git merges both cleanly and flags nothing. The backlog item that graduates into
 this plan first named the pattern with v0.3.0 (#29); it has since recurred at
-scale — the entire reason [Plan 39](../done/39-docs-drift-refresh.md) exists is to
+scale — the entire reason [Plan 39](39-docs-drift-refresh.md) exists is to
 hand-clean drift left by #107/#114/#115, and #118 re-touched the same surfaces
 again. Manual cleanup is the tax; a fast, deterministic CI check is the fix.
 
@@ -36,8 +38,8 @@ That boundary is the same one the backlog item drew ("diff the CLI verb/flag
 
 - [Plan 0 backlog](../draft/) "**Cross-PR docs-drift guardrail in CI**"
   (2026-07-20) — graduated here 2026-07-23. Real enforcement rides the live
-  public-repo CI ruleset ([Plan 13](../done/13-open-source-release.md)).
-- Directly motivated by [Plan 39](../done/39-docs-drift-refresh.md)'s findings: 12
+  public-repo CI ruleset ([Plan 13](13-open-source-release.md)).
+- Directly motivated by [Plan 39](39-docs-drift-refresh.md)'s findings: 12
   of its 26 were verb-last commands or verb↔surface mismatches — exactly the
   class this check makes impossible to reintroduce.
 
@@ -107,7 +109,7 @@ verb set itself):
    caught, and that a clean surface passes. (Keeps the check itself honest.)
 5. **Seed it green — sequencing with Plan 39.** Run against current `main` and
    the check **will fail** on the exact verb-last commands
-   [Plan 39](../done/39-docs-drift-refresh.md) already catalogs (`docs/cli/scenario|simulate|publish.md`,
+   [Plan 39](39-docs-drift-refresh.md) already catalogs (`docs/cli/scenario|simulate|publish.md`,
    `template/AGENTS.md.example`, the three CLI error hints). So **land this after
    (or fold in) Plan 39's grammar fixes** — the check can't go green until those
    commands are verb-first. Cleanest order: Plan 39's Task-A grammar fixes first
@@ -155,6 +157,6 @@ verb set itself):
 - **Self-maintaining by construction:** the map in Task 2 is the *only* place a
   verb rename/retire needs a manual touch beyond the verb set; forget it and the
   check fails loudly, which is the guardrail working.
-- **Relation to [Plan 39](../done/39-docs-drift-refresh.md):** Plan 39 is the
+- **Relation to [Plan 39](39-docs-drift-refresh.md):** Plan 39 is the
   one-time cleanup; Plan 40 is the ratchet that stops the mess recurring. Ship
   Plan 39's grammar fixes first (or together) so this lands green.
