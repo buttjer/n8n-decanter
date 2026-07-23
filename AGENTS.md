@@ -71,14 +71,19 @@ that sidesteps the `git <cmd> *` rules) gates the *whole* batch behind a prompt,
 and elaborate batches also bury their answer in noise. Write commands that clear
 on sight and read cleanly:
 
-- **A leading `cd <dir>` auto-approves — don't "fix" it with `git -C`.** `cd` is
-  allowlisted (`Bash(cd:*)`), so `cd <dir> && git status && git log …` clears
-  cleanly. The trap: `git -C <dir> <cmd>` does **not** match the
-  `Bash(git <cmd> *)` rules — the matcher keys on the prefix and sees `git -C …`,
-  not `git status` — so it *causes* prompts, with no safe flag placement.
-  (`gh`'s `-R` only matches when placed *after* the subcommand:
-  `gh pr view <n> -R <repo>`, not `gh -R <repo> pr view`.) So pin the directory
-  with `cd`, or just rely on the session's persistent working directory.
+- **Any global option *before* the subcommand breaks the match — `git -C`,
+  `git --no-pager`, `git -c <cfg>` all do it.** The matcher keys on the prefix,
+  so `git -C <dir> status`, `git --no-pager reflog`, and
+  `git -c core.hooksPath=/dev/null status` never hit the `Bash(git <cmd> *)`
+  rules. Pin the directory with a leading `cd <dir>` (allowlisted via
+  `Bash(cd:*)`) instead of `git -C`; drop `--no-pager`/`-c` unless you truly
+  need them. **`-c core.hooksPath=/dev/null` in particular is a no-op on
+  `status`/`diff`/`add`/`checkout`** (git runs no hooks there) and on `commit`
+  it defeats the main-checkout guard — never add it; the only sanctioned commit
+  override is `ALLOW_MAIN_COMMIT=1`. (`gh`'s `-R` is the exception — it matches
+  only *after* the subcommand: `gh pr view <n> -R <repo>`, not
+  `gh -R <repo> pr view`.) Otherwise just rely on the session's persistent
+  working directory.
 - **Don't bundle *unrelated* diagnostics into one `&&`/`;` mega-line.** One
   un-allowlisted segment prompts for the entire batch. Split independent checks
   into **separate calls** (they run in parallel — no speed cost) so an un-allowed
@@ -86,6 +91,17 @@ on sight and read cleanly:
 - **Keep** legitimate dependent chains (`a && b` where `b` needs `a`) and pipes
   (`… | jq`, `… | tail`) — the goal is not "never chain," it's "don't let a
   `git -C` prefix or an unrelated straggler gate a batch of safe reads."
+- **Loops, command substitution, and heredocs never auto-approve — no rule can
+  fix them, so avoid them for reads.** A `for … done` / `while` loop, a `$(…)`
+  substitution, and a `cat > file <<EOF` heredoc can't be decomposed into
+  allowlistable prefixes, so the whole command prompts no matter what's inside
+  (and the prompt exists for a reason — it shows the human the real expansion).
+  Most read-loops are just a glob the tool already expands: `head -1
+  docs/cli/*.md`, not `for f in docs/cli/*.md; do head -1 "$f"; done`. Write
+  scratch files with the **Write tool into the scratchpad** (then `node <path>`),
+  never `cat >` + `rm`. List tags with `git tag --list` (bare `git tag` matches
+  no rule and can *create* a tag). To probe upstream n8n source, list a whole
+  directory in one call — `curl -sL "https://api.github.com/repos/n8n-io/n8n/contents/<dir>?ref=<tag>" | jq -r '.[].name'` — instead of looping `curl … -w %{http_code}` over guessed paths.
 - **Write output a human can read, not just run.** Drop decorative
   `echo "=== … ==="` banners; ask **one question per command** — don't run two
   approaches to the same check (e.g. a `git merge-tree | grep | awk` conflict-hunt
