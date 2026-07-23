@@ -22,6 +22,20 @@ A status change is a **file move** between these dirs — update inbound links
 (they're relative paths, e.g. `../done/32-mcp-native-code-layer.md`). Nothing
 else changes; the number and slug stay put.
 
+## Closing a plan is mandatory — it's part of the work
+
+**A plan is not done until its file says so.** When a plan's tasks are **fully**
+implemented, tested, and documented, flip `**Status:**` to `Done` and move the
+file to `done/` (updating inbound links) — **in the same PR that completes the
+work**, or immediately after if it merged without the move. Leaving a finished
+plan in `open/` still reading `Not started` is drift, and closing it is the
+**executing agent's job, not a later housekeeping cleanup**.
+
+Watch for the trap that stranded Plan 39: a PR can ship a plan's *entire* task
+list while touching **none** of the plan file, so nothing signals the plan is
+done — it sits in `open/` looking untouched. If you execute a plan (or find its
+work already merged), close it out.
+
 ## Filenames & numbers
 
 - **`NN-slug.md`** — `NN` is the plan's stable id and rough running order (how
