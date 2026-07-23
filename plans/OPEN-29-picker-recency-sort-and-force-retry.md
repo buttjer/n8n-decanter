@@ -49,7 +49,7 @@ color).
 > `pushSingleNode` calls are wrapped in watch's own log-and-continue catch and
 > never reach the picker loop, and `pull`/`status`/`check`/`executions`/
 > `simulate` hit no drift gate — so the `ForceableError` branch and its test
-> only ever exercise `push`. **(Assuming Plan 36 merged, #117):** `preflight`
+> only ever exercise `push`. **Plan 36 merged (#117):** `preflight`
 > joins the picker menu (`status/pull/push/watch/check/preflight/executions/simulate`
 > — now 8 verbs), but it is **read-only/never-mutates**, so it is *not*
 > drift-capable and never triggers the force-retry prompt either — `push`

@@ -391,7 +391,7 @@ framing error in the first draft is **corrected (F4)**.
         the whole ladder (static → instance reads → a pinned `test`, `--full`
         adds `simulate`); its rungs **`test`** (instance-side pinned run) and
         **`simulate`/`scenario`** stay reachable individually for a focused
-        check. *(Assuming Plan 36 merged, #117 — `preflight` is the shipped
+        check. *(Plan 36 merged, #117 — `preflight` is the shipped
         consolidation of rungs 1–5 into one verdict.)*
    - **The precedence override — LANDED as "This AGENTS.md wins…" (#107); do not
      re-add.** The template boundary contract shipped and the guard technically
@@ -519,7 +519,7 @@ framing error in the first draft is **corrected (F4)**.
    → **gate (`preflight` — the single scored, read-only pre-push gate: static +
    instance reads + a pinned `test`/`simulate` run)** → report ready-to-push.*
    One diagram agents and humans share (plain Markdown / a mermaid fence — no
-   bespoke MDX). **Assuming Plan 36 merged (#117):** `preflight` is the shipped
+   bespoke MDX). **Plan 36 merged (#117):** `preflight` is the shipped
    consolidation of the verify ladder — feature it as the gate step rather than
    listing `check`/`test`/`simulate` loose (they remain the individual rungs it
    orchestrates). **Fix in passing:** `overview.md` still names "the `mcp serve`

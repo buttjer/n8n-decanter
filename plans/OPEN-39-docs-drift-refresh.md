@@ -130,12 +130,13 @@ since frame durations don't change).
     under the title (not the footer hint); hint text `enter select · esc quit`
     (both demo frames sit on pulled workflows).
 
-### C2. Website ↔ README `preflight` sync — POST-#117 ONLY (MEDIUM)
+### C2. Website ↔ README `preflight` sync — LIVE DRIFT since #117 merged (MEDIUM)
 
-**Not from the main audit** (which ran pre-`preflight`): #117 adds `preflight`
-to the README's compare row and framing but **touches no `website/` file**, so
-these open only *after* #117 merges. The website's `index.astro` is the static
-mirror of the README compare table + feature cards — bring it back in step:
+**Not from the main audit** (which ran pre-`preflight`): #117 added `preflight`
+to the README's compare row + framing but **touched no `website/` file**, so as
+of its 2026-07-23 merge the website's `index.astro` — the static mirror of the
+README compare table + feature cards — **now lags the README** on preflight.
+Bring it back in step:
 
 12a. **`website/src/pages/index.astro` "Preflights" comparison row (~line 48)** —
      currently `"Preflights (check / simulate / test)"` + "…offline check +
@@ -231,17 +232,17 @@ mirror of the README compare table + feature cards — bring it back in step:
   no `PLAN.md` design change. The audit's `cleanNote`s confirmed the rest of the
   website (hero, 5/6 feature cards, comparison table, AgentDemo, nav/llms
   generation) and most docs pages are already current.
-- **Sequence after Plan 36 (`preflight`, PR #117 — open at time of writing).**
-  This audit ran against `main` (no `preflight`), but **#117 edits several of
-  the same files this plan touches** — `docs/cli/simulate.md`,
-  `docs/cli/check.md`, `docs/cli/overview.md`, and `template/AGENTS.md.example`.
-  So: **apply this plan *after* #117 merges and re-verify each finding against
-  the merged state** — #117 may already fix some (e.g. it rewrites parts of
-  `simulate.md`/`check.md`/`overview.md`) or shift line anchors, and it adds the
-  `preflight` rows/menu those pages need. Do **not** duplicate or fight #117's
-  edits; `preflight`'s own surfaces (`docs/cli/preflight.md`, the overview verb
-  row, the `AGENTS.md.example` gate step) are **owned by #117**, not this plan.
-  Treat the finding line-numbers here as pre-#117.
+- **Plan 36 (`preflight`, PR #117) merged 2026-07-23 — re-verified against the
+  merged `main`.** #117 edits four files this plan also touches
+  (`docs/cli/simulate.md`/`check.md`/`overview.md`, `template/AGENTS.md.example`),
+  but **it fixed none of these findings** — all survive: `simulate.md`'s "Filling
+  gaps" block is still verb-last, `check.md` still omits the three guard rules,
+  `overview.md`'s `scenario create --scaffold` is still tagged "(offline)", and
+  `AGENTS.md.example`'s scenario loop is still verb-last (only its line moved,
+  now ~423). So this plan stands as written. Do **not** touch `preflight`'s own
+  surfaces — `docs/cli/preflight.md`, the overview `preflight` verb row, the
+  `AGENTS.md.example` gate step — they are **owned by #117**. Re-resolve the
+  remaining line anchors at execution (they are pre-#117).
 - **One-code-comment sibling:** `lib/pull.mts:151`'s "stale-fixture warning"
   comment rides along with Task 14 (same terminology fix), keeping code and docs
   consistent.
