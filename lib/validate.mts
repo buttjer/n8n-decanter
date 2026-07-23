@@ -171,8 +171,8 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   }
 
   // Orphans and strays. Only the folder root and code/ are scanned: other
-  // subdirs are reserved for artifacts (executions/, scenarios/ — see
-  // plans 3 and 7/37) and must not trip the guard.
+  // subdirs are reserved for artifacts (executions/, scenarios/, backups/ —
+  // see plans 3, 7/37 and 51) and must not trip the guard.
   const codeDir = path.join(dir, CODE_DIR);
   const entries = readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isFile())

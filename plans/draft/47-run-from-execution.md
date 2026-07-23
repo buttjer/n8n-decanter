@@ -3,6 +3,7 @@
 **Status:** Draft
 **Priority:** P3
 **Source:** deferred 2026-07-19 from [Plan 3](../done/3-local-run-and-diff-fidelity.md) C
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 
 Load a captured execution (`executions` verb) as a `run` fixture: reconstruct
 `$input` (via the connections graph — a node's own input isn't stored, only

@@ -9,7 +9,7 @@ Node's type stripping; there is no build step.
 
 ```sh
 npm install
-npm test              # unit tests + e2e + proxy suite (binds localhost ports)
+npm test              # unit tests + e2e suite (binds localhost ports)
 npm run lint          # Biome linter (biome.json); CI gates on it
 npm run typecheck     # CLI sources (tsc) + workflow node files
 npm run test:smoke    # OPTIONAL: integration smoke against a real n8n in

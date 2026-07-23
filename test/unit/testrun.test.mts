@@ -61,7 +61,7 @@ describe("runTest (non-TTY)", () => {
 
   const config = (root: string): DecanterConfig => ({
     configDir: root, root, workflows: [], commitOnPush: false, commitOnPull: false,
-    browserReload: "off", proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: "http://x", apiKey: "k",
+    requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: "http://x", apiKey: "k",
   });
 
   /** Seed a pulled workflow folder + a capture; return its dir. */

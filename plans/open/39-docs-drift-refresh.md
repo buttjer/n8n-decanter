@@ -4,6 +4,7 @@
 agent would follow verbatim and get `unknown verb` errors. Mechanical, offline,
 clearly-right; no design decisions.
 **Status:** Not started
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Close the documentation/website drift a targeted audit (2026-07-23,
 26 verified findings) found against the current code after the skills-first wave
 (#107), the `scenario` fold (#109/#114), and the no-ref pull picker (#115). Pure

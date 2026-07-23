@@ -1,6 +1,6 @@
 ---
 title: watch
-description: Push a workflow's Code-node saves to the draft, with optional browser live-reload.
+description: Push a workflow's Code-node saves to the draft as you edit.
 order: 7
 ---
 
@@ -25,11 +25,11 @@ change.
 Saving `workflow.json` pushes nothing — structure lives in n8n. Watch warns
 once per session if you edit it, and the next pull overwrites the file.
 
-## Browser live-reload
+## The editor updates live
 
-With `"browserReload": "proxy"` in the config, watch boots a transparent dev
-proxy and refreshes the n8n editor tab after every successful push — setup
-and caveats in [Watch & live reload](/docs/concepts/watch-live-reload/).
+Keep the n8n editor tab open on the watched workflow — n8n 2.x reflects each
+push in the open canvas natively (no proxy, no manual refresh), and skips the
+update if the tab has unsaved edits so nothing in-browser is clobbered.
 
 Node saves are guarded by the same [compliance rules](/docs/cli/check/) as a
 manual push, so a broken save doesn't reach n8n. `--force` carries through to

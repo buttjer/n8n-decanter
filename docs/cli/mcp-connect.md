@@ -40,6 +40,16 @@ and wires structure over MCP (adding Code nodes **without** `jsCode` — the
 guard blocks code), then `pull` lands each new Code node as an empty file in
 `code/`, and the first `push` seeds its source from the repo.
 
+**Live mirror.** When the guard forwards a structure edit (a non-blocked
+`update_workflow`), it schedules a debounced background `pull` of that
+workflow, so the read-only `workflow.json` snapshot (+ code files + state)
+refreshes itself — the clean git diff of structure changes keeps pace with the
+agent, with no manual `pull`. It's fire-and-forget (never blocks the agent's
+next call), git-gated (a dirty tree is safety-committed before the pull; with
+no git it's skipped), and tracked-only (a brand-new, untracked workflow is left
+for an explicit `pull`). On by default; set `"liveMirror": false` in
+`decanter.config.json` to turn it off (CI / deterministic setups).
+
 Failure posture matches the HTTP guard: unparseable input is refused
 (**fail closed**), and an unreachable instance answers the agent with a
 JSON-RPC error naming the host instead of hanging. Logs go to stderr; stdout

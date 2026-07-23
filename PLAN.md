@@ -33,7 +33,7 @@ n8n-decanter/
                           #   mcp (connect|serve)
   lib/                    # implementation: api, compile, config, datatables,
                           #   diff, engine, executions, git, init, lifecycle,
-                          #   mcp, mcpconnect, mcpserve, picker, prompt, proxy,
+                          #   mcp, mcpconnect, mcpserve, picker, prompt,
                           #   pull, push, run, simulate, state, status, style,
                           #   template, testrun, util, validate, watch (one
                           #   .mts each) + types.mts (shared data-model shapes)
@@ -43,7 +43,7 @@ n8n-decanter/
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
                           #   added here later is copied too
-  test/                   # e2e.mts (mock REST+MCP e2e) + proxy.mts +
+  test/                   # e2e.mts (mock REST+MCP e2e) +
                           #   interactive.mts (picker terminal IO, PassThrough
                           #   streams) + unit/ — all npm test; smoke-n8n.mts
                           #   (opt-in Docker smoke incl. the MCP path, plans/15
@@ -112,7 +112,32 @@ n8n-decanter/
   ~20 MB Sustainable-Use-licensed dependency tree to an MIT CLI for one verb;
   a hand-rolled emitter risked silent wiring divergence. The n8n UI
   duplicates natively; decanter pulls the copy. Consequence: the API-only
-  surface is exactly `executions` + `data-tables` fetches.
+  surface was `executions` + `data-tables` fetches — later joined by `backup`
+  (Plan 51 Part B; below).
+- **Plan 51 (2026-07-23): `backup` re-adds a REST full-JSON path, framed as
+  disaster recovery — not sync.** Two spikes settled the design (both live
+  against n8n 2.30.7 + source). **Spike 1 (why not MCP/`.ts` deploy):**
+  `create_workflow_from_code` is deployable but *lossy + create-only* —
+  `jsCode` byte-exact, but node ids are **regenerated** (SDK grammar has no id
+  slot), it always mints a **new** workflow, and settings/tags/pinData drop;
+  the only faithful emitter (`generateWorkflowCode`) lives solely in the
+  Sustainable-Use-licensed ~124 MB `@n8n/workflow-sdk`, not over MCP — so
+  "fully deployable over MCP" is unreachable losslessly. **Spike 2 (why REST,
+  not the MCP snapshot):** reading the *same* credentialed workflow both ways,
+  MCP's sanitized `get_workflow_details` **strips** node credential refs +
+  `pinData` + `staticData` + `description` (keeping jsCode/connections/
+  settings/tags identical), while REST `GET /workflows/:id` is full-fidelity,
+  reads the **draft tip**, shows no write/read race, and **`GET → POST`
+  round-trips losslessly** (node ids, credential refs, pinData, webhookId all
+  preserved). Hence `backup` sources from REST and redeploys via REST
+  (`lib/backup.mts`, `lib/api.mts` `getWorkflow`/`createWorkflow`). Since both
+  MCP and REST expose only the current tip and can't export a *past* version's
+  content, **git is the only place a redeployable version history can live** —
+  a committed, redeployable backup makes git a real second versioning + DR
+  layer outside n8n. `restore` creates a **new** workflow (new workflow id,
+  node ids preserved), landing unpublished — it never reconciles an existing
+  one; structure ownership stays with n8n. Consequence: the API-only surface
+  is `executions` + `data-tables` + `backup`.
 - **esbuild** compiles `.ts` node files (`bundle: false`, `format: "cjs"`,
   `target: node18`). Comments are stripped and lines shift — accepted.
   Consequence: instance-side edits on TS nodes can't be auto-merged back into
@@ -162,6 +187,11 @@ workflows/
     scenarios/                # optional: committed, self-contained pin-data
       <slug>.json             #   sets (scenario create/check, plans/7+37) —
                               #   tracked; the ONLY committed pin artifact
+    backups/                  # optional: versioned, redeployable full-export
+      <ts>.<versionId>.json   #   disaster-recovery backups (backup create,
+                              #   plans/51) — COMMITTED (not gitignored),
+                              #   rolling-capped by backupLimit, PII-sensitive,
+                              #   NOT auto-committed (user reviews + git adds)
 ```
 
 - Workflow **id** lives in `workflow.json` (and `.decanter.json`) → the folder
@@ -191,6 +221,17 @@ workflows/
   conversions work). Derived/permission fields are stripped on pull:
   `activeVersion`, `activeVersionId`, `shared`, `scopes`, `canExecute`. The
   draft `versionId` is kept (the executions stale-fixture warning reads it).
+  It stays *decanter-read-only*, but the **guard now keeps it live** (Plan 51
+  Part A, `lib/mirror.mts`): when an agent's structure edit is forwarded
+  through the guard (`mcp connect`/`serve` — a non-blocked `update_workflow`),
+  decanter schedules a **debounced background `pull`** of that workflow, so
+  the snapshot (+ code files + state, incl. rename file-moves) refreshes with
+  no manual `pull`. Safety rails: fire-and-forget (the agent's tool call is
+  never blocked); git-required + safety-commit-before-pull (skip with a
+  warn-once when there's no git); per-workflow debounce + overlap guard (never
+  two pulls, or a pull mid-pull, for one workflow); tracked-only (an untracked
+  id — e.g. a `create_workflow_from_code` — is skipped with a hint). On by
+  default; `liveMirror: false` disables it (CI/deterministic setups).
 
 ### `.decanter.json` (per workflow)
 
@@ -286,16 +327,19 @@ dependency). Everything below is verified against n8n 2.30.7 (spike + smoke,
 Ids only — names, folders, node lists are all derived on pull. Optional keys:
 `commitOnPush`/`commitOnPull` (default `true`), `requestTimeoutMs` (default
 `30000` — per-request timeout on MCP and API calls; init's probes are fixed
-at 10 s), `dataTables` (default `true`, plans/25), `bundleDependencies`
-(default `[]`, plans/14), and — for watch's browser live-reload (plans/5) —
-`browserReload` (`"off"` default, or `"proxy"`) and `proxyPort` (default
-`5679`).
+at 10 s), `dataTables` (default `true`, plans/25), `liveMirror` (default
+`true`, plans/51 Part A — the guard's background `workflow.json` refresh;
+`false` disables it), `backupLimit` (default `20`, plans/51 Part B — the
+retained `backups/` working-set cap; `0` keeps all), `bundleDependencies`
+(default `[]`, plans/14). `browserReload`/`proxyPort` (plans/5) were removed
+in Plan 52 — a stale value in an existing config is ignored, not an error.
 
 Credentials (Plan 32): `N8N_HOST` is required for online verbs; MCP
 credentials (env token or auth file) power the sync/structure/lifecycle
 verbs; `N8N_API_KEY` is **optional** and guarded per-verb (`requireApiKey`
-names the verb in its error) — only `executions` and `data-tables` need it
-(Plan 33). `loadConfig`'s old `requireCredentials` became `requireHost`.
+names the verb in its error) — only `executions`, `data-tables`, and `backup`
+need it (Plan 33 + 51). `loadConfig`'s old `requireCredentials` became
+`requireHost`.
 
 ## Workflow refs & CLI output (plans/11)
 
@@ -396,7 +440,7 @@ Guard errors abort and are *not* bypassable with `--force`.
 5. `--publish` → `publish_workflow` afterwards. Result lines state the draft
    reality: `— draft updated; the live version is unchanged (run "publish"
    to go live)` / `— unpublished draft` / `— published: code is live now`.
-6. Optional auto-commit (`commitOnPush`); the live-reload proxy is notified.
+6. Optional auto-commit (`commitOnPush`).
 
 ## Compliance guard (`n8n-decanter check [id…]`)
 
@@ -487,9 +531,17 @@ Radically simplified by Plan 32 — the fast inner loop for a workflow's
   then stays quiet. The whole structural-watch apparatus — 3-way baseline,
   conflict prompt (`[m]/[l]/[r]`), `workflow.remote.json`, promptFactory
   injection — is deleted.
-- **Browser live-reload (plans/5)** is untouched: same transparent proxy,
-  same `notifyPushed` SSE contract, verified by `test/proxy.mts` and a
-  dedicated e2e step.
+- **Browser live-reload proxy (plans/5) is removed (Plan 52).** n8n 2.x
+  reflects an MCP `update_workflow` draft edit in the open editor **natively**
+  (soft canvas re-render via `collaborationService.broadcastWorkflowUpdate` →
+  a `workflowUpdated` push, skipped — with a warning — when the tab has
+  unsaved edits), making decanter's injected reload proxy redundant and, on
+  its dirty-tab path, strictly worse (a hard `location.reload()` would
+  destroy those edits). `watch` now just prints the editor deep link and a
+  "keep it open" note; `lib/proxy.mts`/`test/proxy.mts` are gone, along with
+  the `browserReload`/`proxyPort` config keys. The write-lock failure mode
+  this surfaces (n8n's single-writer `LockedError` when a human is mid-edit)
+  is tracked separately, plans/draft/53.
 
 ## MCP guard (`mcp connect` stdio + `mcp serve` HTTP, plans/33 + retirement wave)
 
@@ -532,6 +584,18 @@ transports:
 - Binds `127.0.0.1` only; default port 5680 (`--port`, `0` = ephemeral).
   Blast radius is availability, not integrity: decanter's own sync never
   routes through the proxy.
+- **Live snapshot mirror (Plan 51 Part A, `lib/mirror.mts`).** Both transports
+  share one orchestrator: after forwarding a **non-blocked** `update_workflow`
+  (a structure edit), the guard calls `mirror.schedule(arguments.workflowId)`,
+  which debounced-background-`pull`s that workflow so `workflow.json` refreshes
+  with no manual `pull` (`mirrorTargetId` in `mcpserve.mts` extracts the id;
+  the same client the guard forwards with does the pull). Rails: fire-and-
+  forget (scheduled *after* the response relays — never blocks the agent);
+  git-required + safety-commit-before-pull; per-workflow debounce + overlap
+  guard (an injected clock makes it unit-testable); tracked-only. On by
+  default; `liveMirror: false` disables it. The orchestrator is a pure
+  scheduler over an injected `refresh`/clock/git-probe, so the debounce/overlap
+  logic is tested without ports or a real pull.
 - Template stack: `mcp-route-check.mjs` (SessionStart hook, shared script —
   config-drift detector, not an op inspector) warns when an agent MCP config
   in the sync dir reaches an n8n `/mcp-server/http` endpoint that isn't
@@ -593,6 +657,40 @@ into it):
   per-execution, unpersisted). Scenarios are the durable counterpart:
   committed, human-reviewed, reused across runs, and diffed against real
   data when capture-seeded.
+
+## Backups — git-native disaster recovery (`backup`, plans/51 Part B)
+
+`lib/backup.mts` (+ `lib/api.mts` `getWorkflow`/`createWorkflow`) — a
+**versioned, redeployable** DR store per workflow
+(`workflows/<slug>/backups/<ts>.<versionId>.json`), REST-sourced because MCP's
+read is sanitized (the spike verdicts are recorded in the design-decisions
+section above). It is disaster recovery, **not** sync: `restore` creates a
+*new* workflow, never reconciling an existing one — structure ownership stays
+with n8n.
+
+- **`backup create`** REST-GETs the draft tip, **dedups** on an unchanged
+  `versionId` (no redundant identical copies), strips `pinData`/`staticData`,
+  keeps credential refs + `description`, and replaces each **tracked** Code
+  node's `jsCode` with its `//@file:` placeholder (no code duplication; an
+  untracked Code node keeps inline code + a "pull first" warn). Writes the new
+  timestamped file, then **rolling-prunes** the working set to `backupLimit`
+  (default 20; `0` = keep all — git holds the full history regardless).
+  **Not auto-committed** and **not self-gitignored** — the file carries
+  credential refs + any embedded secrets, so the user reviews + `git add`s
+  deliberately; committing it is the whole point.
+- **`backup restore`** selects a backup (latest default; `--version <id>` /
+  `--at <ts>` / a TTY chooser), compliance-guards the folder, re-inlines each
+  placeholdered Code node's source from `code/` (reusing `buildNodeCode`/
+  `placeholderFile` from push — `.ts` compiled), and REST-POSTs an **allowlist
+  body** (`name`/`nodes`/`connections`/`settings`) → a **new** workflow, node
+  ids preserved, landing **unpublished**. Prints credential-rebind hints (refs
+  point at the source instance) + the editor URL; publish is the operator's
+  next step.
+- **`backup list`** (offline) prints the retained set: timestamp · versionId ·
+  node count.
+- **Auth:** REST-only → `requireApiKey` gates `create`/`restore` (`list` is
+  offline). The `backup` namespace mirrors the `node`/`scenario`/`mcp`
+  sub-verb dispatch in `n8n-decanter.mts`.
 
 ## Instance-side test runs (`test`, plans/33)
 
@@ -691,8 +789,8 @@ Bootstraps a sync directory. Plan 32 made it OAuth-first:
    failure falls back to a paste-a-token prompt. Piped/non-TTY runs skip the
    browser and go straight to the token prompt — init stays scriptable
    (`printf "host\ntoken\nkey\n" | n8n-decanter init`).
-3. **Optional API key** prompt (Enter to skip) — executions / data-tables
-   only (Plan 33).
+3. **Optional API key** prompt (Enter to skip) — executions / data-tables /
+   backup only (Plan 33 + 51).
 4. `.env` is rewritten preserving unknown keys (comments are not preserved);
    template copy (modification-aware manifest machinery, unchanged — see
    below), `decanter.config.json` scaffold, `.gitignore` (now also covering
@@ -754,7 +852,7 @@ Unchanged by Plan 32 (the file layer is decanter's layer):
 ## Implementation notes (decisions & observations)
 
 Validated by `npm test` (unit + e2e with an in-process **REST+MCP mock** +
-proxy + interactive suites) and the opt-in Docker smoke suite. Notes from the
+interactive suites) and the opt-in Docker smoke suite. Notes from the
 API-era build that still hold are kept; superseded ones are marked.
 
 - **Top-level `return`**: node code is a function body; esbuild accepts it,
@@ -796,8 +894,8 @@ API-era build that still hold are kept; superseded ones are marked.
 - **Watch internals**: dir watches (editor saves replace inodes), 200 ms
   debounce, dirty-set, state re-read per event — unchanged; the structural
   half is gone (see Watch mode).
-- **Browser live-reload proxy** (plans/5): unchanged, incl. the SSE reload
-  channel and dirty-tab probe.
+- **Browser live-reload proxy** (plans/5): removed (Plan 52) — n8n's own
+  editor reflects MCP draft edits live, dirty-safe; see Watch mode above.
 - **Piped stdin for prompts**: `readline/promises` drops early lines and
   hangs on EOF → the buffering prompt helper; **one session per command** —
   a second `createPrompt()` loses lines the first one buffered (Plan 32

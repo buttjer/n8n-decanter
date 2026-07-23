@@ -4,6 +4,7 @@
 **Priority:** P2
 **Class:** Distinctive feature (differentiator — agent-native tooling)
 **Source:** 2026-07-22, deferred out of [Plan 33](../done/33-post-mcp-pivot-wave.md)
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 
 A small **original** skill (1–2 files, no n8n-io/skills fork —
 [Plan 30](../open/30-agent-llm-working-ergonomics.md)'s "override, not fork"

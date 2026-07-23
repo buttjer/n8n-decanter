@@ -77,7 +77,6 @@
       ]
     },
     "excludedCommands": [
-      "git worktree *",
       "docker *"
     ]
   }
