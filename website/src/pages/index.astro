@@ -23,7 +23,7 @@ const features = [
   {
     icon: "✓",
     title: "Preflights",
-    text: "check, simulate, and test — verify offline or on your instance. check is static; simulate replays the workflow through a real engine offline (Docker); test runs it on your instance, draft-only. Each diffs every node against a real capture and exits 1 on divergence.",
+    text: "check, simulate, and test — verify offline or on your instance. check is static; simulate replays the workflow through a real engine offline (Docker); test runs it on your instance, draft-only. Each diffs every node against a real capture and exits 1 on divergence — and preflight runs the whole ladder as one scored, read-only, CI-gateable verdict.",
   },
   {
     icon: "↯",
@@ -45,7 +45,7 @@ const compareRows = [
   ["Shared types & helpers", "❌ self-host allow-list only, no libraries", "❌ not part of its model", "✅ shared/*.ts + npm bundled into self-contained nodes"],
   ["Code as individual files", "❌ no source files (JSON blob)", "🟡 one .workflow.ts per workflow", "✅ folder per workflow; each Code node its own .js/.ts"],
   ["Code-level git versioning", "🟡 in-app history; Git is Enterprise-only", "✅ GitOps sync of workflow source", "✅ real git — diffs, PRs, blame; auto-commit each sync"],
-  ["Preflights (check / simulate / test)", "🟡 re-run in-editor, online only", "🟡 inspect against a live env", "✅ offline check + simulate, instance-side test; each diffed vs a real capture"],
+  ["Preflights (check / simulate / test / preflight)", "🟡 re-run in-editor, online only", "🟡 inspect against a live env", "✅ offline check + simulate, instance-side test; preflight scores the whole ladder into one CI-gateable verdict"],
   ["Draft-first code sync", "✅ editor Save vs Publish (manual)", "🟡 API sync republishes on push", "✅ pushes land on the draft; publish is deliberate (over MCP)"],
   ["Live editing", "✅ the canvas (baseline)", "🟡 explicit pull/push, no auto-watch", "✅ watch: push on save + auto-reload the editor tab"],
   ["Agent-native tooling", "🟡 n8n's own canvas AI, not your agent", "✅ Workbench, skills, MCP, plugins", "✅ scaffolds Claude/Cursor/Codex + guard-proxy; offline loop"],
