@@ -38,6 +38,8 @@ items not yet claimed by one. Recommended order:
    handling via the `mock` namespace (committed, hand-fillable `mocks/` scenarios
    + offline `mock check` — no LLM API); and tier-1/tier-2 loop handling. The
    dependency-free **npx backend was split to [Plan 26](OPEN-26-npx-engine-backend.md)**.
+   (The `mock`/`--pin` gap mechanism was later folded into the `scenario` verb —
+   [Plan 37](DONE-37-scenario-pin-sets.md).)
 8. [Folder hierarchy in sync layout](BLOCKED-8-folder-hierarchy-in-sync-layout.md) —
    local dirs above a workflow folder become its n8n folder path, pushed
    one-way via the folders public API (the API can write placement but not
@@ -166,9 +168,11 @@ items not yet claimed by one. Recommended order:
     optimize how a coding agent works in a synced dir: codify session-start
     orientation (read-only `status` is the "pull-first" check; recommend a pull
     only when it shows drift, keeping pull user-gated), promote the grounding
-    tools beyond n8n-mcp (`executions`/`data-tables`/`simulate` + version-matched
-    docs) into an explicit research ladder, and add a canonical loop picture +
-    allowlist audit. Docs-first (P1) with small decision-gated tooling (P2).
+    tools (the guarded `n8n-instance` MCP + `n8n-docs` MCP + `executions`/
+    `data-tables` + `test`/`simulate`) into an explicit research ladder, and add
+    a canonical loop picture + allowlist trim. Docs-first (P1) with small
+    decision-gated tooling (P2). **Partially landed via #107/#114** (skills
+    docs, n8n-docs scaffold, allowlist); Themes A/B/D + Tasks 5–7 open.
     Distinctive-features group (agent-native tooling). Proposed 2026-07-21.
 29. [Picker polish + brand-orange CLI logo](OPEN-29-picker-recency-sort-and-force-retry.md) —
     three CLI polish wins: list picker workflows **newest-synced first** (recency
@@ -231,14 +235,15 @@ items not yet claimed by one. Recommended order:
     post-pivot product the way it's actually consumed: **blind** Sonnet coding
     agents (headless `claude -p`, no knowledge they're being evaluated) act as
     typical users against a real Docker n8n — `init` (token path) → structure
-    via n8n MCP skills through the guard-proxy → Code-node authoring →
-    `check`/`node run` → `push`/`publish` → instance-side runs; simple +
-    medium pure-node workflows only (no network/API nodes). Committed harness
-    (stage script reusing the smoke recipe, scenario pack, scripted invariant
-    verifier); Opus orchestrates in-character and grades; findings land as a
-    ranked report for maintainer triage — no product fixes in-plan. Also
-    produces the proxy-log evidence the Plan 0 authoring-skill entry waits on.
-    Proposed 2026-07-22.
+    via n8n MCP skills through the auto-wired `mcp connect` guard → Code-node
+    authoring (block→pull→seed loop) → `check`/`node run` → `push`/`publish` →
+    instance-side runs; simple + medium pure-node workflows only (no
+    network/API nodes). Committed harness (stage script reusing the smoke
+    recipe, scenario pack, scripted invariant verifier); Opus orchestrates
+    in-character and grades; findings land as a ranked report for maintainer
+    triage — no product fixes in-plan. Also
+    produces the captured guard-stderr evidence the Plan 0 authoring-skill entry
+    waits on. Proposed 2026-07-22.
 36. [`preflight` verb — the verification ladder as one scored gate](OPEN-36-preflight-verb.md) —
     reify Plan 34's coined "preflights" vocabulary into a real verb (unparking
     the DECISIONS-NEEDED item, maintainer go 2026-07-22): one command runs every
@@ -249,7 +254,7 @@ items not yet claimed by one. Recommended order:
     `--json` for agents, CI-gateable exits. Strictly non-mutating (never the
     push-local prompt; reads + pinned draft run only); captures auto-fetched as
     the ground truth. Proposed 2026-07-22.
-37. [`scenario` verb — committed pin-data sets](OPEN-37-scenario-pin-sets.md) —
+37. [`scenario` verb — committed pin-data sets](DONE-37-scenario-pin-sets.md) —
     one word and one committed artifact for "a named, full-workflow pin-data
     set": rename `mock` → `scenario` (`scenarios/<slug>.json`, auto-migrated),
     **fold the shipped per-node `fixtures/` mechanism into it** (`simulate
@@ -261,7 +266,7 @@ items not yet claimed by one. Recommended order:
     the stale "server-generated synthetic data" rationale). Captures/real data
     stay primary (the diff baseline); synthetic-pin runs are labeled
     "executability only". Breaking (verb/flag/dir renames). Proposed
-    2026-07-22.
+    2026-07-22. **Done 2026-07-22** (PR #114).
 38. [README overhaul: shop window](DONE-38-readme-slim.md) — cut the 473-line
     README to the document a first-time GitHub/npm visitor actually reads:
     deep sections and the 69-line flag reference moved to `/docs` (a delta
@@ -269,6 +274,16 @@ items not yet claimed by one. Recommended order:
     index replaces the full Commands block (three-surfaces rule relaxed to
     verb + one-liner), compare table kept whole. **Done 2026-07-22** — 186
     lines.
+39. [Docs & website drift refresh](OPEN-39-docs-drift-refresh.md) — close the
+    documentation/website drift a targeted audit (2026-07-23, 26 verified
+    findings) found after the skills-first wave (#107), the `scenario` fold
+    (#109/#114), and the no-ref pull picker (#115): verb-last commands the CLI
+    rejects (several docs pages, the template agent contract, **and three of the
+    CLI's own error hints**), the `mcp serve` guard-proxy → auto-wired
+    `mcp connect` surface, draft-first vs "live" in the website demo, the missing
+    `scenarios/`/`n8nVersion` data-model+config entries, and assorted nits.
+    Mostly mechanical; P1 because the broken commands are copy-paste-followable.
+    Proposed 2026-07-23.
 
 ## Conventions
 

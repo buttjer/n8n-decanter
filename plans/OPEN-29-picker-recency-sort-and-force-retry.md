@@ -29,6 +29,28 @@ color).
 > must never trigger the force-retry prompt. Inline line refs predate the
 > Plan 32 rewrite — re-resolve at execution time.
 
+> **Post-#107/#115 review (2026-07-23):** still valid; three touch-ups.
+> (1) **#115 gave `pickOneWorkflow` a real `mergeRemote` call** — for `pull`
+> only (it fetches `searchWorkflows` and merges; other ref verbs stay
+> local-only; offline degrades to local). So Feature 1's "sort the local list
+> before `mergeRemote` in **both** builders" now maps onto **three** merge
+> sites: `pickerLoop`'s builder, `pickOneWorkflow`'s pull branch, and — the
+> one easy to miss — `runPicker`'s own async-arrival merge (the first
+> `pickerLoop` round has no `remoteCache` yet, so remotes merge *inside*
+> `runPicker`). Sorting the `local` array in the builders still covers all
+> three (the in-picker merge appends fresh remotes after the already-sorted
+> entries) — just don't try to sort inside `runPicker`.
+> (2) **Draft-first prompt copy:** since Plan 32 a forced push overwrites the
+> **draft** only, and the drift error the prompt follows says "…or repeat with
+> `--force` to overwrite the draft" — so Feature 2's confirm copy and its TTY
+> test must say **draft**, not "remote changes", and assert against the mock's
+> *draft* state (the published version is untouched).
+> (3) **`push` is the only prompt-triggering verb:** `watch`'s inner
+> `pushSingleNode` calls are wrapped in watch's own log-and-continue catch and
+> never reach the picker loop, and `pull`/`status`/`check`/`executions`/
+> `simulate` hit no drift gate — so the `ForceableError` branch and its test
+> only ever exercise `push`.
+
 ## Why
 
 The interactive picker ([lib/picker.mts](../lib/picker.mts), Plan 19/23) lists
@@ -85,11 +107,16 @@ is a *local-activity* signal, not committed history.
    **name ascending** as the stable tie-break. Keep it pure so it's unit-testable
    like `filterEntries`/`mergeRemote`/`visibleWindow`.
 3. **[n8n-decanter.mts](../n8n-decanter.mts)** — in the two picker builders
-   (`pickerLoop` [~:279](../n8n-decanter.mts#L279), `pickOneWorkflow`
-   [~:312](../n8n-decanter.mts#L312)) map `ref.syncedAt` onto each `PickerEntry`
-   and `sortByRecency` the **local** list *before* `mergeRemote`. `mergeRemote`
-   appends unpulled remotes after locals ([picker.mts:82](../lib/picker.mts#L82)),
-   so the result is: pulled newest-first, then unpulled — exactly what we want.
+   (`pickerLoop`, `pickOneWorkflow`) map `ref.syncedAt` onto each `PickerEntry`
+   and `sortByRecency` the **local** list *before* it is handed off. Post-#115
+   there are three merge points; sorting the `local` array covers all of them:
+   `pickerLoop`'s builder-level `mergeRemote`; `pickOneWorkflow`'s **pull-only**
+   `mergeRemote` branch (and its offline-degradation catch, which keeps the
+   sorted local list); and `runPicker`'s internal async-arrival `mergeRemote`
+   (which appends fresh remotes *after* the already-sorted entries). Because
+   `mergeRemote` appends unpulled remotes after locals, the result is: pulled
+   newest-first, then unpulled available, then unavailable — exactly what we
+   want. **Do not sort inside `runPicker`.**
 
 ### Scope
 
@@ -123,11 +150,17 @@ brittle; use a **typed error** instead:
 2. **[n8n-decanter.mts](../n8n-decanter.mts) `pickerLoop` catch** — if
    `err instanceof ForceableError`, the error line is already logged; then ask a
    **special y/N confirm, default No**, e.g.:
-   `retry with --force and overwrite remote changes? [y/N]`. On **yes**
+   `retry with --force and overwrite the remote draft? [y/N]`. On **yes**
    (`y`/`yes`, case-insensitive), re-dispatch the *same* verb with
    `{ ...PICKER_FLAGS, force: true }`. On **no / bare Enter / anything else**,
    behave exactly as today (back to the menu). Non-forceable errors keep today's
-   log-and-return path.
+   log-and-return path. **Copy says "draft", not "remote changes"** — since
+   Plan 32 a forced push overwrites the *draft* only (the published version is
+   untouched), and this prompt directly follows the drift error line
+   ("…repeat with `--force` to overwrite the draft"), so the wording must match.
+   In practice `push` is the only `ForceableError` source that reaches this
+   catch (watch's inner pushes self-handle; the other picker verbs hit no drift
+   gate).
 
 ### Prompt mechanics
 
@@ -205,7 +238,13 @@ the site needs a **24-bit truecolor** SGR — `styleText` can't emit that.
 5. `n8n-decanter.mts` `pickerLoop` — forceable-error branch: special y/N confirm
    (default No) → re-dispatch with `force: true`.
 6. `lib/style.mts` — `brand()` (truecolor `#E18428`, 256/16-color fallbacks,
-   `styleText`-parity gating) + commented RGB constant; `lib/init.mts:56` uses it.
+   `styleText`-parity gating) + commented RGB constant; the logo loop in
+   `lib/init.mts` uses it. **Pick and document one canonical value:**
+   `oklch(0.7 0.15 60)` (the site's `--color-accent-500`, still in
+   `website/src/styles/theme.css`) converts to ≈ `#E18528` / `rgb(225,133,40)`,
+   one green-channel step off the plan's `#E18428` — within rounding, but the
+   `style.mts` constant should carry a single derived value with the oklch
+   source in the comment.
 7. **Tests**
    - Unit ([test/unit](../test/unit/)): `sortByRecency` ordering (newest-first,
      no-`syncedAt` last, name tie-break); `ForceableError` is thrown by
@@ -213,18 +252,29 @@ the site needs a **24-bit truecolor** SGR — `styleText` can't emit that.
    - Interactive ([test/interactive.mts](../test/interactive.mts), injected
      streams): pick order reflects `syncedAt`.
    - TTY confirm (`/verify` recipe with **`expect`** — piped `script -q /dev/null`
-     doesn't work per AGENTS.md): drive `pull`, edit code, drift the mock via
-     `PUT /__remote`, open picker → `push` fails drift → answer `y` → assert the
-     force push overwrites remote; a second run answering **Enter** → no force,
-     back to menu.
+     doesn't work per AGENTS.md): drive `pull`, edit code, then **drift the
+     mock's in-memory draft driver-side** between `expect` sends (coordinated
+     via marker files per AGENTS.md — there is no `/__remote` control endpoint;
+     the e2e suite mutates its in-process mock's workflow object directly, and
+     the `/verify` mock is now the MCP JSON-RPC/SSE surface), open picker →
+     `push` fails drift → answer `y` → assert the force push overwrites the
+     **draft** (published untouched); a second run answering **Enter** → no
+     force, back to menu.
    - `brand()`: `FORCE_COLOR` → emits the truecolor SGR; `NO_COLOR` / non-TTY →
      plain text; assert the banner logo uses `brand`, not `red`.
 8. **Docs (all surfaces, per AGENTS.md)**
-   - `README.md` — feature bullet for the two picker behaviors (recency order +
-     force-retry). *(Logo color is cosmetic — no README/docs surface change.)*
-   - `docs/cli/overview.md` — the *Interactive picker* section
-     ([:57](../docs/cli/overview.md#L57)): note newest-synced-first ordering and
-     the drift force-retry confirm.
+   - `README.md` — the README was slimmed to a 186-line shop window (Plan 38),
+     so these two polish behaviors may not clear its curation bar. Prefer a
+     **one-line tweak** to the existing bare-picker line (or no README change),
+     not a new feature bullet; there are three picker touchpoints already
+     (demo-GIF caption, the "bare `n8n-decanter` opens a picker" line, and the
+     "`list --remote` and the picker show what's still missing" line). *(Logo
+     color is cosmetic — no README/docs surface change.)*
+   - `docs/cli/overview.md` — **both** picker paragraphs (the bare-picker
+     *Interactive picker* section **and** the #115-added "No-ref → picker"
+     paragraph documenting `pull`'s remote-merged single-select): note
+     newest-synced-first ordering and the drift force-retry confirm. Add a
+     matching one-line note to `docs/cli/pull.md`'s no-ref picker paragraph.
    - `CHANGELOG.md` `[Unreleased]` — **Changed** (picker orders pulled workflows
      newest-synced first; CLI logo now uses the brand orange, matching the
      website) + **Added** (picker offers a force-retry confirm on a drift
@@ -236,8 +286,8 @@ the site needs a **24-bit truecolor** SGR — `styleText` can't emit that.
 
 - `sortByRecency` unit test green; picker shows the most-recently pulled/pushed
   workflow at the top (interactive test).
-- From the picker, a `push` that drifts prompts `[y/N]`; `y` overwrites remote,
-  Enter returns to the menu; a **compliance** failure never prompts.
+- From the picker, a `push` that drifts prompts `[y/N]`; `y` overwrites the
+  draft, Enter returns to the menu; a **compliance** failure never prompts.
 - The banner's "n8n" mark renders orange on a truecolor terminal (matching the
   website), degrades to a 256-color orange / red on lesser terminals, and stays
   plain under `NO_COLOR` / when piped.

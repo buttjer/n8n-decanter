@@ -34,9 +34,13 @@ capability.
 - [Plan 0 backlog](BACKLOG.md) "**`run` executes node code with full host
   privileges — document and narrow it**" — this plan supersedes the doc-only
   recommendation with an enforced boundary (the doc note still lands as the
-  fallback for `--unsafe`).
-- Proposal `PROPOSAL.md` item 5 (the **[new]** "Better" tier) — the item the
-  proposal said "needs a user decision before it graduates to a plan."
+  fallback for `--unsafe`). That item names **README + template `AGENTS.md`**
+  as its doc surfaces, so the `--unsafe` fallback note is obligated to touch
+  the template files, not just `/docs` (see Task 6).
+- A plan-mode session artifact (the old "PROPOSAL.md item 5", the **[new]**
+  "Better" tier) — the item flagged as needing a user decision before
+  graduating. *(There is no `PROPOSAL.md` in the repo; the surviving repo-side
+  source is the BACKLOG item above, which already links back to this plan.)*
 - Pairs with the `run` faked-context fidelity item (BACKLOG, `$jmespath`): the
   emulated-global surface is the *inside* of this boundary.
 
@@ -77,10 +81,18 @@ implementations + two test suites, not a small switch (user decision
    in-process `AsyncFunction`. Both `runOnceForAllItems` and the per-item
    `runOnceForEachItem` loop must go through it.
 2. **Implement the sandbox (option A).** Worker with a curated global set;
-   inject the `buildGlobals` payload; return the node's value (or per-item
-   array) across the structured-clone boundary. Preserve current semantics:
-   `undefined` per-item returns are dropped, `$env`/`--allow-env` behavior
-   unchanged *inside* the sandbox.
+   return the node's value (or per-item array) across the structured-clone
+   boundary. Preserve current semantics: `undefined` per-item returns are
+   dropped, `$env`/`--allow-env` behavior unchanged *inside* the sandbox.
+   **Marshaling caveat:** `buildGlobals`' return value is **not**
+   structured-clone-serializable — it holds functions (`$input.all/first/last`,
+   `$`, `$getWorkflowStaticData`, `$jmespath`), Luxon `DateTime`/`Duration`/
+   `Interval` instances, and `console`. So do **not** `postMessage` the built
+   globals; send the serialized `Fixture` + context (`nodeName`, `staticData`,
+   `allowEnv`) and call `buildGlobals` **worker-side** — only the fixture and
+   the return value cross the clone boundary. Run the per-item
+   `runOnceForEachItem` loop **inside one worker per invocation** (not one
+   worker per item) so startup cost stays O(1).
 3. **`--unsafe` flag + surfacing.** Default = sandboxed; `--unsafe` = full host
    access (today's behavior). Print a one-line notice on `--unsafe` ("running
    with full host access — no sandbox"). Wire it through the `node run` handler
@@ -94,11 +106,30 @@ implementations + two test suites, not a small switch (user decision
    under `--unsafe`**; a pure-logic node returns identical output in both modes;
    per-item mode preserved. Assert with regexes (ANSI).
 6. **Docs + CHANGELOG + PLAN.md.** New flag and the default-sandbox behavior are
-   user-facing and change a flow: update `docs/cli/run.md` (emulated-vs-blocked
-   boundary), README (`## Commands` + a feature bullet), `[Unreleased]`
-   (**Breaking:** — default execution semantics change), and **PLAN.md** (the
-   `run` execution-boundary model). The retained plain-text "not a full jail"
+   user-facing and change a flow. **The correct doc surface is
+   `docs/cli/node-run.md`** (the verb is `node run`; there is no `run.md`),
+   plus `docs/cli/overview.md` (the flag line **and** the offline-verbs table),
+   README (`## Commands` row + feature bullet + the comparison-table cell if
+   its wording changes), `[Unreleased]` (**Breaking:** — default execution
+   semantics change), and **PLAN.md** (the `run` execution-boundary model).
+   **Retract the "safe to run unsupervised" overstatement wherever it now
+   appears** — the sandbox is what *makes it true by default*, and `--unsafe`
+   must re-qualify it: `docs/agents/offline-loop.md` ("fully offline … safe for
+   agents to run without supervision"), `docs/agents/overview.md` (the
+   agent-policy row "`check`, `node run`, `scenario` | Offline and safe — run
+   freely"), `docs/cli/node-run.md`'s "no credentials, no network" phrasing,
+   and the template surfaces the backlog item obligates:
+   `template/AGENTS.md.example` ("two offline tools … no credentials, no
+   network" + the `node run` doc + the verify-offline line) and
+   `template/CLAUDE.md.example`. The retained plain-text "not a full jail"
    caveat is the doc half of the superseded backlog item.
+7. **Scaffolded-allowlist decision (NEW).** `template/.claude/settings.local.json.example`
+   pre-approves `Bash(n8n-decanter node:*)`, whose prefix match will silently
+   auto-approve `node run … --unsafe` the moment this ships — re-opening the
+   full-host-access footgun on pre-approved commands. Decide (and record):
+   either narrow the scaffold rule so `--unsafe` still prompts, or call the
+   residual risk out explicitly. This is the permission surface, distinct from
+   the CLI notice in Task 3.
 
 ## Acceptance / verification
 
@@ -124,10 +155,20 @@ implementations + two test suites, not a small switch (user decision
 
 - **Post-Plan-32 review (2026-07-22): unaffected by the MCP pivot** —
   `node run` is fully offline/local and never touches the sync backend. The
-  upcoming instance-side `test` verb
-  ([Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) Task 5) runs code in n8n's
-  own sandbox and doesn't change this plan's scope: `run` remains the local
-  fast path, and *that* is the one needing a boundary.
+  instance-side `test` verb ([Plan 33](DONE-33-post-mcp-pivot-wave.md) Task 5,
+  **shipped** in `lib/testrun.mts`) runs code in n8n's own sandbox and doesn't
+  change this plan's scope: `node run` remains the local fast path, and *that*
+  is the one needing a boundary. Plan 37's `scenario` rewrite (#109/#114) did
+  **not** touch `run.mts` or its `[fixture.json]` format — `node run` fixtures
+  are a separate surface from the committed `scenarios/` pin sets, confirming
+  this plan's "unaffected" self-assessment.
+- **The #107 empty-file-seeding flow makes this plan's Why concrete, not just a
+  tagline:** the documented authoring loop now has `pull` land a Code node
+  added over MCP as an **empty** `code/` file, the agent write the code, verify
+  with `node run` + `check`, and the **first push seed** the node's source. So
+  "an agent `run`-ing code it just generated" is a documented,
+  allowlist-pre-approved step — sharpening the priority case for a default
+  boundary.
 - **Breaking:** the default flips from "full host access" to "sandboxed," so a
   node relying on host `process`/`fetch` now needs `--unsafe`. While 0.x, a
   breaking change is a minor bump per AGENTS.md.
