@@ -215,11 +215,16 @@ export function checkVerbInReadme(model: VerbModel, readme: string): Violation[]
   return out;
 }
 
+/** Fully escape a string for safe interpolation into a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** Check 4 — every user-facing verb is listed in `docs/cli/overview.md`. */
 export function checkVerbInOverview(model: VerbModel, overview: string): Violation[] {
   const out: Violation[] = [];
   for (const verb of model.userVerbs) {
-    const re = new RegExp(`n8n-decanter\\s+${verb.replace(/[-]/g, "\\$&")}(?![\\w-])`);
+    const re = new RegExp(`n8n-decanter\\s+${escapeRegExp(verb)}(?![\\w-])`);
     if (!re.test(overview)) {
       out.push({ check: "verb→overview", message: `verb '${verb}' is not listed in docs/cli/overview.md` });
     }
