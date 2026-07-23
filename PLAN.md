@@ -33,7 +33,7 @@ n8n-decanter/
                           #   mcp (connect|serve)
   lib/                    # implementation: api, compile, config, datatables,
                           #   diff, engine, executions, git, init, lifecycle,
-                          #   mcp, mcpconnect, mcpserve, picker, prompt, proxy,
+                          #   mcp, mcpconnect, mcpserve, picker, prompt,
                           #   pull, push, run, simulate, state, status, style,
                           #   template, testrun, util, validate, watch (one
                           #   .mts each) + types.mts (shared data-model shapes)
@@ -43,7 +43,7 @@ n8n-decanter/
   template/               # copied verbatim by init: AGENTS.md, CLAUDE.md
                           #   (references AGENTS.md), workflows/ — anything
                           #   added here later is copied too
-  test/                   # e2e.mts (mock REST+MCP e2e) + proxy.mts +
+  test/                   # e2e.mts (mock REST+MCP e2e) +
                           #   interactive.mts (picker terminal IO, PassThrough
                           #   streams) + unit/ — all npm test; smoke-n8n.mts
                           #   (opt-in Docker smoke incl. the MCP path, plans/15
@@ -287,9 +287,8 @@ Ids only — names, folders, node lists are all derived on pull. Optional keys:
 `commitOnPush`/`commitOnPull` (default `true`), `requestTimeoutMs` (default
 `30000` — per-request timeout on MCP and API calls; init's probes are fixed
 at 10 s), `dataTables` (default `true`, plans/25), `bundleDependencies`
-(default `[]`, plans/14), and — for watch's browser live-reload (plans/5) —
-`browserReload` (`"off"` default, or `"proxy"`) and `proxyPort` (default
-`5679`).
+(default `[]`, plans/14). `browserReload`/`proxyPort` (plans/5) were removed
+in Plan 52 — a stale value in an existing config is ignored, not an error.
 
 Credentials (Plan 32): `N8N_HOST` is required for online verbs; MCP
 credentials (env token or auth file) power the sync/structure/lifecycle
@@ -396,7 +395,7 @@ Guard errors abort and are *not* bypassable with `--force`.
 5. `--publish` → `publish_workflow` afterwards. Result lines state the draft
    reality: `— draft updated; the live version is unchanged (run "publish"
    to go live)` / `— unpublished draft` / `— published: code is live now`.
-6. Optional auto-commit (`commitOnPush`); the live-reload proxy is notified.
+6. Optional auto-commit (`commitOnPush`).
 
 ## Compliance guard (`n8n-decanter check [id…]`)
 
@@ -487,9 +486,17 @@ Radically simplified by Plan 32 — the fast inner loop for a workflow's
   then stays quiet. The whole structural-watch apparatus — 3-way baseline,
   conflict prompt (`[m]/[l]/[r]`), `workflow.remote.json`, promptFactory
   injection — is deleted.
-- **Browser live-reload (plans/5)** is untouched: same transparent proxy,
-  same `notifyPushed` SSE contract, verified by `test/proxy.mts` and a
-  dedicated e2e step.
+- **Browser live-reload proxy (plans/5) is removed (Plan 52).** n8n 2.x
+  reflects an MCP `update_workflow` draft edit in the open editor **natively**
+  (soft canvas re-render via `collaborationService.broadcastWorkflowUpdate` →
+  a `workflowUpdated` push, skipped — with a warning — when the tab has
+  unsaved edits), making decanter's injected reload proxy redundant and, on
+  its dirty-tab path, strictly worse (a hard `location.reload()` would
+  destroy those edits). `watch` now just prints the editor deep link and a
+  "keep it open" note; `lib/proxy.mts`/`test/proxy.mts` are gone, along with
+  the `browserReload`/`proxyPort` config keys. The write-lock failure mode
+  this surfaces (n8n's single-writer `LockedError` when a human is mid-edit)
+  is tracked separately, plans/draft/53.
 
 ## MCP guard (`mcp connect` stdio + `mcp serve` HTTP, plans/33 + retirement wave)
 
@@ -754,7 +761,7 @@ Unchanged by Plan 32 (the file layer is decanter's layer):
 ## Implementation notes (decisions & observations)
 
 Validated by `npm test` (unit + e2e with an in-process **REST+MCP mock** +
-proxy + interactive suites) and the opt-in Docker smoke suite. Notes from the
+interactive suites) and the opt-in Docker smoke suite. Notes from the
 API-era build that still hold are kept; superseded ones are marked.
 
 - **Top-level `return`**: node code is a function body; esbuild accepts it,
@@ -796,8 +803,8 @@ API-era build that still hold are kept; superseded ones are marked.
 - **Watch internals**: dir watches (editor saves replace inodes), 200 ms
   debounce, dirty-set, state re-read per event — unchanged; the structural
   half is gone (see Watch mode).
-- **Browser live-reload proxy** (plans/5): unchanged, incl. the SSE reload
-  channel and dirty-tab probe.
+- **Browser live-reload proxy** (plans/5): removed (Plan 52) — n8n's own
+  editor reflects MCP draft edits live, dirty-safe; see Watch mode above.
 - **Piped stdin for prompts**: `readline/promises` drops early lines and
   hangs on EOF → the buffering prompt helper; **one session per command** —
   a second `createPrompt()` loses lines the first one buffered (Plan 32

@@ -2,7 +2,6 @@ import { existsSync, watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { commitWorkflowDir } from "./git.mts";
 import type { McpClient } from "./mcp.mts";
-import { startProxy, type ProxyHandle } from "./proxy.mts";
 import { pullWorkflow } from "./pull.mts";
 import { pushSingleNode } from "./push.mts";
 import { findWorkflowDir, readState } from "./state.mts";
@@ -12,7 +11,7 @@ import { CODE_DIR } from "./util.mts";
 
 /** Returned by watchWorkflow so tests can stop a session; the CLI never closes it. */
 export interface WatchHandle {
-  /** Stop watching: closes the fs watchers, the debounce timer, and the proxy. */
+  /** Stop watching: closes the fs watchers and the debounce timer. */
   close(): Promise<void>;
 }
 
@@ -31,9 +30,9 @@ export interface WatchHandle {
  * snapshot fails (no git), the startup pull is skipped rather than risk
  * losing uncommitted local edits.
  *
- * With `browserReload: "proxy"` a transparent dev proxy boots first (Plan 5);
- * each successful push signals the browser tab to refresh (notifyPushed in
- * lib/proxy).
+ * No client-side reload is needed (Plan 52): n8n's own editor reflects an MCP
+ * draft edit live (soft canvas re-render, skipped if the tab has unsaved
+ * changes) — decanter just prints the deep link.
  */
 export async function watchWorkflow(
   mcp: McpClient,
@@ -58,16 +57,9 @@ export async function watchWorkflow(
   }
   log.info(style.dim('pushes update the draft only — run "n8n-decanter publish" to take changes live'));
 
-  // Deep link straight to the watched workflow — through the proxy when it
-  // runs (so live reload works in that tab), the configured upstream otherwise.
-  let editorOrigin = config.host;
-  let proxy: ProxyHandle | null = null;
-  if (config.browserReload === "proxy") {
-    proxy = await startProxy({ upstream: config.host, port: config.proxyPort }, log);
-    if (proxy) editorOrigin = `http://127.0.0.1:${proxy.port}`;
-  }
-  const editorUrl = `${editorOrigin.replace(/\/+$/, "")}/workflow/${id}`;
+  const editorUrl = `${config.host.replace(/\/+$/, "")}/workflow/${id}`;
   log.info(`editor: ${style.link(editorUrl, editorUrl)}`);
+  log.info(style.dim("keep the n8n editor open — it updates live on each push"));
 
   /** Resolve a file name inside code/ back to its node id (state re-read live). */
   const nodeIdForFile = (fileName: string): string | undefined => {
@@ -145,7 +137,6 @@ export async function watchWorkflow(
       clearTimeout(timer);
       codeWatcher?.close();
       dirWatcher?.close();
-      await proxy?.close();
     },
   };
 }

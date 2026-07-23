@@ -457,7 +457,7 @@ functions; the CLI process is the surface users touch.
   names or the compliance guard blocks pushes.
 - **Sync dir**: temp dir with `.env` (`N8N_HOST=http://127.0.0.1:<port>`,
   `N8N_MCP_TOKEN=test-mcp-token`, `N8N_API_KEY=test`) + `decanter.config.json`
-  (`{"root":"./workflows","workflows":["wf1"],"browserReload":"off"}`), then
+  (`{"root":"./workflows","workflows":["wf1"]}`), then
   `git init` + local `user.name`/`user.email` — pull/push/watch auto-commit,
   and watch refuses its startup pull without git.
 - **Bootstrap**: run `node n8n-decanter.mts pull` (cwd = sync dir) to create

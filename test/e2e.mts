@@ -805,13 +805,15 @@ await step("watch: debounce coalesces, queued save re-pushes, close() stops", as
   const original = read(dir2, "code", "transform-eu-us.js");
   const config = {
     configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
+    requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
   };
   const logs: string[] = [];
   const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   // TMP is not a git repo yet at this point — watch skips the startup pull
   const handle = await watchWorkflow(await mcpClient(), config, "wf123", {}, log);
+  assert.ok(logs.some((m) => m.includes(`${env.N8N_HOST!}/workflow/wf123`)), "editor deep-link:\n" + logs.join("\n"));
+  assert.ok(logs.some((m) => m.includes("updates live on each push")), "live-reflect note:\n" + logs.join("\n"));
   const before = updateCount;
   try {
     // two rapid saves coalesce into a single push of the final content
@@ -851,7 +853,7 @@ await step("watch: workflow.json is a read-only snapshot — a save warns once, 
   const wfJsonPath = path.join(dir2, "workflow.json");
   const config = {
     configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
+    requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
   };
   const logs: string[] = [];
   const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
@@ -877,55 +879,6 @@ await step("watch: workflow.json is a read-only snapshot — a save warns once, 
     writeFileSync(wfJsonPath, savedJson);
     await handle.close();
   }
-});
-
-await step("watch<->proxy: single-node push broadcasts a 'pushed' SSE event through the dev-reload proxy", async () => {
-  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
-  await cli("pull"); // fresh baseline
-  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
-  const js = path.join(dir2, "code", "transform-eu-us.js");
-  const original = read(js);
-  const logs: string[] = [];
-  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
-  const config = {
-    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "proxy" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
-  };
-
-  const handle = await watchWorkflow(await mcpClient(), config, "wf123", {}, log);
-  try {
-    // deep link must go through the proxy — a different port than the raw upstream
-    const proxyUrlMatch = logs.join("\n").match(/http:\/\/127\.0\.0\.1:(\d+)\/workflow\/wf123/);
-    assert.ok(proxyUrlMatch, "editor deep-link through the proxy:\n" + logs.join("\n"));
-    const proxyPort = proxyUrlMatch![1];
-    assert.notEqual(proxyPort, new URL(env.N8N_HOST!).port, "editor link must use the proxy port, not the raw upstream host");
-
-    const received = await new Promise<string>((resolve, reject) => {
-      const req = http.get(`http://127.0.0.1:${proxyPort}/__decanter/events`, (res) => {
-        let buf = "";
-        res.setEncoding("utf8");
-        res.on("data", (c) => {
-          buf += c;
-          // only save the code file once the SSE stream is actually live
-          if (buf.includes(": connected")) writeFileSync(js, original + "// proxied push\n");
-          if (buf.includes("event: pushed")) {
-            req.destroy();
-            resolve(buf);
-          }
-        });
-        res.on("error", () => {}); // req.destroy() surfaces the abort here — ignore
-      });
-      req.on("error", reject);
-      setTimeout(() => reject(new Error("no pushed SSE event within 3s:\n" + logs.join("\n"))), 3000).unref();
-    });
-    assert.match(received, /event: pushed/);
-    assert.match(received, /"workflowId":"wf123"/);
-    assert.match(remoteNode("wf123", "n2").parameters.jsCode, /proxied push/, "the save that triggered the SSE event actually pushed:\n" + logs.join("\n"));
-  } finally {
-    writeFileSync(js, original);
-    await handle.close();
-  }
-  await cli("pull"); // re-baseline
 });
 
 await step("check: clean tree passes, typecheck skipped without tsconfig", async () => {

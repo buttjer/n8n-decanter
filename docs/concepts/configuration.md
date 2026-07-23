@@ -17,8 +17,6 @@ environment.
   "requestTimeoutMs": 30000,
   "n8nVersion": "2.31.4",
   "dataTables": true,
-  "browserReload": "proxy",
-  "proxyPort": 5679,
   "bundleDependencies": ["zod"]
 }
 ```
@@ -32,8 +30,6 @@ environment.
 | `requestTimeoutMs` | `30000` | Request timeout (MCP and API) — raise for slow instances. |
 | `n8nVersion` | unset | n8n version [`simulate`](/docs/cli/simulate/)'s engine-true runner pins to (e.g. `"2.31.4"`); `--n8n-version` overrides it per run. Unset falls back to the project's default with a hint. |
 | `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the API key needn't carry the data-table read scopes); `data-tables clean` still works. |
-| `browserReload` | off | `"proxy"` enables the [live-reload proxy](/docs/concepts/watch-live-reload/) during watch. |
-| `proxyPort` | `5679` | Port for that proxy. |
 | `bundleDependencies` | `[]` | npm packages `.ts` nodes may import; [bundled on push](/docs/concepts/typescript-nodes/). Pure-JS only. |
 
 ## Credentials

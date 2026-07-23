@@ -60,4 +60,5 @@ Every push updates the workflow's **draft** — the live version keeps running
 until you `publish`. Push refuses to overwrite remote code changes made since
 the last sync and blocks on layout or type errors — the
 [push gates](/docs/concepts/push-gates/) page explains the guard rules. For a
-save-to-push loop with browser live-reload, see [watch](/docs/cli/watch/).
+save-to-push loop, see [watch](/docs/cli/watch/) — the open n8n editor
+updates live on each push.

@@ -87,7 +87,7 @@ the escape hatch; `run` stays honest about its edges.
 - **Relates to** [Plan 30](30-agent-llm-working-ergonomics.md) — treats
   `n8n-globals.d.ts` as *the decanter authoring contract* agents read; keeping it
   single-source and current serves that.
-- **Sibling to** [Plan 52](52-remove-watch-browser-reload-proxy.md) — both are
+- **Sibling to** [Plan 52](../done/52-remove-watch-browser-reload-proxy.md) — both are
   *"the MCP/n8n-native reality reshapes a decanter hand-rolled layer."* Plan 52
   **deletes** the `watch` proxy (n8n reflects MCP edits natively, so it's
   redundant); this plan **keeps but reframes** `run`'s emulation, because `run`
@@ -263,7 +263,7 @@ it authors decanter's code, never pastes n8n's).
 
 ## Non-goals
 
-- **Deleting `run`'s emulation the way [Plan 52](52-remove-watch-browser-reload-proxy.md)
+- **Deleting `run`'s emulation the way [Plan 52](../done/52-remove-watch-browser-reload-proxy.md)
   deletes the proxy.** Tempting to apply the same "n8n does it natively → drop the
   hand-rolled layer" rule — but it doesn't hold here. The proxy was *redundant*:
   n8n does the identical thing (reload the open editor) in the identical place.

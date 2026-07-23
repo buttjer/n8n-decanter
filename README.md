@@ -47,8 +47,8 @@ clean git diffs.
   (`--scaffold`, no LLM API) into a reviewable, git-tracked pin-data set that
   `test`/`simulate` replay — the durable counterpart to an agent's ephemeral
   in-session pin flow.
-- **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
-  tab via a local proxy.
+- **Live editing** — `watch` pushes on save; the open n8n editor tab reflects
+  each push live (n8n's own draft-edit refresh, no proxy needed).
 - **Guarded agent access to n8n's MCP — wired by default** — the scaffolded
   `.mcp.json` spawns `mcp connect`, forwarding the full n8n MCP surface
   except writes to a Code node's `jsCode`; no secret to manage.
@@ -111,7 +111,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `completion zsh\|bash` | Print a shell completion script |
 | `pull [workflow…]` | Code + structure snapshot → `workflows/<kebab>/` |
 | `push [workflow…]` | Push Code-node source to the workflow's **draft** |
-| `watch [workflow]` | Push on save (draft-only), optional browser live-reload |
+| `watch [workflow]` | Push on save (draft-only); editor updates live |
 | `publish` / `unpublish [workflow…]` | Take the draft live / back to draft-only |
 | `status [workflow…]` | Drift report — exits 1 on conflict or remote drift |
 | `check [workflow…]` | Offline layout-compliance check + typecheck |

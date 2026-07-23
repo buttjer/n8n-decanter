@@ -39,7 +39,7 @@
     "lint": "biome lint",
     "lint:fix": "biome lint --write",
     "typecheck": "tsc -p tsconfig.cli.json && node scripts/typecheck.mts",
-    "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/proxy.mts && node test/guardproxy.mts && node test/interactive.mts",
+    "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/guardproxy.mts && node test/interactive.mts",
     "test:smoke": "node test/smoke-n8n.mts",
     "test:sim": "node test/sim.mts"
   },

@@ -93,6 +93,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   create, so a faithful clone required the public API — rather than keep the
   API dependency or ship a lossy SDK-code re-expression, the verb was
   dropped. Duplicate workflows from the n8n UI and `pull` the copy.
+- **Breaking: `watch`'s browser-reload proxy is gone — `browserReload` and
+  `proxyPort` config keys are no longer honored (silently ignored, not an
+  error).** n8n 2.x reflects an MCP draft edit in the open editor natively
+  (soft canvas re-render, skipped — with a warning — while the tab has
+  unsaved edits), making decanter's injected `<script>`-reload proxy
+  redundant and, on that exact dirty-tab path, worse than doing nothing (a
+  hard reload would have clobbered the unsaved edits). `watch` now just
+  prints the editor deep link with a note to keep the tab open; it updates
+  live on every push.
 - **Breaking: `simulate --pin` and per-node `fixtures/` are gone — folded into
   `scenario`.** The per-node `workflows/<folder>/fixtures/<node>.json`
   mechanism and its precedence over captures are removed outright; a scenario
