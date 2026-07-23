@@ -4,7 +4,10 @@
 Breaking rework of the entire agent-facing surface, **now released in 0.6.0
 (2026-07-23, #133)**; this validates it the way it will actually be consumed,
 before further releases build on it untested.
-**Status:** Not started
+**Status:** In progress — **harness built + validated** (2026-07-23,
+`scripts/field-test/`); Tasks 1–3 + 6 done, **round-1 blind execution (Task 4)
+pending** as a maintainer-run, UNSANDBOXED step (nested `claude` is
+sandbox-blocked; see "Harness status" below).
 **Snapshot:** 2026-07-23T14:05Z @ 7995d22
 **Theme:** Put the whole product — `init` → skills/MCP structure work →
 Code-node authoring → `push` → runs — in front of **blind** Sonnet coding
@@ -312,6 +315,65 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
    that file was retired (#122); the `ls plans/*/` listing is the index and
    `plans/AGENTS.md` holds the conventions; no changelog (internal tooling — no
    user-facing surface).
+
+## Harness status — round 1 pending (2026-07-23)
+
+**Built (Tasks 1–3 + 6), in `scripts/field-test/`:**
+
+- `stage.mts` (+ `skills-install.mts`) — `field-test:stage` boots + provisions a
+  throwaway n8n (or `FIELD_N8N_URL` targets a running one), seeds 4 pure-node
+  workflows (2 realism, 1 left `availableInMCP=false` as a gate-tripper, 1 S1
+  **skeleton** = manual-trigger → **empty** Code node), scaffolds a **neutral**
+  scratch project (`git init`, vendored n8n skills pack), and prints a manifest.
+  Harness artifacts (manifest, transcripts, `guard.log`) live in a **sibling**
+  dir the agent never enters, so their metadata can't leak into a blind session.
+- `scenarios/S1–S5.md` + `STYLE.md` — persona/goal/adaptive-beats/checklist +
+  a machine-readable `## Orchestration` turn spine; blinding rules verbatim. **S1
+  decided CLI-only against the stage-seeded skeleton** (the guard can't load in
+  the same process `init` first writes `.mcp.json`); S2 owns the MCP-guard path.
+- `run.mts` — replays each scenario's scripted turns as headless
+  `claude -p --model sonnet` sessions (`--resume` per beat), post-init merges the
+  allow-list extension into `settings.local.json` (deny rules preserved) and
+  rewrites `.mcp.json` to **capture the guard's stderr** to `guard.log`, then runs
+  the verifier. `README.md` documents the full run + grade procedure.
+- `verify.mts` — the scripted invariant oracle (independent of `lib/` for the
+  fail-generating checks): placeholder integrity, `.js` byte-equality, `.ts`
+  marker-hash relation, `lastPushedHash` tie, `.decanter.json` git-history, +
+  `get_workflow_history` version-trail evidence.
+- `field-test:{stage,run,verify}` npm scripts; AGENTS.md "field test harness"
+  Commands note.
+
+**Validated against real n8n 2.30.7 in Docker (2026-07-23):** stage
+boots/provisions/seeds/vendors 14 skills end-to-end; `verify.mts` **PASSes** a
+clean pull→author→push sync and **FAILs (exit 1)** a simulated rogue direct-MCP
+`jsCode` write (byte-equality + `lastPushedHash` both caught, unaffected checks
+stay green, version trail records the extra write); `run.mts --dry-run` parses +
+substitutes all five scenarios. Typecheck + Biome lint clean.
+
+**Round 1 (Task 4) is a maintainer-run, UNSANDBOXED step.** Nested `claude` is
+blocked under the agent command sandbox (and per project convention the sandbox
+is not disabled), and `fs.watch`/FSEvents dies sandboxed — so the blind sessions
+run from a normal terminal: `npm run field-test:stage` → `node
+scripts/field-test/run.mts <manifest>` → grade (Opus, unblinded) + contamination
+check → append `## Run report — round 1`. No blind runs were executed in the
+build session, so **no run report is fabricated here.**
+
+**Skills-pack finding (feeds [Plan 50](../draft/50-code-node-authoring-skill.md)
+— strong prior to confirm in round 1).** The official `n8n-io/skills` pack
+(Apache-2.0) frames the **Code node as a "last resort"** and routes any code it
+does write through `create_workflow_from_code` / `update_workflow` SDK code —
+which decanter's guard **blocks**. So the pack's routing nudge should surface in
+round 1 exactly as **guard-blocked `jsCode` warn-lines** in `guard.log`, i.e. the
+block→pull→seed loop is the *expected* product of the nudge, not an error. The
+authoring-skill evidence question ("does the nudge bite?") therefore has a clear
+hypothesis to verify.
+
+**Fidelity caveat for the grader.** The harness vendors `skills/*` into
+`.claude/skills/` (auto-discovered) + reproduces the SessionStart routing cue in
+`AGENTS.md`, but does **not** reproduce the official plugin's PreToolUse hooks or
+`plugin:` namespacing (that install is interactive/non-deterministic). A
+Code-node write nudged over MCP hits the guard the same either way; grade with
+the missing hooks in mind.
 
 ## Acceptance / verification
 

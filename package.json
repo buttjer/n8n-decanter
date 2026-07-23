@@ -42,7 +42,10 @@
     "check:docs": "node scripts/check-docs-surface.mts",
     "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/guardproxy.mts && node test/interactive.mts",
     "test:smoke": "node test/smoke-n8n.mts",
-    "test:sim": "node test/sim.mts"
+    "test:sim": "node test/sim.mts",
+    "field-test:stage": "node scripts/field-test/stage.mts",
+    "field-test:run": "node scripts/field-test/run.mts",
+    "field-test:verify": "node scripts/field-test/verify.mts"
   },
   "engines": {
     "node": ">=22.18"
