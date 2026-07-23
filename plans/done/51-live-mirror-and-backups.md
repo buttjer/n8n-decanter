@@ -1,6 +1,8 @@
 # Plan 51 — Live snapshot mirror + git-native workflow backups
 
-**Status:** Not started
+**Status:** Done (2026-07-23 — Part A live mirror + Part B `backup` shipped;
+unit + e2e + guardproxy suites green. Smoke steps added under `test/smoke-n8n.mts`
+but not run in this session — Docker unavailable; run `npm run test:smoke` to verify.)
 **Priority:** P2 (both parts — real design; the live mirror touches the guard's
 cross-process concurrency, the `backup` verbs re-add a REST surface + a new
 committed artifact)

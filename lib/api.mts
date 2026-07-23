@@ -1,10 +1,12 @@
-import type { DataTable, DataTableColumn, DataTableRow, Execution } from "./types.mts";
+import type { DataTable, DataTableColumn, DataTableRow, Execution, Workflow } from "./types.mts";
 
 /**
  * n8n public REST API client — since Plan 33 only the surfaces MCP cannot
- * serve: executions (no MCP read of full run data) and data-table rows (MCP
- * is add-only). The workflow code path and lifecycle (pull/push/watch/status/
- * publish/create/archive) live in lib/mcp.mts.
+ * serve: executions (no MCP read of full run data), data-table rows (MCP is
+ * add-only), and full-fidelity workflow GET/POST for `backup` (Plan 51 Part B —
+ * MCP's read strips credentials/pinData/staticData/description, so it can't
+ * export a redeployable copy). The daily code path and lifecycle (pull/push/
+ * watch/status/publish) stay on MCP (lib/mcp.mts).
  */
 export class N8nApi {
   #host: string;
@@ -38,6 +40,28 @@ export class N8nApi {
 
   async getExecution(id: string): Promise<Execution> {
     return this.#request("GET", `/api/v1/executions/${encodeURIComponent(id)}?includeData=true`) as Promise<Execution>;
+  }
+
+  /**
+   * One workflow at full REST fidelity (`GET /workflows/:id`) — the recovery
+   * read `backup` needs (Plan 51 Part B). Unlike MCP's sanitized
+   * `get_workflow_details`, REST returns node credential refs, `pinData`,
+   * `staticData`, and `description`, and reads the **draft tip**. Byte-exact
+   * `jsCode`; node ids match the MCP read (spike-verified).
+   */
+  async getWorkflow(id: string): Promise<Workflow> {
+    return this.#request("GET", `/api/v1/workflows/${encodeURIComponent(id)}`) as Promise<Workflow>;
+  }
+
+  /**
+   * Create a workflow from a full-fidelity body (`POST /workflows`) — the
+   * redeploy write for `backup restore` (Plan 51 Part B). Lands a **new,
+   * unpublished** workflow (new workflow id) while **preserving node ids** and
+   * credential refs carried in `nodes` (spike-verified GET→POST round-trip).
+   * Publishing is the operator's next step.
+   */
+  async createWorkflow(workflow: unknown): Promise<Workflow> {
+    return this.#request("POST", "/api/v1/workflows", workflow) as Promise<Workflow>;
   }
 
   /**

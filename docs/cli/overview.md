@@ -34,6 +34,12 @@ n8n-decanter simulate <workflow> [--execution <execution-id> | --scenario <slug>
 n8n-decanter preflight [workflow…] [--quick|--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]   # the whole ladder, scored (read-only)
 n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold]   # committed, gap-fillable pin-data set (offline; --scaffold needs MCP)
 n8n-decanter scenario check <workflow> ["<slug>"]                                    # structurally validate a scenario (offline)
+
+# Backup — git-native, redeployable disaster recovery (REST; needs N8N_API_KEY)
+n8n-decanter backup create <workflow>                            # capture a full-export backup into backups/
+n8n-decanter backup restore <workflow> [--version <id> | --at <ts>]   # redeploy as a NEW, unpublished workflow
+n8n-decanter backup list <workflow>                             # retained backups (offline)
+
 n8n-decanter list [--remote] [--json]
 
 # Node
@@ -103,18 +109,20 @@ errors with *unknown verb*. Flags may still appear in any position.
 | Verbs | Network |
 | --- | --- |
 | `check`, `node run`, `list`, `simulate`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
-| `status`, `list --remote`, `executions`, `data-tables` | Read the remote, never write |
+| `status`, `list --remote`, `executions`, `data-tables`, `backup create`/`restore` | Read the remote (`backup restore` also writes a **new** workflow, never touching the source) |
+| `backup list` | Fully offline — reads the local `backups/` store |
 | `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
 | `preflight` | Runs the whole verification ladder read-only — static + instance reads + a pinned draft `test`/`simulate` run; **never writes** (no push/publish/restore), in every profile |
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |
-| `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes |
+| `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes; a forwarded structure edit also triggers a background `workflow.json` refresh (`liveMirror`, on by default) |
 
 Credentials come from `.env` next to `decanter.config.json` (searched upward
 from the current directory) or the environment. `N8N_HOST` plus **MCP
 credentials** (OAuth minted by [`init`](/docs/cli/init/) into
 `.decanter-auth.json`, or an `N8N_MCP_TOKEN`) power the sync and lifecycle
 verbs; the **public API key** (`N8N_API_KEY`, optional) powers only
-`executions` and `data-tables` — the surfaces n8n's MCP server doesn't cover.
+`executions`, `data-tables`, and `backup` — the surfaces n8n's MCP server
+doesn't cover.
 
 ## Output and scripting
 

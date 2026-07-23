@@ -17,6 +17,8 @@ environment.
   "requestTimeoutMs": 30000,
   "n8nVersion": "2.31.4",
   "dataTables": true,
+  "liveMirror": true,
+  "backupLimit": 20,
   "browserReload": "proxy",
   "proxyPort": 5679,
   "bundleDependencies": ["zod"]
@@ -32,6 +34,8 @@ environment.
 | `requestTimeoutMs` | `30000` | Request timeout (MCP and API) — raise for slow instances. |
 | `n8nVersion` | unset | n8n version [`simulate`](/docs/cli/simulate/)'s engine-true runner pins to (e.g. `"2.31.4"`); `--n8n-version` overrides it per run. Unset falls back to the project's default with a hint. |
 | `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the API key needn't carry the data-table read scopes); `data-tables clean` still works. |
+| `liveMirror` | `true` | Refresh the read-only `workflow.json` snapshot in the background after an agent restructures a workflow through the [guard](/docs/cli/mcp-connect/) (a forwarded `update_workflow`). `false` disables the auto-refresh (CI / deterministic setups). |
+| `backupLimit` | `20` | Cap on the retained [`backups/`](/docs/cli/backup/) working set per workflow. Each `backup create` rolling-prunes the oldest beyond this; `0` keeps all (git holds the full history regardless). |
 | `browserReload` | off | `"proxy"` enables the [live-reload proxy](/docs/concepts/watch-live-reload/) during watch. |
 | `proxyPort` | `5679` | Port for that proxy. |
 | `bundleDependencies` | `[]` | npm packages `.ts` nodes may import; [bundled on push](/docs/concepts/typescript-nodes/). Pure-JS only. |
@@ -52,10 +56,13 @@ In order of resolution:
      re-run `init` to re-consent (also the fix for a
      "MCP session expired" error).
 3. **`N8N_API_KEY` (optional)** — only for the verbs MCP cannot serve:
-   [executions](/docs/cli/executions/) and
-   [data-tables](/docs/cli/data-tables/). Scope it minimally:
+   [executions](/docs/cli/executions/),
+   [data-tables](/docs/cli/data-tables/), and
+   [backup](/docs/cli/backup/). Scope it minimally:
    `execution:read`, `execution:list`, `workflow:list` (init's connection
-   check), and the `dataTable:*` read scopes (only while `dataTables` is on).
+   check), the `dataTable:*` read scopes (only while `dataTables` is on), and
+   `workflow:read` + `workflow:create` (only for `backup`
+   create/restore's full-fidelity GET/POST).
 
 The instance needs **MCP access enabled** once (n8n → Settings → MCP;
 requires an n8n with the built-in MCP server, ~2.20+), and each synced

@@ -17,7 +17,7 @@ export function parseEnvFile(file: string): Record<string, string> {
 }
 
 /**
- * Guard for the REST-API-only verbs (executions and data-tables — the
+ * Guard for the REST-API-only verbs (executions, data-tables, and backup — the
  * surfaces MCP cannot serve). Names the verb so the error says *why* an API
  * key is suddenly needed in an otherwise MCP-only setup.
  */
@@ -63,6 +63,8 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
         requestTimeoutMs?: number;
         n8nVersion?: string;
         dataTables?: boolean;
+        liveMirror?: boolean;
+        backupLimit?: number;
       };
       loadEnv(dir);
       const host = (process.env.N8N_HOST ?? "").replace(/\/+$/, "");
@@ -81,6 +83,8 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
         requestTimeoutMs: typeof cfg.requestTimeoutMs === "number" && cfg.requestTimeoutMs > 0 ? cfg.requestTimeoutMs : 30_000,
         n8nVersion: typeof cfg.n8nVersion === "string" && cfg.n8nVersion !== "" ? cfg.n8nVersion : undefined,
         dataTables: cfg.dataTables !== false,
+        liveMirror: cfg.liveMirror !== false,
+        backupLimit: typeof cfg.backupLimit === "number" && cfg.backupLimit >= 0 ? Math.floor(cfg.backupLimit) : 20,
         host,
         apiKey,
       };
