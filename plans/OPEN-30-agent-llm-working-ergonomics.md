@@ -387,8 +387,12 @@ framing error in the first draft is **corrected (F4)**.
      4. **instance version → the `n8n-docs` MCP (F5, default-scaffolded)** (or
         `WebFetch docs.n8n.io` if not scaffolded; single-latest, heed "available
         from vX") **+ release-notes page** for version behavior (Task 5, F4).
-     5. **`test`** (instance-side pinned run — recommended first) **then
-        `simulate`/`scenario`** to confirm the workflow offline.
+     5. **`preflight`** — the single scored, read-only pre-push gate that runs
+        the whole ladder (static → instance reads → a pinned `test`, `--full`
+        adds `simulate`); its rungs **`test`** (instance-side pinned run) and
+        **`simulate`/`scenario`** stay reachable individually for a focused
+        check. *(Assuming Plan 36 merged, #117 — `preflight` is the shipped
+        consolidation of rungs 1–5 into one verdict.)*
    - **The precedence override — LANDED as "This AGENTS.md wins…" (#107); do not
      re-add.** The template boundary contract shipped and the guard technically
      enforces the one carve-out (`jsCode` writes blocked). Task 7 ships only the
@@ -511,12 +515,16 @@ framing error in the first draft is **corrected (F4)**.
 9. **A canonical "recommended agent loop" picture** in
    [docs/agents/overview.md](../docs/agents/overview.md): *orient (`status`) →
    research (the guarded `n8n-instance` MCP / `executions` / `data-tables` /
-   version-aware `n8n-docs` MCP) → edit → verify (`node run` / `check` /
-   `scenario` / `test` / `simulate`) → report ready-to-push.* One diagram agents
-   and humans share (plain Markdown / a mermaid fence — no bespoke MDX). **Fix in
-   passing:** `overview.md` still names "the `mcp serve` guard-proxy" where
-   `mcp connect` is the scaffolded default, and its loop is a single sentence
-   with no orient step.
+   version-aware `n8n-docs` MCP) → edit → verify offline (`node run` / `check`)
+   → **gate (`preflight` — the single scored, read-only pre-push gate: static +
+   instance reads + a pinned `test`/`simulate` run)** → report ready-to-push.*
+   One diagram agents and humans share (plain Markdown / a mermaid fence — no
+   bespoke MDX). **Assuming Plan 36 merged (#117):** `preflight` is the shipped
+   consolidation of the verify ladder — feature it as the gate step rather than
+   listing `check`/`test`/`simulate` loose (they remain the individual rungs it
+   orchestrates). **Fix in passing:** `overview.md` still names "the `mcp serve`
+   guard-proxy" where `mcp connect` is the scaffolded default, and its loop is a
+   single sentence with no orient step.
 10. **Audit + trim the scaffolded permission allowlist** — mostly landed
     ([settings.local.json.example](../template/.claude/settings.local.json.example)
     already pre-allows `check`/`node`/`pull`/`simulate`/`scenario`/`status`/

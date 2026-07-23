@@ -35,6 +35,14 @@ selection), and the scaffolded Claude allowlist pre-approves
 `n8n-decanter simulate` in every synced dir (#107) — so a Docker-less agent
 machine hits the hard error on a pre-approved command.
 
+**Also a `preflight` consumer (assuming Plan 36 merged, #117).** `preflight`
+runs `simulate` under its `--full` and `--offline` profiles — and
+`preflight --offline` is explicitly *"air-gapped CI, no instance contact at
+all."* Without Docker that profile can't run today; the npx backend is what
+makes the whole read-only gate genuinely dependency-free, which is `preflight`'s
+whole point as the CI gate. Add `preflight --offline`/`--full` to the "surfaces
+that dead-end without Docker" list.
+
 ## Source
 
 - [Plan 7](DONE-7-engine-true-simulation-suite.md) "Design decision — the

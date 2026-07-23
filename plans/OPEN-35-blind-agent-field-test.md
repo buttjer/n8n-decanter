@@ -53,6 +53,13 @@ happens. A UX/contract field test, not a CI suite.
 >    harness-authored artifacts (prompts, dir/container/workflow names, git
 >    author) with product vocabulary whitelisted. Also update the **`plans/README.md`
 >    index blurb**, which repeats the stale guard-proxy/proxy-log story.
+> 6. **`preflight` is now the shipped pre-push gate (assuming Plan 36 merged,
+>    #117).** It joins the picker menu and is billed as *"the single gate an
+>    agent runs before push."* Make it a first-class surface under test: the
+>    rubric should record **whether blind agents discover and use `preflight`**
+>    (vs. running `check`/`test`/`simulate` piecemeal or skipping verification),
+>    and it's a natural pre-`push`/`publish` step in S1/S2's checklists. It is
+>    read-only, so it never trips the drift guard.
 
 ## Why
 

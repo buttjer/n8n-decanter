@@ -117,9 +117,12 @@ since frame durations don't change).
     `✓ Invoice Sync pushed — 3 nodes — draft updated (0.4s)` (optional dim
     follow-up line `run "publish" to go live`). *(The `AgentDemo` push line is
     already correct — "pushed to the draft".)*
-11. **Line ~45 — verb menu includes `test`.** The real picker menu is 7 verbs
-    with no `test` (`PICKER_VERBS`). Remove `"test"` from the demo's `verbs`
-    array. (Animation-safe: the cursor only reaches index 2 = `push`.)
+11. **Line ~45 — verb menu includes `test`.** The real picker menu has no
+    `test`. Remove `"test"` from the demo's `verbs` array. (Animation-safe: the
+    cursor only reaches index 2 = `push`.) **After #117 merges** the real menu is
+    `status/pull/push/watch/check/preflight/executions/simulate` (8 verbs, adds
+    `preflight`) — match whatever `PICKER_VERBS` is at execution time (the demo
+    need not show all of it, but must not show a verb the menu lacks).
 12. **Lines ~53–56 — picker rows show trailing `pulled` / `not pulled` words.**
     The real picker replaced trailing words with `●`/`○` glyphs + a single dim
     footer legend `● pulled · ○ not pulled`. Drop the per-row words, keep the
@@ -204,8 +207,17 @@ since frame durations don't change).
   no `PLAN.md` design change. The audit's `cleanNote`s confirmed the rest of the
   website (hero, 5/6 feature cards, comparison table, AgentDemo, nav/llms
   generation) and most docs pages are already current.
-- **Explicitly out of scope:** Plan 36 / the `preflight` verb (in flight in a
-  separate session) — do not touch its surfaces.
+- **Sequence after Plan 36 (`preflight`, PR #117 — open at time of writing).**
+  This audit ran against `main` (no `preflight`), but **#117 edits several of
+  the same files this plan touches** — `docs/cli/simulate.md`,
+  `docs/cli/check.md`, `docs/cli/overview.md`, and `template/AGENTS.md.example`.
+  So: **apply this plan *after* #117 merges and re-verify each finding against
+  the merged state** — #117 may already fix some (e.g. it rewrites parts of
+  `simulate.md`/`check.md`/`overview.md`) or shift line anchors, and it adds the
+  `preflight` rows/menu those pages need. Do **not** duplicate or fight #117's
+  edits; `preflight`'s own surfaces (`docs/cli/preflight.md`, the overview verb
+  row, the `AGENTS.md.example` gate step) are **owned by #117**, not this plan.
+  Treat the finding line-numbers here as pre-#117.
 - **One-code-comment sibling:** `lib/pull.mts:151`'s "stale-fixture warning"
   comment rides along with Task 14 (same terminology fix), keeping code and docs
   consistent.
