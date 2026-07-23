@@ -1,7 +1,7 @@
 ---
 title: test
 description: Run the workflow on your n8n instance with pinned data — the recommended runtime check.
-order: 7
+order: 10
 ---
 
 ```sh

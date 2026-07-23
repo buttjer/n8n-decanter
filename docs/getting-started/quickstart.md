@@ -13,8 +13,10 @@ n8n-decanter init [dir]
 `init` prompts for your n8n host, connects via **OAuth** in your browser (or
 takes a pasted MCP token), offers the optional public API key, copies the
 starter template, and scaffolds config, `.gitignore`, TypeScript tooling, and
-agent configs. It never overwrites existing files (safe to re-run) and does a
-best-effort connection check. See [init](/docs/cli/init/) for details.
+agent configs. Re-running is safe: files you've edited are left alone
+(untouched template files can be refreshed after a confirm; `--force` resets
+everything), and it does a best-effort connection check. See
+[init](/docs/cli/init/) for details.
 
 One-time n8n-side setup: enable **MCP access** (n8n → Settings → MCP; needs
 an n8n with the built-in MCP server, ~2.20+), and flip **"Available in MCP"**

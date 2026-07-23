@@ -25,8 +25,14 @@ Exits 1 on any error.
 - orphan `.js`/`.ts` files nothing references
 - dangling literal `$('…')` references, in node source and in expression
   parameters
+- a leftover legacy `fixtures/` dir containing `.json` files — the per-node
+  `fixtures/` / `simulate --pin` mechanism is retired; recreate the data as a
+  [scenario](/docs/cli/scenario/), then delete the dir
 
-Unresolved `.remote.js` leftovers warn without blocking.
+Warn without blocking: unresolved `.remote.js` leftovers; a Python Code node's
+inline `pythonCode` (decanter extracts JS/TS only — Python extraction is
+planned); and a committed scenario whose `workflowData` embeds inline Code-node
+source (`jsCode` not starting with `//@file:`).
 
 ## Typecheck
 

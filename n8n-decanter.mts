@@ -717,7 +717,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       break;
     }
     case "simulate": {
-      if (refs.length !== 1) throw new Error("simulate needs exactly one workflow ref: n8n-decanter <ref> simulate [--execution <id> | --scenario <slug>]");
+      if (refs.length !== 1) throw new Error("simulate needs exactly one workflow ref: n8n-decanter simulate <workflow> [--execution <id> | --scenario <slug>]");
       const dir = findWorkflowDir(config.root, refs[0], log);
       if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
       migrateScenariosDir(dir, log);
@@ -730,7 +730,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       }
       const source = scenarioSlug !== undefined ? "scenario" : "capture";
       const ref = scenarioSlug ?? valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
-      if (ref === undefined) throw new Error(`no execution to simulate: pass --execution <id> (or --scenario <slug>), or fetch one with \`n8n-decanter ${refs[0]} executions\``);
+      if (ref === undefined) throw new Error(`no execution to simulate: pass --execution <id> (or --scenario <slug>), or fetch one with \`n8n-decanter executions ${refs[0]}\``);
       if (source === "capture" && valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution/--scenario given; using the latest capture ${ref}`));
       if (!(await dockerAvailable())) {
         throw new Error("simulate needs a running Docker daemon (the engine backend) — start Docker and retry");
@@ -860,7 +860,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         execId = explicitExec;
       } else if (!scaffoldFlag) {
         execId = latestCaptureId(dir) ?? undefined;
-        if (execId === undefined) throw new Error(`no execution to seed the scenario: pass --execution <id>, add --scaffold to build from the workflow's schemas, or fetch a capture first with \`n8n-decanter ${refs[0]} executions\``);
+        if (execId === undefined) throw new Error(`no execution to seed the scenario: pass --execution <id>, add --scaffold to build from the workflow's schemas, or fetch a capture first with \`n8n-decanter executions ${refs[0]}\``);
         log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
       }
       const scaffold = scaffoldFlag ? await prepareTestPinData(mcp(), refs[0]) : undefined;

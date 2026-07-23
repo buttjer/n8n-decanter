@@ -18,8 +18,11 @@ The same wrapper-based typecheck as [check](/docs/cli/check/) — see
 Layout violations are **hard errors that `--force` does not bypass** — they
 would corrupt sync state. The full list of checks is on the
 [check](/docs/cli/check/) page: placeholder integrity, connection integrity,
-duplicate names/ids, orphan files, dangling `$('…')` references, marker
-misuse. Standalone: `n8n-decanter check`, no credentials needed.
+duplicate names/ids, orphan files, dangling `$('…')` references, marker misuse,
+and a leftover retired `fixtures/` dir. Standalone: `n8n-decanter check`, no
+credentials needed. The guard also **warns without blocking** about an inline
+Python `pythonCode` node and a committed scenario that embeds inline Code-node
+source under `workflowData`.
 
 ## 3. Per-node drift guard
 

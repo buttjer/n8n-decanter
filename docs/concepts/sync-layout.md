@@ -14,6 +14,8 @@ workflows/
     code/
       parse-order.js     # one file per Code node, kebab-case-named
       amazon-feed.ts
+    scenarios/
+      happy-path.json    # committed pin-data set (see below)
 ```
 
 The split of responsibilities (since the MCP-native sync): **Code-node source
@@ -67,7 +69,7 @@ Viewer-relative and derived fields are stripped on pull (`shared`, `scopes`,
 published-version pointer `activeVersionId` — state that churns on each
 publish, with no local reader; the version-aware [status](/docs/cli/status/)
 reads `activeVersionId` off the live workflow). The draft `versionId` is kept,
-since the [executions](/docs/cli/executions/) stale-fixture warning compares
+since the [executions](/docs/cli/executions/) stale-capture warning compares
 against it.
 
 ## `code/`
@@ -77,6 +79,16 @@ Node sources, named in kebab-case after their node (`Parse Order` →
 `.ts` files are one-way — see
 [TypeScript nodes](/docs/concepts/typescript-nodes/). Layouts from older
 versions (files at the folder root) migrate automatically on the next pull.
+
+## `scenarios/`
+
+Committed, full-workflow **pin-data sets** — `scenarios/<slug>.json`, each a
+self-contained, execution-shaped file captured from a real run or scaffolded
+from the workflow's schemas. `test`/`simulate` replay one with `--scenario
+<slug>` and diff each node against it. Unlike the gitignored `executions/`
+sibling (temporary capture data), **`scenarios/` is tracked in git**, so a
+scenario-based replay is reproducible for teammates and CI. See
+[scenario](/docs/cli/scenario/) for how they're created, filled, and validated.
 
 ## `.decanter.json`
 

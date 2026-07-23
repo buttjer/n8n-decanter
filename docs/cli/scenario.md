@@ -29,13 +29,13 @@ you supply the missing data as a reproducible, reviewable set.
 Two seeds, composable:
 
 ```sh
-n8n-decanter order-sync scenario create "happy-path" --execution 4812
+n8n-decanter scenario create order-sync "happy-path" --execution 4812
 #   copies executions/4812.json -> scenarios/happy-path.json, flags the gap nodes
 
-n8n-decanter order-sync scenario create "happy-path" --execution 4812 --scaffold
+n8n-decanter scenario create order-sync "happy-path" --execution 4812 --scaffold
 #   same, plus annotates each gap with its output JSON Schema
 
-n8n-decanter order-sync scenario create "from-scratch" --scaffold
+n8n-decanter scenario create order-sync "from-scratch" --scaffold
 #   no capture: every pinnable node becomes a schema-annotated fill entry
 ```
 
@@ -109,8 +109,8 @@ Structurally validates a scenario **offline** — the fast loop while filling,
 no Docker needed:
 
 ```sh
-n8n-decanter order-sync scenario check happy-path   # one scenario
-n8n-decanter order-sync scenario check              # every scenario in the folder
+n8n-decanter scenario check order-sync happy-path   # one scenario
+n8n-decanter scenario check order-sync              # every scenario in the folder
 ```
 
 Exits `1` if any scenario is malformed or has a `fill` node still empty, with a
@@ -147,11 +147,11 @@ The shape to match, per node:
 ## The full loop
 
 ```sh
-n8n-decanter order-sync simulate --execution 4812        # ✗ gap: Enrich Customer has no data
-n8n-decanter order-sync scenario create "happy-path" --execution 4812
+n8n-decanter simulate order-sync --execution 4812        # ✗ gap: Enrich Customer has no data
+n8n-decanter scenario create order-sync "happy-path" --execution 4812
 #   → fill scenarios/happy-path.json's runData for the flagged nodes
-n8n-decanter order-sync scenario check happy-path          # ✓ valid   (offline, fast)
-n8n-decanter order-sync simulate --scenario happy-path     # replay the scenario
+n8n-decanter scenario check order-sync happy-path          # ✓ valid   (offline, fast)
+n8n-decanter simulate order-sync --scenario happy-path     # replay the scenario
 ```
 
 ## Provenance and synthetic pins

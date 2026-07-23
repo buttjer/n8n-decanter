@@ -34,7 +34,8 @@ here and synced by decanter — never edited on the instance** (not in the UI,
 not via n8n's MCP tools or skills); and **`workflow.json` is a read-only
 snapshot** — structure changes go through n8n. n8n-decanter is built to pair
 with n8n's official skills pack: see [Using n8n's official skills](/docs/agents/n8n-skills/)
-for how the `mcp serve` guard-proxy makes that boundary safe by construction.
+for how the MCP guard (`mcp connect`; `mcp serve` for URL-only harnesses) makes
+that boundary safe by construction.
 
 ## Who runs what
 

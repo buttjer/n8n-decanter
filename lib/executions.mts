@@ -52,7 +52,7 @@ export function assertNoLegacyFixtures(dir: string): void {
   if (!readdirSync(fx).some((e) => e.endsWith(".json"))) return;
   throw new Error(
     `legacy ${LEGACY_FIXTURES_DIR}/ dir found in ${path.relative(process.cwd(), dir)} — per-node fixtures and \`simulate --pin\` were removed (Plan 37). ` +
-      `Recreate the data as a committed scenario (\`n8n-decanter <workflow> scenario create --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/.`,
+      `Recreate the data as a committed scenario (\`n8n-decanter scenario create <workflow> --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/.`,
   );
 }
 

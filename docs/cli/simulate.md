@@ -137,10 +137,10 @@ hand (or with your IDE agent — the CLI never calls a model), or scaffold its
 schema with `--scaffold`:
 
 ```sh
-n8n-decanter <workflow> scenario create "<slug>" --execution <id>   # writes scenarios/<slug>.json, flags the gaps
+n8n-decanter scenario create <workflow> "<slug>" --execution <id>   # writes scenarios/<slug>.json, flags the gaps
 # fill the flagged nodes' runData, then validate offline:
-n8n-decanter <workflow> scenario check <slug>
-n8n-decanter <workflow> simulate --scenario <slug>                  # replay the scenario
+n8n-decanter scenario check <workflow> <slug>
+n8n-decanter simulate <workflow> --scenario <slug>                  # replay the scenario
 ```
 
 ## Scope
