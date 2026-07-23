@@ -244,6 +244,11 @@ entries carry no priority field) — adjust freely.
       release-checklist step — would catch the cross-PR case. Real enforcement
       rides the public-repo CI ruleset
       ([Plan 13](DONE-13-open-source-release.md)), now live. Severity: low.
+      (graduated 2026-07-23 to
+      [Plan 40](OPEN-40-docs-surface-drift-guardrail.md) — the recurring drift
+      that [Plan 39](OPEN-39-docs-drift-refresh.md) cleaned up by hand bumped
+      this from "low" to worth a mechanical gate: a CI script checking
+      verb↔page↔README↔overview parity + the verb-last-command grammar bug.)
 
 - [ ] **Re-evaluate the TypeScript 7.x (native) major on each stable release**
       (2026-07-20). Dependabot #5 tried to bump `typescript` 5.9.3 → 7.0.2; the

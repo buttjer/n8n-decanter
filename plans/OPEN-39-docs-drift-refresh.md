@@ -243,6 +243,24 @@ Bring it back in step:
   surfaces — `docs/cli/preflight.md`, the overview `preflight` verb row, the
   `AGENTS.md.example` gate step — they are **owned by #117**. Re-resolve the
   remaining line anchors at execution (they are pre-#117).
+- **PR #118 (guarded-MCP-gateway reframe) merged 2026-07-23 — re-verified.**
+  #118 reworded structure copy across six files this plan also touches
+  (`docs/concepts/sync-layout.md`, `docs/concepts/push-gates.md`,
+  `docs/cli/status.md`, `template/AGENTS.md.example`,
+  `website/src/pages/index.astro`, `website/src/lib/llms.ts`) — but again
+  **fixed none of these findings**: the website "Agent-native" card still says
+  "`mcp serve` is a localhost guard-proxy" (Task 7), the comparison rows still
+  say "guard-proxy"/"guard-proxied" (Task 8), `sync-layout.md` still never
+  mentions `scenarios/` (Task 13), and `push-gates.md`/`AGENTS.md.example`'s
+  gaps stand. What it **did** change is the *surrounding framing* — structure is
+  now "decanter's guarded MCP gateway", not "n8n's job". So when executing the
+  website/`AGENTS.md` tasks, **reconcile the `mcp serve`→`mcp connect` wording
+  with #118's new gateway copy** rather than the pre-#118 text, and re-resolve
+  anchors again (they shifted in all six files). Plan still stands whole.
+- **This plan is the one-time cleanup; [Plan 40](OPEN-40-docs-surface-drift-guardrail.md)
+  is the ratchet** that stops the verb-last / surface-mismatch class recurring.
+  Land this plan's grammar fixes first (or together) so Plan 40's CI check goes
+  green.
 - **One-code-comment sibling:** `lib/pull.mts:151`'s "stale-fixture warning"
   comment rides along with Task 14 (same terminology fix), keeping code and docs
   consistent.
