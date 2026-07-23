@@ -41,8 +41,8 @@ capability.
   "Better" tier) — the item flagged as needing a user decision before
   graduating. *(There is no `PROPOSAL.md` in the repo; the surviving repo-side
   source is the BACKLOG item above, which already links back to this plan.)*
-- Pairs with the `run` faked-context fidelity item (BACKLOG, `$jmespath`): the
-  emulated-global surface is the *inside* of this boundary.
+- Pairs with [Plan 43](43-emulated-globals-surface.md) (`run`'s emulated-global
+  surface, incl. `$jmespath`): that surface is the *inside* of this boundary.
 
 ## Design decision — the isolation mechanism (DECIDED: A, 2026-07-22)
 
@@ -148,8 +148,9 @@ implementations + two test suites, not a small switch (user decision
   enforced network/fs isolation stays `simulate`'s Docker `--network none` job
   ([Plan 7](../done/7-engine-true-simulation-suite.md)).
 - Sandboxing anything but `run` — `push`/`watch` don't execute node bodies.
-- Changing the emulated-global *surface* (that's the `$jmespath`/fidelity
-  backlog item); this plan only changes *where* the body runs.
+- Changing the emulated-global *surface* (that's [Plan
+  43](43-emulated-globals-surface.md), the `$jmespath`/fidelity work); this plan
+  only changes *where* the body runs.
 
 ## Notes
 
