@@ -639,6 +639,8 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    rather than silently merging.
 6. **CI & tests green** — main's required checks are green, `npm test` and
    `npm run typecheck` pass locally, and no open PR is red.
-7. **Drift audits** — `template/*.example` still match their repo counterparts
-   (e.g. the `n8n-globals.d.ts` duplication, a tracked backlog item); run
-   `npm audit` for new advisories.
+7. **Drift audits** — `template/*.example` still match their repo counterparts;
+   `n8n-globals.d.ts` is single-sourced (init copies the root file — no
+   `template/*.example` duplicate; Plan 43) and its declared surface is checked
+   against n8n by `scripts/globals-drift-audit.mts`; run `npm audit` for new
+   advisories.

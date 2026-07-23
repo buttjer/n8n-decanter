@@ -549,6 +549,11 @@ await step("init: writes .env (MCP token + optional API key), copies whole templ
       assert.equal(read(target, destRel), read(templateDir, rel), `content mismatch: ${rel} -> ${destRel}`);
     }
   }
+  // n8n-globals.d.ts is single-sourced from the repo root (Plan 43) — no
+  // template/*.example duplicate — but init still materializes + tracks it.
+  assert.ok(!existsSync(path.join(templateDir, "n8n-globals.d.ts.example")), "the byte-identical template duplicate must be gone");
+  assert.ok(existsSync(path.join(target, "n8n-globals.d.ts")), "init copies the root-sourced n8n-globals.d.ts");
+  assert.equal(read(target, "n8n-globals.d.ts"), read(PROJECT, "n8n-globals.d.ts"), "init copies the single root n8n-globals.d.ts verbatim");
   assert.ok(existsSync(path.join(target, "workflows")), "workflows dir copied");
   assert.equal(JSON.parse(read(target, "decanter.config.json")).root, "./workflows");
   assert.match(read(target, ".gitignore"), /^\.env$/m);
@@ -564,8 +569,9 @@ await step("init: writes .env (MCP token + optional API key), copies whole templ
   // init records a copy-time baseline manifest (.decanter-template.json) that
   // tracks every materialized template file *except* the credential-bearing .env
   const manifest = JSON.parse(read(target, ".decanter-template.json")) as { version: string; files: Record<string, string> };
-  const expectedKeys = templateFiles.map(materialize).filter((r) => r !== ".env").sort();
-  assert.deepEqual(Object.keys(manifest.files).sort(), expectedKeys, "manifest tracks all template files but .env");
+  // the root-sourced n8n-globals.d.ts (Plan 43) is tracked alongside the template files
+  const expectedKeys = [...templateFiles.map(materialize).filter((r) => r !== ".env"), "n8n-globals.d.ts"].sort();
+  assert.deepEqual(Object.keys(manifest.files).sort(), expectedKeys, "manifest tracks all template files + root .d.ts, but .env");
   assert.ok(!("env" in manifest.files) && !(".env" in manifest.files), ".env must never be manifest-tracked");
   // re-init must not clobber user edits to template-provided files, and must
   // report the drift instead (modification-aware refresh)

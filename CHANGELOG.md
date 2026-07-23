@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`node run` now emulates `$jmespath`.** A Code node that calls
+  `$jmespath(data, expr)` (or the `$jmesPath` alias) runs offline, matching
+  n8n's result (backed by `jmespath@0.16.0`, the version n8n pins). It also
+  fills in `$items()`/`$node` (views over the fixture's `nodes`), `$vars`/
+  `$secrets` (new fixture fields), and `$nodeId`/`$nodeVersion`/`$webhookId`.
+- **`node run` fixtures gained `vars` and `secrets`** to pin the instance-scoped
+  `$vars`/`$secrets` when a node reads them.
+
+### Changed
+
+- **`node run` signposts instead of crashing on instance-scoped globals.** A
+  global whose value lives on the running instance (`$vars`/`$secrets` when
+  unpinned, `$evaluateExpression`) now throws a friendly message that names the
+  global and points to `test` (or the fixture field) — never a bare
+  `ReferenceError`. `docs/cli/node-run.md` documents the covered / partial /
+  unsupported boundary.
+
+### Fixed
+
+- **`n8n-globals.d.ts` no longer over-declares `$if`/`$min`/`$max`.** Those are
+  n8n *expression-language* helpers (`{{ }}` only), not Code-node globals — they
+  throw in a real Code node too — so declaring them wrongly type-checked broken
+  code. The declared surface now matches what a Code node actually sees, and is
+  single-sourced (init copies the one root file — no duplicate template copy).
+
 ## [0.6.0] - 2026-07-23
 
 ### Added
