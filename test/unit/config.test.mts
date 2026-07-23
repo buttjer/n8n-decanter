@@ -70,7 +70,7 @@ describe("loadEnv", () => {
 });
 
 describe("loadConfig", () => {
-  it("resolves defaults: root, commit flags, browserReload, proxyPort", () => {
+  it("resolves defaults: root, commit flags", () => {
     const dir = configDir({}, "N8N_HOST=http://localhost:5678\nN8N_API_KEY=k\n");
     const cfg = loadConfig(dir);
     assert.equal(cfg.configDir, dir);
@@ -78,11 +78,19 @@ describe("loadConfig", () => {
     assert.deepEqual(cfg.workflows, []);
     assert.equal(cfg.commitOnPush, true);
     assert.equal(cfg.commitOnPull, true);
-    assert.equal(cfg.browserReload, "off");
-    assert.equal(cfg.proxyPort, 5679);
     assert.equal(cfg.dataTables, true);
     assert.equal(cfg.host, "http://localhost:5678");
     assert.equal(cfg.apiKey, "k");
+  });
+
+  it("ignores a stale browserReload/proxyPort (Plan 52 removal) rather than erroring", () => {
+    const dir = configDir(
+      { browserReload: "proxy", proxyPort: 7000 },
+      "N8N_HOST=http://localhost:5678\nN8N_API_KEY=k\n",
+    );
+    const cfg = loadConfig(dir) as unknown as Record<string, unknown>;
+    assert.equal(cfg.browserReload, undefined);
+    assert.equal(cfg.proxyPort, undefined);
   });
 
   it("dataTables defaults on and only false switches it off", () => {
@@ -97,7 +105,7 @@ describe("loadConfig", () => {
 
   it("honors explicit settings and strips trailing slashes off the host", () => {
     const dir = configDir(
-      { root: "./flows", workflows: ["a", "b"], commitOnPush: false, browserReload: "proxy", proxyPort: 7000 },
+      { root: "./flows", workflows: ["a", "b"], commitOnPush: false },
       "N8N_HOST=http://localhost:5678///\nN8N_API_KEY=k\n",
     );
     const cfg = loadConfig(dir);
@@ -105,8 +113,6 @@ describe("loadConfig", () => {
     assert.deepEqual(cfg.workflows, ["a", "b"]);
     assert.equal(cfg.commitOnPush, false);
     assert.equal(cfg.commitOnPull, true);
-    assert.equal(cfg.browserReload, "proxy");
-    assert.equal(cfg.proxyPort, 7000);
     assert.equal(cfg.host, "http://localhost:5678");
   });
 

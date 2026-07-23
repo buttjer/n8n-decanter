@@ -1,4 +1,4 @@
-// Shared step runner for the scenario suites (e2e, proxy, smoke): sequential
+// Shared step runner for the scenario suites (e2e, guardproxy, smoke): sequential
 // steps building one shared, stateful scenario — ok/skip/FAIL lines, overall
 // exit via process.exitCode (never process.exit() mid-run — that would skip
 // pending `finally` cleanup in the caller).

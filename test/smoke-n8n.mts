@@ -513,7 +513,7 @@ try {
     const mcpClient = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
     const config = {
       configDir: TMP, root: ROOT, workflows: [wfId], commitOnPush: false, commitOnPull: false,
-      browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: HOST, apiKey: KEY,
+      requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: HOST, apiKey: KEY,
     };
     const logs: string[] = [];
     const capture = (m: string) => logs.push(m);

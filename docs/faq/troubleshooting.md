@@ -1,6 +1,6 @@
 ---
 title: FAQ & troubleshooting
-description: Common errors and their causes — Node version, editor squiggles, drift, proxy auth.
+description: Common errors and their causes — Node version, editor squiggles, drift, auth.
 order: 1
 ---
 
@@ -68,12 +68,6 @@ and ambiguity errors instead of prompting. Use more of the name, or the id.
 Since the verb comes first (`n8n-decanter <verb> <workflow>`), a workflow
 literally named like a verb needs no special handling — `n8n-decanter status push`
 runs `status` on the workflow named `push`.
-
-## The live-reload proxy loses my n8n login
-
-The [watch proxy](/docs/concepts/watch-live-reload/) is designed for a local
-**http** n8n. Against an https/remote host, Secure cookies don't survive the
-plain-http hop, so auth may not carry through — best-effort only.
 
 ## Where do my credentials live?
 

@@ -58,8 +58,6 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
         workflows?: string[];
         commitOnPush?: boolean;
         commitOnPull?: boolean;
-        browserReload?: string;
-        proxyPort?: number;
         requestTimeoutMs?: number;
         n8nVersion?: string;
         dataTables?: boolean;
@@ -78,8 +76,6 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
         workflows: cfg.workflows ?? [],
         commitOnPush: cfg.commitOnPush !== false,
         commitOnPull: cfg.commitOnPull !== false,
-        browserReload: cfg.browserReload === "proxy" ? "proxy" : "off",
-        proxyPort: typeof cfg.proxyPort === "number" ? cfg.proxyPort : 5679,
         requestTimeoutMs: typeof cfg.requestTimeoutMs === "number" && cfg.requestTimeoutMs > 0 ? cfg.requestTimeoutMs : 30_000,
         n8nVersion: typeof cfg.n8nVersion === "string" && cfg.n8nVersion !== "" ? cfg.n8nVersion : undefined,
         dataTables: cfg.dataTables !== false,

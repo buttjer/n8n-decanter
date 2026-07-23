@@ -13,7 +13,7 @@ throwaway mock n8n API — do not import lib/ modules directly.
   pushes).
 - **Sync dir**: temp dir with `.env` (`N8N_HOST=http://127.0.0.1:<port>`,
   `N8N_API_KEY=test`) + `decanter.config.json`
-  (`{"root":"./workflows","workflows":["wf1"],"browserReload":"off"}`), then
+  (`{"root":"./workflows","workflows":["wf1"]}`), then
   `git init` + local user.name/email — pull/push/watch auto-commit and watch
   refuses its startup pull without git.
 - **Bootstrap**: run `node n8n-decanter.mts pull` (cwd = sync dir) to create

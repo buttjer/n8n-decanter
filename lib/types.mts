@@ -134,10 +134,6 @@ export interface DecanterConfig {
   workflows: string[];
   commitOnPush: boolean;
   commitOnPull: boolean;
-  /** `"proxy"` boots the browser-reload dev proxy during watch; `"off"` disables it. */
-  browserReload: "off" | "proxy";
-  /** Port the browser-reload proxy binds on 127.0.0.1 (browserReload: "proxy"). */
-  proxyPort: number;
   /** Per-request timeout for n8n API calls, milliseconds (default 30 000). */
   requestTimeoutMs: number;
   /**

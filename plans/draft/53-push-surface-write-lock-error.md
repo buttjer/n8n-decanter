@@ -3,7 +3,7 @@
 **Status:** Draft
 **Priority:** P3
 **Source:** fell out of the `n8n-editor-live-reflects-mcp-edits` research (the
-proxy-removal exploration, [Plan 52](../open/52-remove-watch-browser-reload-proxy.md)).
+proxy-removal exploration, [Plan 52](../done/52-remove-watch-browser-reload-proxy.md)).
 **Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 
 n8n 2.x runs a **single-writer lock**: a UI user acquires it on their first edit

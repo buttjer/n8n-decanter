@@ -19,8 +19,6 @@ environment.
   "dataTables": true,
   "liveMirror": true,
   "backupLimit": 20,
-  "browserReload": "proxy",
-  "proxyPort": 5679,
   "bundleDependencies": ["zod"]
 }
 ```
@@ -36,8 +34,6 @@ environment.
 | `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the API key needn't carry the data-table read scopes); `data-tables clean` still works. |
 | `liveMirror` | `true` | Refresh the read-only `workflow.json` snapshot in the background after an agent restructures a workflow through the [guard](/docs/cli/mcp-connect/) (a forwarded `update_workflow`). `false` disables the auto-refresh (CI / deterministic setups). |
 | `backupLimit` | `20` | Cap on the retained [`backups/`](/docs/cli/backup/) working set per workflow. Each `backup create` rolling-prunes the oldest beyond this; `0` keeps all (git holds the full history regardless). |
-| `browserReload` | off | `"proxy"` enables the [live-reload proxy](/docs/concepts/watch-live-reload/) during watch. |
-| `proxyPort` | `5679` | Port for that proxy. |
 | `bundleDependencies` | `[]` | npm packages `.ts` nodes may import; [bundled on push](/docs/concepts/typescript-nodes/). Pure-JS only. |
 
 ## Credentials
