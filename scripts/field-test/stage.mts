@@ -248,15 +248,16 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   }
 
   // Put OUR version of the CLI in the project — the code under test, not whatever
-  // is published to npm. This is also what makes the CLI DISCOVERABLE (package.json
-  // + node_modules/.bin, so `npx n8n-decanter` works) to a blind agent; a global
-  // PATH binary it has no reason to know about is NOT enough (round-1 finding:
-  // without this breadcrumb the agent never used decanter at all).
+  // is published to npm. A WORKDIR-LOCAL install (node_modules/.bin) is the
+  // breadcrumb + the runnable bin; run.mts prepends node_modules/.bin to the blind
+  // session's PATH so a bare `n8n-decanter` resolves to this copy (guard + agent
+  // alike). Deliberately NOT a global `npm link` — that mutates machine-global
+  // state and leaves the user's global command dangling after teardown.
   //
-  // Default: build + `npm link` the local repo (Plan 35 §Stage: "Build + npm link
-  // the CLI"; Node won't type-strip .mts under node_modules, so the built dist/ is
-  // the bin that runs). FIELD_DECANTER_SPEC overrides with an npm spec (a published
-  // version, tarball, or git ref) when you deliberately want that instead.
+  // Default: build + `npm pack` OUR repo to a tarball, install it locally (Node
+  // won't type-strip .mts under node_modules, so the packed dist/ is the bin that
+  // runs). FIELD_DECANTER_SPEC overrides with an npm spec (published version,
+  // tarball, or git ref) when you deliberately want that instead.
   const spec = process.env.FIELD_DECANTER_SPEC;
   writeFileSync(path.join(workDir, "package.json"), JSON.stringify({ name: "flows-ops", private: true, dependencies: { "n8n-decanter": spec ?? "^0.6.0" } }, null, 2) + "\n");
   let decanterInstalled = false;
@@ -265,10 +266,11 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
       await execFile("npm", ["install", "--no-audit", "--no-fund", spec], { cwd: workDir });
       console.log(`installed n8n-decanter (${spec}) into the project`);
     } else {
-      await execFile("npm", ["run", "build"], { cwd: PACKAGE_ROOT });     // dist/ — the bin Node actually runs
-      await execFile("npm", ["link"], { cwd: PACKAGE_ROOT });             // register the local repo globally
-      await execFile("npm", ["link", "n8n-decanter"], { cwd: workDir });  // workDir/node_modules -> the local repo
-      console.log(`built + linked local n8n-decanter (${PACKAGE_ROOT}) into the project`);
+      // `npm pack` runs prepack (build → dist/) and prints the tarball name as JSON.
+      const { stdout } = await execFile("npm", ["pack", "--pack-destination", workDir, "--json"], { cwd: PACKAGE_ROOT });
+      const tgz = (JSON.parse(stdout) as Array<{ filename: string }>)[0].filename;
+      await execFile("npm", ["install", "--no-audit", "--no-fund", path.join(workDir, tgz)], { cwd: workDir });
+      console.log(`packed + locally installed n8n-decanter (${tgz}) — no global link`);
     }
     decanterInstalled = true;
   } catch (err) {

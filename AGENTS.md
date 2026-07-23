@@ -401,7 +401,8 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   probes; `field-test:verify <manifest>` runs the scripted
                       #   invariant checks; `field-test:report <manifest>` renders
                       #   a self-contained HTML timeline of the agentic sessions.
-                      #   The stage npm-links OUR built CLI + pre-seeds a correct
+                      #   The stage packs + locally installs OUR built CLI (no
+                      #   global link) + pre-seeds a correct
                       #   .env. Never part of npm test; grading is a separate pass.
                       #   Teardown: `field-test:stage --down <manifest>`.
 
