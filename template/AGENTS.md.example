@@ -422,11 +422,11 @@ author the data locally and it is reviewed in the diff.**
 The loop:
 
 ```sh
-n8n-decanter "<workflow>" simulate --execution <id>                 # ✗ gap: <Node> has no data
-n8n-decanter "<workflow>" scenario create "<slug>" --execution <id> # writes a committed, fillable scenario
+n8n-decanter simulate "<workflow>" --execution <id>                 # ✗ gap: <Node> has no data
+n8n-decanter scenario create "<workflow>" "<slug>" --execution <id> # writes a committed, fillable scenario
 #   → edit workflows/<folder>/scenarios/<slug>.json  (see below)
-n8n-decanter "<workflow>" scenario check <slug>                     # validate offline (fast, no Docker)
-n8n-decanter "<workflow>" simulate --scenario <slug>               # replay the filled scenario
+n8n-decanter scenario check "<workflow>" <slug>                     # validate offline (fast, no Docker)
+n8n-decanter simulate "<workflow>" --scenario <slug>               # replay the filled scenario
 ```
 
 Add `--scaffold` to `scenario create` to annotate each gap with its **output

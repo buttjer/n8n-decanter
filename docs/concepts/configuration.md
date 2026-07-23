@@ -15,6 +15,7 @@ environment.
   "commitOnPush": true,
   "commitOnPull": true,
   "requestTimeoutMs": 30000,
+  "n8nVersion": "2.31.4",
   "dataTables": true,
   "browserReload": "proxy",
   "proxyPort": 5679,
@@ -29,6 +30,7 @@ environment.
 | `commitOnPush` | `true` | Auto-commit the workflow folder after a successful push. |
 | `commitOnPull` | `true` | Same for pull. |
 | `requestTimeoutMs` | `30000` | Request timeout (MCP and API) — raise for slow instances. |
+| `n8nVersion` | unset | n8n version [`simulate`](/docs/cli/simulate/)'s engine-true runner pins to (e.g. `"2.31.4"`); `--n8n-version` overrides it per run. Unset falls back to the project's default with a hint. |
 | `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the API key needn't carry the data-table read scopes); `data-tables clean` still works. |
 | `browserReload` | off | `"proxy"` enables the [live-reload proxy](/docs/concepts/watch-live-reload/) during watch. |
 | `proxyPort` | `5679` | Port for that proxy. |
@@ -41,7 +43,7 @@ In order of resolution:
 
 1. **`N8N_HOST`** — always required for online verbs (`.env` or environment).
 2. **MCP credentials** (the sync verbs — pull, push, watch, status, publish,
-   unpublish — and the `mcp connect`/`mcp serve` guard):
+   unpublish, test — and the `mcp connect`/`mcp serve` guard):
    - `N8N_MCP_TOKEN` (`.env` or environment) — a rotatable token from n8n →
      Settings → MCP → API key. Takes precedence when set.
    - Otherwise `.decanter-auth.json` — the OAuth client id + refresh token

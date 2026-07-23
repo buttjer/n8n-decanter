@@ -106,6 +106,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Verb-first error hints.** Several CLI error/guidance messages suggested
+  **verb-last** commands (`n8n-decanter <ref> simulate …`,
+  `n8n-decanter <ref> executions`, `n8n-decanter <ref> scenario …`) that the
+  verb-first grammar rejects when copy-pasted; every one now prints the
+  verb-first form (`n8n-decanter simulate <workflow> …`,
+  `n8n-decanter executions <workflow>`, `n8n-decanter scenario … <workflow>`).
 - **Refresh-token race (OAuth):** two concurrent MCP calls — or `watch` plus
   a manual `push` sharing `.decanter-auth.json` — could both redeem the
   single-use refresh token, killing the session for the loser ("re-run

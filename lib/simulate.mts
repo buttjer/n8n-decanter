@@ -180,8 +180,8 @@ export function readCapture(dir: string, ref: string, source: SimSource): { exec
   const file = sourceFile(dir, ref, source);
   if (!file) {
     throw new Error(source === "scenario"
-      ? `scenario "${ref}" not found under ${SCENARIOS_DIR}/ — create it first: n8n-decanter <ref> scenario create ${ref}`
-      : `execution ${ref} not captured under ${EXECUTIONS_DIR}/ — fetch it first: n8n-decanter <ref> executions`);
+      ? `scenario "${ref}" not found under ${SCENARIOS_DIR}/ — create it first: n8n-decanter scenario create <ref> ${ref}`
+      : `execution ${ref} not captured under ${EXECUTIONS_DIR}/ — fetch it first: n8n-decanter executions <ref>`);
   }
   let exec: Execution;
   try {
@@ -472,8 +472,8 @@ export async function buildSimulation(
     const names = gaps.map((g) => g.node).join(", ");
     throw new SimulationGapError(
       source === "scenario"
-        ? `scenario "${ref}" still has network node(s) with no data: ${names} — add their runData under data.resultData.runData in ${SCENARIOS_DIR}/${sourceName(ref, "scenario")}.json (see the _decanterScenario block), then re-run. Validate offline with: n8n-decanter <workflow> scenario check ${ref}.`
-        : `network node(s) reached with no captured data: ${names} — create a committed, fillable scenario with \`n8n-decanter <workflow> scenario create --execution ${ref}\`, add their runData, and replay with \`simulate --scenario\`. The scenario is edited locally — the CLI never calls a model.`,
+        ? `scenario "${ref}" still has network node(s) with no data: ${names} — add their runData under data.resultData.runData in ${SCENARIOS_DIR}/${sourceName(ref, "scenario")}.json (see the _decanterScenario block), then re-run. Validate offline with: n8n-decanter scenario check <workflow> ${ref}.`
+        : `network node(s) reached with no captured data: ${names} — create a committed, fillable scenario with \`n8n-decanter scenario create <workflow> --execution ${ref}\`, add their runData, and replay with \`simulate --scenario\`. The scenario is edited locally — the CLI never calls a model.`,
       gaps,
     );
   }
@@ -596,7 +596,7 @@ export async function writeScenario(
   if (opts.execId !== undefined) {
     const rawFile = path.join(dir, EXECUTIONS_DIR, `${opts.execId}.json`);
     if (!existsSync(rawFile)) {
-      throw new Error(`execution ${opts.execId} not captured under ${EXECUTIONS_DIR}/ — fetch it first: n8n-decanter <ref> executions`);
+      throw new Error(`execution ${opts.execId} not captured under ${EXECUTIONS_DIR}/ — fetch it first: n8n-decanter executions <ref>`);
     }
     try {
       baseExec = JSON.parse(readFileSync(rawFile, "utf8")) as Execution;
@@ -609,7 +609,7 @@ export async function writeScenario(
   } else {
     // Pure scaffold: no capture — every pinnable node is a gap to author.
     if (!opts.scaffold) {
-      throw new Error("scenario create with no --execution needs --scaffold — or fetch a capture first with `n8n-decanter <ref> executions`");
+      throw new Error("scenario create with no --execution needs --scaffold — or fetch a capture first with `n8n-decanter executions <ref>`");
     }
     baseExec = { id: name, mode: "manual", workflowVersionId: typeof wf.versionId === "string" ? wf.versionId : undefined, data: { resultData: { runData: {} } } } as unknown as Execution;
     gaps = pinnableNodes(wf).map((n) => ({ node: n.name, type: n.type, parameters: n.parameters, input: [] }));
@@ -629,7 +629,7 @@ export async function writeScenario(
     createdAt: new Date().toISOString().slice(0, 10),
     ...(wfVersion !== undefined ? { workflowVersionId: wfVersion } : {}),
     guidance: gaps.length > 0
-      ? `Scenario pin data — synthetic, not a full real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample${opts.scaffold ? "/expectedSchema" : ""} as context. Keep the "fill" list as-is — it records which nodes are synthetic (provenance) and is what "scenario check" validates. Validate offline: n8n-decanter <workflow> scenario check ${name}. Then replay: n8n-decanter <workflow> simulate --scenario ${name}.`
+      ? `Scenario pin data — synthetic, not a full real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample${opts.scaffold ? "/expectedSchema" : ""} as context. Keep the "fill" list as-is — it records which nodes are synthetic (provenance) and is what "scenario check" validates. Validate offline: n8n-decanter scenario check <workflow> ${name}. Then replay: n8n-decanter simulate <workflow> --scenario ${name}.`
       : `Committed, reproducible copy of capture ${opts.execId} — no gaps to fill.`,
     fill,
   };
@@ -670,7 +670,7 @@ export function listScenarioSlugs(dir: string): string[] {
 export function checkScenarios(dir: string, slug: string | undefined, log: Log): number {
   const slugs = slug !== undefined ? [kebabCase(slug)] : listScenarioSlugs(dir);
   if (slugs.length === 0) {
-    log.info(slug !== undefined ? `no scenario "${slug}" under ${SCENARIOS_DIR}/` : `no scenarios under ${SCENARIOS_DIR}/ — create one with: n8n-decanter <workflow> scenario create`);
+    log.info(slug !== undefined ? `no scenario "${slug}" under ${SCENARIOS_DIR}/` : `no scenarios under ${SCENARIOS_DIR}/ — create one with: n8n-decanter scenario create <workflow>`);
     return 0;
   }
   let invalid = 0;

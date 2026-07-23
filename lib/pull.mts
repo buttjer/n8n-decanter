@@ -148,7 +148,7 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
   // dropped: `activeVersion` would duplicate every node's source in git,
   // `activeVersionId` churns on each publish, `shared`/`scopes`/`canExecute`
   // are viewer-relative MCP noise. The draft `versionId` is kept — the
-  // executions stale-fixture warning compares against it.
+  // executions stale-capture warning compares against it.
   const wfOut = structuredClone(wf);
   delete wfOut.activeVersion;
   delete wfOut.activeVersionId;

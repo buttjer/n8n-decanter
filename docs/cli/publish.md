@@ -32,9 +32,9 @@ error — nothing changes and the command still exits 0.
 ## The standard loop
 
 ```sh
-n8n-decanter wf push        # update the draft (live version untouched)
+n8n-decanter push wf        # update the draft (live version untouched)
 # …iterate, test, repeat…
-n8n-decanter wf publish     # ship it — or use push --publish for the last one
+n8n-decanter publish wf     # ship it — or use push --publish for the last one
 ```
 
 Because pushes never auto-publish, there is no need to `unpublish` first for

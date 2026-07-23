@@ -51,15 +51,18 @@
       const rows = workflows
         .map((w, i) => {
           const dot = w.pulled ? '<span class="ok">●</span>' : '<span class="warn">○</span>';
-          const state = w.pulled ? '<span class="ok">pulled</span>' : '<span class="warn">not pulled</span>';
-          const head = `${i === cursor ? "❯" : " "} ${pad(w.name, 17)} ${pad(w.id, 8)} `;
-          return `<div class="${i === cursor ? "sel" : ""}">${head}${dot} ${state}</div>`;
+          const cls = w.pulled ? "ok" : "warn";
+          const pointer = i === cursor ? "❯" : " ";
+          return `<div class="${i === cursor ? "sel" : ""}">${pointer} ${dot} <span class="${cls}">${pad(w.name, 17)}</span> <span class="dim">${w.id}</span></div>`;
         })
         .join("");
+      const enterHint = workflows[cursor].pulled ? "enter select" : "enter pull";
       return (
         '<div class="dim">┌ pick a workflow ─────────────────────────┐</div>' +
+        '<div class="dim">? type to filter</div>' +
         rows +
-        '<div class="dim">type to filter · ↑↓ move · ⏎ select · esc quit</div>'
+        '<div class="dim"><span class="ok">●</span> pulled · <span class="warn">○</span> not pulled</div>' +
+        `<div class="dim">↑↓ move · ${enterHint} · esc quit</div>`
       );
     };
 
@@ -78,7 +81,8 @@
     const running = cmdLine + '<div><span class="warn">⠹</span> pushing Invoice Sync…</div>';
     const output =
       cmdLine +
-      '<div><span class="ok">✓</span> Invoice Sync pushed — 3 nodes live <span class="dim">(0.4s)</span></div>' +
+      '<div><span class="ok">✓</span> Invoice Sync pushed — 3 nodes — draft updated <span class="dim">(0.4s)</span></div>' +
+      '<div class="dim">  run "publish" to go live</div>' +
       '<div class="dim">  ~/my-n8n/workflows/invoice-sync/workflow.json</div>' +
       '<div class="dim">  code/parse-invoice.js · code/format.ts</div>';
 

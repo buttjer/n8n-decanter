@@ -33,7 +33,7 @@ const features = [
   {
     icon: "⌘",
     title: "Agent-native, your own model",
-    text: "init scaffolds Claude Code / Cursor / Codex configs and guard hooks; mcp serve is a localhost guard-proxy that holds your credentials so agents never see them. decanter never calls an LLM itself — your agent and subscription do 100%.",
+    text: "init scaffolds Claude Code / Cursor / Codex configs and guard hooks; the scaffolded .mcp.json spawns mcp connect, a guard that holds your credentials so agents never see them (mcp serve is the HTTP variant). decanter never calls an LLM itself — your agent and subscription do 100%.",
   },
 ];
 
@@ -45,12 +45,12 @@ const compareRows = [
   ["Shared types & helpers", "❌ self-host allow-list only, no libraries", "❌ not part of its model", "✅ shared/*.ts + npm bundled into self-contained nodes"],
   ["Code as individual files", "❌ no source files (JSON blob)", "🟡 one .workflow.ts per workflow", "✅ folder per workflow; each Code node its own .js/.ts"],
   ["Code-level git versioning", "🟡 in-app history; Git is Enterprise-only", "✅ GitOps sync of workflow source", "✅ real git — diffs, PRs, blame; auto-commit each sync"],
-  ["Preflights (check / simulate / test / preflight)", "🟡 re-run in-editor, online only", "🟡 inspect against a live env", "✅ offline check + simulate, instance-side test; preflight scores the whole ladder into one CI-gateable verdict"],
+  ["Preflights (check / simulate / test / preflight)", "🟡 re-run in-editor, online only", "🟡 inspect against a live env", "✅ offline check + simulate, instance-side test; preflight scores the whole ladder into one read-only, CI-gateable verdict"],
   ["Draft-first code sync", "✅ editor Save vs Publish (manual)", "🟡 API sync republishes on push", "✅ pushes land on the draft; publish is deliberate (over MCP)"],
   ["Live editing", "✅ the canvas (baseline)", "🟡 explicit pull/push, no auto-watch", "✅ watch: push on save + auto-reload the editor tab"],
-  ["Agent-native tooling", "🟡 n8n's own canvas AI, not your agent", "✅ Workbench, skills, MCP, plugins", "✅ scaffolds Claude/Cursor/Codex + guard-proxy; offline loop"],
+  ["Agent-native tooling", "🟡 n8n's own canvas AI, not your agent", "✅ Workbench, skills, MCP, plugins", "✅ scaffolds Claude/Cursor/Codex incl. a pre-wired mcp connect guard; offline loop"],
   ["Model ownership", "❌ locked to n8n's hosted AI", "🟡 plugin uses your sub; Workbench needs a key", "✅ never calls an LLM — your agent/subscription does 100%"],
-  ["Agentic workflow creation", "🟡 AI Builder, Cloud / plan-gated", "✅ node schemas + templates + skills", "✅ agent builds structure over n8n's MCP (guard-proxied); decanter owns the code"],
+  ["Agentic workflow creation", "🟡 AI Builder, Cloud / plan-gated", "✅ node schemas + templates + skills", "✅ agent builds structure over n8n's MCP (through the pre-wired mcp connect guard); decanter owns the code"],
   ["Whole-workflow authoring", "❌", "✅ .workflow.ts decorator classes", "❌ not as repo code — built live over MCP, mirrored read-only"],
   ["Multi-environment promotion", "🟡 Enterprise environments", "✅ promote remaps creds + refs", "🟡 a sync dir per instance, no promote yet"],
 ];
