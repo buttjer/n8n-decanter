@@ -19,6 +19,23 @@ import { classifyTemplateFile, MANIFEST_FILE, readManifest, writeManifest, type 
 import type { Log } from "./types.mts";
 import { sha256 } from "./util.mts";
 
+/**
+ * Normalize a user-entered n8n host into a full origin. A scheme the user typed
+ * is kept as-is; a scheme-less host gets `http://` when it is a LOCAL address
+ * (localhost, loopback, private LAN ranges, `*.local`) and `https://` otherwise.
+ * A local n8n almost always serves plain http, so blindly defaulting to https
+ * left `.env` pointing at a TLS endpoint that doesn't exist — every sync/guard
+ * fetch then failed with `fetch failed` (Plan 35 field-test finding). Trailing
+ * slashes are stripped.
+ */
+export function normalizeHostInput(raw: string): string {
+  const host = raw.trim();
+  if (/^https?:\/\//i.test(host)) return host.replace(/\/+$/, "");
+  const isLocal =
+    /^(localhost|0\.0\.0\.0|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|\[::1\]|::1|[a-z0-9-]+\.local)(:\d+)?$/i.test(host);
+  return ((isLocal ? "http://" : "https://") + host).replace(/\/+$/, "");
+}
+
 /** Like readAuthFile, but a corrupt file only warns — init re-mints it. */
 function readAuthFileTolerant(dir: string, log: Log): McpAuthFile | null {
   try {
@@ -270,8 +287,7 @@ export async function init(targetDir: string | undefined, { force = false }: { f
     } else {
       host = await ask("n8n host: ");
       if (!host) throw new Error("host is required");
-      if (!/^https?:\/\//.test(host)) host = "https://" + host;
-      host = host.replace(/\/+$/, "");
+      host = normalizeHostInput(host);
     }
 
     // --- MCP credentials (the sync backend): existing → OAuth consent (TTY) →
