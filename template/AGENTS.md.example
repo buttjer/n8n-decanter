@@ -396,6 +396,15 @@ against the capture and exit 1 on divergence.
   pushed yet — `push` first to test local code.
 - `n8n-decanter simulate <workflow>` — the same idea through a **local**
   n8n engine (Docker), fully offline.
+- `n8n-decanter preflight <workflow> [--json]` — **the one gate to run before
+  `push`/`publish`.** It runs the whole ladder — static (`check`) + instance
+  reads (`status`, execution `history`) + a pinned `test` run (`--full` adds
+  `simulate`) — **read-only** and scores it into one verdict (`ready` /
+  `caution` / `not ready`, exit 0/1). Read `--json` for stable check ids +
+  per-check remediation; `--require=test` fails the gate unless a runtime check
+  actually ran (the teeth for "must have coverage"). It **never mutates** (no
+  push/publish/restore), so run it freely. The loop:
+  **`… edit → check → preflight → push`**.
 
 ## Scenarios (`scenarios/` — committed pin-data sets)
 

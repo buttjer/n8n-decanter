@@ -142,6 +142,8 @@ describe("verb stage", () => {
     s = next(reduceKey(s, { name: "p", sequence: "p" }));
     assert.equal(PICKER_VERBS[s.verbCursor], "push");
     s = next(reduceKey(s, { name: "p", sequence: "p" }));
+    assert.equal(PICKER_VERBS[s.verbCursor], "preflight");
+    s = next(reduceKey(s, { name: "p", sequence: "p" }));
     assert.equal(PICKER_VERBS[s.verbCursor], "pull");
     s = next(reduceKey(s, { name: "e", sequence: "e" }));
     assert.equal(PICKER_VERBS[s.verbCursor], "executions");

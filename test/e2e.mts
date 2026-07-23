@@ -182,6 +182,18 @@ function callMcpTool(name: string, args: any): any | null {
         ...(args.includeData === true && { data: { resultData: { runData: testRunData } } }),
       });
     }
+    case "search_executions": {
+      // metadata only (no run data) — the `preflight` history signal (Plan 36)
+      if (args.workflowId !== undefined) {
+        const gated = gate(args.workflowId);
+        if (gated) return gated;
+      }
+      const rows = EXECUTIONS
+        .filter((e: any) => args.workflowId === undefined || String(e.workflowId) === String(args.workflowId))
+        .slice(0, args.limit ?? 200)
+        .map((e: any) => ({ id: String(e.id), workflowId: String(e.workflowId), status: e.status, mode: e.mode ?? "webhook", startedAt: e.startedAt ?? null, stoppedAt: e.stoppedAt ?? null }));
+      return ok({ data: rows, count: rows.length, estimated: false });
+    }
     case "prepare_test_pin_data": {
       // schema oracle (Plan 37): triggers/http/credentialed nodes need pins with
       // schemas; logic nodes execute normally. Returns schemas only, never data.
@@ -2195,6 +2207,67 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   assert.equal(r.code, 1);
   assert.match(r.out, /cannot pin "Fetch Prices"[\s\S]*scenario create/);
   db.get("wfT1").nodes.pop();
+});
+
+await step("preflight: one scored, read-only gate over the whole ladder (Plan 36)", async () => {
+  testRunOutcome = { status: "success" };
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] }; // matches capture 301
+
+  // default profile: static + sync + test; passes; NEVER mutates the draft
+  const updatesBefore = updateCount;
+  let r = await cli("preflight", "wfT1");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /preflight: Instance Test Flow/);
+  assert.match(r.out, /layout/);
+  assert.match(r.out, /connect/);
+  assert.match(r.out, /\btest\b/);
+  assert.match(r.out, /score \d+\/100/);
+  assert.match(r.out, /verdict: (ready|caution)/);
+  assert.equal(updateCount, updatesBefore, "preflight is read-only — no update_workflow");
+
+  // --json: one document with stable ids, score, verdict, coverage, subject
+  r = await cli("preflight", "wfT1", "--json");
+  assert.equal(r.code, 0, r.out);
+  const report = JSON.parse(r.out.slice(r.out.indexOf("{")));
+  assert.equal(report.profile, "default");
+  assert.ok(Array.isArray(report.checks) && report.checks.some((c: any) => c.id === "test"), "checks[] carries stable ids");
+  assert.equal(typeof report.score, "number");
+  assert.ok(["ready", "caution", "not ready"].includes(report.verdict));
+  assert.ok(Array.isArray(report.coverage.ran));
+  assert.ok(report.checks.every((c: any) => typeof c.durationMs === "number"));
+
+  // --quick: static + sync only; the runtime tier is skipped with an unlock
+  r = await cli("preflight", "wfT1", "--quick", "--json");
+  assert.equal(r.code, 0, r.out);
+  const quick = JSON.parse(r.out.slice(r.out.indexOf("{")));
+  assert.equal(quick.profile, "quick");
+  assert.ok(quick.coverage.skipped.some((s: any) => s.id === "test"), "test skipped under --quick");
+  assert.ok(quick.checks.find((c: any) => c.id === "connect").status === "pass");
+
+  // --require turns a skipped runtime check into a hard fail (the CI teeth)
+  r = await cli("preflight", "wfT1", "--quick", "--require=test");
+  assert.equal(r.code, 1, "a required-but-skipped check fails the gate");
+  assert.match(r.out, /verdict: not ready/);
+
+  // divergence on the instance → not ready, exit 1
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 999 } }]] } }] };
+  r = await cli("preflight", "wfT1");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /verdict: not ready/);
+  assert.match(r.out, /diverged/);
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+
+  // --fail-on=warn promotes a caution (local ahead of the draft → parity warn) to exit 1
+  const computeFile = path.join(wfDir("Instance Test Flow"), "code", "compute.js");
+  const original = read(wfDir("Instance Test Flow"), "code", "compute.js");
+  writeFileSync(computeFile, "return [{ json: { doubled: 7 } }];\n"); // local ahead of the draft
+  r = await cli("preflight", "wfT1", "--quick");
+  assert.equal(r.code, 0, "a warn alone is a caution (exit 0)");
+  assert.match(r.out, /verdict: caution/);
+  r = await cli("preflight", "wfT1", "--quick", "--fail-on=warn");
+  assert.equal(r.code, 1, "--fail-on=warn promotes caution to exit 1");
+  writeFileSync(computeFile, original);
+  assert.equal(updateCount, updatesBefore, "the whole preflight run mutated nothing");
 });
 
 await step("archive over raw MCP: server semantics (unpublish + archived-first gate); decanter's pull refuses, folder kept", async () => {

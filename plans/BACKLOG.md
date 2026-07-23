@@ -263,6 +263,18 @@ entries carry no priority field) — adjust freely.
       `mcp connect` variant — same guard core, auto-wired into the scaffolded
       `.mcp.json` by `init`, no secret/nothing to start — #107; `mcp serve`
       stays as the HTTP variant for URL-configured agents.)
+- [x] **Scored pre-publish gate over the whole verification ladder (`preflight`
+      verb)** (shipped 2026-07-23, [Plan 36](DONE-36-preflight-verb.md)). One
+      read-only command runs every safe check — static (`layout`/`types`) →
+      instance reads (`connect`/`access`/`parity`/`drift`/`snapshot`/`lifecycle`/
+      `history`/`capture`) → pinned draft runs (`test`/`simulate`) — fast→slow,
+      and condenses them into a **score + verdict** (`ready`/`caution`/`not
+      ready`, exit 0/1) with per-check remediation and honest coverage
+      (`--require` turns a skip into a fail; `--fail-on=warn` promotes a caution).
+      Never mutates in any profile. Differentiator: neither n8n nor generic
+      git-sync has a scored, capture-grounded, CI-gateable pre-publish gate that
+      aggregates static + instance-read + pinned-run checks into one verdict —
+      the single gate an agent runs before `push`/`publish`.
 - [x] **Committed scenario library with schema-scaffolded gap fills (`scenario`
       verb)** (shipped 2026-07-22, [Plan 37](DONE-37-scenario-pin-sets.md)).
       Folds the earlier `mock` namespace and per-node `fixtures/` into one

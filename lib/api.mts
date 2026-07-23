@@ -18,14 +18,16 @@ export class N8nApi {
   }
 
   /**
-   * Recent executions with full run data, newest first. Read-only by design —
-   * the executions API is never written through. `limit` caps the single page
-   * (the API allows up to 250); no pagination on purpose, "recent" is the use
-   * case.
+   * Recent executions, newest first. Read-only by design — the executions API is
+   * never written through. `limit` caps the single page (the API allows up to
+   * 250); no pagination on purpose, "recent" is the use case. `includeData`
+   * defaults to `true` (full run data, what `capture`/pinning needs); pass
+   * `false` for a lightweight metadata-only health probe (status/timing only —
+   * `preflight`'s `history` check, which must not download every run's payload).
    */
-  async listExecutions({ workflowId, status, limit = 5 }: { workflowId?: string; status?: string; limit?: number }): Promise<Execution[]> {
+  async listExecutions({ workflowId, status, limit = 5, includeData = true }: { workflowId?: string; status?: string; limit?: number; includeData?: boolean }): Promise<Execution[]> {
     const query = new URLSearchParams({
-      includeData: "true",
+      includeData: includeData ? "true" : "false",
       limit: String(limit),
       ...(workflowId !== undefined && { workflowId }),
       ...(status !== undefined && { status }),

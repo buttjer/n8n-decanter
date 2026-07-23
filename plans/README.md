@@ -244,7 +244,7 @@ items not yet claimed by one. Recommended order:
     triage — no product fixes in-plan. Also
     produces the captured guard-stderr evidence the Plan 0 authoring-skill entry
     waits on. Proposed 2026-07-22.
-36. [`preflight` verb — the verification ladder as one scored gate](OPEN-36-preflight-verb.md) —
+36. [`preflight` verb — the verification ladder as one scored gate](DONE-36-preflight-verb.md) —
     reify Plan 34's coined "preflights" vocabulary into a real verb (unparking
     the DECISIONS-NEEDED item, maintainer go 2026-07-22): one command runs every
     safe check fast→slow — static (`check`), instance read-only (auth, drift,
@@ -253,7 +253,7 @@ items not yet claimed by one. Recommended order:
     score + `ready`/`caution`/`not ready` verdict with per-finding remediation,
     `--json` for agents, CI-gateable exits. Strictly non-mutating (never the
     push-local prompt; reads + pinned draft run only); captures auto-fetched as
-    the ground truth. Proposed 2026-07-22.
+    the ground truth. Proposed 2026-07-22. **Done 2026-07-23** (PR #117).
 37. [`scenario` verb — committed pin-data sets](DONE-37-scenario-pin-sets.md) —
     one word and one committed artifact for "a named, full-workflow pin-data
     set": rename `mock` → `scenario` (`scenarios/<slug>.json`, auto-migrated),

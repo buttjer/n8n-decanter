@@ -5,8 +5,8 @@ infrastructure, or your go-ahead. Each entry says what's proposed, what the
 options cost, and what happens if you do nothing. Delete entries once
 decided (move the outcome into the relevant plan).
 
-*Resolved so far: `preflight` verb → **adopted** (maintainer go 2026-07-22),
-graduated to [Plan 36](OPEN-36-preflight-verb.md) — a real verb with staged
+*Resolved so far: `preflight` verb → **shipped** 2026-07-23
+([Plan 36](DONE-36-preflight-verb.md)) — a real verb with staged
 checks + scoring, not an alias; the entry's costs are answered in the plan's
 Source section;
 `completion` verb → kept

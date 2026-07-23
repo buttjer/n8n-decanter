@@ -37,3 +37,7 @@ memory and maps diagnostics back to real line numbers — see
 your editor may still show a spurious TS1108.
 
 `npm run typecheck` in a scaffolded sync dir is an alias for this.
+
+`check` is the static rung of the ladder [`preflight`](/docs/cli/preflight/)
+runs — reach for `preflight` to run this plus the instance reads and a pinned
+`test`/`simulate` run as one scored gate.

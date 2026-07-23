@@ -31,6 +31,7 @@ n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=c
 n8n-decanter data-tables [table…] clean
 n8n-decanter test <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
 n8n-decanter simulate <workflow> [--execution <execution-id> | --scenario <slug>] [--network-none] [--json]
+n8n-decanter preflight [workflow…] [--quick|--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]   # the whole ladder, scored (read-only)
 n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold]   # committed, gap-fillable pin-data set (offline)
 n8n-decanter scenario check <workflow> ["<slug>"]                                    # structurally validate a scenario (offline)
 n8n-decanter list [--remote] [--json]
@@ -58,6 +59,7 @@ first push seeds a node born empty.
 | `<node-file>` | a path to a node source file (`node run`) |
 | `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
 | `<slug>` | a scenario name — `scenario create`/`scenario check`, `simulate --scenario`/`test --scenario` (kebab-cased) |
+| `<ids>` | a comma list of [preflight](/docs/cli/preflight/) check ids — `preflight --require=layout,test` |
 
 ## Interactive picker
 
@@ -67,7 +69,7 @@ on a terminal opens a picker instead of printing usage: type to filter,
 workflow (green), `○` for a not-yet-pulled remote one (yellow), `⊘` for a
 remote workflow **not yet available in MCP** (red, sorted last) — so the state
 reads by shape, not color alone, and the ids line up in an aligned column.
-`Enter` on a pulled workflow offers status/pull/push/watch/check/executions/simulate;
+`Enter` on a pulled workflow offers status/pull/push/watch/check/preflight/executions/simulate;
 `Enter` on an unpulled one pulls it directly; `Enter` on a `⊘` row explains
 where to flip the "Available in MCP" switch in n8n. It stays in the workflow's verb
 menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
@@ -103,6 +105,7 @@ errors with *unknown verb*. Flags may still appear in any position.
 | `check`, `node run`, `list`, `simulate`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
 | `status`, `list --remote`, `executions`, `data-tables` | Read the remote, never write |
 | `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
+| `preflight` | Runs the whole verification ladder read-only — static + instance reads + a pinned draft `test`/`simulate` run; **never writes** (no push/publish/restore), in every profile |
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |
 | `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes |
 
