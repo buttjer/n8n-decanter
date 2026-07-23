@@ -10,7 +10,7 @@ rule that out). Never part of `npm test`.
 
 | File | Role |
 | --- | --- |
-| `stage.mts` | Boots + provisions a throwaway n8n (or `FIELD_N8N_URL`), seeds workflows + an S1 skeleton, scaffolds a **neutral** scratch project: `git init`, **`npm link`s OUR built CLI**, **pre-seeds a correct `.env`**, disables the nested session's sandbox, vendors the n8n skills pack (`skills-install.mts`). Prints a **manifest**. |
+| `stage.mts` | Boots + provisions a throwaway n8n (or `FIELD_N8N_URL`), seeds workflows + an S1 skeleton, scaffolds a **neutral** scratch project: `git init`, **packs + locally installs OUR built CLI** (no global link; `run.mts` puts `node_modules/.bin` on the session PATH), **pre-seeds a correct `.env`**, disables the nested session's sandbox, vendors the n8n skills pack (`skills-install.mts`). Prints a **manifest**. |
 | `run.mts` | Orchestrator: replays each scenario's scripted turns as headless `claude -p --model sonnet` sessions (`--resume` per turn); post-init wires guard-stderr capture + the allow-extension; runs `verify.mts` after each. Diagnostics: `--smoke`, `--netcheck`, `--dry-run`. |
 | `verify.mts` | Scripted invariant oracle (no LLM): placeholder integrity, `.js` byte-equality, `.ts` marker-hash relation, `.decanter.json` git-history, `get_workflow_history` evidence. Exit 1 on any violation. |
 | `report.mts` | **Renders a run's transcripts into ONE self-contained HTML report** — a chat-style timeline of each blind session (prompts, agent reasoning, every tool call + result, guard log, verdicts). Secrets redacted. This is how you *see what happened in the agentic part*. |
@@ -53,7 +53,7 @@ node scripts/field-test/stage.mts --down <manifest>     # teardown (container + 
 | --- | --- |
 | `FIELD_N8N_TAG` | n8n image (default matches `test/smoke-n8n.mts`). |
 | `FIELD_N8N_URL` / `FIELD_MCP_TOKEN` / `FIELD_API_KEY` | target an existing instance instead of booting one. |
-| `FIELD_DECANTER_SPEC` | install a published version / tarball / git ref instead of `npm link`ing the local repo. |
+| `FIELD_DECANTER_SPEC` | install a published version / tarball / git ref instead of packing the local repo. |
 | `FIELD_NO_SEED_ENV=1` | omit the pre-seeded `.env` to exercise `init`'s cold host-prompt path (reproduces the https finding). |
 | `FIELD_TURN_TIMEOUT_MS` | per-turn kill timeout (default 15 min). |
 | `FIELD_KEEP=1` | keep the container on `--down`. |
@@ -68,9 +68,9 @@ Contamination check clean (no agent inferred an evaluation). Findings surfaced
 along the way, ranked for the maintainer's triage:
 
 1. **Discoverability (P1).** With no project-level `n8n-decanter`, a blind agent
-   never finds it — it hand-rolls raw n8n MCP instead. *(Harness now `npm link`s
-   the CLI so the project has the breadcrumb; the underlying discoverability gap
-   is the finding.)*
+   never finds it — it hand-rolls raw n8n MCP instead. *(Harness now installs the
+   CLI into the project so it has the breadcrumb; the underlying discoverability
+   gap is the finding.)*
 2. **`init` writes `https://` for a local `http://` host (P1, product).** Breaks
    the guard (which reads `.env` directly → `upstream request failed`) and the
    CLI. Reproduce with `FIELD_NO_SEED_ENV=1`.

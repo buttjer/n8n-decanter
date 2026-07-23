@@ -142,7 +142,12 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
   // is enforced by the mcp connect guard itself, not by permissions.
   args.push("--allowedTools", "Bash,Read,Edit,Write,Glob,Grep,TodoWrite,mcp__n8n-instance,mcp__n8n-docs");
   return await new Promise((resolve, reject) => {
-    const proc = spawn("claude", args, { cwd: WORKDIR, env: { ...process.env } });
+    // Prepend the workDir's node_modules/.bin so a bare `n8n-decanter` (in the
+    // agent's Bash and in the guard's .mcp.json command, both spawned by claude)
+    // resolves to the WORKDIR-LOCAL install — no global npm link needed.
+    const localBin = path.join(WORKDIR, "node_modules", ".bin");
+    const env = { ...process.env, PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}` };
+    const proc = spawn("claude", args, { cwd: WORKDIR, env });
     let buf = "";
     let sessionId: string | undefined;
     let resultText = "";

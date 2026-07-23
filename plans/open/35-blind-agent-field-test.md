@@ -341,7 +341,7 @@ per-turn grading + Task-4 run report are the next pass.
 
 **Findings (ranked, for maintainer triage — Task 5):**
 1. **Discoverability (P1).** No project-level `n8n-decanter` ⇒ a blind agent
-   never finds it and hand-rolls raw n8n MCP. Harness now `npm link`s the CLI so
+   never finds it and hand-rolls raw n8n MCP. Harness now installs the CLI so
    the project carries the breadcrumb; the gap itself is the finding.
 2. **`init` writes `https://` for a local `http://` host (P1, product).** Breaks
    the guard (reads `.env` directly → `upstream request failed: fetch failed`)
@@ -356,10 +356,12 @@ per-turn grading + Task-4 run report are the next pass.
    (Plan 50 evidence: the contract pre-empts the nudge). Contamination check
    clean (no agent inferred an evaluation).
 
-**Harness hardening this round:** `stage` now `npm link`s our built CLI (not a
-published version), pre-seeds a correct `.env`, disables the nested session's
-sandbox (so the agent can reach the local n8n); `run.mts` gained a per-turn
-timeout + `--smoke`/`--netcheck`/`--dry-run` probes; `report.mts` renders a
+**Harness hardening this round:** `stage` packs + **locally installs** our built
+CLI (not a published version, and no global `npm link` — `run.mts` puts
+`node_modules/.bin` on the session PATH so a bare `n8n-decanter` resolves, with
+no machine-global state to clean up), pre-seeds a correct `.env`, disables the
+nested session's sandbox (so the agent can reach the local n8n); `run.mts` gained
+a per-turn timeout + `--smoke`/`--netcheck`/`--dry-run` probes; `report.mts` renders a
 self-contained HTML timeline of the agentic sessions.
 
 ## Harness status — capabilities (2026-07-23)
