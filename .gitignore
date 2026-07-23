@@ -3,6 +3,7 @@ node_modules/
 .decanter-auth.json
 .decanter-proxy.json
 /.worktrees/
+.claude/worktrees/
 .claude/settings.local.json
 .claude/.cc-writes/
 .DS_Store
