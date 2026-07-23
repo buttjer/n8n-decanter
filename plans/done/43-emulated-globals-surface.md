@@ -1,6 +1,8 @@
 # Plan 43 — Emulated n8n-globals surface: declared types ⇄ `run`, `test` as the fidelity backstop
 
-**Status:** Not started
+**Status:** Done — all five tasks shipped (emulate `$jmespath`/`$items`/`$node`,
+signpost instance-scoped globals, boundary docs, single-sourced `.d.ts`,
+drift-audit). Parity test enforces the declared⇄emulated closure.
 **Priority:** P2 (the `run` fidelity + boundary docs) — split **P3** for the
 optional `types` refresh command (Task 5) and the `.d.ts` de-dup (Task 4).
 **Source:** consolidates **draft 43** (`n8n-globals.d.ts` sourcing) + **draft
@@ -78,14 +80,14 @@ the escape hatch; `run` stays honest about its edges.
   refresh command.
 - Draft 44 — `run`'s faked context parity (backlog item), deferred severity
   "moderate": `$jmespath`, missing globals, undocumented boundary.
-- **Relates to** [Plan 31](31-run-sandbox-boundary.md) — the sandbox/isolation
+- **Relates to** [Plan 31](../open/31-run-sandbox-boundary.md) — the sandbox/isolation
   boundary. This plan is the *inside* of that boundary (the emulated-global
   surface); Plan 31 line 151 already lists "changing the emulated-global
   surface" as its own **non-goal**, so the two are complementary by design.
 - **Relates to** [Plan 47](../draft/47-run-from-execution.md) — a `run` *fixture
   source*, an orthogonal axis (where input comes from, not how faithfully
   globals are emulated).
-- **Relates to** [Plan 30](30-agent-llm-working-ergonomics.md) — treats
+- **Relates to** [Plan 30](../open/30-agent-llm-working-ergonomics.md) — treats
   `n8n-globals.d.ts` as *the decanter authoring contract* agents read; keeping it
   single-source and current serves that.
 - **Sibling to** [Plan 52](../done/52-remove-watch-browser-reload-proxy.md) — both are
@@ -272,7 +274,7 @@ it authors decanter's code, never pastes n8n's).
   whereas `run` is the **offline / no-instance / CI** path nothing else fills.
   Hand-mirroring `run`'s surface is justified by a niche the proxy never had, so
   the answer is *reframe* (defer fidelity to `test`), not *delete*.
-- **Sandboxing `run`** — that's [Plan 31](31-run-sandbox-boundary.md); this plan
+- **Sandboxing `run`** — that's [Plan 31](../open/31-run-sandbox-boundary.md); this plan
   is the emulated-global *surface* inside that boundary, not the isolation
   mechanism.
 - **`run --from-execution`** fixture loading — [Plan

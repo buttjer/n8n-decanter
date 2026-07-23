@@ -77,11 +77,24 @@ declare const $webhookId: string | undefined;
 /** Per-workflow / per-node persisted store. */
 declare function $getWorkflowStaticData(type: "global" | "node"): Record<string, any>;
 
+/** Query data with JMESPath. Both spellings work — `$jmesPath` is n8n's
+ * canonical name; `$jmespath` is an accepted (deprecated) alias. */
 declare function $jmespath(data: unknown, expression: string): any;
+declare function $jmesPath(data: unknown, expression: string): any;
 declare function $evaluateExpression(expression: string, itemIndex?: number): any;
-declare function $if<T, F>(condition: boolean, valueIfTrue: T, valueIfFalse: F): T | F;
-declare function $min(...numbers: number[]): number;
-declare function $max(...numbers: number[]): number;
+
+// NB: `$if`/`$min`/`$max`/`$ifEmpty` are n8n *expression-language* extensions
+// (resolved inside `{{ }}` expressions), NOT Code-node runtime globals — they
+// are absent from the Code node's `getSandboxContext`, so a Code node calling
+// them throws a ReferenceError in real n8n too. Deliberately not declared.
+
+/**
+ * Instance-scoped values — n8n workflow variables and external secrets. Their
+ * values live on the running instance, so `node run` can't know them offline:
+ * pin them in the fixture or use `test`. See docs/cli/node-run.md.
+ */
+declare const $vars: Record<string, string>;
+declare const $secrets: Record<string, any>;
 
 /** Legacy helpers */
 declare function $items(nodeName?: string, outputIndex?: number, runIndex?: number): N8nItem[];
