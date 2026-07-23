@@ -242,11 +242,9 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   Auto-merge is not enabled on the repo and admin-bypass is disallowed, so a
   blocked merge means "checks still pending" — wait them out, don't try to
   force it.
-- **Sandboxed shells:** credentialed git/`gh` (`git push`, `gh pr …`, `gh api`,
-  `gh auth`) **fail sandboxed** — the `credential.https://github.com.helper`→`gh`
-  helper can't read gh's **keyring**-stored token from the sandbox
-  (`could not read Username`); `.git/config` writes and `git worktree add` can
-  fail too. Rerun with sandbox escalation — see "Sandboxed shells" below.
+- **Sandboxed shells:** `.git/config` writes (e.g. cleaning up a stale
+  `branch.<name>` section left by a sandboxed `git branch -D`) still need
+  escalation — see "Sandboxed shells" below.
 
 ## One worktree per task — never reuse a dirty one
 
@@ -304,35 +302,20 @@ commit in the main working tree", you skipped the worktree step — start a
 worktree in your default worktree dir (`git worktree add -b <branch>
 .claude/worktrees/<name> main`) and retry.
 
-## Sandboxed shells: credentialed git/gh and .git/config writes need escalation
+## Sandboxed shells: .git/config writes need escalation
 
-Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) block the
-credential read git/`gh` need and direct `.git/config` writes, while local git
-works fine:
+Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) still
+block direct `.git/config` writes, even though credentialed git operations
+(`git push`, `gh`) now authenticate fine sandboxed since
+`credential.https://github.com.helper` points at `gh` instead of the
+unreachable macOS keychain:
 
-- **`git push` / `gh pr …` / `gh api` / `gh auth` / anything auth'd to
-  github.com fails sandboxed** with `fatal: could not read Username for
-  'https://github.com': Device not configured`. The
-  `credential.https://github.com.helper` points at `!gh auth git-credential`
-  (not the keychain) — but **gh's token itself is stored in the macOS keyring**,
-  which the sandbox blocks, so the helper can't retrieve it. Environment
-  artifact, not an auth problem: rerun the *same* command with the escalation
-  your harness provides (Claude Code: retry the Bash call with
-  `dangerouslyDisableSandbox: true`; don't loosen the sandbox config). `git
-  push *` is allowlisted so it runs without a permission prompt — only the
-  escalation is needed; force-push (`--force`/`-f`) stays denied. *(To run these
-  sandboxed instead, store gh's token in a file like `~/.config/gh` rather than
-  the keyring — a security tradeoff.)*
-- **`.git/config` writes are blocked sandboxed** — e.g. `git branch -D` of a
-  branch with an upstream deletes the branch but then warns `could not lock
-  config file`, leaving a stale `branch.<name>` section. Clean up unsandboxed:
-  `git config --remove-section branch.<name>`.
-- **`git worktree add` can fail sandboxed** when the checkout writes a
-  sandbox-protected path — e.g. this repo's
-  `template/.vscode/settings.json.example` trips the settings-file write-deny
-  (`Operation not permitted`); create the worktree unsandboxed.
-- Commit, status, diff, log, and branch creation are fine sandboxed; only
-  credentialed git/`gh`, `.git/config` writes, and the worktree case above need
+- **`.git/config` writes are blocked sandboxed** — e.g. `git branch -D` of
+  a branch with an upstream deletes the branch but then warns `could not
+  lock config file`, leaving a stale `branch.<name>` section. Clean up
+  unsandboxed: `git config --remove-section branch.<name>`.
+- Commit, status, diff, log, branch creation, worktree add, and push/gh
+  (credentialed) — all fine sandboxed; only `.git/config` writes need
   escalation.
 
 ## Commands
