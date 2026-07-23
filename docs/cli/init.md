@@ -1,11 +1,12 @@
 ---
 title: init
-description: Interactive bootstrap — OAuth consent, starter template, config, agent tooling.
+description: Bootstrap a sync dir — OAuth/token, starter template, config, agent tooling.
 order: 2
 ---
 
 ```sh
 n8n-decanter init [dir] [--force]
+n8n-decanter init [dir] --host <url> [--token <mcp-token>] [--api-key <key>]   # non-interactive
 ```
 
 Interactive setup for a new (or existing) sync dir:
@@ -34,6 +35,32 @@ Interactive setup for a new (or existing) sync dir:
 The instance needs MCP access enabled once (n8n → Settings → MCP; ~2.20+),
 and each workflow you sync needs its "Available in MCP" flag — see
 [configuration](/docs/concepts/configuration/).
+
+## Non-interactive setup (`--host` / `--token` / `--api-key`)
+
+Passing **any** of `--host`, `--token`, or `--api-key` runs `init`
+non-interactively — values come from the flags plus any existing `.env`, and
+**no prompt is ever issued** (so it drives cleanly from a script or a coding
+agent, with no stdin dance):
+
+```sh
+n8n-decanter init --host http://localhost:5678 --token "$N8N_MCP_TOKEN"
+n8n-decanter init ./flows --host n8n.example.com --token "$TOK" --api-key "$KEY"
+```
+
+- `--host <url>` — the n8n origin. Normalized like a typed host (a scheme-less
+  local address gets `http://`, everything else `https://`; a scheme you write
+  is kept). **Required** in this mode — omit it and `init` errors instead of
+  prompting.
+- `--token <mcp-token>` — the MCP bearer token (`N8N_MCP_TOKEN`), the same one
+  the paste path uses. Omit it and `init` writes the rest and warns that sync
+  won't work until credentials are set (there is **no** headless OAuth — the
+  browser consent flow needs a terminal).
+- `--api-key <key>` — the optional public API key (`N8N_API_KEY`). Omit it and
+  it's simply skipped.
+
+An explicit flag wins over an existing `.env` value; the end-of-init connection
+checks run exactly as they do interactively. `--force` composes with all three.
 
 ## TypeScript tooling
 

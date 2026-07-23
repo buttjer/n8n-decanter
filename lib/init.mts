@@ -257,21 +257,36 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
 }
 
 /**
- * Interactive bootstrap (Plan 32: OAuth-first): prompt for the host, run the
- * browser OAuth consent for MCP (the sync backend) with a paste-a-bearer
- * fallback, offer the OPTIONAL public API key (executions / data-tables /
- * backup only), write .env + .decanter-auth.json, copy template/.
+ * Bootstrap a sync dir (Plan 32: OAuth-first). Interactive by default: prompt
+ * for the host, run the browser OAuth consent for MCP (the sync backend) with a
+ * paste-a-bearer fallback, offer the OPTIONAL public API key (executions /
+ * data-tables / backup only), write .env + .decanter-auth.json, copy template/.
+ *
+ * Passing any of `--host`/`--token`/`--api-key` (Plan 35 field-test finding —
+ * init was undrivable headless) switches to a fully **non-interactive** mode:
+ * values come from the flags + the existing .env, and NOT ONE prompt is issued
+ * (a missing MCP token just warns, a missing API key is skipped). The flag-less
+ * invocation is unchanged (interactive, or answers piped over stdin).
  */
-export async function init(targetDir: string | undefined, { force = false }: { force?: boolean } = {}, log: Log): Promise<void> {
+export async function init(
+  targetDir: string | undefined,
+  { force = false, host: hostFlag, token: tokenFlag, apiKey: apiKeyFlag }: { force?: boolean; host?: string; token?: string; apiKey?: string } = {},
+  log: Log,
+): Promise<void> {
   printBanner(log);
   const dir = path.resolve(targetDir ?? ".");
   mkdirSync(dir, { recursive: true });
   const envFile = path.join(dir, ".env");
   const existing = parseEnvFile(envFile);
-  let host = existing.N8N_HOST ?? "";
-  let apiKey = existing.N8N_API_KEY ?? "";
-  let mcpToken = existing.N8N_MCP_TOKEN ?? "";
+  // Precedence: an explicit flag wins over the existing .env, which wins over a
+  // prompt. A flag host is normalized the same way a typed one is.
+  let host = hostFlag !== undefined ? normalizeHostInput(hostFlag) : (existing.N8N_HOST ?? "");
+  let apiKey = apiKeyFlag ?? existing.N8N_API_KEY ?? "";
+  let mcpToken = tokenFlag ?? existing.N8N_MCP_TOKEN ?? "";
   const interactive = process.stdin.isTTY === true;
+  // Any setup flag → non-interactive: drive init purely from flags + existing
+  // .env, issuing no prompts (and no OAuth-fallback token prompt either).
+  const flagDriven = hostFlag !== undefined || tokenFlag !== undefined || apiKeyFlag !== undefined;
   // ONE shared prompt session for every question: a second createPrompt()
   // would lose piped answers the first one already buffered, so the session
   // opens lazily on the first question and closes once at the end.
@@ -283,7 +298,9 @@ export async function init(targetDir: string | undefined, { force = false }: { f
   try {
     // --- host (prompted over stdin even when piped — init stays scriptable)
     if (host !== "") {
-      log.info(`using existing .env host (${host})`);
+      log.info(hostFlag !== undefined ? `using --host ${host}` : `using existing .env host (${host})`);
+    } else if (flagDriven) {
+      throw new Error("host is required — pass --host <url> (e.g. --host http://localhost:5678)");
     } else {
       host = await ask("n8n host: ");
       if (!host) throw new Error("host is required");
@@ -293,9 +310,10 @@ export async function init(targetDir: string | undefined, { force = false }: { f
     // --- MCP credentials (the sync backend): existing → OAuth consent (TTY) →
     // paste-a-token fallback. Only the browser consent itself is TTY-gated;
     // piped runs go straight to the token prompt so init stays scriptable.
+    // --token / any setup flag suppresses every prompt (non-interactive mode).
     const auth = readAuthFileTolerant(dir, log);
     if (mcpToken !== "") {
-      log.info("using existing MCP token from .env (N8N_MCP_TOKEN)");
+      log.info(tokenFlag !== undefined ? "using MCP token from --token" : "using existing MCP token from .env (N8N_MCP_TOKEN)");
     } else if (auth !== null && auth.host === host) {
       log.info(`using existing MCP OAuth credentials (${AUTH_FILE})`);
     } else if (interactive) {
@@ -305,9 +323,9 @@ export async function init(targetDir: string | undefined, { force = false }: { f
         log.ok(`connected to ${host} via OAuth — credentials in ${AUTH_FILE} (gitignored)`);
       } catch (err) {
         log.warn(`OAuth consent did not complete (${(err as Error).message})`);
-        mcpToken = await ask("paste an n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
+        if (!flagDriven) mcpToken = await ask("paste an n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
       }
-    } else {
+    } else if (!flagDriven) {
       mcpToken = await ask("n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
     }
     if (mcpToken === "" && !(auth !== null && auth.host === host)) {
@@ -315,7 +333,7 @@ export async function init(targetDir: string | undefined, { force = false }: { f
     }
 
     // --- optional public API key (the REST-only surfaces)
-    if (apiKey === "") {
+    if (apiKey === "" && !flagDriven) {
       apiKey = await ask("n8n public API key (optional — executions/data-tables/backup) [Enter to skip]: ");
     }
   } finally {

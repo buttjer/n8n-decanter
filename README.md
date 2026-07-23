@@ -115,7 +115,7 @@ Full flag reference: `n8n-decanter --help`, or the
 
 | Verb | What it does |
 |---|---|
-| `init [dir]` | Interactive bootstrap — OAuth, template, config, agent tooling |
+| `init [dir]` | Bootstrap a sync dir — OAuth/token, template, config, agent tooling (`--host`/`--token`/`--api-key` drive it non-interactively) |
 | `completion zsh\|bash` | Print a shell completion script |
 | `pull [workflow…]` | Code + structure snapshot → `workflows/<kebab>/` |
 | `push [workflow…]` | Push Code-node source to the workflow's **draft** |
