@@ -130,6 +130,27 @@ since frame durations don't change).
     under the title (not the footer hint); hint text `enter select · esc quit`
     (both demo frames sit on pulled workflows).
 
+### C2. Website ↔ README `preflight` sync — POST-#117 ONLY (MEDIUM)
+
+**Not from the main audit** (which ran pre-`preflight`): #117 adds `preflight`
+to the README's compare row and framing but **touches no `website/` file**, so
+these open only *after* #117 merges. The website's `index.astro` is the static
+mirror of the README compare table + feature cards — bring it back in step:
+
+12a. **`website/src/pages/index.astro` "Preflights" comparison row (~line 48)** —
+     currently `"Preflights (check / simulate / test)"` + "…offline check +
+     simulate, instance-side test; each diffed vs a real capture". Mirror the
+     post-#117 README row: title `(check / simulate / test / preflight)` and
+     append "— and `preflight` scores the whole ladder into one read-only,
+     CI-gateable verdict".
+12b. **The "Preflights" feature card (~lines 25–26)** — text names only "check,
+     simulate, and test". Add `preflight` as the scored, read-only gate over the
+     three (one clause, matching the README capability bullet #117 adds). Weigh
+     whether `preflight` warrants its own headline card, since #117 leads with it
+     as a headline capability — judgment call, not required.
+12c. **No GIF change** — these are static copy, not the `TerminalDemo` component,
+     so no re-record. *(The demo picker menu is Task 11 above.)*
+
 ### D. Data-model & config doc gaps (MEDIUM/LOW)
 
 13. **`docs/concepts/sync-layout.md`** — the folder-per-workflow tree (lines
@@ -185,9 +206,12 @@ since frame durations don't change).
   patterns and confirm each hit is verb-first (or a legitimate `<verb> <ref>`).
 - **No "guard-proxy"/"`mcp serve` is the guard" framing** remains as *the*
   default in docs/website; `mcp connect` leads, `mcp serve` is named the variant.
-- The website terminal demo matches the real picker (7 verbs, glyph rows +
-  footer legend) and draft-first push wording; **`docs/terminal-demo.gif`
-  re-recorded**.
+- The website terminal demo matches the real picker (glyph rows + footer legend,
+  the exact `PICKER_VERBS` menu at execution time) and draft-first push wording;
+  **`docs/terminal-demo.gif` re-recorded**.
+- **Post-#117:** the website's "Preflights" compare row **and** feature card name
+  `preflight` (matching the README `preflight` changes #117 lands), so
+  `website/index.astro` no longer lags the README on preflight.
 - `docs/concepts/sync-layout.md` documents `scenarios/`; `configuration.md`
   lists `n8nVersion` and `test`; `check.md`/`push-gates.md` list the three
   guard rules; the quickstart re-init claim and the `order:` collision are fixed.
