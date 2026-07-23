@@ -3,6 +3,7 @@
 **Status:** Draft
 **Priority:** P3
 **Source:** backlog item (2026-07-20), standing watch item
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 
 Dependabot #5 tried to bump `typescript` 5.9.3 → 7.0.2; the 7.x line is
 Microsoft's **native (Go) compiler rewrite**, shipped as per-platform binaries

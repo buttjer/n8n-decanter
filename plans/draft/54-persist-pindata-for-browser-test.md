@@ -5,6 +5,7 @@
 **Source:** the proxy-removal watch loop
 ([Plan 52](../done/52-remove-watch-browser-reload-proxy.md)) + scenarios
 ([Plan 37](../done/37-scenario-pin-sets.md), done).
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 
 With the proxy gone, the dev loop is: `watch` pushes code to the draft (MCP) →
 the n8n editor live-updates → you hit **"Test workflow"** in the browser. That

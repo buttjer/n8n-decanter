@@ -3,6 +3,7 @@
 **Status:** Done (2026-07-23) — superseded, not implemented as described
 **Priority:** P3
 **Source:** backlog item
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 
 `lib/proxy.mts` binds `127.0.0.1` only (good) and is opt-in
 (`browserReload: "proxy"`), but it's a transparent auth-passthrough tunnel to the

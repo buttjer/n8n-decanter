@@ -9,6 +9,7 @@ retires two backlog drafts — a net simplification, not a feature)
 [`48`](48-watch-proxy-trust-model-docs.md) (proxy trust-model docs
 — nothing to document once it's gone). Grounded in the source-verified
 `n8n-editor-live-reflects-mcp-edits` memory.
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** n8n 2.x **natively** reflects an MCP `update_workflow` draft edit in
 the open editor (soft canvas re-render, dirty-safe) — so decanter's injected
 live-reload proxy ([Plan 5](5-browser-refresh-after-push.md),

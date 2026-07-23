@@ -4,6 +4,7 @@
 Breaking rework of the entire agent-facing surface; this validates it the way it
 will actually be consumed, before the next release is cut.
 **Status:** Not started
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Put the whole product — `init` → skills/MCP structure work →
 Code-node authoring → `push` → runs — in front of **blind** Sonnet coding
 agents acting as typical users against a real n8n in Docker, and grade what

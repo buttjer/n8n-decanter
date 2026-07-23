@@ -3,6 +3,7 @@
 **Priority:** P2 (real footgun for the primary audience; needs a small design
 choice on the isolation mechanism)
 **Status:** Not started
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Model:** Opus (safety-critical boundary; the failure mode is arbitrary local
 code execution)
 **Theme:** Give `node run` an actual execution boundary so agent-generated code

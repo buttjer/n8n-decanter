@@ -1,12 +1,16 @@
 # Plan 51 — Live snapshot mirror + git-native workflow backups
 
-**Status:** Not started
+**Status:** Done (2026-07-23 — Part A live mirror + Part B `backup` shipped;
+unit + e2e + proxy + guardproxy + interactive suites green, and the real-n8n
+smoke suite (`test/smoke-n8n.mts`, incl. the new live-mirror + backup steps)
+green in CI against n8n 2.31.0.)
 **Priority:** P2 (both parts — real design; the live mirror touches the guard's
 cross-process concurrency, the `backup` verbs re-add a REST surface + a new
 committed artifact)
 **Source:** absorbs the retired `draft/42` "auto-refresh `workflow.json` after
 MCP structure edits" backlog item (2026-07-23; number 42 retired per
 never-reuse) + the paired 2026-07-23 deployable-snapshot research question.
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Make git more than a passive record of a workflow. **(A)** keep the
 read-only `workflow.json` review mirror **auto-fresh** after an agent
 restructures a workflow through decanter's guarded MCP gateway — no manual

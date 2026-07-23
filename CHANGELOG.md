@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`backup` — git-native, redeployable disaster recovery.** `n8n-decanter
+  backup create <workflow>` captures the workflow's full REST export into a
+  committed, versioned `workflows/<slug>/backups/<timestamp>.<versionId>.json`
+  store — the fidelity MCP can't give (credential refs + `description` kept;
+  `pinData`/`staticData` stripped; each Code node's `jsCode` stays a `//@file:`
+  placeholder, so no code is duplicated). It **dedupes** on an unchanged
+  `versionId` and **rolling-prunes** the working set to `backupLimit` (config,
+  default 20; `0` keeps all). `backup restore <workflow> [--version <id> |
+  --at <ts>]` re-inlines the Code from `code/` and REST-POSTs a **new,
+  unpublished** workflow with **node ids preserved** — a real second version
+  history that survives the instance being lost; it prints credential-rebind
+  hints + the editor URL (publish is your next step). `backup list <workflow>`
+  shows the retained set. REST-only: needs `N8N_API_KEY`. The backup file is
+  **not** auto-committed (it carries credential refs and any embedded
+  secrets) — review it, then `git add` deliberately.
+- **Live `workflow.json` mirror — the review snapshot refreshes itself after
+  an agent restructures a workflow through the guard.** When a structure edit
+  is forwarded through `mcp connect` / `mcp serve` (a non-blocked
+  `update_workflow`), decanter now schedules a debounced background `pull` of
+  that workflow, so the read-only `workflow.json` (+ code files + state) stays
+  fresh with **no manual `pull`**. On by default; set `"liveMirror": false` in
+  `decanter.config.json` to disable (CI / deterministic setups). It is
+  fire-and-forget (never blocks the agent's next tool call), git-gated
+  (safety-commits before pulling; skips with no git), and tracked-only. This
+  changes `mcp connect`/`serve` default behavior (additive and disable-able —
+  not breaking).
 - **`preflight` — the whole verification ladder as one scored, read-only
   gate.** `n8n-decanter preflight [workflow…]` runs every safe check there
   is — local static (`layout`, `types`) → instance read-only (`connect`,

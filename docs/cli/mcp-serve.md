@@ -28,6 +28,11 @@ manage. `mcp serve` exists for harnesses that only take an MCP **URL**:
 - **Everything else passes through untouched**, including SSE responses:
   reads, structure edits, wiring, publishing, the n8n build/lifecycle tools.
 
+Like [mcp connect](/docs/cli/mcp-connect/), a forwarded structure edit also
+triggers the **live mirror** — a debounced background `pull` that refreshes the
+read-only `workflow.json` snapshot with no manual `pull` (fire-and-forget,
+git-gated, tracked-only; on by default, `"liveMirror": false` to disable).
+
 Point your agent's MCP config at the printed URL with the printed
 **session secret** as its `Authorization` header — the agent never sees an
 n8n credential, and the secret rotates on every `mcp serve` run. The current

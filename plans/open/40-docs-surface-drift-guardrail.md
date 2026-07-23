@@ -5,6 +5,7 @@ now recurred across #107/#114/#115 — cleaned up by hand in [Plan 39](../open/3
 — and again in #118; a cheap mechanical gate is overdue). Mechanical, offline,
 no new deps.
 **Status:** Not started
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** A CI-run script that mechanically verifies the CLI's **command
 surface** is reflected across the three doc surfaces (README verb table, `docs/cli/*`,
 `docs/cli/overview.md`) and that no doc/template ships a **copy-paste-broken
