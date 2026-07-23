@@ -3,7 +3,7 @@
 **Priority:** P1 — several are **HIGH**: copy-paste-broken commands a user or
 agent would follow verbatim and get `unknown verb` errors. Mechanical, offline,
 clearly-right; no design decisions.
-**Status:** Not started
+**Status:** Done — executed in PR #123 (b5ff47d, 2026-07-23).
 **Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Close the documentation/website drift a targeted audit (2026-07-23,
 26 verified findings) found against the current code after the skills-first wave
