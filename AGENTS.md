@@ -157,6 +157,16 @@ tool rather than mirroring n8n or plain workflow-syncing — mark its plan
 `**Class:** Distinctive feature`. This keeps the tool's differentiators visible
 and tracked as a distinct class.
 
+**Executing a plan checks for drift first.** Every plan header carries a
+`**Snapshot:**` timestamp + main commit hash (`plans/AGENTS.md` has the exact
+field format) recording when it was created or last reworked. Before starting
+work on any plan the user asks you to execute, diff `CHANGELOG.md`
+(`[Unreleased]` and, if released since, the relevant version sections) and
+skim `git log --oneline <snapshot-hash>..main` for changes the plan's tasks
+didn't anticipate — a data-model shift, a guard change, a verb/flag rename.
+Surface anything relevant before proceeding rather than executing a stale plan
+as if nothing changed; if nothing changed, proceed normally.
+
 ## Agent tooling
 
 When adding agentic/LLM-facing material for this repo (a skill, recipe,
@@ -242,10 +252,9 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   Auto-merge is not enabled on the repo and admin-bypass is disallowed, so a
   blocked merge means "checks still pending" — wait them out, don't try to
   force it.
-- **Sandboxed shells:** `git push`/`gh` fail in the command sandbox
-  (credential helper unreachable — "could not read Username"); rerun that
-  command with sandbox escalation. Details + `.git/config` gotcha:
-  "Sandboxed shells" below.
+- **Sandboxed shells:** `.git/config` writes (e.g. cleaning up a stale
+  `branch.<name>` section left by a sandboxed `git branch -D`) still need
+  escalation — see "Sandboxed shells" below.
 
 ## One worktree per task — never reuse a dirty one
 
@@ -303,27 +312,20 @@ commit in the main working tree", you skipped the worktree step — start a
 worktree in your default worktree dir (`git worktree add -b <branch>
 .claude/worktrees/<name> main`) and retry.
 
-## Sandboxed shells: git push / gh need escalation
+## Sandboxed shells: .git/config writes need escalation
 
-Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) block
-the network credential path git needs, while local git works fine:
+Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) still
+block direct `.git/config` writes, even though credentialed git operations
+(`git push`, `gh`) now authenticate fine sandboxed since
+`credential.https://github.com.helper` points at `gh` instead of the
+unreachable macOS keychain:
 
-- **`git push` / `gh pr …` / anything hitting github.com fails sandboxed**
-  with `fatal: could not read Username for 'https://github.com': Device not
-  configured` — the credential helper (macOS keychain) is unreachable from
-  the sandbox. This is an environment artifact, not an auth problem: rerun
-  the *same* command with the sandbox escalation your harness provides
-  (Claude Code: retry the Bash call with `dangerouslyDisableSandbox: true`;
-  don't loosen the sandbox config for this). `git push *` is on the Claude
-  Code allowlist (`.claude/settings.json`) so it runs without a permission
-  prompt — only the sandbox escalation is still required; force-push
-  (`--force`/`-f`) stays denied.
 - **`.git/config` writes are blocked sandboxed** — e.g. `git branch -D` of
   a branch with an upstream deletes the branch but then warns `could not
   lock config file`, leaving a stale `branch.<name>` section. Clean up
   unsandboxed: `git config --remove-section branch.<name>`.
-- Commit, status, diff, log, branch creation, worktree add — all fine
-  sandboxed; only credential/network git and `.git/config` writes need
+- Commit, status, diff, log, branch creation, worktree add, and push/gh
+  (credentialed) — all fine sandboxed; only `.git/config` writes need
   escalation.
 
 ## Commands

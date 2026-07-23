@@ -36,7 +36,6 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git branch *)",
       "Bash(git push *)",
-      "Bash(gh pr create:*)",
       "Bash(docker version *)",
       "Bash(cd:*)",
       "Bash(git config --get-regexp:*)",
@@ -75,7 +74,6 @@
       ]
     },
     "excludedCommands": [
-      "git worktree *",
       "docker *"
     ]
   }

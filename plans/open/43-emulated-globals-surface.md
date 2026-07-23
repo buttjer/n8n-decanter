@@ -7,6 +7,7 @@ optional `types` refresh command (Task 5) and the `.d.ts` de-dup (Task 4).
 44** (`run`'s faked-context parity); both were "backlog item" origin. Merged in
 favour of the lower number per [`plans/AGENTS.md`](../AGENTS.md) — **number 44 is
 retired.** Closes the PLAN.md "run faked-context" fidelity gap.
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** There is **one** "supported n8n-globals" surface; today it lives in
 three places that drift — the shipped `n8n-globals.d.ts`, `run`'s `buildGlobals`
 ([lib/run.mts:114](../../lib/run.mts#L114)), and n8n itself. Define it once, make

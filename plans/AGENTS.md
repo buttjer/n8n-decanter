@@ -46,6 +46,11 @@ else changes; the number and slug stay put.
     `P2` (valuable, more scope/design) / `P3` (deferred). May split per task.
   - `**Source:**` the backlog/draft origin and any `PLAN.md` refs this closes,
     so nothing is orphaned.
+  - `**Snapshot:**` `<UTC timestamp, minute precision> @ <7-char main commit
+    hash>` — when the plan was created or last substantively reworked, e.g.
+    `2026-07-23T06:57Z @ 710d3f1`. Refresh both on every substantive rework
+    (scope/task changes — not typo fixes). Executing agents use this to check
+    for drift since (see root `AGENTS.md`, "Backlog").
   - `**Theme:**` *(optional)* one-line what-and-why.
   - `**Model:**` *(optional, advisory)* the Claude model best suited to
     implement it — Opus for high-reasoning/novel design, Sonnet for

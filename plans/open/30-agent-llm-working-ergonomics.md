@@ -7,6 +7,7 @@ tuning), which carry design decisions.
 **Status:** Partially landed via PR #107/#114 (Task 8a skills docs + install
 commands, Task 8c core n8n-docs scaffold, most of Task 10's allow additions);
 **Themes A / B / D and Tasks 5–7 remain open.**
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Make an LLM coding agent measurably more effective *and* safer the
 moment it lands in a synced dir — codify session-start orientation ("check
 `status` before you edit; pull-first when it drifted"), sharpen the offline loop,
