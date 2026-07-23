@@ -37,7 +37,7 @@ entries carry no priority field) — adjust freely.
 ### Open — medium (valuable, more scope/design)
 
 - [ ] **Scenario layering over a fresh capture** (deferred 2026-07-22 from
-      [Plan 37](OPEN-37-scenario-pin-sets.md) Decision 2) — an optional hybrid
+      [Plan 37](DONE-37-scenario-pin-sets.md) Decision 2) — an optional hybrid
       source: `simulate`/`test` `--scenario <slug> --execution <id>` overlays a
       scenario's per-node pins on a fresh capture — the capability the retired
       `simulate --pin` fixtures provided (pin one flaky network node, keep the
@@ -199,7 +199,7 @@ entries carry no priority field) — adjust freely.
       agent offline-loop docs (`docs/agents/offline-loop.md`,
       `docs/agents/overview.md`) actively steer agents to `uuid` for minting node
       ids, so removal must land **together with (or after)
-      [Plan 21](OPEN-21-repo-authored-workflows.md)'s `add` verb**, which
+      [Plan 21](DONE-21-repo-authored-workflows.md)'s `add` verb**, which
       scaffolds a Code node *including its id* and makes standalone `uuid`
       redundant. Removal touches: the `VERBS`/`__complete` sets + `usage()` +
       handler in `n8n-decanter.mts`, `docs/cli/uuid.md` (delete),
@@ -259,7 +259,10 @@ entries carry no priority field) — adjust freely.
       structure ops pass, Code-node (`jsCode`) writes are blocked with
       file+push guidance; plus the `mcp-route-check.mjs` config-drift hook.
       Differentiator: technical enforcement of the code-layer boundary no
-      instruction file can guarantee.
+      instruction file can guarantee. (2026-07-23: joined by the stdio
+      `mcp connect` variant — same guard core, auto-wired into the scaffolded
+      `.mcp.json` by `init`, no secret/nothing to start — #107; `mcp serve`
+      stays as the HTTP variant for URL-configured agents.)
 - [x] **Scored pre-publish gate over the whole verification ladder (`preflight`
       verb)** (shipped 2026-07-23, [Plan 36](DONE-36-preflight-verb.md)). One
       read-only command runs every safe check — static (`layout`/`types`) →
@@ -304,6 +307,10 @@ entries carry no priority field) — adjust freely.
       stack, so this is ergonomics/reach, not safety — pick up if Plan 33's
       proxy logs show the n8n skills' routing nudge biting agents in practice,
       or when the adoption channel becomes worth it.
+      (2026-07-23 note: the loop's first step has moved — `node create` was
+      retired in the skills-first wave (#107); a Code node is now born over
+      MCP `addNode` through the guard and lands as an empty file whose first
+      `push` seeds the source. The skill's story should teach that loop.)
 
 ### Graduated (tracked by a numbered plan; not yet done)
 

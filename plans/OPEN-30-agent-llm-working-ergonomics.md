@@ -4,11 +4,14 @@
 before you edit" + loop-clarity work (small, clearly-right, offline, high-value);
 **P2** for the small tooling (instance version in `status`, research recipe, scaffold/allowlist
 tuning), which carry design decisions.
-**Status:** Not started
+**Status:** Partially landed via PR #107/#114 (Task 8a skills docs + install
+commands, Task 8c core n8n-docs scaffold, most of Task 10's allow additions);
+**Themes A / B / D and Tasks 5–7 remain open.**
 **Theme:** Make an LLM coding agent measurably more effective *and* safer the
 moment it lands in a synced dir — codify session-start orientation ("check
 `status` before you edit; pull-first when it drifted"), sharpen the offline loop,
-and give the agent grounded knowledge tooling beyond the scaffolded n8n-mcp.
+and promote the grounding tools already scaffolded (the guarded instance MCP +
+the read-only n8n-docs MCP + the official n8n skills) into an explicit ladder.
 **Model:** Opus for the policy/flow wording in `template/AGENTS.md.example`
 (agent-behavior, safety-critical); Sonnet for the mechanical doc-surface
 propagation and any small verb/flag.
@@ -24,7 +27,7 @@ propagation and any small verb/flag.
 > `.mcp.json` block): decanter now authenticates the instance MCP itself
 > (`.decanter-auth.json` OAuth + `N8N_MCP_TOKEN` paste fallback, both
 > landed), and agent-facing instance-MCP access is redesigned **proxy-first**
-> in [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) Task 4 (decanter as sole
+> in [Plan 33](DONE-33-post-mcp-pivot-wave.md) Task 4 (decanter as sole
 > token holder; agents point at a localhost guard-proxy, never the instance
 > directly). The Task 7/8 **precedence-override snippet** is likewise owned
 > elsewhere: Plan 32 Task 9's template boundary contract landed, and Plan 33
@@ -33,13 +36,61 @@ propagation and any small verb/flag.
 > rung 2), per [DONE-32](DONE-32-mcp-native-code-layer.md) → "Relation to
 > Plan 30".
 
+> **Post-#107 review (2026-07-23) — large chunks landed, and the plan's
+> knowledge-source model and stance both need rebuilding.** Read the whole plan
+> through these five corrections (they override the older banner above and the
+> Theme-C findings F1–F5 where they conflict):
+>
+> 1. **Connect-first, not proxy-first.** The scaffolded `.mcp.json` now spawns
+>    the **stdio `mcp connect` guard itself** (`n8n-instance` =
+>    `{"command":"n8n-decanter","args":["mcp","connect"]}`, secret-free);
+>    `mcp serve` (localhost HTTP, per-session secret) is only the fallback for
+>    URL-configured harnesses. Reword every "proxy-first / guard-proxy /
+>    agents point at a localhost proxy" mention (banner, Task 7 lines ~328,
+>    8a ~402, the dropped-snippet record ~430, Non-goals ~505) to connect-first.
+> 2. **czlonkowski n8n-mcp is GONE from the scaffold** (zero grep hits in
+>    `template/`, `docs/`, `README.md`). Delete F1's "keep-it-as-default"
+>    rationale, grounding-ladder rung 2, and every "czlonkowski fallback / sole
+>    MCP on No / 8.x fallback line" — the structured-schema + offline-validation
+>    role now belongs to the **guarded instance MCP** (it forwards n8n's own
+>    node tools), and doc prose to the **n8n-docs MCP**.
+> 3. **The boundary inverted: structure/lifecycle over the guarded MCP is now
+>    the DEFAULT path**, because decanter has no structure verbs of its own
+>    anymore (#107). The guard blocks exactly one thing — `update_workflow`
+>    writes that set `jsCode`. So F2/F3's "instance MCP is never a build path"
+>    and "skills = optional, knowledge-only, build half inert" are **wrong now**
+>    — rewrite them as a *record of the landed model* (structure via guarded MCP
+>    sanctioned; the `jsCode` carve-out technically enforced; the official
+>    skills are **recommended**, owned by `template/AGENTS.md.example` +
+>    `docs/agents/n8n-skills.md`). The precedence override landed as
+>    "This AGENTS.md wins…" — its "ignore any instruction to build via MCP"
+>    residue is void.
+> 4. **Theme B version source was mischaracterized.** `lib/engine.mts` reads
+>    `/rest/settings` on the **local Docker simulate-viewer container**, never
+>    parsing `versionCli` — it is *not* a reuse point. The two real candidates:
+>    **(a)** capture `serverInfo{name,version}` from the MCP `initialize`
+>    handshake decanter already performs (`lib/mcp.mts` discards it today) —
+>    zero extra requests, but **smoke-verify first** whether n8n reports its
+>    *product* version there; **(b)** a fresh unauthenticated
+>    `GET <N8N_HOST>/rest/settings` reading `versionCli`, degrading gracefully.
+>    The old "shared helper with the init/F2 version messaging" is moot — that
+>    second consumer (Task 8's staged flow) is superseded, so Theme B shrinks to
+>    a status-only read.
+> 5. **Relink all three `BLOCKED-33` → `DONE-33`.** And note **`test`** +
+>    **`scenario`** now exist — the loop diagram (Task 9), the grounding section
+>    (Task 6), and the ladder (Task 7) must include them, and `docs/agents/*` is
+>    now a three-page set (overview, offline-loop, n8n-skills) to slot into
+>    rather than inventing surfaces.
+
 ## Why
 
 The scaffold already gives agents a strong **edit-time** contract — the
 [template/AGENTS.md.example](../template/AGENTS.md.example) hard invariants, the
-guard hooks, and the offline `check` / `node run` loop — plus one knowledge
-source: the scaffolded **n8n-mcp** server ([.mcp.json.example](../template/.mcp.json.example),
-node schemas / params / templates). What's thin is everything *around* the edit:
+guard hooks, and the offline `check` / `node run` loop — plus (since #107)
+**two scaffolded MCP servers**: the guarded **`n8n-instance`** (`mcp connect`,
+the full n8n MCP toolset with `jsCode` writes blocked) and the read-only
+**`n8n-docs`** MCP, with the official **n8n-io/skills** pack recommended
+alongside. What's thin is everything *around* the edit:
 
 1. **Session start / orientation is uncodified.** An agent typically starts
    editing whatever is on disk. If the workflow drifted in the n8n UI since the
@@ -47,15 +98,19 @@ node schemas / params / templates). What's thin is everything *around* the edit:
    (`pull first`) or — worse, if pushed `--force` — clobbers the UI edits. There
    is no "orient yourself first" step in the contract. *(Maintainer's prompt: "a
    pull before starting to work on a workflow is very recommended.")*
-2. **Knowledge grounding is single-source.** n8n-mcp covers **static** node
-   schemas, but not: the *instance's* n8n version and its behavior, the **real
-   payload shapes** flowing through this specific workflow, or the decanter
-   contract itself. Absent those, agents fall back to (often stale) training
-   data. *(Maintainer's prompt: "Deep research? More tooling than the mcp?")*
+2. **Knowledge grounding lacks a stated order.** The scaffolded servers cover
+   node schemas/validation (guarded instance MCP) and doc prose (n8n-docs MCP),
+   but nothing tells the agent *which to reach for when*, nor surfaces the
+   **instance's n8n version** (still unshown — Theme B) or the **real payload
+   shapes** flowing through this specific workflow. Absent an explicit ladder,
+   agents fall back to (often stale) training data. *(Maintainer's prompt:
+   "Deep research? More tooling than the mcp?")*
 3. **The best offline/grounding tools are under-surfaced in the loop.**
-   `executions` (real payloads → `node run` fixtures), `data-tables`, and
-   `simulate` (whole-workflow offline replay) all exist, but the agent docs
-   frame the loop as just `node run` + `check`.
+   `executions` (real payloads → `node run` fixtures / `scenario create
+   --execution`), `data-tables`, and `simulate`/`test` all exist, but the
+   **docs-site** agent pages (`docs/agents/overview.md`, `offline-loop.md`)
+   still frame the loop as roughly `node run` + `check` — the depth landed in
+   `template/AGENTS.md.example` but not the published pages.
 
 Agent-native tooling is a **stated differentiator** of this project (the
 [README](../README.md) comparison table's "Agent-native tooling" row), so it
@@ -134,17 +189,26 @@ Grouped by theme; each theme is independently shippable (split the PRs by theme)
    per-workflow *publication* state (draft vs live `versionId`), **not** the
    instance's n8n software version (e.g. `n8n 2.31.0`). Surface it once in the
    `status` header/footer so the agent sees, in the tool it already runs, the
-   version it needs for the Task-5 docs-grounding recipe (and that the Task-8
-   `init` probe reports).
-   - **Source (verified):** the instance version is **not** read anywhere in the
-     status path today. The only place decanter reads it is
-     [lib/engine.mts:193](../lib/engine.mts) — `GET <host>/rest/settings`, whose
-     JSON carries **`versionCli`** (used there only as a readiness check). Reuse
-     that: fetch `/rest/settings` and read `versionCli`. **Caveat:** `/rest/settings`
-     is n8n's *internal* REST endpoint (what the frontend uses), **not** the public
-     `/api/v1` — treat a missing/renamed field as "version unknown" and degrade
-     gracefully (don't fail `status`). The same read backs the `init`/F2 version
-     messaging, so implement it once as a shared helper.
+   version it needs for the Task-5 docs-grounding recipe.
+   - **Source — corrected (2026-07-23).** The old pointer to
+     `lib/engine.mts`'s `/rest/settings` read is **wrong**: that read polls the
+     **local Docker simulate-viewer container** for readiness and never parses
+     `versionCli`. No code reads the instance version anywhere. Two real
+     candidates, decide when executing:
+     - **(a) MCP `initialize` `serverInfo` (preferred if it carries the product
+       version).** Decanter already performs the `initialize` handshake in
+       `lib/mcp.mts` and **discards the result**; per the MCP spec it carries
+       `serverInfo{name, version}` (the e2e mock returns one). **Smoke-verify
+       first** whether n8n 2.30.x reports its *product* version there (add a
+       one-line assertion to the smoke suite) — if so this is a **zero
+       extra-request** source captured from a handshake already made.
+     - **(b) Fallback:** a fresh unauthenticated `GET <N8N_HOST>/rest/settings`
+       reading `versionCli` — n8n's *internal* endpoint (not public `/api/v1`),
+       so treat a missing/renamed field as "version unknown" and never fail
+       `status`.
+     - The old "shared helper with the `init`/F2 version messaging" is moot —
+       that consumer was Task 8's superseded staged flow, so Theme B is a
+       status-only read.
 
 ### C. Knowledge grounding beyond n8n-mcp — "deep research" (P2)
 
@@ -164,18 +228,15 @@ framing error in the first draft is **corrected (F4)**.
   instance's version, installed custom/community nodes, real execution payloads,
   credential schemas, or live node availability. → the snapshot can itself be a
   **different version than the instance** (a grounding gap, not just coverage).
-  - **Why keep it as a default despite F5 (the docs MCP) — don't re-litigate:**
-    it is the **only** source of *structured, machine-readable node schemas*
-    (`get_node`/`search_nodes` — exact props/params/`typeVersion`/operations, the
-    thing you write into `workflow.json`), *offline pre-push validation*
-    (`validate_node`/`validate_workflow`), and a *template corpus*. The docs MCP
-    (F5) returns **prose pages**, not schemas, and n8n ships **no first-party
-    structured node-schema MCP** — so czlonkowski fills a gap nothing else does,
-    at zero auth and no instance. **Honest caveat:** once the **instance MCP (F2)**
-    is wired, *its* validation + node info are version-accurate and partly overlap
-    czlonkowski's schema/validation role (leaving it valued mainly for templates +
-    zero-setup availability). So it's the **safe default baseline**, strongest
-    *before* the instance MCP is connected — not irreplaceable forever.
+  - **OBSOLETE (2026-07-23): czlonkowski n8n-mcp was REMOVED from the scaffold
+    in #107** and is referenced nowhere in `template/`, `docs/`, or `README.md`.
+    The "keep it as the default baseline" rationale below has no object anymore:
+    the structured-schema + `validate_workflow` role now belongs to the **guarded
+    `n8n-instance` MCP** (version-accurate, since it forwards this instance's own
+    node tools), and F1's snapshot-staleness gap is moot. *(Retained struck-out
+    for the record — do not re-scaffold czlonkowski.)* ~~it is the only source of
+    structured, machine-readable node schemas … a safe default baseline, strongest
+    before the instance MCP is connected.~~
 - **F2 — [new since draft; since Plan 32 this is decanter's *own sync
   backend*, OAuth-authenticated by `init` — see the banner] n8n ships a
   *first-party, instance-level* MCP server**
@@ -278,8 +339,9 @@ framing error in the first draft is **corrected (F4)**.
     no-MCP fallback).
 
 5. **Instance-version awareness.** n8n behavior is version-dependent. `status`
-   will now surface the instance version (Task 4/B — read from
-   `/rest/settings.versionCli`; it is **not** read in the status path today).
+   will now surface the instance version (Task 4/B — source corrected: MCP
+   `initialize` `serverInfo` if it carries the product version, else a
+   `/rest/settings.versionCli` read; **not** `lib/engine.mts`'s viewer poll).
    Document a recipe: read that version, then consult the docs via the **`n8n-docs`
    MCP (F5)** — or, for agents without it, `WebFetch`/`Read` of `docs.n8n.io` —
    **heeding the inline "Available from n8n X.Y.Z" annotations** (docs are
@@ -309,34 +371,43 @@ framing error in the first draft is **corrected (F4)**.
    in [template/AGENTS.md.example](../template/AGENTS.md.example) (new *"Grounding
    yourself"* section) and keep any per-agent file (a `.claude/skills/` pointer,
    Cursor/opencode equivalents) a **thin pointer**. Two parts:
-   - **Ordered source ladder** (most-authoritative-for-*this*-repo first):
-     1. **`n8n-globals.d.ts` + this AGENTS.md** — the decanter contract itself.
-     2. **n8n-mcp** for node schemas / params / templates — caveat: *static
-        snapshot* whose version may differ from the instance (F1). *(Demoted
-        since Plan 32: with the instance MCP always wired as the sync
-        backend, its version-accurate node info/validation covers the schema
-        role — the snapshot is the no-instance fallback + template corpus.)*
+   - **Ordered source ladder (rebuilt 2026-07-23 around the landed two-server
+     scaffold; czlonkowski is gone)** — most-authoritative-for-*this*-repo first:
+     1. **`n8n-globals.d.ts` + the scaffolded AGENTS.md** — the decanter contract
+        itself.
+     2. **The guarded `n8n-instance` MCP** for node schemas / params /
+        validation — version-accurate because it forwards *this instance's* own
+        node tools (the sync backend); `jsCode` writes are blocked, everything
+        else (incl. node info + `validate_workflow`) passes. *(This replaces the
+        old czlonkowski snapshot rung outright — the "only czlonkowski has
+        structured schemas" argument is void.)*
      3. **`executions` / `data-tables`** for the real payload shapes / stored data
-        flowing through *this* instance (what the snapshot can't give).
-     4. **instance version → the `n8n-docs` MCP (F5)** (or `WebFetch docs.n8n.io`
-        without it; single-latest, heed "available from vX") **+ release-notes
-        page** for version behavior (Task 5, F4) — *not* a "version-matched" URL.
-     5. **`simulate`** to confirm the whole workflow end-to-end offline.
-   - **The precedence override — DROPPED (2026-07-22, superseded; see the
-     banner).** Ownership moved: Plan 32 Task 9's template boundary contract
-     landed (Code-node source is decanter's; structure may go via
-     MCP/skills), and [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) Task 4c
-     rewrites it **proxy-first** ("wire n8n MCP access through the decanter
-     proxy, never the instance directly"). Do not add this plan's version —
-     Task 7 ships only the source ladder above, pointing at the landed
-     contract for the boundary rules.
+        flowing through *this* instance (`scenario create --execution` promotes a
+        capture into a committed pin set).
+     4. **instance version → the `n8n-docs` MCP (F5, default-scaffolded)** (or
+        `WebFetch docs.n8n.io` if not scaffolded; single-latest, heed "available
+        from vX") **+ release-notes page** for version behavior (Task 5, F4).
+     5. **`preflight`** — the single scored, read-only pre-push gate that runs
+        the whole ladder (static → instance reads → a pinned `test`, `--full`
+        adds `simulate`); its rungs **`test`** (instance-side pinned run) and
+        **`simulate`/`scenario`** stay reachable individually for a focused
+        check. *(Plan 36 merged, #117 — `preflight` is the shipped
+        consolidation of rungs 1–5 into one verdict.)*
+   - **The precedence override — LANDED as "This AGENTS.md wins…" (#107); do not
+     re-add.** The template boundary contract shipped and the guard technically
+     enforces the one carve-out (`jsCode` writes blocked). Task 7 ships only the
+     rebuilt source ladder above, pointing at
+     [`docs/agents/n8n-skills.md`](../docs/agents/n8n-skills.md) +
+     `template/AGENTS.md.example` for the boundary rules. *(Structure/lifecycle
+     via the guarded MCP is the **sanctioned default** now — not something to
+     override.)*
 8. **SUPERSEDED (2026-07-22, Plan 32 executed — see the banner; do not
    execute the staged flow below, kept for the record; sub-tasks 8a/8b/8c
    survive, see their annotations).** The flow assumed the instance MCP was
    an opt-in read-only extra reached with a UI-pasted token; it is now the
    sync backend, `init` runs OAuth consent itself (landed), and agent-facing
    instance access goes through the
-   [Plan 33](BLOCKED-33-post-mcp-pivot-wave.md) Task 4 guard-proxy instead of
+   [Plan 33](DONE-33-post-mcp-pivot-wave.md) Task 4 guard-proxy instead of
    a direct `n8n-instance` `.mcp.json` block.
    *Original task:* **A staged `init` flow that probes, wires, warns, and falls back** (the
    instance MCP only — no skills prompt) — the concrete build of the maintainer's
@@ -398,11 +469,14 @@ framing error in the first draft is **corrected (F4)**.
      (`n8n-code-nodes-official`, `n8n-expressions-official`,
      `n8n-error-handling-official`, `n8n-debugging-official`,
      `n8n-loops-official`) and the F3 install command. Do **not** re-add a
-     precedence override — that text is owned by Plan 33 Task 4c
-     (proxy-first). Still: not an `init` step, not in `package.json` — no
-     `npx skills add` script. Real default grounding is the instance MCP
-     (the sync backend) + the `n8n-docs` MCP + `n8n-globals.d.ts`, with
-     czlonkowski as the no-instance fallback.
+     precedence override — it landed as "This AGENTS.md wins…" (#107). Still:
+     not an `init` step, not in `package.json` — no `npx skills add` script.
+     Real default grounding is the guarded instance MCP (the sync backend) +
+     the `n8n-docs` MCP + `n8n-globals.d.ts` (no czlonkowski fallback — it was
+     removed). **LANDED via #107:** the knowledge-skill list and install
+     commands shipped in `template/AGENTS.md.example` + `docs/agents/n8n-skills.md`
+     (and landed as **recommended**, beyond this task's original "optional"
+     framing) — so 8a is essentially done; diff before doing more.
    - **8b — redundancy trim.** In `AGENTS.md.example` the overlap with the skills
      is **narrow** (the file is already decanter-specific: ownership, `.js`/`.ts`,
      placeholders, verbs). Trim only the **generic Code-node runtime** prose in
@@ -410,22 +484,15 @@ framing error in the first draft is **corrected (F4)**.
      `n8n-globals.d.ts` + the `n8n-code-nodes-official` skill; below is only what
      decanter changes"*), **keeping every decanter-specific rule** — the skills
      don't know decanter exists.
-   - **8c — scaffold the `n8n-docs` MCP by default (F5) + allowlist fallback.**
-     Because the GitBook docs MCP is first-party, **public/no-auth, read-only, and
-     instance-free** (zero bypass risk), add it to
-     [.mcp.json.example](../template/.mcp.json.example) as a **second default MCP**
-     alongside czlonkowski n8n-mcp (remote HTTP entry, URL
-     `https://docs.n8n.io/~gitbook/mcp`) — it needs **no probe, no token, and none
-     of the Task-8 staged-instance-MCP flow** (that flow is only for the *mutating*
-     instance MCP). Document **`n8n-kapa`** (`https://n8n.mcp.kapa.ai`, browser
-     auth) as **opt-in**. As the **no-MCP fallback**, still default-allow
-     `WebFetch`/`Read` of `docs.n8n.io` (+ release-notes) in
-     [settings.local.json.example](../template/.claude/settings.local.json.example)
-     + the `opencode.json` equivalent. `n8n-instance` + `N8N_MCP_TOKEN` appear only
-     when wired (Task 8 flow). Skills need no allowlist (plugin). Leave
-     `push`/`--force`/`delete` denied. **Decision — RESOLVED: docs MCP is
-     default-scaffolded** (cleanest grounding win; only cost is a remote call to
-     n8n's public docs endpoint each session, opt-out by editing `.mcp.json`).
+   - **8c — LANDED via #107 (core).** The `n8n-docs` MCP is default-scaffolded
+     in `template/.mcp.json.example` (`https://docs.n8n.io/~gitbook/mcp`) and
+     `opencode.json.example`, and pre-allowed (`mcp__n8n-docs`) — **alongside
+     the `n8n-instance` connect guard, not czlonkowski** (which is gone). Only
+     two small optional residues remain: **(1)** a `WebFetch(docs.n8n.io)`
+     no-MCP-fallback allow entry — **it does not exist in the scaffold today**
+     (grep-empty), add it only if the no-MCP story is still wanted; **(2)** an
+     opt-in **`n8n-kapa`** (`https://n8n.mcp.kapa.ai`, browser auth) mention —
+     documented nowhere yet.
 
    **The precedence override snippet — DROPPED (2026-07-22; superseded by
    Plan 32 Task 9's landed template contract + Plan 33 Task 4c's proxy-first
@@ -447,15 +514,28 @@ framing error in the first draft is **corrected (F4)**.
 
 9. **A canonical "recommended agent loop" picture** in
    [docs/agents/overview.md](../docs/agents/overview.md): *orient (`status`) →
-   research (mcp / executions / data-tables / instance-version-aware docs) → edit →
-   verify (`node run` / `check` / `simulate`) → report ready-to-push.* One diagram
-   agents and humans share (plain Markdown / a mermaid fence — no bespoke MDX).
-10. **Audit the scaffolded permission allowlist** against the full loop
+   research (the guarded `n8n-instance` MCP / `executions` / `data-tables` /
+   version-aware `n8n-docs` MCP) → edit → verify offline (`node run` / `check`)
+   → **gate (`preflight` — the single scored, read-only pre-push gate: static +
+   instance reads + a pinned `test`/`simulate` run)** → report ready-to-push.*
+   One diagram agents and humans share (plain Markdown / a mermaid fence — no
+   bespoke MDX). **Plan 36 merged (#117):** `preflight` is the shipped
+   consolidation of the verify ladder — feature it as the gate step rather than
+   listing `check`/`test`/`simulate` loose (they remain the individual rungs it
+   orchestrates). **Fix in passing:** `overview.md` still names "the `mcp serve`
+   guard-proxy" where `mcp connect` is the scaffolded default, and its loop is a
+   single sentence with no orient step.
+10. **Audit + trim the scaffolded permission allowlist** — mostly landed
     ([settings.local.json.example](../template/.claude/settings.local.json.example)
-    + `opencode.json`): confirm the offline/read-only tools the loop leans on —
-    `simulate` (offline path), `executions` / `data-tables` (incl. `clean`),
-    `status` (now version-aware, Task 4/B) — are pre-allowed so the agent isn't
-    prompted on safe reads. Add gaps; leave `push`/`--force`/`delete` denied.
+    already pre-allows `check`/`node`/`pull`/`simulate`/`scenario`/`status`/
+    `list`/`executions`/`data-tables`/`completion` + `mcp__n8n-docs`). Remaining
+    work is a **trim pass**: the `delete` verb is gone (#107) so drop any
+    "delete denied" mention; the deny list still carries dead `Edit(**/*.remote.js)`
+    entries (both `settings.local.json.example` **and** `opencode.json.example`,
+    plus opencode's stale "two file-level invariants … `*.remote.js`" comment) —
+    `.remote.js` artifacts were removed in Plan 32, so trim them. Note plain
+    `push` is **prompt-gated by omission**, not denied. Add any genuine gap;
+    keep `push --force` denied.
 
 ## Acceptance / verification
 
