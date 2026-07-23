@@ -21,7 +21,7 @@ import type { Log } from "./types.mts";
 /** Gitignored discovery file (sync-dir root): the running proxy's endpoint + secret. */
 export const PROXY_STATE_FILE = ".decanter-proxy.json";
 
-/** Default listen port — one above the browser-reload proxy's 5679. */
+/** Default listen port for the guard-proxy (localhost only; --port overrides). */
 export const DEFAULT_GUARD_PORT = 5680;
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024;

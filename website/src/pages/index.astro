@@ -28,7 +28,7 @@ const features = [
   {
     icon: "↯",
     title: "Draft-first over n8n's MCP",
-    text: "Sync Code-node source over n8n's built-in MCP server: every push lands on the workflow's draft, and publish is the deliberate go-live step. watch pushes on save and auto-reloads the editor tab via a local proxy.",
+    text: "Sync Code-node source over n8n's built-in MCP server: every push lands on the workflow's draft, and publish is the deliberate go-live step. watch pushes on save; the open n8n editor tab reflects each push live (n8n's own draft-edit refresh, no proxy).",
   },
   {
     icon: "⌘",
@@ -47,7 +47,7 @@ const compareRows = [
   ["Code-level git versioning", "🟡 in-app history; Git is Enterprise-only", "✅ GitOps sync of workflow source", "✅ real git — diffs, PRs, blame; auto-commit each sync"],
   ["Preflights (check / simulate / test / preflight)", "🟡 re-run in-editor, online only", "🟡 inspect against a live env", "✅ offline check + simulate, instance-side test; preflight scores the whole ladder into one read-only, CI-gateable verdict"],
   ["Draft-first code sync", "✅ editor Save vs Publish (manual)", "🟡 API sync republishes on push", "✅ pushes land on the draft; publish is deliberate (over MCP)"],
-  ["Live editing", "✅ the canvas (baseline)", "🟡 explicit pull/push, no auto-watch", "✅ watch: push on save + auto-reload the editor tab"],
+  ["Live editing", "✅ the canvas (baseline)", "🟡 explicit pull/push, no auto-watch", "✅ watch: push on save; the editor tab reflects each push live (n8n-native)"],
   ["Agent-native tooling", "🟡 n8n's own canvas AI, not your agent", "✅ Workbench, skills, MCP, plugins", "✅ scaffolds Claude/Cursor/Codex incl. a pre-wired mcp connect guard; offline loop"],
   ["Model ownership", "❌ locked to n8n's hosted AI", "🟡 plugin uses your sub; Workbench needs a key", "✅ never calls an LLM — your agent/subscription does 100%"],
   ["Agentic workflow creation", "🟡 AI Builder, Cloud / plan-gated", "✅ node schemas + templates + skills", "✅ agent builds structure over n8n's MCP (through the pre-wired mcp connect guard); decanter owns the code"],
