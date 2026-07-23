@@ -87,6 +87,13 @@ the escape hatch; `run` stays honest about its edges.
 - **Relates to** [Plan 30](30-agent-llm-working-ergonomics.md) — treats
   `n8n-globals.d.ts` as *the decanter authoring contract* agents read; keeping it
   single-source and current serves that.
+- **Sibling to** [Plan 52](52-remove-watch-browser-reload-proxy.md) — both are
+  *"the MCP/n8n-native reality reshapes a decanter hand-rolled layer."* Plan 52
+  **deletes** the `watch` proxy (n8n reflects MCP edits natively, so it's
+  redundant); this plan **keeps but reframes** `run`'s emulation, because `run`
+  fills an offline niche n8n has no native answer for (see Non-goals). **Execute
+  Plan 52 first** — it strips `browserReload`/proxy from `config`/`PLAN.md`/
+  `test/e2e.mts`/docs that this plan also edits, so 43 lands on the leaner base.
 
 ## Tasks
 
@@ -256,6 +263,14 @@ it authors decanter's code, never pastes n8n's).
 
 ## Non-goals
 
+- **Deleting `run`'s emulation the way [Plan 52](52-remove-watch-browser-reload-proxy.md)
+  deletes the proxy.** Tempting to apply the same "n8n does it natively → drop the
+  hand-rolled layer" rule — but it doesn't hold here. The proxy was *redundant*:
+  n8n does the identical thing (reload the open editor) in the identical place.
+  `run` is *not* — its fidelity backstop `test` needs a **live instance + network**,
+  whereas `run` is the **offline / no-instance / CI** path nothing else fills.
+  Hand-mirroring `run`'s surface is justified by a niche the proxy never had, so
+  the answer is *reframe* (defer fidelity to `test`), not *delete*.
 - **Sandboxing `run`** — that's [Plan 31](31-run-sandbox-boundary.md); this plan
   is the emulated-global *surface* inside that boundary, not the isolation
   mechanism.
