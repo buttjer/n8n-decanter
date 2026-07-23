@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   throw in a real Code node too — so declaring them wrongly type-checked broken
   code. The declared surface now matches what a Code node actually sees, and is
   single-sourced (init copies the one root file — no duplicate template copy).
+- The scaffolded agent permission allowlist (`.claude/settings.local.json`) now
+  pre-approves the read-only **`preflight`** gate, so an agent following the
+  template's recommended `edit → check → preflight → push` loop no longer stalls
+  on a permission prompt at the gate itself. Also dropped the obsolete
+  `*.remote.js` deny rule — those artifacts were removed in the Plan 32 MCP pivot.
 
 ## [0.6.0] - 2026-07-23
 
