@@ -4,7 +4,11 @@
 Breaking rework of the entire agent-facing surface, **now released in 0.6.0
 (2026-07-23, #133)**; this validates it the way it will actually be consumed,
 before further releases build on it untested.
-**Status:** Not started
+**Status:** In progress — **harness built + stabilized, and round-1 blind
+execution RUN** (2026-07-23, `scripts/field-test/`). Tasks 1–3 + 6 done; **S1 +
+S2 passed** (full flow + a blind-built 6-node workflow, all Code via files+push);
+5 findings captured (see "Round-1" below). **Detailed per-turn grading + a full
+Task-4 run report are the next pass** (Task 5 triage still pending).
 **Snapshot:** 2026-07-23T14:05Z @ 7995d22
 **Theme:** Put the whole product — `init` → skills/MCP structure work →
 Code-node authoring → `push` → runs — in front of **blind** Sonnet coding
@@ -312,6 +316,110 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
    that file was retired (#122); the `ls plans/*/` listing is the index and
    `plans/AGENTS.md` holds the conventions; no changelog (internal tooling — no
    user-facing surface).
+
+## Round-1 results — preliminary (2026-07-23)
+
+First blind round ran end-to-end (Sonnet, headless `claude -p`, real n8n 2.30.7
+in Docker). Getting a *valid* run took four harness corrections, each itself a
+finding; the fixes are in `scripts/field-test/`. **S1 + S2 passed**; the full
+per-turn grading + Task-4 run report are the next pass.
+
+**Per-scenario (round-1b):**
+- **S1 — PASS.** `init` (on a pre-seeded `.env`) → `pull` → author `normalize.js`
+  → `push` → `publish`, verified on the instance. `verify.mts` 5/5 across 3
+  pulled workflows.
+- **S2 — PASS (headline).** The blind agent **built a 6-node workflow** (schedule
+  → generate → IF → tag-high/tag-low → merge → summarize): **structure via the
+  guarded MCP, every Code node via files+push, all byte-equal, zero rogue
+  `jsCode`**. `verify.mts` clean across 4 workflows. Core value prop validated.
+- **S3 — inconclusive (harness bug, since fixed).** The drift preHook edited
+  *Contact normalizer* while the prompt targeted the *orders* workflow → the
+  agent fixed the undrifted flow and the drift guard was never exercised. Prompt
+  realigned to the drifted node for the next run.
+- **S4 — mixed.** `archive_workflow` via MCP **worked** (confirmed archived);
+  node-rename handled; the `.js→.ts` conversion exposed finding 4 below.
+
+**Findings (ranked, for maintainer triage — Task 5):**
+1. **Discoverability (P1).** No project-level `n8n-decanter` ⇒ a blind agent
+   never finds it and hand-rolls raw n8n MCP. Harness now `npm link`s the CLI so
+   the project carries the breadcrumb; the gap itself is the finding.
+2. **`init` writes `https://` for a local `http://` host (P1, product).** Breaks
+   the guard (reads `.env` directly → `upstream request failed: fetch failed`)
+   and the CLI. Repro: `FIELD_NO_SEED_ENV=1`.
+3. **`init` is hard for agents to drive (P2, product).** Interactive stdin took
+   20+ attempts; no non-interactive flag path.
+4. **`.js→.ts` conversion leaves `.decanter.json` stale (P2, product).** Agent
+   swapped the file + re-pointed the `//@file:` placeholder correctly, but the
+   node→file map still pointed at the deleted `.js`.
+5. **Positive.** Decanter's scaffolded `AGENTS.md` steered the agent **file-first**
+   for code before it ever tried `jsCode` over MCP — the guard never had to block
+   (Plan 50 evidence: the contract pre-empts the nudge). Contamination check
+   clean (no agent inferred an evaluation).
+
+**Harness hardening this round:** `stage` now `npm link`s our built CLI (not a
+published version), pre-seeds a correct `.env`, disables the nested session's
+sandbox (so the agent can reach the local n8n); `run.mts` gained a per-turn
+timeout + `--smoke`/`--netcheck`/`--dry-run` probes; `report.mts` renders a
+self-contained HTML timeline of the agentic sessions.
+
+## Harness status — capabilities (2026-07-23)
+
+**Built (Tasks 1–3 + 6), in `scripts/field-test/`:**
+
+- `stage.mts` (+ `skills-install.mts`) — `field-test:stage` boots + provisions a
+  throwaway n8n (or `FIELD_N8N_URL` targets a running one), seeds 4 pure-node
+  workflows (2 realism, 1 left `availableInMCP=false` as a gate-tripper, 1 S1
+  **skeleton** = manual-trigger → **empty** Code node), scaffolds a **neutral**
+  scratch project (`git init`, vendored n8n skills pack), and prints a manifest.
+  Harness artifacts (manifest, transcripts, `guard.log`) live in a **sibling**
+  dir the agent never enters, so their metadata can't leak into a blind session.
+- `scenarios/S1–S5.md` + `STYLE.md` — persona/goal/adaptive-beats/checklist +
+  a machine-readable `## Orchestration` turn spine; blinding rules verbatim. **S1
+  decided CLI-only against the stage-seeded skeleton** (the guard can't load in
+  the same process `init` first writes `.mcp.json`); S2 owns the MCP-guard path.
+- `run.mts` — replays each scenario's scripted turns as headless
+  `claude -p --model sonnet` sessions (`--resume` per beat), post-init merges the
+  allow-list extension into `settings.local.json` (deny rules preserved) and
+  rewrites `.mcp.json` to **capture the guard's stderr** to `guard.log`, then runs
+  the verifier. `README.md` documents the full run + grade procedure.
+- `verify.mts` — the scripted invariant oracle (independent of `lib/` for the
+  fail-generating checks): placeholder integrity, `.js` byte-equality, `.ts`
+  marker-hash relation, `lastPushedHash` tie, `.decanter.json` git-history, +
+  `get_workflow_history` version-trail evidence.
+- `field-test:{stage,run,verify}` npm scripts; AGENTS.md "field test harness"
+  Commands note.
+
+**Validated against real n8n 2.30.7 in Docker (2026-07-23):** stage
+boots/provisions/seeds/vendors 14 skills end-to-end; `verify.mts` **PASSes** a
+clean pull→author→push sync and **FAILs (exit 1)** a simulated rogue direct-MCP
+`jsCode` write (byte-equality + `lastPushedHash` both caught, unaffected checks
+stay green, version trail records the extra write); `run.mts --dry-run` parses +
+substitutes all five scenarios. Typecheck + Biome lint clean.
+
+**Round 1 (Task 4) is a maintainer-run, UNSANDBOXED step.** Nested `claude` is
+blocked under the agent command sandbox (and per project convention the sandbox
+is not disabled), and `fs.watch`/FSEvents dies sandboxed — so the blind sessions
+run from a normal terminal: `npm run field-test:stage` → `node
+scripts/field-test/run.mts <manifest>` → grade (Opus, unblinded) + contamination
+check → append `## Run report — round 1`. No blind runs were executed in the
+build session, so **no run report is fabricated here.**
+
+**Skills-pack finding (feeds [Plan 50](../draft/50-code-node-authoring-skill.md)
+— strong prior to confirm in round 1).** The official `n8n-io/skills` pack
+(Apache-2.0) frames the **Code node as a "last resort"** and routes any code it
+does write through `create_workflow_from_code` / `update_workflow` SDK code —
+which decanter's guard **blocks**. So the pack's routing nudge should surface in
+round 1 exactly as **guard-blocked `jsCode` warn-lines** in `guard.log`, i.e. the
+block→pull→seed loop is the *expected* product of the nudge, not an error. The
+authoring-skill evidence question ("does the nudge bite?") therefore has a clear
+hypothesis to verify.
+
+**Fidelity caveat for the grader.** The harness vendors `skills/*` into
+`.claude/skills/` (auto-discovered) + reproduces the SessionStart routing cue in
+`AGENTS.md`, but does **not** reproduce the official plugin's PreToolUse hooks or
+`plugin:` namespacing (that install is interactive/non-deterministic). A
+Code-node write nudged over MCP hits the guard the same either way; grade with
+the missing hooks in mind.
 
 ## Acceptance / verification
 

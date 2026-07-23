@@ -389,6 +389,21 @@ npm run check:docs    # Plan 40: STRUCTURAL docs-surface guardrail — proves ev
 npm run test:smoke    # OPT-IN, dev-only: real n8n in Docker (test/smoke-n8n.mts,
                       #   plans/15); needs a running Docker daemon; never part
                       #   of npm test
+npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
+                      #   (scripts/field-test/, Plan 35). stage boots + provisions
+                      #   a throwaway n8n (or FIELD_N8N_URL targets a running one)
+                      #   and scaffolds a neutral scratch project, printing a
+                      #   manifest. `field-test:run <manifest>` drives blind
+                      #   `claude -p --model sonnet` sessions per the S*.md
+                      #   scenarios — run UNSANDBOXED (nested claude needs the
+                      #   Anthropic API + must reach the local n8n; fs.watch dies
+                      #   sandboxed). `run.mts --smoke`/`--netcheck` are debug
+                      #   probes; `field-test:verify <manifest>` runs the scripted
+                      #   invariant checks; `field-test:report <manifest>` renders
+                      #   a self-contained HTML timeline of the agentic sessions.
+                      #   The stage npm-links OUR built CLI + pre-seeds a correct
+                      #   .env. Never part of npm test; grading is a separate pass.
+                      #   Teardown: `field-test:stage --down <manifest>`.
 
 node n8n-decanter.mts <init|pull|push|status|check|watch> …
 ```
