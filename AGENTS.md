@@ -22,10 +22,18 @@ don't let either drift from the code.
 ## Session labels: tag Plan work `[Plan NN] Planning` / `[Plan NN] Executing`
 
 When a session's task maps to a numbered backlog Plan (`plans/…`, "Plan NN"),
-label the session for that plan and phase so concurrent sessions stay legible:
+the session should be labeled for that plan and phase so concurrent sessions
+stay legible:
 
 - **Planning** that plan → **`[Plan NN] Planning`**
 - **Executing** that plan → **`[Plan NN] Executing`**
+
+**An agent can't rename its own session** — there is no model-invokable rename
+in Claude Code (`/rename` is a human-only slash command). So the agent's job is
+to **surface the exact command for the user to paste**: as soon as the plan
+number and phase are known, print a one-liner such as — Run
+`/rename [Plan 30] Executing` — so the human can apply it in one keystroke.
+Re-prompt when the phase or round number changes.
 
 Append a round number `(2)`…`(99)` for repeat passes; the **first round carries
 no number**. E.g. `[Plan 30] Planning` → `[Plan 30] Planning (2)` after a
@@ -169,11 +177,13 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   locally too" below.
 - **When a plan number is known, prefix everything with it — from the moment
   it's known, in both planning and execution.** If the work belongs to a
-  numbered plan (`plans/*-N-*.md`, "Plan 27"), name the **branch** and
-  **worktree** `<type>/plan-NN-<slug>` and `.worktrees/<type>-plan-NN-<slug>`
-  (e.g. `feat/plan-27-verb-grammar`, `.worktrees/feat-plan-27-verb-grammar`),
-  and prefix the **agent session** `[Plan 27] …`. This ties the session, branch,
-  worktree, and PR back to the plan at a glance. The plan number is often known
+  numbered plan (`plans/*-N-*.md`, "Plan 27"), name the **branch**
+  `<type>/plan-NN-<slug>` and the **worktree dir** `<type>-plan-NN-<slug>` inside
+  your default worktree dir (e.g. branch `feat/plan-27-verb-grammar`, worktree
+  `.claude/worktrees/feat-plan-27-verb-grammar`), and **tell the user to label
+  the session** by pasting `/rename [Plan 27] …` (an agent can't rename its own
+  session — see below). This ties the session, branch, worktree, and PR back to
+  the plan at a glance. The plan number is often known
   only *after* work has started (planning surfaces it, or an existing plan gets
   claimed mid-task) — **when it becomes known, it's worth a rename**: create a
   correctly-named worktree/branch and move the work over (see "One worktree per
@@ -208,19 +218,24 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   docs and Markdown included.** There is no "fast path" that branches in the
   main checkout: the main checkout is *shared*, so a concurrent session (or the
   IDE's git integration) flips its `HEAD` and branch out from under you
-  mid-edit. Start by creating a worktree in the gitignored `.worktrees/` dir
-  (`git worktree add -b feat/x .worktrees/feat-x main`) and working there —
-  don't edit the main checkout unless the user explicitly says to. Read-only
-  work (questions, reviews, exploration) needs no worktree. Claude Code enters
-  it via `EnterWorktree` with `path: .worktrees/feat-x`. After the PR is merged,
+  mid-edit. Create the worktree in **your agent's default worktree dir**,
+  falling back to repo-root `.worktrees/` if your tool has none — **Claude Code:
+  `.claude/worktrees/`; Codex/opencode: `.worktrees/`**; both are gitignored
+  (`git worktree add -b feat/x .claude/worktrees/feat-x main`). The *location*
+  is free to vary per agent, but the **branch/worktree naming does not** —
+  always pass an explicit `-b <branch>` so the `<type>/<slug>` (or
+  `<type>/plan-NN-<slug>`) name survives. Work there — don't edit the main
+  checkout unless the user explicitly says to. Read-only work (questions,
+  reviews, exploration) needs no worktree. Claude Code enters it via
+  `EnterWorktree` with `path: .claude/worktrees/feat-x`. After the PR is merged,
   remove the worktree, delete the branch, and refresh main with `git switch
   main && git pull` **in the main checkout** (merged branches auto-delete on
   GitHub). Each worktree needs its own `npm install`. Concurrent `npm test`
   across worktrees is safe (tests bind ephemeral ports), and so is concurrent
   `test:smoke` (PID-suffixed container name, ephemeral host port, mkdtemp work
   dir). **Never run `git clean -fdx`/`-fdX` from the repo root** — it deletes
-  `.worktrees/` including uncommitted work; clean inside subdirs (e.g. `dist/`)
-  instead.
+  the worktree dirs (`.claude/worktrees/`, `.worktrees/`) including uncommitted
+  work; clean inside subdirs (e.g. `dist/`) instead.
 - GitHub-side enforcement (require PR + green required checks, block
   force-push) is **live** via the public-repo ruleset (plans/DONE-13).
   Auto-merge is not enabled on the repo and admin-bypass is disallowed, so a
@@ -233,9 +248,10 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
 
 ## One worktree per task — never reuse a dirty one
 
-Every repo-modifying task runs in its **own** `.worktrees/<name>` worktree
-branched off `main` (`git worktree add -b feat/x .worktrees/feat-x main`) — the
-core rule is in "Git workflow & releases" above; read-only work needs no
+Every repo-modifying task runs in its **own** worktree in your default worktree
+dir (Claude Code `.claude/worktrees/<name>`, fallback `.worktrees/<name>`)
+branched off `main` (`git worktree add -b feat/x .claude/worktrees/feat-x main`)
+— the core rule is in "Git workflow & releases" above; read-only work needs no
 worktree.
 
 **The trap that keeps biting: being *launched inside* an existing worktree does
@@ -255,7 +271,7 @@ exact mess this rule prevents. So:
   the work already staged there.
 - **Already made edits in the wrong worktree?** Move only those files out
   cleanly: `git diff -- <files> > patch`, `git worktree add -b <branch>
-  .worktrees/<name> main`, `git -C <new worktree> apply patch`, then
+  .claude/worktrees/<name> main`, `git -C <new worktree> apply patch`, then
   `git checkout -- <files>` in the original to revert them there.
 
 ## The main checkout is guarded locally too (pre-commit hook)
@@ -263,8 +279,9 @@ exact mess this rule prevents. So:
 The GitHub ruleset blocks *pushes* to main, but nothing upstream stops a
 *local* commit made in the main checkout when the worktree rule gets skipped. A
 tracked `scripts/hooks/pre-commit` catches that: it aborts any commit **not**
-made from a linked `.worktrees/` worktree. It gates on the *working tree*, not
-the branch — a linked worktree's git-dir lives under `.git/worktrees/` (allowed)
+made from a linked worktree (in whichever worktree dir it lives). It gates on
+the *working tree*, not the branch — a linked worktree's git-dir lives under
+`.git/worktrees/` (allowed)
 while the main checkout's is plain `.git` (refused) — which subsumes the old "no
 commits on the `main` branch" rule, since `main` only ever lives in the main
 checkout. It's **self-installing** — the `prepare` npm script
@@ -282,8 +299,8 @@ There is never a legitimate local commit in the main checkout (the only local
 touch is `git switch main && git pull` after a merge); the emergency override is
 `ALLOW_MAIN_COMMIT=1 git commit …`. If a commit is refused with "Refusing to
 commit in the main working tree", you skipped the worktree step — start a
-`.worktrees/` worktree (`git worktree add -b <branch> .worktrees/<name> main`)
-and retry.
+worktree in your default worktree dir (`git worktree add -b <branch>
+.claude/worktrees/<name> main`) and retry.
 
 ## Sandboxed shells: git push / gh need escalation
 
@@ -607,11 +624,11 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    tag's `[x.y.z]` changelog section matches what's released. If those line up,
    surface the size/age of the pending `[Unreleased]` as an FYI and move on.
    **`npm publish` is the maintainer's step — agents never run it.**
-4. **Worktree & branch prune** — remove `.worktrees/*` whose branch is merged
-   or gone (`git worktree remove`), delete merged local + remote branches, and
-   clean stale `.git/config` `branch.<name>` sections left by sandboxed deletes
-   (see "Sandboxed shells" above). **Never `git clean -fdx` from the repo
-   root** — it nukes `.worktrees/`.
+4. **Worktree & branch prune** — remove worktrees (in `.claude/worktrees/` and
+   `.worktrees/`) whose branch is merged or gone (`git worktree remove`), delete
+   merged local + remote branches, and clean stale `.git/config` `branch.<name>`
+   sections left by sandboxed deletes (see "Sandboxed shells" above). **Never
+   `git clean -fdx` from the repo root** — it nukes both worktree dirs.
 5. **Dependency PR triage** — review open Dependabot PRs; merge the safe ones
    (green CI, minor/patch). For majors, record the decision in the backlog
    (e.g. TypeScript 7.x → `plans/BACKLOG.md`) rather than silently merging.

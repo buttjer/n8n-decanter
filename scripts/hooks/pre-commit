@@ -1,8 +1,9 @@
 #!/bin/sh
 # Refuse commits made in the MAIN working tree.
 #
-# Every repo-modifying task runs in its own linked worktree under .worktrees/
-# (docs and Markdown included — there is no fast path). The main checkout is
+# Every repo-modifying task runs in its own linked worktree — in the agent's
+# default worktree dir (Claude Code .claude/worktrees/, else .worktrees/), docs
+# and Markdown included; there is no fast path. The main checkout is
 # shared: a concurrent session or the IDE's git integration can flip its HEAD
 # and branch out from under you mid-edit, and committing there lands work on
 # whatever branch the main checkout happens to be on — including `main` itself.
