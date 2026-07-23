@@ -71,13 +71,16 @@ that sidesteps the `git <cmd> *` rules) gates the *whole* batch behind a prompt,
 and elaborate batches also bury their answer in noise. Write commands that clear
 on sight and read cleanly:
 
-- **Any global option *before* the subcommand breaks the match — `git -C`,
-  `git --no-pager`, `git -c <cfg>` all do it.** The matcher keys on the prefix,
-  so `git -C <dir> status`, `git --no-pager reflog`, and
-  `git -c core.hooksPath=/dev/null status` never hit the `Bash(git <cmd> *)`
-  rules. Pin the directory with a leading `cd <dir>` (allowlisted via
-  `Bash(cd:*)`) instead of `git -C`; drop `--no-pager`/`-c` unless you truly
-  need them. **`-c core.hooksPath=/dev/null` in particular is a no-op on
+- **Anything *before* the real command breaks the match — a git global option
+  (`git -C`, `git --no-pager`, `git -c <cfg>`) or an inline env-var assignment
+  (`STEP=… node …`).** The matcher keys on the prefix, so `git -C <dir> status`,
+  `git --no-pager reflog`, `git -c core.hooksPath=/dev/null status`, and
+  `STEP=x node test/e2e.mts` never hit their `Bash(…)` rules. Pin the directory
+  with a leading `cd <dir>` (allowlisted via `Bash(cd:*)`) instead of `git -C`;
+  drop `--no-pager`/`-c` unless you truly need them; pass config as a **flag, not
+  an env prefix**, when the tool allows it — the e2e/guardproxy runners take
+  `--step=` as well as `STEP=`, so `node test/e2e.mts --step=x` still matches
+  `Bash(node test/*)`. **`-c core.hooksPath=/dev/null` in particular is a no-op on
   `status`/`diff`/`add`/`checkout`** (git runs no hooks there) and on `commit`
   it defeats the main-checkout guard — never add it; the only sanctioned commit
   override is `ALLOW_MAIN_COMMIT=1`. (`gh`'s `-R` is the exception — it matches
