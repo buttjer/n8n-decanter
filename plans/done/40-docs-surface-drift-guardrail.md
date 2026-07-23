@@ -4,10 +4,9 @@
 now recurred across #107/#114/#115 — cleaned up by hand in [Plan 39](39-docs-drift-refresh.md)
 — and again in #118; a cheap mechanical gate is overdue). Mechanical, offline,
 no new deps.
-**Status:** Done — executed 2026-07-23 on branch
-`feat/plan-40-docs-surface-drift-guardrail` (`scripts/check-docs-surface.mts` +
-`npm run check:docs` CI step + `test/unit/check-docs-surface.test.mts` + AGENTS.md
-dev notes).
+**Status:** Done — executed in PR #135 (2026-07-23):
+`scripts/check-docs-surface.mts` + `npm run check:docs` CI step +
+`test/unit/check-docs-surface.test.mts` + AGENTS.md dev notes.
 **Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** A CI-run script that mechanically verifies the CLI's **command
 surface** is reflected across the three doc surfaces (README verb table, `docs/cli/*`,
