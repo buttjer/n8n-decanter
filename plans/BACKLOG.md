@@ -61,6 +61,14 @@ entries carry no priority field) — adjust freely.
       edits and `push`, git-commit churn, draft-vs-tip timing, and
       on-by-default vs. opt-in (like `browserReload`). Decide whether it's worth
       it or whether explicit `pull` stays the model. Severity: low/medium.
+      (graduated 2026-07-23 to
+      [Plan 41](OPEN-41-live-mirror-recovery-redeploy.md) Part A — resolved as an
+      **on-by-default live mirror**: the guard schedules a debounced, safety-
+      committed `pull` of the edited workflow after a forwarded `update_workflow`;
+      `liveMirror:false` disables it. The plan's Part B answers the paired
+      "deployable snapshot / second versioning layer" research question — a smoke
+      spike proved `create_workflow_from_code` lossy + create-only, so the
+      deployable path is a REST `recover` redeploy framed as disaster recovery.)
 - [x] **Modification-aware template refresh** — conffile-style: record
       copy-time hashes of template files in a manifest at init; on re-init
       update pristine files (after confirm), never touch user-modified ones,
@@ -333,6 +341,19 @@ entries carry no priority field) — adjust freely.
       retired in the skills-first wave (#107); a Code node is now born over
       MCP `addNode` through the guard and lands as an empty file whose first
       `push` seeds the source. The skill's story should teach that loop.)
+- [ ] **Git-native disaster recovery — redeploy a workflow from git**
+      (2026-07-23). The committed `workflow.json` + `code/` sources make git a
+      **second, recovery-grade versioning layer outside n8n** — one that
+      survives the instance dying (n8n's own draft/publish history does not). A
+      `recover` verb reassembles the full workflow JSON from git (jsCode
+      re-inlined from files) and `POST`s it to a fresh/rebuilt n8n, **node ids
+      preserved** — the only lossless redeploy path (a smoke spike proved MCP's
+      `create_workflow_from_code` lossy on ids/tags/settings + create-only, and
+      its faithful emitter is SUL-licensed ~124 MB). Framed as break-glass DR,
+      not structure sync — structure ownership stays n8n's. Differentiator:
+      neither n8n nor generic git-sync offers git-based DR for workflows.
+      (graduated 2026-07-23 to
+      [Plan 41](OPEN-41-live-mirror-recovery-redeploy.md) Part B.)
 
 ### Graduated (tracked by a numbered plan; not yet done)
 

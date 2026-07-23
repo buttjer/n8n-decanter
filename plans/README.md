@@ -292,6 +292,16 @@ items not yet claimed by one. Recommended order:
     copy-paste-broken bug Plan 39 keeps finding). Structural, not semantic; the
     ratchet that stops the drift Plan 39 cleaned up by hand from recurring. Lands
     green after Plan 39's grammar fixes. Proposed 2026-07-23.
+41. [Live snapshot mirror + REST recovery redeploy](OPEN-41-live-mirror-recovery-redeploy.md) —
+    two ways `workflow.json` earns its keep as a *live, redeployable* record.
+    **(A)** the guarded MCP gateway **auto-refreshes** the snapshot after an
+    agent restructures a workflow (on by default, debounced, safety-commit-first,
+    `liveMirror:false` to disable) — no manual `pull`. **(B)** a `recover` verb
+    **redeploys** that git snapshot to a fresh/rebuilt n8n via REST
+    `POST /workflows` (**node ids preserved** — the only lossless path; a smoke
+    spike proved MCP's `create_workflow_from_code` lossy + create-only, its
+    faithful emitter SUL-licensed ~124 MB), framed as **disaster recovery**.
+    Distinctive-features group (git-native DR). Proposed 2026-07-23.
 
 ## Conventions
 
