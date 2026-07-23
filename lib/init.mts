@@ -90,10 +90,30 @@ interface TemplateEntry {
 
 /**
  * Classify every template file against the target dir and the copy-time
- * baseline manifest. Pure scan — no files are written.
+ * baseline manifest. Pure scan — no files are written. `extraSources` folds in
+ * files authored *outside* `template/` that init still materializes into the
+ * sync dir (Plan 43: `n8n-globals.d.ts` is sourced from the single root file,
+ * not a byte-identical `template/*.example` duplicate) — they flow through the
+ * identical pristine/drift/manifest logic, keyed by their materialized rel path.
  */
-function scanTemplate(srcDir: string, destDir: string, manifest: Record<string, string>, protect: Set<string>): TemplateEntry[] {
+function scanTemplate(srcDir: string, destDir: string, manifest: Record<string, string>, protect: Set<string>, extraSources: Array<{ rel: string; srcPath: string }> = []): TemplateEntry[] {
   const entries: TemplateEntry[] = [];
+  const classify = (srcPath: string, materializedRel: string): void => {
+    const destPath = path.join(destDir, materializedRel);
+    if (protect.has(destPath)) return; // .env: written separately, never manifest-tracked
+    const templateHash = sha256(readFileSync(srcPath, "utf8"));
+    const exists = existsSync(destPath);
+    const targetHash = exists ? sha256(readFileSync(destPath, "utf8")) : undefined;
+    const manifestHash = manifest[materializedRel];
+    entries.push({
+      rel: materializedRel,
+      srcPath,
+      destPath,
+      templateHash,
+      targetHash,
+      outcome: classifyTemplateFile({ exists, targetHash, templateHash, manifestHash }),
+    });
+  };
   const walk = (src: string, rel: string): void => {
     for (const entry of readdirSync(src, { withFileTypes: true })) {
       const srcPath = path.join(src, entry.name);
@@ -104,24 +124,11 @@ function scanTemplate(srcDir: string, destDir: string, manifest: Record<string, 
       const name = entry.name.endsWith(".example") && entry.name !== ".example"
         ? entry.name.slice(0, -".example".length)
         : entry.name;
-      const materializedRel = path.join(rel, name);
-      const destPath = path.join(destDir, materializedRel);
-      if (protect.has(destPath)) continue; // .env: written separately, never manifest-tracked
-      const templateHash = sha256(readFileSync(srcPath, "utf8"));
-      const exists = existsSync(destPath);
-      const targetHash = exists ? sha256(readFileSync(destPath, "utf8")) : undefined;
-      const manifestHash = manifest[materializedRel];
-      entries.push({
-        rel: materializedRel,
-        srcPath,
-        destPath,
-        templateHash,
-        targetHash,
-        outcome: classifyTemplateFile({ exists, targetHash, templateHash, manifestHash }),
-      });
+      classify(srcPath, path.join(rel, name));
     }
   };
   walk(srcDir, "");
+  for (const s of extraSources) classify(s.srcPath, s.rel);
   return entries;
 }
 
@@ -137,10 +144,10 @@ function copyEntry(entry: TemplateEntry): void {
  * leaves locally-modified files alone while reporting the drift. `--force` is
  * the escape hatch: it overwrites every template file regardless.
  */
-async function refreshTemplate(srcDir: string, destDir: string, { force, protect, version }: { force: boolean; protect: Set<string>; version: string }, log: Log): Promise<void> {
+async function refreshTemplate(srcDir: string, destDir: string, { force, protect, version, extraSources }: { force: boolean; protect: Set<string>; version: string; extraSources?: Array<{ rel: string; srcPath: string }> }, log: Log): Promise<void> {
   const manifest = readManifest(destDir);
   const firstInit = !existsSync(path.join(destDir, MANIFEST_FILE));
-  const entries = scanTemplate(srcDir, destDir, manifest.files, protect);
+  const entries = scanTemplate(srcDir, destDir, manifest.files, protect, extraSources);
   const nextFiles: Record<string, string> = {};
 
   if (force) {
@@ -316,7 +323,11 @@ export async function init(targetDir: string | undefined, { force = false }: { f
   // is protected (just written with real credentials) and never tracked.
   // Files named `X.example` are inert in this repo (so agent tooling ignores
   // them while working on the CLI itself) and materialize as `X` in the target.
-  await refreshTemplate(TEMPLATE_DIR, dir, { force, protect: new Set([envFile]), version: cliVersion() }, log);
+  // `n8n-globals.d.ts` is the exception: it's sourced from the single root file
+  // (Plan 43 — no `template/*.example` duplicate to drift) but materialized and
+  // tracked exactly like a template file.
+  const extraSources = [{ rel: "n8n-globals.d.ts", srcPath: path.join(PACKAGE_ROOT, "n8n-globals.d.ts") }];
+  await refreshTemplate(TEMPLATE_DIR, dir, { force, protect: new Set([envFile]), version: cliVersion(), extraSources }, log);
 
   const configFile = path.join(dir, "decanter.config.json");
   if (!existsSync(configFile)) {

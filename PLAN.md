@@ -830,6 +830,36 @@ Unchanged by Plan 32 (the file layer is decanter's layer):
 - `npm run typecheck` = `tsc -p tsconfig.cli.json` (the CLI's own strict
   sources) + the wrapper script.
 
+### The emulated-globals surface (Plan 43)
+
+`n8n-globals.d.ts` is decanter's **own** hand-written, MIT-clean subset of n8n's
+Code-node globals (n8n's authoritative surface — `WorkflowDataProxy` +
+`getAdditionalKeys` — is Sustainable-Use-Licensed, so its text is never
+vendored). It is **single-sourced**: `init` copies the one root file into a sync
+dir (no `template/*.example` duplicate to drift).
+
+`node run` is the **offline approximation** rung of the verification ladder, not
+a faithful n8n context — `test` (real draft over MCP) is the fidelity backstop.
+Its `buildGlobals` ([lib/run.mts](lib/run.mts)) classifies each declared global as
+one of three, and a parity test keeps *declared* (the `.d.ts`) and *emulated*
+(`buildGlobals`) in lock-step — every global is exactly one of:
+
+- **Emulated** — pure/offline meaning: `$jmespath`/`$jmesPath` (n8n's pinned
+  `jmespath@0.16.0` `search(data, expr)`), `$items`/`$node` views over the
+  fixture, Luxon `DateTime`/`Duration`/`Interval`, `$nodeId`/`$nodeVersion` from
+  the node entry.
+- **Pinnable** from the fixture: `$input`/`$json`/`$env`/`$vars`/`$secrets`/
+  `$workflow`/`$execution`/`$getWorkflowStaticData`/…
+- **Signposted** — genuinely instance-scoped, so `run` refuses it with one
+  friendly *"not emulated in `run` — use `test`, or pin it in the fixture"*
+  message (never a bare `ReferenceError`): `$vars`/`$secrets` when unpinned,
+  `$evaluateExpression` (needs the expression engine).
+
+Expression-language extensions (`$if`/`$min`/`$max`/`$ifEmpty`) are deliberately
+**not** declared — they resolve inside `{{ }}` expressions, not the Code node's
+JS, so they throw in real n8n too. `scripts/globals-drift-audit.mts` reads n8n's
+proxy at a pinned tag to flag newly-added globals (names only, license-clean).
+
 ## Milestones
 
 1. ✅ Scaffold + pull, single workflow (API era — validated the data model).

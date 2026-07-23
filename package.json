@@ -30,6 +30,7 @@
   "files": [
     "dist/",
     "template/",
+    "n8n-globals.d.ts",
     "CHANGELOG.md"
   ],
   "scripts": {
@@ -42,17 +43,20 @@
     "check:docs": "node scripts/check-docs-surface.mts",
     "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/guardproxy.mts && node test/interactive.mts",
     "test:smoke": "node test/smoke-n8n.mts",
-    "test:sim": "node test/sim.mts"
+    "test:sim": "node test/sim.mts",
+    "audit:globals": "node scripts/globals-drift-audit.mts"
   },
   "engines": {
     "node": ">=22.18"
   },
   "dependencies": {
     "esbuild": "^0.28.1",
+    "jmespath": "0.16.0",
     "luxon": "^3.7.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
+    "@types/jmespath": "^0.15.2",
     "@types/luxon": "^3.7.2",
     "@types/node": "^26.1.1",
     "typescript": "^5.9.3"

@@ -20,6 +20,9 @@ interface Fixture {
   nodes?: Record<string, unknown[]>;
   params?: Record<string, unknown>;
   env?: Record<string, string | undefined>;
+  /** Pins the instance-scoped `$vars`/`$secrets` (otherwise they signpost `test`). */
+  vars?: Record<string, string>;
+  secrets?: Record<string, unknown>;
   workflow?: unknown;
   execution?: unknown;
   prevNode?: unknown;
@@ -99,6 +102,9 @@ function makeNodeRef(items: unknown[]) {
     all: () => list,
     first: () => list[0],
     last: () => list[list.length - 1],
+    // Approximation: offline `run` has no paired-item graph, so `.item` /
+    // `.itemMatching` read the fixture by position rather than resolving the
+    // true linked item. Documented as "partial" in docs/cli/node-run.md.
     item: list[0],
     itemMatching: (i: number) => list[i],
     params: {},
@@ -108,11 +114,48 @@ function makeNodeRef(items: unknown[]) {
 }
 
 /**
- * Build the globals an n8n Code node sees. `perItem` overrides the each-item
- * fields ($json, $binary, $itemIndex, $input.item) for "Run Once for Each Item".
+ * The friendly boundary (Plan 43). A global whose value is genuinely
+ * instance-scoped — n8n workflow variables, external secrets, the expression
+ * engine — has no honest offline meaning, so `run` refuses it with one
+ * consistent message that names the global and points at the escape hatches
+ * (`test` against the real instance, or pinning it in the fixture) instead of
+ * letting it surface as a bare `ReferenceError` at the call site.
  */
-async function buildGlobals(fixture: Fixture, context: { nodeName?: string; staticData?: unknown; allowEnv?: boolean } = {}) {
-  const staticData = staticDataSlices(context.staticData, context.nodeName, fixture);
+function signpost(name: string, why: string, fixtureField?: string): never {
+  const pin = fixtureField ? `, or pin \`${fixtureField}\` in the fixture` : "";
+  throw new Error(`${name} is not emulated in \`run\` — ${why}. Run against the real instance with \`n8n-decanter test\`${pin}.`);
+}
+
+/** A function-shaped signpost (e.g. `$evaluateExpression`). */
+const signpostFn = (name: string, why: string, fixtureField?: string) => (): never => signpost(name, why, fixtureField);
+
+/**
+ * Keys that serializers/inspectors probe (JSON.stringify's `toJSON`, thenable
+ * detection's `then`, and every well-known symbol like `Symbol.toStringTag`) —
+ * an emulated Proxy must return `undefined` for these rather than treat them as
+ * a real access, so `JSON.stringify`/`console.log` of the proxy don't throw.
+ */
+const isProbeKey = (prop: string | symbol): boolean => typeof prop !== "string" || prop === "toJSON" || prop === "then";
+
+/** A value-shaped signpost (e.g. `$vars`/`$secrets`): any real property read throws. */
+function signpostValue(name: string, why: string, fixtureField: string): Record<string, never> {
+  return new Proxy({} as Record<string, never>, {
+    get: (_t, prop) => (isProbeKey(prop) ? undefined : signpost(name, why, fixtureField)),
+  });
+}
+
+/**
+ * Build the globals an n8n Code node sees (Plan 43 — the emulated surface). Each
+ * global is one of: **emulated** (a pure/offline meaning — `$jmespath`, `$items`,
+ * `$node`, Luxon), **pinnable** from the fixture (`$input`/`$json`/`$env`/`$vars`/…),
+ * or a friendly **signpost** to `test` for genuinely instance-scoped values
+ * (`$vars`/`$secrets` unpinned, `$evaluateExpression`). The set of keys returned
+ * here is held in lock-step with `n8n-globals.d.ts` by the parity test. The
+ * each-item loop in `runNode` overrides `$json`/`$binary`/`$itemIndex`/`$input.item`.
+ */
+export async function buildGlobals(fixture: Fixture, context: { node?: WorkflowNode | null; staticData?: unknown; allowEnv?: boolean } = {}) {
+  const node = context.node ?? null;
+  const staticData = staticDataSlices(context.staticData, node?.name, fixture);
   const input = (fixture.input ?? [{ json: {} }]).map(asItem);
   const nodes: Record<string, ReturnType<typeof makeNodeRef>> = {};
   for (const [name, items] of Object.entries(fixture.nodes ?? {})) {
@@ -125,26 +168,51 @@ async function buildGlobals(fixture: Fixture, context: { nodeName?: string; stat
     item: input[0],
     params: fixture.params ?? {},
   };
-  const $ = (name: string) => {
+  const nodeRef = (name: string) => {
     if (!nodes[name]) {
       throw new Error(`node "${name}" has no fixture data — add it under "nodes" in the fixture JSON`);
     }
     return nodes[name];
   };
+  // Legacy views over the same fixture `nodes` map: `$node.Name` mirrors
+  // `$("Name")`; `$items("Name")` is that node's `.all()` items array (and,
+  // with no name, the current input — n8n's own default).
+  const $node = new Proxy({} as Record<string, ReturnType<typeof makeNodeRef>>, {
+    get: (_t, prop) => (isProbeKey(prop) ? undefined : nodeRef(prop as string)),
+  });
+  const $items = (name?: string, _outputIndex?: number, _runIndex?: number) => (name === undefined ? input : nodeRef(name).all());
 
-  // Luxon is what n8n exposes for DateTime/Duration/Interval. It's a hard
-  // dependency, so a normal install always has it — no optional fallback.
+  // Luxon backs DateTime/Duration/Interval; jmespath backs `$jmespath` (n8n
+  // pins 0.16.0, data-first `search(data, expr)`). Both are hard deps, so a
+  // normal install always has them — imported eagerly because a Code node calls
+  // them synchronously.
   const { DateTime, Duration, Interval } = await import("luxon");
+  const { search: jmespathSearch } = await import("jmespath");
+  const $jmespath = (data: unknown, expression: string) => {
+    // Mirror n8n's arg guard so bad-arg errors match (the security guard it also
+    // wraps `search` in is Plan 31's concern, not needed offline).
+    if (typeof data !== "object" || typeof expression !== "string") {
+      throw new Error("expected two arguments (Object, string) for this function");
+    }
+    return jmespathSearch(data, expression);
+  };
 
   return {
     $input,
-    $,
+    $: nodeRef,
     $json: input[0]?.json ?? {},
     $binary: input[0]?.binary ?? {},
+    $node,
+    $items,
     // n8n's $env is scoped, not the whole host environment. A fixture's env
     // always wins; otherwise $env is empty unless --allow-env opts into
     // inheriting process.env (which can carry N8N_API_KEY and other secrets).
     $env: fixture.env ?? (context.allowEnv ? { ...process.env } : {}),
+    // Instance-scoped: pinned from the fixture, else a friendly signpost to `test`.
+    $vars: fixture.vars ?? signpostValue("$vars", "n8n workflow variables live on the running instance", "vars"),
+    $secrets: fixture.secrets ?? signpostValue("$secrets", "external secrets live on the running instance", "secrets"),
+    // Single-item offline run: both pinned at 0 (the each-item loop advances
+    // $itemIndex). Stated as such in docs/cli/node-run.md.
     $itemIndex: 0,
     $runIndex: 0,
     $now: DateTime.now(),
@@ -161,9 +229,15 @@ async function buildGlobals(fixture: Fixture, context: { nodeName?: string; stat
     },
     $execution: fixture.execution ?? { id: "local", mode: "test" },
     $prevNode: fixture.prevNode ?? { name: "", outputIndex: 0, runIndex: 0 },
-    $jmespath: (_data: unknown, _expr: unknown) => {
-      throw new Error("$jmespath is not implemented in `run` — assert on the data directly");
-    },
+    // Node identity, read straight from workflow.json's node entry (cheap and
+    // honest); stubbed when no placeholder points at the file being run.
+    $nodeId: node?.id ?? "local",
+    $nodeVersion: (node?.typeVersion as number | undefined) ?? 1,
+    $webhookId: node?.webhookId as string | undefined,
+    $jmespath,
+    $jmesPath: $jmespath,
+    // Needs n8n's expression engine — no offline meaning, so it signposts.
+    $evaluateExpression: signpostFn("$evaluateExpression", "it needs n8n's expression engine"),
     console,
   };
 }
@@ -194,7 +268,7 @@ export async function runNode(file: string, fixturePath: string | undefined, log
     : splitMarker(readFileSync(resolved, "utf8")).body;
 
   const fixture = loadFixture(fixturePath);
-  const globals = await buildGlobals(fixture, { nodeName: node?.name, staticData, allowEnv: opts.allowEnv });
+  const globals = await buildGlobals(fixture, { node, staticData, allowEnv: opts.allowEnv });
 
   log.info(`running ${basename} (${mode})${fixturePath ? ` with fixture ${path.basename(fixturePath)}` : ""}`);
   log.info("─".repeat(48));
