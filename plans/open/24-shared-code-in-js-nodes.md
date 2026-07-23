@@ -3,6 +3,7 @@
 **Priority:** P2 (valuable; reuses Plan 14's machinery, but changes the `.js`
 sync contract — data-model + flow work, so a real design pass)
 **Status:** Not started
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Let a `.js` node `import` from `shared/` (and opted-in npm packages)
 the same way `.ts` nodes already can (Plan 14) — bundled into the pushed node
 at push time — so a plain-JS author can factor out shared helpers without

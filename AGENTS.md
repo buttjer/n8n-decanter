@@ -157,6 +157,16 @@ tool rather than mirroring n8n or plain workflow-syncing — mark its plan
 `**Class:** Distinctive feature`. This keeps the tool's differentiators visible
 and tracked as a distinct class.
 
+**Executing a plan checks for drift first.** Every plan header carries a
+`**Snapshot:**` timestamp + main commit hash (`plans/AGENTS.md` has the exact
+field format) recording when it was created or last reworked. Before starting
+work on any plan the user asks you to execute, diff `CHANGELOG.md`
+(`[Unreleased]` and, if released since, the relevant version sections) and
+skim `git log --oneline <snapshot-hash>..main` for changes the plan's tasks
+didn't anticipate — a data-model shift, a guard change, a verb/flag rename.
+Surface anything relevant before proceeding rather than executing a stale plan
+as if nothing changed; if nothing changed, proceed normally.
+
 ## Agent tooling
 
 When adding agentic/LLM-facing material for this repo (a skill, recipe,

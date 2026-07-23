@@ -7,6 +7,7 @@ committed artifact)
 **Source:** absorbs the retired `draft/42` "auto-refresh `workflow.json` after
 MCP structure edits" backlog item (2026-07-23; number 42 retired per
 never-reuse) + the paired 2026-07-23 deployable-snapshot research question.
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Make git more than a passive record of a workflow. **(A)** keep the
 read-only `workflow.json` review mirror **auto-fresh** after an agent
 restructures a workflow through decanter's guarded MCP gateway — no manual

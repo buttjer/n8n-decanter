@@ -3,6 +3,7 @@
 **Status:** Draft
 **Priority:** P2
 **Source:** deferred 2026-07-22 from [Plan 37](../done/37-scenario-pin-sets.md) Decision 2
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 
 An optional hybrid source: `simulate`/`test` `--scenario <slug> --execution <id>`
 overlays a scenario's per-node pins on a fresh capture — the capability the

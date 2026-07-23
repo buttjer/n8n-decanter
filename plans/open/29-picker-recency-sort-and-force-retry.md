@@ -4,6 +4,7 @@
 `state.mts`, `style.mts`/`init.mts`, one typed error, tests, docs — no
 data-model change)
 **Status:** Not started
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Three CLI improvements: (1) the interactive picker lists pulled
 workflows **newest-synced first**; (2) a picker-run verb that fails on a
 **forceable** (drift) error offers a special **retry-with-`--force`** confirm

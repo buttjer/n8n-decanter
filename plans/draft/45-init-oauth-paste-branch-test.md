@@ -3,6 +3,7 @@
 **Status:** Draft
 **Priority:** P3
 **Source:** named debt out of [Plan 33](../done/33-post-mcp-pivot-wave.md) Task 3.1
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 
 `runOAuthConsent` now has full unit coverage (`test/unit/mcp.test.mts`), but the
 branch in `lib/init.mts` that catches a failed consent and prompts for a pasted
