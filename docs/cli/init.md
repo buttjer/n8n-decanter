@@ -10,7 +10,10 @@ n8n-decanter init [dir] [--force]
 
 Interactive setup for a new (or existing) sync dir:
 
-- Prompts for the n8n host, then connects via **OAuth**: your browser opens
+- Prompts for the n8n host. If you leave off the scheme, local addresses
+  (`localhost`, loopback, private LAN ranges, `*.local`) default to `http://`
+  and everything else to `https://` — type the scheme yourself to override.
+  Then connects via **OAuth**: your browser opens
   n8n's consent page, and the resulting refresh token lands in a gitignored
   `.decanter-auth.json` (rotated automatically on every refresh). No browser
   or piped run? Paste an **MCP token** instead (minted in n8n → Settings →

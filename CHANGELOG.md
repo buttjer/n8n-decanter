@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`init` no longer breaks local `http` instances.** A scheme-less host typed
+  at the `n8n host:` prompt now defaults to `http://` for local addresses
+  (`localhost`, loopback, private LAN ranges, `*.local`) and `https://`
+  otherwise. Previously every scheme-less host got `https://`, so a local n8n
+  (plain http) was written to `.env` as a TLS URL and every sync/guard call
+  failed with `fetch failed`. A scheme you type is still kept as-is.
 - **`n8n-globals.d.ts` no longer over-declares `$if`/`$min`/`$max`.** Those are
   n8n *expression-language* helpers (`{{ }}` only), not Code-node globals — they
   throw in a real Code node too — so declaring them wrongly type-checked broken
