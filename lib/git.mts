@@ -4,6 +4,16 @@ import type { Log } from "./types.mts";
 
 const execFile = promisify(execFileCb);
 
+/** True when `dir` sits inside a git work tree (the live-mirror safety-net gate). */
+export async function isGitRepo(dir: string): Promise<boolean> {
+  try {
+    await execFile("git", ["-C", dir, "rev-parse", "--is-inside-work-tree"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Outcome of a commit attempt; "failed" covers no-git and not-a-repo too. */
 export type CommitResult = "committed" | "clean" | "failed";
 

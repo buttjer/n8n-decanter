@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import path from "node:path";
 import { N8nApi } from "./lib/api.mts";
+import { backupCreate, backupList, backupRestore } from "./lib/backup.mts";
 import { loadConfig, requireApiKey } from "./lib/config.mts";
 import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
@@ -11,6 +12,7 @@ import { publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, prepareTestPinData, searchWorkflows } from "./lib/mcp.mts";
 import { runStdioGuard } from "./lib/mcpconnect.mts";
 import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
+import { createMirror } from "./lib/mirror.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
 import { ALL_CHECK_IDS, type CheckId, exitCodeOf, formatCheckLine, type Palette, type Profile, renderPreflightSummary, runPreflight } from "./lib/preflight.mts";
 import { pullWorkflow } from "./lib/pull.mts";
@@ -81,6 +83,11 @@ ${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-sca
   ${b("scenario create")} <workflow> ["<slug>"] [--execution <id>] [--scaffold]   ${d("write a committed scenario from a capture and/or the workflow's schemas")}
   ${b("scenario check")} <workflow> ["<slug>"]                     ${d("structurally validate a scenario (or all); exits 1 on invalid")}
 
+${b("Backup")} ${d("(git-native, redeployable disaster-recovery store — REST, needs N8N_API_KEY)")}
+  ${b("backup create")} <workflow>                  ${d("capture the workflow's full REST export into backups/ (not auto-committed)")}
+  ${b("backup restore")} <workflow> [--version <id> | --at <ts>]   ${d("redeploy a backup as a NEW, unpublished workflow (node ids preserved)")}
+  ${b("backup list")} <workflow>                    ${d("list retained backups: timestamp · versionId · node count")}
+
 ${b("Node")}
   ${b("node run")} <node-file> [fixture.json] [--allow-env]  ${d("run a node locally (offline)")}
 
@@ -94,18 +101,20 @@ An ${b("<execution-id>")} is an n8n execution id (numeric).
 
 Config: decanter.config.json (searched upward from cwd). Credentials: N8N_HOST +
 MCP (OAuth via ${b("init")}, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional)
-powers executions and data-tables.`;
+powers executions, data-tables, and backup.`;
 };
 
 // Verb-first grammar (Plan 27): the command is positional[0]. The structure/
 // lifecycle verbs (rename, create, archive, node create, node rename) are
 // retired — those acts go through n8n's MCP (guarded via `mcp connect`/
 // `mcp serve`) and `pull` reconciles the local mirror.
-const VERBS = new Set(["init", "pull", "push", "status", "check", "watch", "list", "executions", "data-tables", "simulate", "test", "preflight", "scenario", "mcp", "publish", "unpublish", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "status", "check", "watch", "list", "executions", "data-tables", "simulate", "test", "preflight", "scenario", "backup", "mcp", "publish", "unpublish", "completion", "node", "__complete", "help"]);
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["run"]);
 /** Sub-verbs of the `scenario` namespace; dispatched as internal `scenario:<sub>` commands. */
 const SCENARIO_VERBS = new Set(["create", "check"]);
+/** Sub-verbs of the `backup` namespace; dispatched as internal `backup:<sub>` commands. */
+const BACKUP_VERBS = new Set(["create", "restore", "list"]);
 /** Sub-verbs of the `mcp` namespace; dispatched as internal `mcp:<sub>` commands. */
 const MCP_VERBS = new Set(["serve", "connect"]);
 /** Verbs whose workflow arguments go through name resolution. */
@@ -146,7 +155,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|version|at)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -211,6 +220,14 @@ async function main() {
     }
     command = `scenario:${sub}`;
     rest = positional.slice(2);
+  } else if (command === "backup") {
+    const sub = positional[1];
+    if (sub === undefined || !BACKUP_VERBS.has(sub)) {
+      console.log(usage());
+      throw new Error(`unknown backup command: ${sub ?? "(none)"} — try: n8n-decanter backup create|restore|list`);
+    }
+    command = `backup:${sub}`;
+    rest = positional.slice(2);
   } else if (command === "mcp") {
     const sub = positional[1];
     if (sub === undefined || !MCP_VERBS.has(sub)) {
@@ -245,7 +262,7 @@ async function main() {
   // Verb-first: slot 0 must be a known verb (a workflow named like a verb is now
   // just an argument, so the old "address it by id" caveat is gone). `node:<sub>`
   // is internal and already validated above.
-  if (!command.startsWith("node:") && !command.startsWith("scenario:") && !command.startsWith("mcp:") && !VERBS.has(command)) {
+  if (!command.startsWith("node:") && !command.startsWith("scenario:") && !command.startsWith("backup:") && !command.startsWith("mcp:") && !VERBS.has(command)) {
     console.log(usage());
     throw new Error(`unknown verb: ${command}`);
   }
@@ -275,8 +292,8 @@ async function main() {
     // hidden helper backing the completion scripts: verbs, flags, and local
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
-    words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--help");
+    words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--version=", "--at=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -449,6 +466,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   // (requireApiKey at the verb).
   const offline = command === "check" || command === "simulate"
     || command === "scenario:check" || (command === "scenario:create" && !scaffoldFlag)
+    || command === "backup:list"
     || (command === "preflight" && offlineFlag)
     || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"))
@@ -508,14 +526,15 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   if (REF_VERBS.has(command)) {
     refs = [];
     for (const r of rest) refs.push(await resolveRef(r));
-  } else if ((command === "scenario:create" || command === "scenario:check") && rest.length > 0) {
+  } else if (((command === "scenario:create" || command === "scenario:check") || command.startsWith("backup:")) && rest.length > 0) {
     // ref-plus-literals verbs: only the first argument is a workflow ref;
     // the rest are literals (a scenario slug) — not resolved.
     refs = [await resolveRef(rest[0]), ...rest.slice(1)];
   }
-  // No-ref → picker (Plan 27): a pure ref verb with no workflow, on a terminal,
-  // picks one; piped/non-TTY falls through to the config default / error below.
-  if (refs.length === 0 && REF_VERBS.has(command) && interactive()) {
+  // No-ref → picker (Plan 27): a pure ref verb (or a backup sub-verb) with no
+  // workflow, on a terminal, picks one; piped/non-TTY falls through to the
+  // config default / error below.
+  if (refs.length === 0 && (REF_VERBS.has(command) || command.startsWith("backup:")) && interactive()) {
     const picked = await pickOneWorkflow(config, command, log);
     if (picked !== undefined) refs = [picked];
   }
@@ -890,6 +909,24 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (invalid > 0) process.exitCode = 1;
       break;
     }
+    case "backup:create":
+    case "backup:restore":
+    case "backup:list": {
+      if (refs.length < 1) throw new Error(`backup ${command.slice("backup:".length)} needs a workflow ref: n8n-decanter ${command.replace(":", " ")} <workflow>`);
+      const dir = findWorkflowDir(config.root, refs[0], log);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      if (command === "backup:list") {
+        backupList(dir, log, { json: jsonFlag });
+        break;
+      }
+      const backupApi = api("backup");
+      if (command === "backup:create") {
+        await backupCreate(backupApi, dir, { limit: config.backupLimit }, log);
+      } else {
+        await backupRestore(backupApi, dir, { host: config.host, version: valueFlags.get("version"), at: valueFlags.get("at"), interactive: interactive() }, log);
+      }
+      break;
+    }
     case "publish":
     case "unpublish": {
       if (ids.length === 0) {
@@ -919,10 +956,15 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       const portRaw = valueFlags.get("port");
       const port = portRaw !== undefined ? Number(portRaw) : DEFAULT_GUARD_PORT;
       if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("--port must be a port number (0 for ephemeral)");
-      const handle = await startGuardProxy({ mcp: mcp(), host: config.host, configDir: config.configDir, port, log });
+      const serveMcp = mcp();
+      // Live snapshot mirror (Plan 51 Part A): refresh workflow.json after a
+      // forwarded structure edit, reusing the guard's own credentialed client.
+      const serveMirror = createMirror({ mcp: serveMcp, root: config.root, workflows: config.workflows, commitOnPull: config.commitOnPull, liveMirror: config.liveMirror, log });
+      const handle = await startGuardProxy({ mcp: serveMcp, host: config.host, configDir: config.configDir, port, mirror: serveMirror, log });
       log.ok(`MCP guard-proxy listening on ${handle.url}`);
       log.info(`  forwards to ${config.host} with decanter's credentials — the agent never sees them`);
       log.info(`  blocks: update_workflow calls carrying jsCode (Code-node source is files + \`n8n-decanter push\`)`);
+      if (config.liveMirror) log.info(`  live mirror: refreshes workflow.json after a forwarded structure edit (liveMirror: false to disable)`);
       log.info("");
       log.info("point your agent's MCP config at it (session secret rotates per run):");
       log.info(style.dim(JSON.stringify({ mcpServers: { "n8n-instance": { type: "http", url: handle.url, headers: { Authorization: `Bearer ${handle.secret}` } } } }, null, 2)));
@@ -941,7 +983,10 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         warn: (m) => console.error(styleErr.yellow(`! ${m}`)),
         error: (m) => console.error(styleErr.red(`✗ ${m}`)),
       };
-      await runStdioGuard({ mcp: createMcpClient(config, elog), host: config.host, timeoutMs: config.requestTimeoutMs, log: elog });
+      const connectMcp = createMcpClient(config, elog);
+      // Live snapshot mirror (Plan 51 Part A) — same client the guard forwards with.
+      const connectMirror = createMirror({ mcp: connectMcp, root: config.root, workflows: config.workflows, commitOnPull: config.commitOnPull, liveMirror: config.liveMirror, log: elog });
+      await runStdioGuard({ mcp: connectMcp, host: config.host, timeoutMs: config.requestTimeoutMs, mirror: connectMirror, log: elog });
       break;
     }
     default:

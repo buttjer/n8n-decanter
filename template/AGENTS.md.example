@@ -542,10 +542,19 @@ Rules:
   same rule applies: only when the user asks. **Archiving is outward-facing**
   (the workflow leaves the active list; a published one goes offline;
   reversible only in the n8n UI) — never without an explicit instruction
-  naming that workflow. After any structure act, `pull` to reconcile.
+  naming that workflow. After any structure act the **live mirror** refreshes
+  the local `workflow.json` snapshot for you in the background (no manual
+  `pull` needed); run `pull` yourself only if you want it immediately or the
+  mirror is disabled (`"liveMirror": false`).
+- **Backups** — `n8n-decanter backup create <workflow>` captures a versioned,
+  redeployable full export into a committed `backups/` folder (needs
+  `N8N_API_KEY`); the file carries credential refs + any embedded secrets, so
+  it is **not** auto-committed — review before `git add`. `backup restore` is
+  **outward-facing** (it deploys a *new* workflow onto the instance) — only on
+  an explicit instruction. `backup list` is offline.
 - Never use `--force` on push without the user's explicit instruction — it
   overrides the per-node drift guard that protects code edits made on the
   instance.
 - **Credentials:** MCP (OAuth via `init`, or `N8N_MCP_TOKEN`) powers the sync,
   structure, and lifecycle verbs; the optional public API key (`N8N_API_KEY`)
-  powers `executions` and `data-tables`.
+  powers `executions`, `data-tables`, and `backup`.

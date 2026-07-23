@@ -16,12 +16,13 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { unlinkSync, writeFileSync } from "node:fs";
 import { MCP_PATH, type McpClient } from "./mcp.mts";
+import type { Mirror } from "./mirror.mts";
 import type { Log } from "./types.mts";
 
 /** Gitignored discovery file (sync-dir root): the running proxy's endpoint + secret. */
 export const PROXY_STATE_FILE = ".decanter-proxy.json";
 
-/** Default listen port — one above the browser-reload proxy's 5679. */
+/** Default listen port for the guard-proxy (localhost only; --port overrides). */
 export const DEFAULT_GUARD_PORT = 5680;
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024;
@@ -90,13 +91,30 @@ export function guardMessage(msg: Record<string, unknown>): Record<string, unkno
 }
 
 /**
+ * The live-mirror hook (Plan 51 Part A): the workflow id a message targets when
+ * it is a **forwardable, non-blocked** `update_workflow` — i.e. a structure edit
+ * the guard lets through. `null` for anything else (blocked jsCode writes, other
+ * tools, handshakes, or a missing/blank `workflowId`). The guard calls
+ * `mirror.schedule(id)` with this after forwarding, so the snapshot refreshes
+ * without a manual `pull`.
+ */
+export function mirrorTargetId(msg: Record<string, unknown>): string | null {
+  if (msg.method !== "tools/call") return null;
+  const params = msg.params as { name?: unknown; arguments?: unknown } | undefined;
+  if (params?.name !== "update_workflow") return null;
+  if (writesJsCode(params.arguments)) return null; // blocked writes never forward
+  const id = (params.arguments as { workflowId?: unknown } | undefined)?.workflowId;
+  return typeof id === "string" && id !== "" ? id : null;
+}
+
+/**
  * Start the guard proxy on 127.0.0.1. Auth is a per-session random secret
  * (the agent's MCP config carries it; the n8n credential never leaves this
  * process). The current endpoint + secret land in a gitignored
  * `.decanter-proxy.json` for tooling (the config-drift hook) to discover.
  */
 export async function startGuardProxy(
-  { mcp, host, configDir, port = DEFAULT_GUARD_PORT, log }: { mcp: McpClient; host: string; configDir: string; port?: number; log: Log },
+  { mcp, host, configDir, port = DEFAULT_GUARD_PORT, mirror, log }: { mcp: McpClient; host: string; configDir: string; port?: number; mirror?: Mirror; log: Log },
 ): Promise<GuardProxyHandle> {
   const secret = randomBytes(24).toString("base64url");
   const upstream = host + MCP_PATH;
@@ -111,6 +129,7 @@ export async function startGuardProxy(
       }
 
       let body: Buffer | undefined;
+      const mirrorIds: string[] = []; // forwardable update_workflow targets to refresh
       if (req.method === "POST") {
         // Classic event reading, not for-await: on an oversized body we answer
         // 413 while DRAINING the rest — destroying the socket mid-upload would
@@ -152,13 +171,19 @@ export async function startGuardProxy(
           if (msg === null || typeof msg !== "object") {
             return void res.writeHead(403, { "content-type": "text/plain" }).end("guard-proxy: malformed JSON-RPC message — refusing to forward (fail closed)");
           }
-          const blocked = guardMessage(msg as Record<string, unknown>);
+          const record = msg as Record<string, unknown>;
+          const blocked = guardMessage(record);
           if (blocked !== null) {
             log.warn(`blocked a jsCode write (update_workflow) — pointed the agent at the file + push flow`);
             return void res
               .writeHead(200, { "content-type": "application/json" })
               .end(JSON.stringify(Array.isArray(parsed) ? [blocked] : blocked));
           }
+          // Live mirror (Plan 51 Part A): a forwardable structure edit — refresh
+          // the local snapshot after it lands. None here are blocked (a block
+          // short-circuits above), so collect and schedule post-forward.
+          const target = mirror ? mirrorTargetId(record) : null;
+          if (target !== null) mirrorIds.push(target);
         }
       }
 
@@ -192,6 +217,10 @@ export async function startGuardProxy(
         if (value !== null) headers[name] = value;
       }
       res.writeHead(upstreamRes.status, headers);
+      // Optimistic on forward (Plan 51 Part A): schedule the snapshot refresh
+      // once the op has been forwarded — non-blocking, debounced; a failed op
+      // just yields a redundant no-op pull.
+      for (const id of mirrorIds) mirror?.schedule(id);
       if (upstreamRes.body === null) return void res.end();
       // responses (incl. SSE) pipe through untouched
       Readable.fromWeb(upstreamRes.body as import("node:stream/web").ReadableStream).pipe(res);
@@ -227,6 +256,7 @@ export async function startGuardProxy(
       } catch {
         // best-effort cleanup
       }
+      await mirror?.drain(); // let a pending snapshot refresh finish
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };

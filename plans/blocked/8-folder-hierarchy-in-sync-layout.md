@@ -4,6 +4,7 @@
 |---|---|
 | **Priority** | P2 |
 | **Status** | **Blocked** — solely on one upstream fix: `get_workflow_details`' `parentFolderId` is advertised but never loaded (always `null` — see MCP re-check). **Rescoped 2026-07-22 to read-only "Local Overview"**: placement flows n8n → local only; decanter never writes folders or placement to n8n. The earlier push-first design (and its licensing/probe machinery) is retired — kept below as research record. Live verification still needs a licensed instance, but only *after* upstream ships the read fix. Code not started. |
+| **Snapshot** | 2026-07-23T06:57Z @ 710d3f1 |
 | **Theme** | **Local Overview** — on pull, mirror each workflow's n8n folder placement as directory nesting between `root` and the workflow dir, so the sync dir reflects the n8n UI's organization. Read-only by design: folder placement is workflow *structure*, and since Plan 32 structure is n8n's job, mirrored locally — placement joins that same principle. |
 | **Model** | **Sonnet** — after the rescope this is a small, well-specified pull-side feature (resolve an id chain, hand `ensureWorkflowDir` a parent path). The only judgment-heavy part is the null-safety semantics (task 3); the design below pins them. |
 

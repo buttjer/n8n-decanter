@@ -157,6 +157,16 @@ tool rather than mirroring n8n or plain workflow-syncing — mark its plan
 `**Class:** Distinctive feature`. This keeps the tool's differentiators visible
 and tracked as a distinct class.
 
+**Executing a plan checks for drift first.** Every plan header carries a
+`**Snapshot:**` timestamp + main commit hash (`plans/AGENTS.md` has the exact
+field format) recording when it was created or last reworked. Before starting
+work on any plan the user asks you to execute, diff `CHANGELOG.md`
+(`[Unreleased]` and, if released since, the relevant version sections) and
+skim `git log --oneline <snapshot-hash>..main` for changes the plan's tasks
+didn't anticipate — a data-model shift, a guard change, a verb/flag rename.
+Surface anything relevant before proceeding rather than executing a stale plan
+as if nothing changed; if nothing changed, proceed normally.
+
 ## Agent tooling
 
 When adding agentic/LLM-facing material for this repo (a skill, recipe,
@@ -339,15 +349,15 @@ works fine:
 
 ```sh
 npm test              # unit tests (node:test, test/unit/) + e2e suite
-                      #   (test/e2e.mts) + proxy suite (test/proxy.mts) +
+                      #   (test/e2e.mts) + guard-proxy suite (test/guardproxy.mts) +
                       #   interactive picker suite (test/interactive.mts,
-                      #   PassThrough streams — no pty); e2e and proxy bind
+                      #   PassThrough streams — no pty); e2e and guard-proxy bind
                       #   localhost ports, and one e2e step uses fs.watch
                       #   (macOS FSEvents) — sandboxes that block port binding
                       #   or FSEvents break them (unit tests and the
                       #   interactive suite run fine sandboxed).
                       #   STEP=<substring> (env or --step=) runs a single
-                      #   step/scenario of e2e/proxy/smoke in isolation
+                      #   step/scenario of e2e/guardproxy/smoke in isolation
 npm run lint          # Biome linter (biome.json); CI gates on it. Config
                       #   keeps the correctness/suspicious rules but turns off
                       #   the deliberate-style rules this repo intentionally
@@ -474,7 +484,7 @@ functions; the CLI process is the surface users touch.
   names or the compliance guard blocks pushes.
 - **Sync dir**: temp dir with `.env` (`N8N_HOST=http://127.0.0.1:<port>`,
   `N8N_MCP_TOKEN=test-mcp-token`, `N8N_API_KEY=test`) + `decanter.config.json`
-  (`{"root":"./workflows","workflows":["wf1"],"browserReload":"off"}`), then
+  (`{"root":"./workflows","workflows":["wf1"]}`), then
   `git init` + local `user.name`/`user.email` — pull/push/watch auto-commit,
   and watch refuses its startup pull without git.
 - **Bootstrap**: run `node n8n-decanter.mts pull` (cwd = sync dir) to create

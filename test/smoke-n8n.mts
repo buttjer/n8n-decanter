@@ -513,7 +513,7 @@ try {
     const mcpClient = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
     const config = {
       configDir: TMP, root: ROOT, workflows: [wfId], commitOnPush: false, commitOnPull: false,
-      browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: HOST, apiKey: KEY,
+      requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: HOST, apiKey: KEY,
     };
     const logs: string[] = [];
     const capture = (m: string) => logs.push(m);
@@ -575,7 +575,13 @@ try {
     assert.match(r.out, /not found|permission/i, r.out);
   });
 
-  await step("mcp serve: guard-proxy against the REAL instance — reads pass, a jsCode write is blocked (Plan 33)", async () => {
+  await step("mcp serve: guard-proxy against the REAL instance — reads pass, a jsCode write is blocked (Plan 33); live mirror auto-refreshes the snapshot (Plan 51 Part A)", async () => {
+    // the live mirror needs git as its safety net (commit-before-pull); the
+    // shared smoke dir isn't a repo, so make it one before the guard boots
+    await execFile("git", ["init"], { cwd: TMP });
+    await execFile("git", ["-C", TMP, "config", "user.email", "smoke@test"]);
+    await execFile("git", ["-C", TMP, "config", "user.name", "smoke"]);
+    await execFile("git", ["-C", TMP, "config", "commit.gpgsign", "false"]);
     const { spawn } = await import("node:child_process");
     const proc = spawn(process.execPath, [CLI, "mcp", "serve", "--port", "0"], { cwd: TMP, env });
     let out = "";
@@ -638,6 +644,20 @@ try {
       const rename = await rpc({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: wfId, operations: [{ type: "renameNode", oldName: "Ümläut Nödé", newName: "Proxy Renamed" }] } } }, session);
       assert.equal(parseResult(rename.text).result?.isError ?? false, false, "structure op passed: " + rename.text);
       assert.ok((await api("GET", `/api/v1/workflows/${wfId}`)).nodes.some((n: any) => n.name === "Proxy Renamed"), "rename landed via the proxy");
+
+      // live mirror (Plan 51 Part A): the guard schedules a debounced background
+      // pull after forwarding the rename — the local snapshot must refresh to
+      // "Proxy Renamed" with NO manual pull. Poll (debounce + pull are async).
+      let mirrored = false;
+      for (let i = 0; i < 40 && !mirrored; i++) {
+        await sleep(250);
+        try {
+          mirrored = JSON.parse(read(wfDir, "workflow.json")).nodes.some((n: any) => n.name === "Proxy Renamed");
+        } catch {
+          // a mid-write snapshot — retry
+        }
+      }
+      assert.ok(mirrored, "live mirror auto-refreshed workflow.json to the forwarded rename (no manual pull)");
       await rpc({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: wfId, operations: [{ type: "renameNode", oldName: "Proxy Renamed", newName: "Ümläut Nödé" }] } } }, session);
       assert.ok((await api("GET", `/api/v1/workflows/${wfId}`)).nodes.some((n: any) => n.name === "Ümläut Nödé"), "rename reverted");
       // the local .ts source references the old name — refresh the snapshot/state
@@ -811,6 +831,54 @@ try {
 
     // tidy up the authoring workflow (the container is ephemeral, but keep it clean)
     await api("DELETE", `/api/v1/workflows/${authId}`);
+  });
+
+  await step("backup: create captures a redeployable export; restore preserves node ids and executes after publish (Plan 51 Part B)", async () => {
+    // a self-contained Webhook -> Code -> Respond flow with a unique path
+    const created = await api("POST", "/api/v1/workflows", {
+      name: "Smoke Backup",
+      nodes: [
+        { id: "bw1", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { httpMethod: "POST", path: "smoke-backup-hook", responseMode: "responseNode" } },
+        { id: "bc1", name: "Stamp", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { mode: "runOnceForAllItems", jsCode: "for (const i of $input.all()) i.json.stamped = 99;\nreturn $input.all();\n" } },
+        { id: "br1", name: "Respond", type: "n8n-nodes-base.respondToWebhook", typeVersion: 1.1, position: [440, 0], parameters: { respondWith: "allIncomingItems" } },
+      ],
+      connections: { Webhook: { main: [[{ node: "Stamp", type: "main", index: 0 }]] }, Stamp: { main: [[{ node: "Respond", type: "main", index: 0 }]] } },
+      settings: { executionOrder: "v1" },
+    });
+    const srcId = created.id;
+    const srcCodeIds = created.nodes.filter((n: any) => n.type === "n8n-nodes-base.code").map((n: any) => n.id);
+    await enableMcpAccess(srcId);
+    let r = await cli("pull", srcId);
+    assert.equal(r.code, 0, r.out);
+    const backupDir = path.join(ROOT, "smoke-backup");
+
+    // create → one file in backups/ (REST-sourced, jsCode placeholdered)
+    r = await cli("backup", "create", srcId);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /backed up "Smoke Backup"/);
+    const files = readdirSync(path.join(backupDir, "backups")).filter((f) => f.endsWith(".json"));
+    assert.equal(files.length, 1, "one backup file written: " + r.out);
+    assert.match(JSON.parse(read(backupDir, "backups", files[0])).nodes.find((n: any) => n.type === "n8n-nodes-base.code").parameters.jsCode, /^\/\/@file:code\//, "jsCode kept as a placeholder");
+
+    // restore → a NEW, unpublished workflow with node ids preserved
+    r = await cli("backup", "restore", srcId);
+    assert.equal(r.code, 0, r.out);
+    const newId = r.out.match(/new workflow (\S+) \(unpublished\)/)?.[1];
+    assert.ok(newId, "restore printed the new workflow id: " + r.out);
+    const restored = await api("GET", `/api/v1/workflows/${newId}`);
+    assert.equal(restored.active, false, "restore lands unpublished");
+    assert.deepEqual(restored.nodes.filter((n: any) => n.type === "n8n-nodes-base.code").map((n: any) => n.id), srcCodeIds, "node ids preserved through the REST GET→POST round-trip");
+    assert.ok(!restored.nodes.find((n: any) => n.type === "n8n-nodes-base.code").parameters.jsCode.startsWith("//@file:"), "jsCode re-inlined on restore");
+
+    // executes after publish: retire the source (frees the webhook path), publish + trigger the restored copy
+    await api("DELETE", `/api/v1/workflows/${srcId}`);
+    await enableMcpAccess(newId);
+    r = await cli("publish", newId);
+    assert.equal(r.code, 0, r.out);
+    const out = await webhook({ n: 5 }, "smoke-backup-hook");
+    assert.equal(out[0]?.stamped, 99, "restored Code node executed after publish: " + JSON.stringify(out).slice(0, 300));
+
+    await api("DELETE", `/api/v1/workflows/${newId}`);
   });
 
   await step("executions stale-fixture warning: fires on a version mismatch, silent on a match", async () => {

@@ -1,16 +1,18 @@
 # Plan 52 — Remove the `watch` browser-reload proxy (rely on n8n-native live reflect)
 
-**Status:** Not started
+**Status:** Done (2026-07-23) — proxy + tests + config keys removed, docs/PLAN.md
+synced, `npm test`/`lint`/`typecheck` green
 **Priority:** P2 (deletes a real data-loss risk + ~440 LOC + a concept doc, and
 retires two backlog drafts — a net simplification, not a feature)
 **Source:** reframes the merged `draft/52` proxy-**hardening** note (#124) into a
 **removal** — the research below made hardening moot. Supersedes
-[`draft/48`](../draft/48-watch-proxy-trust-model-docs.md) (proxy trust-model docs
+[`48`](48-watch-proxy-trust-model-docs.md) (proxy trust-model docs
 — nothing to document once it's gone). Grounded in the source-verified
 `n8n-editor-live-reflects-mcp-edits` memory.
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** n8n 2.x **natively** reflects an MCP `update_workflow` draft edit in
 the open editor (soft canvas re-render, dirty-safe) — so decanter's injected
-live-reload proxy ([Plan 5](../done/5-browser-refresh-after-push.md),
+live-reload proxy ([Plan 5](5-browser-refresh-after-push.md),
 [`lib/proxy.mts`](../../lib/proxy.mts)) is redundant *and inferior*. Delete it;
 `watch` becomes: push code to the draft (MCP) + print the editor deep-link.
 **Model:** Sonnet (mechanical deletion + docs sweep; the one care point is
@@ -32,7 +34,7 @@ nothing. Removing it:
 - deletes **~440 LOC** ([`lib/proxy.mts`](../../lib/proxy.mts) 226 +
   [`test/proxy.mts`](../../test/proxy.mts) 214) and a whole concept doc;
 - **retires two drafts** — this plan's former hardening self **and**
-  [`draft/48`](../draft/48-watch-proxy-trust-model-docs.md);
+  [`48`](48-watch-proxy-trust-model-docs.md);
 - sheds the https/Secure-cookie "best-effort" caveats;
 - fits the Plan 32 grain — **let n8n own its editor** instead of decanter
   injecting `<script>` into n8n's HTML.

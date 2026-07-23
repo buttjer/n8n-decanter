@@ -10,6 +10,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { createStepRunner } from "./harness.mts";
+import { createMirror } from "../lib/mirror.mts";
+import { startGuardProxy } from "../lib/mcpserve.mts";
 import { kebabCase } from "../lib/util.mts";
 
 const execFile = promisify(execFileCb);
@@ -113,6 +115,18 @@ const summaryOf = (wf: any) => ({
   createdAt: wf.createdAt, updatedAt: wf.updatedAt, triggerCount: 0,
   scopes: ["workflow:read"], canExecute: true,
   availableInMCP: wf.availableInMCP !== false, tags: [],
+});
+
+/** Full REST fidelity (Plan 51 Part B): what `GET /workflows/:id` returns —
+ * credential refs + pinData + staticData + description that MCP's read strips.
+ * A synthetic credential ref rides a Code node so backup keep/round-trip is
+ * exercised. */
+const restExportOf = (wf: any) => ({
+  id: wf.id, name: wf.name, active: wf.active,
+  nodes: wf.nodes.map((n: any) => (n.type === "n8n-nodes-base.code" ? { ...n, credentials: { httpHeaderAuth: { id: "cred-9", name: "API Auth" } } } : { ...n })),
+  connections: wf.connections, settings: wf.settings,
+  staticData: { seen: 3 }, pinData: { Webhook: [{ json: { probe: 1 } }] }, description: "order sync flow",
+  versionId: wf.versionId, activeVersionId: wf.activeVersionId ?? null, tags: wf.tags ?? [],
 });
 
 /** One MCP tool call → its result envelope (or `null` to hang forever). */
@@ -285,6 +299,32 @@ const server = http.createServer((req, res) => {
   // init's API-key probe (GET /workflows?limit=1) — a shallow list suffices
   if (req.method === "GET" && req.url!.startsWith("/api/v1/workflows?")) {
     return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: [], nextCursor: null }));
+  }
+  // backup create (Plan 51 Part B): full-fidelity single-workflow GET — REST
+  // returns credentials/pinData/staticData/description that MCP strips.
+  const wfGet = req.method === "GET" && req.url!.match(/^\/api\/v1\/workflows\/([^/?]+)$/);
+  if (wfGet) {
+    const wf = db.get(wfGet[1]);
+    if (!wf) return void res.writeHead(404).end("not found");
+    return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(restExportOf(wf)));
+  }
+  // backup restore (Plan 51 Part B): create a NEW workflow, PRESERVING node ids
+  // carried in the body (the redeploy round-trip).
+  if (req.method === "POST" && req.url === "/api/v1/workflows") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      const input = JSON.parse(body);
+      const id = `wf-restored-${createCount++}`;
+      const now = new Date().toISOString();
+      db.set(id, {
+        id, name: input.name, active: false, createdAt: now, updatedAt: now,
+        nodes: input.nodes, connections: input.connections ?? {}, settings: input.settings ?? {},
+        staticData: null, pinData: {}, tags: [], versionId: `ver-${id}`, activeVersionId: null, availableInMCP: true,
+      });
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(db.get(id)));
+    });
+    return;
   }
   if (req.method === "GET" && req.url!.startsWith("/api/v1/executions")) {
     const one = req.url!.match(/^\/api\/v1\/executions\/(\d+)\?/);
@@ -805,13 +845,15 @@ await step("watch: debounce coalesces, queued save re-pushes, close() stops", as
   const original = read(dir2, "code", "transform-eu-us.js");
   const config = {
     configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
+    requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: env.N8N_HOST!, apiKey: "test-key",
   };
   const logs: string[] = [];
   const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   // TMP is not a git repo yet at this point — watch skips the startup pull
   const handle = await watchWorkflow(await mcpClient(), config, "wf123", {}, log);
+  assert.ok(logs.some((m) => m.includes(`${env.N8N_HOST!}/workflow/wf123`)), "editor deep-link:\n" + logs.join("\n"));
+  assert.ok(logs.some((m) => m.includes("updates live on each push")), "live-reflect note:\n" + logs.join("\n"));
   const before = updateCount;
   try {
     // two rapid saves coalesce into a single push of the final content
@@ -851,7 +893,7 @@ await step("watch: workflow.json is a read-only snapshot — a save warns once, 
   const wfJsonPath = path.join(dir2, "workflow.json");
   const config = {
     configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "off" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
+    requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: env.N8N_HOST!, apiKey: "test-key",
   };
   const logs: string[] = [];
   const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
@@ -877,55 +919,6 @@ await step("watch: workflow.json is a read-only snapshot — a save warns once, 
     writeFileSync(wfJsonPath, savedJson);
     await handle.close();
   }
-});
-
-await step("watch<->proxy: single-node push broadcasts a 'pushed' SSE event through the dev-reload proxy", async () => {
-  const { watchWorkflow } = await import(pathToFileURL(path.join(PROJECT, "lib/watch.mts")).href);
-  await cli("pull"); // fresh baseline
-  const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
-  const js = path.join(dir2, "code", "transform-eu-us.js");
-  const original = read(js);
-  const logs: string[] = [];
-  const log = { info: (m: string) => logs.push(m), ok: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(`E ${m}`) };
-  const config = {
-    configDir: TMP, root: ROOT, workflows: ["wf123"], commitOnPush: false, commitOnPull: false,
-    browserReload: "proxy" as const, proxyPort: 0, requestTimeoutMs: 30_000, dataTables: true, host: env.N8N_HOST!, apiKey: "test-key",
-  };
-
-  const handle = await watchWorkflow(await mcpClient(), config, "wf123", {}, log);
-  try {
-    // deep link must go through the proxy — a different port than the raw upstream
-    const proxyUrlMatch = logs.join("\n").match(/http:\/\/127\.0\.0\.1:(\d+)\/workflow\/wf123/);
-    assert.ok(proxyUrlMatch, "editor deep-link through the proxy:\n" + logs.join("\n"));
-    const proxyPort = proxyUrlMatch![1];
-    assert.notEqual(proxyPort, new URL(env.N8N_HOST!).port, "editor link must use the proxy port, not the raw upstream host");
-
-    const received = await new Promise<string>((resolve, reject) => {
-      const req = http.get(`http://127.0.0.1:${proxyPort}/__decanter/events`, (res) => {
-        let buf = "";
-        res.setEncoding("utf8");
-        res.on("data", (c) => {
-          buf += c;
-          // only save the code file once the SSE stream is actually live
-          if (buf.includes(": connected")) writeFileSync(js, original + "// proxied push\n");
-          if (buf.includes("event: pushed")) {
-            req.destroy();
-            resolve(buf);
-          }
-        });
-        res.on("error", () => {}); // req.destroy() surfaces the abort here — ignore
-      });
-      req.on("error", reject);
-      setTimeout(() => reject(new Error("no pushed SSE event within 3s:\n" + logs.join("\n"))), 3000).unref();
-    });
-    assert.match(received, /event: pushed/);
-    assert.match(received, /"workflowId":"wf123"/);
-    assert.match(remoteNode("wf123", "n2").parameters.jsCode, /proxied push/, "the save that triggered the SSE event actually pushed:\n" + logs.join("\n"));
-  } finally {
-    writeFileSync(js, original);
-    await handle.close();
-  }
-  await cli("pull"); // re-baseline
 });
 
 await step("check: clean tree passes, typecheck skipped without tsconfig", async () => {
@@ -2392,6 +2385,91 @@ await step("removed verbs: delete and duplicate are gone (Plan 33) — unknown-v
   assert.equal(r.code, 1);
   assert.match(r.out, /unknown node command: rename/);
   assert.ok(db.has(id), "nothing mutated by the removed verbs");
+});
+
+await step("backup create: writes a placeholdered, runtime-state-stripped file (PII-warned, NOT auto-committed); dedup skips same versionId", async () => {
+  await cli("pull"); // normalize the folder so the restore assembly is compliant
+  let r = await cli("backup", "list", "wf123");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /no backups/);
+
+  r = await cli("backup", "create", "wf123");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /backed up "Order Sync/);
+  assert.match(r.out, /FULL export/, "PII/secret warning");
+  const backupsDir = path.join(dir1, "backups");
+  const files = readdirSync(backupsDir).filter((f) => f.endsWith(".json"));
+  assert.equal(files.length, 1, "one backup file written");
+  const stored = JSON.parse(read(backupsDir, files[0]));
+  const codeNode = stored.nodes.find((n: any) => n.type === "n8n-nodes-base.code");
+  assert.match(codeNode.parameters.jsCode, /^\/\/@file:code\//, "jsCode kept as a placeholder — no code duplication");
+  assert.equal(stored.pinData, undefined, "pinData stripped");
+  assert.equal(stored.staticData, undefined, "staticData stripped");
+  assert.deepEqual(codeNode.credentials, { httpHeaderAuth: { id: "cred-9", name: "API Auth" } }, "credential refs kept");
+  assert.equal(stored.description, "order sync flow", "description kept");
+
+  // backups/ is committed deliberately by the user — NOT self-gitignored, NOT auto-committed
+  const { stdout: gitst } = await execFile("git", ["-C", TMP, "status", "--porcelain", "--", "workflows/order-sync/backups/"], { encoding: "utf8" });
+  assert.match(gitst, /^\?\?\s+workflows\/order-sync\/backups\//m, "backup file is untracked (not auto-committed) and not gitignored");
+
+  r = await cli("backup", "list", "wf123");
+  assert.match(r.out, /aaa/, "list shows the versionId");
+
+  // same versionId → skipped (no redundant identical copy)
+  r = await cli("backup", "create", "wf123");
+  assert.match(r.out, /already backed up/);
+  assert.equal(readdirSync(backupsDir).filter((f) => f.endsWith(".json")).length, 1, "no second file");
+});
+
+await step("backup restore: redeploys a NEW unpublished workflow — node ids + credential refs preserved, jsCode re-inlined", async () => {
+  const before = db.size;
+  const codeIds = db.get("wf123").nodes.filter((n: any) => n.type === "n8n-nodes-base.code").map((n: any) => n.id);
+  const r = await cli("backup", "restore", "wf123");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /new workflow wf-restored-\d+ \(unpublished\)/);
+  assert.match(r.out, /credential/i, "prints credential-rebind hints");
+  assert.equal(db.size, before + 1, "one new workflow created");
+  const created = [...db.values()].find((w: any) => String(w.id).startsWith("wf-restored-")) as any;
+  assert.equal(created.active, false, "lands unpublished");
+  assert.deepEqual(created.nodes.filter((n: any) => n.type === "n8n-nodes-base.code").map((n: any) => n.id), codeIds, "node ids preserved");
+  const restoredCode = created.nodes.find((n: any) => n.type === "n8n-nodes-base.code");
+  assert.ok(!restoredCode.parameters.jsCode.startsWith("//@file:"), "jsCode re-inlined, not a placeholder");
+  assert.deepEqual(restoredCode.credentials, { httpHeaderAuth: { id: "cred-9", name: "API Auth" } }, "credential refs carried");
+});
+
+await step("live mirror: a structure edit forwarded THROUGH the guard refreshes workflow.json with no manual pull (fire-and-forget); liveMirror:false suppresses it", async () => {
+  await cli("pull"); // baseline snapshot
+  const wfjson = () => JSON.parse(read(dir1, "workflow.json"));
+  const firstNode = db.get("wf123").nodes[0].name;
+  assert.ok(wfjson().nodes.some((n: any) => n.name === firstNode), "baseline snapshot has the node");
+
+  const mirrorLogs: string[] = [];
+  const mlog = { info: (m: string) => mirrorLogs.push(m), ok: (m: string) => mirrorLogs.push(m), warn: (m: string) => mirrorLogs.push(m), error: (m: string) => mirrorLogs.push(m) };
+  const client = await mcpClient();
+  const mirror = createMirror({ mcp: client, root: ROOT, workflows: ["wf123"], commitOnPull: false, liveMirror: true, log: mlog });
+  const handle = await startGuardProxy({ mcp: client, host: env.N8N_HOST!, configDir: TMP, port: 0, mirror, log: mlog });
+  try {
+    const res = await fetch(handle.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${handle.secret}`, accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "update_workflow", arguments: { workflowId: "wf123", operations: [{ type: "renameNode", oldName: firstNode, newName: "MirroredHook" }] } } }),
+    });
+    assert.equal(res.status, 200, await res.text());
+    // fire-and-forget: the tool response returned before the debounced pull ran
+    assert.ok(!wfjson().nodes.some((n: any) => n.name === "MirroredHook"), "response returned before the mirror pull (non-blocking)");
+    await mirror.drain();
+    assert.ok(wfjson().nodes.some((n: any) => n.name === "MirroredHook"), "snapshot auto-refreshed with no manual pull");
+    assert.ok(mirrorLogs.some((l) => /mirrored /.test(l)), "logged the mirror");
+  } finally {
+    await handle.close();
+  }
+
+  // liveMirror:false — schedule is a no-op
+  const off = createMirror({ mcp: await mcpClient(), root: ROOT, workflows: ["wf123"], commitOnPull: false, liveMirror: false, log: mlog });
+  applyOps(db.get("wf123"), [{ type: "renameNode", oldName: "MirroredHook", newName: "SuppressedHook" }]);
+  off.schedule("wf123");
+  await off.drain();
+  assert.ok(!wfjson().nodes.some((n: any) => n.name === "SuppressedHook"), "disabled mirror never refreshed the snapshot");
 });
 
 if (!hasFailed()) {

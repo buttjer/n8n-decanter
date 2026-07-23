@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`backup` — git-native, redeployable disaster recovery.** `n8n-decanter
+  backup create <workflow>` captures the workflow's full REST export into a
+  committed, versioned `workflows/<slug>/backups/<timestamp>.<versionId>.json`
+  store — the fidelity MCP can't give (credential refs + `description` kept;
+  `pinData`/`staticData` stripped; each Code node's `jsCode` stays a `//@file:`
+  placeholder, so no code is duplicated). It **dedupes** on an unchanged
+  `versionId` and **rolling-prunes** the working set to `backupLimit` (config,
+  default 20; `0` keeps all). `backup restore <workflow> [--version <id> |
+  --at <ts>]` re-inlines the Code from `code/` and REST-POSTs a **new,
+  unpublished** workflow with **node ids preserved** — a real second version
+  history that survives the instance being lost; it prints credential-rebind
+  hints + the editor URL (publish is your next step). `backup list <workflow>`
+  shows the retained set. REST-only: needs `N8N_API_KEY`. The backup file is
+  **not** auto-committed (it carries credential refs and any embedded
+  secrets) — review it, then `git add` deliberately.
+- **Live `workflow.json` mirror — the review snapshot refreshes itself after
+  an agent restructures a workflow through the guard.** When a structure edit
+  is forwarded through `mcp connect` / `mcp serve` (a non-blocked
+  `update_workflow`), decanter now schedules a debounced background `pull` of
+  that workflow, so the read-only `workflow.json` (+ code files + state) stays
+  fresh with **no manual `pull`**. On by default; set `"liveMirror": false` in
+  `decanter.config.json` to disable (CI / deterministic setups). It is
+  fire-and-forget (never blocks the agent's next tool call), git-gated
+  (safety-commits before pulling; skips with no git), and tracked-only. This
+  changes `mcp connect`/`serve` default behavior (additive and disable-able —
+  not breaking).
 - **`preflight` — the whole verification ladder as one scored, read-only
   gate.** `n8n-decanter preflight [workflow…]` runs every safe check there
   is — local static (`layout`, `types`) → instance read-only (`connect`,
@@ -93,6 +119,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   create, so a faithful clone required the public API — rather than keep the
   API dependency or ship a lossy SDK-code re-expression, the verb was
   dropped. Duplicate workflows from the n8n UI and `pull` the copy.
+- **Breaking: `watch`'s browser-reload proxy is gone — `browserReload` and
+  `proxyPort` config keys are no longer honored (silently ignored, not an
+  error).** n8n 2.x reflects an MCP draft edit in the open editor natively
+  (soft canvas re-render, skipped — with a warning — while the tab has
+  unsaved edits), making decanter's injected `<script>`-reload proxy
+  redundant and, on that exact dirty-tab path, worse than doing nothing (a
+  hard reload would have clobbered the unsaved edits). `watch` now just
+  prints the editor deep link with a note to keep the tab open; it updates
+  live on every push.
 - **Breaking: `simulate --pin` and per-node `fixtures/` are gone — folded into
   `scenario`.** The per-node `workflows/<folder>/fixtures/<node>.json`
   mechanism and its precedence over captures are removed outright; a scenario

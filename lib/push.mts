@@ -3,7 +3,6 @@ import path from "node:path";
 import { compileTs } from "./compile.mts";
 import { commitWorkflowDir } from "./git.mts";
 import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
-import { notifyPushed } from "./proxy.mts";
 import { findWorkflowDir, readState, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
 import { isJsCodeNode, placeholderFile, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
@@ -185,7 +184,6 @@ export async function pushWorkflow(
     await publishWorkflowMcp(mcp, id);
     log.ok(`published "${confirmed.name}" (${id}) — code is live now`);
   }
-  notifyPushed(id);
   if (commitOnPush) await commitWorkflowDir(dir, `decanter: pushed "${confirmed.name}" (${id})`, log);
   return { dir, name: confirmed.name };
 }
@@ -251,7 +249,6 @@ export async function pushSingleNode(
   } else {
     log.ok(`pushed node "${node.name}" -> workflow "${confirmed.name}"${draftNote(confirmed)}`);
   }
-  notifyPushed(state.workflowId);
   if (commitOnPush) {
     await commitWorkflowDir(dir, `decanter: pushed "${confirmed.name}" / node "${node.name}" (${state.workflowId})`, log);
   }

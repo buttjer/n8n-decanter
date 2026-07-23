@@ -2,6 +2,7 @@
 
 **Priority:** P3 (accessibility win; a follow-up to [Plan 7](../done/7-engine-true-simulation-suite.md), which shipped Docker-only)
 **Status:** Not started
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** A dependency-free **`npx n8n@<ver>`** engine backend so `simulate`
 runs without Docker — using the Node the CLI already requires. The headless
 diff run is npx's natural home; the browsable viewer stays Docker-preferred.

@@ -47,11 +47,19 @@ clean git diffs.
   (`--scaffold`, no LLM API) into a reviewable, git-tracked pin-data set that
   `test`/`simulate` replay — the durable counterpart to an agent's ephemeral
   in-session pin flow.
-- **Live editing** — `watch` pushes on save and auto-reloads the n8n editor
-  tab via a local proxy.
+- **Live editing** — `watch` pushes on save; the open n8n editor tab reflects
+  each push live (n8n's own draft-edit refresh, no proxy needed).
 - **Guarded agent access to n8n's MCP — wired by default** — the scaffolded
   `.mcp.json` spawns `mcp connect`, forwarding the full n8n MCP surface
-  except writes to a Code node's `jsCode`; no secret to manage.
+  except writes to a Code node's `jsCode`; no secret to manage. The read-only
+  `workflow.json` snapshot then **refreshes itself** after an agent
+  restructures the workflow through the guard — no manual `pull`
+  (`liveMirror`, on by default).
+- **Git-native disaster recovery** — `backup create` captures a versioned,
+  redeployable full export into a committed `backups/` store (fidelity MCP
+  can't give — credential refs kept, code stays a placeholder); `backup
+  restore` redeploys it as a new workflow with **node ids preserved**, a
+  second version history that outlives the instance.
 - **Shared code and small libraries** — `.ts` nodes import helpers/types from
   `shared/` and opted-in npm packages, bundled on push into self-contained
   nodes that run anywhere, n8n Cloud included.
@@ -82,8 +90,8 @@ it lands in `workflows/<slug>/`. Know the id already? `n8n-decanter pull
 set a bare `pull`/`push`/`status` acts on.)
 
 **Credentials:** OAuth by default (via `init`); `N8N_MCP_TOKEN` for
-headless/CI; `N8N_API_KEY` is optional, needed only for `executions` and
-`data-tables`. Details: [Installation](docs/getting-started/installation.md),
+headless/CI; `N8N_API_KEY` is optional, needed only for `executions`,
+`data-tables`, and `backup`. Details: [Installation](docs/getting-started/installation.md),
 [init](docs/cli/init.md), [Configuration](docs/concepts/configuration.md).
 
 ## Works with n8n's official skills
@@ -111,7 +119,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `completion zsh\|bash` | Print a shell completion script |
 | `pull [workflow…]` | Code + structure snapshot → `workflows/<kebab>/` |
 | `push [workflow…]` | Push Code-node source to the workflow's **draft** |
-| `watch [workflow]` | Push on save (draft-only), optional browser live-reload |
+| `watch [workflow]` | Push on save (draft-only); editor updates live |
 | `publish` / `unpublish [workflow…]` | Take the draft live / back to draft-only |
 | `status [workflow…]` | Drift report — exits 1 on conflict or remote drift |
 | `check [workflow…]` | Offline layout-compliance check + typecheck |
@@ -121,6 +129,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `simulate <workflow>` | Offline engine replay (Docker); diffs vs a capture |
 | `preflight [workflow…]` | The whole verification ladder as one scored, read-only gate (exits 1 on *not ready*) |
 | `scenario create` / `scenario check` | Build / validate a committed scenario (captured and/or schema-scaffolded) |
+| `backup create` / `restore` / `list` | Git-native disaster recovery — capture / redeploy / list versioned full-export backups |
 | `list [--remote]` | Pulled workflows (`--remote` adds unpulled ones) |
 | `mcp connect` / `mcp serve` | Guarded MCP access for coding agents |
 | `node run <node-file>` | Run a Code node offline, print its items |
@@ -160,7 +169,7 @@ whole-workflow authoring toolkit.
 | **Code-level git versioning** | 🟡 in-app history (DB snapshots, tiered retention); Git source control is Enterprise-only | ✅ GitOps sync of workflow source | ✅ real git — diffs, PRs, blame per Code node; auto-commit each sync (+ read-only structure snapshot) |
 | **Preflights** (`check` / `simulate` / `test` / `preflight`) | 🟡 re-run past executions / pin data, but online in-editor | 🟡 inspect executions against a live env | ✅ offline `check` + `simulate`, instance-side `test`; each diffs every node vs a real capture, exits 1 on divergence — and `preflight` scores the whole ladder into one read-only, CI-gateable verdict |
 | **Draft-first code sync** | ✅ editor *Save* vs *Publish* (manual, in-browser) | 🟡 API sync republishes on push (no draft-only) | ✅ pushes land on the **draft**; `publish` is the deliberate go-live (over MCP) |
-| **Live editing** | ✅ the canvas (baseline) | 🟡 explicit pull/push, no auto-watch | ✅ `watch`: push on save + auto-reload the editor tab |
+| **Live editing** | ✅ the canvas (baseline) | 🟡 explicit pull/push, no auto-watch | ✅ `watch`: push on save; the open editor tab reflects each push live (n8n-native) |
 | **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs incl. a pre-wired `mcp connect` guard holding the credentials; offline `check`/`node run` loop |
 | **Model ownership** | ❌ locked to n8n's own hosted AI; can't use your Claude subscription | 🟡 beta Claude Code plugin uses your subscription; flagship Workbench needs an Anthropic key for Claude | ✅ never calls an LLM itself — your agent/subscription does 100%, no key or model config ever |
 | **Agentic workflow creation** | 🟡 AI Workflow Builder (natural language), but Cloud / plan-gated — credits, self-host needs setup | ✅ 537 node schemas + 7,700+ templates + skills | ✅ your agent builds structure over n8n's MCP (through the pre-wired `mcp connect` guard); decanter owns the Code-node source (files + `push`) |

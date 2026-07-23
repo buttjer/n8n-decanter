@@ -4,6 +4,7 @@
 scope, but the design is well-specified and the Python path is the simplest
 Code-node variant)
 **Status:** Not started
+**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Extract n8n **Python** Code nodes into `code/<node>.py` files with full
 round-trip parity, mirroring today's JS/TS flow.
 **Model:** Sonnet (well-specified, broad implementation) — the one design-sensitive
