@@ -284,6 +284,14 @@ items not yet claimed by one. Recommended order:
     `scenarios/`/`n8nVersion` data-model+config entries, and assorted nits.
     Mostly mechanical; P1 because the broken commands are copy-paste-followable.
     Proposed 2026-07-23.
+40. [Docs-surface drift guardrail (CI check)](OPEN-40-docs-surface-drift-guardrail.md) —
+    graduate the backlog's "Cross-PR docs-drift guardrail" item into a real
+    `scripts/check-docs-surface.mts` CI check: verb↔`docs/cli`-page↔README-table↔
+    `overview` parity (both directions — catches orphan pages for retired verbs
+    *and* new verbs missing a surface) plus a verb-last-command grammar scan (the
+    copy-paste-broken bug Plan 39 keeps finding). Structural, not semantic; the
+    ratchet that stops the drift Plan 39 cleaned up by hand from recurring. Lands
+    green after Plan 39's grammar fixes. Proposed 2026-07-23.
 
 ## Conventions
 
