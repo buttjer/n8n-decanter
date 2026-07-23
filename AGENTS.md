@@ -143,19 +143,23 @@ that can't recur.)
 
 ## Backlog
 
-`plans/` is the backlog (see `plans/README.md` for conventions);
-`plans/BACKLOG.md` is the grab-bag of items without their own plan. When your
-work **fully** completes a Plan 0 entry (implemented, tested, documented as
-applicable), check it off (`- [x]`). Partially done is not done: leave the box
-unchecked and append a short parenthetical status instead. Don't delete,
-reword, or reorder the user's entries, and don't add ideas of your own unasked.
+`plans/` is the backlog: **one file per item**, sorted into `draft/`, `open/`,
+`done/`, `blocked/` by status (`plans/AGENTS.md` has the full conventions —
+filenames `NN-slug.md`, the header block, the merge-in-favour-of-lower-number
+rule; in-progress work lives in `open/`). Short backlog-grade ideas start as a
+note in `draft/`; graduating one moves it to `open/` and fleshes it out. When
+your work **fully** completes a plan (implemented, tested, documented as
+applicable), flip its `**Status:**` to `Done` and **move the file to `done/`**
+(updating inbound relative links). Partially done is not done: leave it in
+`open/` and note the status. Don't delete, reword, or reorder the user's
+entries, and don't add ideas of your own unasked.
 
-**Distinctive features get their own group.** When a change introduces a feature
-that's **distinct from n8n itself and from the generic "n8n-as-code" (git-sync)
-concept** — a capability that *differentiates* this tool rather than mirroring
-n8n or plain workflow-syncing — record it in the backlog under **its own
-group**, kept separate from the priority buckets and the parity/hardening work.
-This keeps the tool's differentiators visible and tracked as a distinct class.
+**Distinctive features are tracked as their own class.** When a change
+introduces a feature that's **distinct from n8n itself and from the generic
+"n8n-as-code" (git-sync) concept** — a capability that *differentiates* this
+tool rather than mirroring n8n or plain workflow-syncing — mark its plan
+`**Class:** Distinctive feature`. This keeps the tool's differentiators visible
+and tracked as a distinct class.
 
 ## Agent tooling
 
@@ -177,7 +181,7 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   locally too" below.
 - **When a plan number is known, prefix everything with it — from the moment
   it's known, in both planning and execution.** If the work belongs to a
-  numbered plan (`plans/*-N-*.md`, "Plan 27"), name the **branch**
+  numbered plan (`plans/*/NN-slug.md`, "Plan 27"), name the **branch**
   `<type>/plan-NN-<slug>` and the **worktree dir** `<type>-plan-NN-<slug>` inside
   your default worktree dir (e.g. branch `feat/plan-27-verb-grammar`, worktree
   `.claude/worktrees/feat-plan-27-verb-grammar`), and **tell the user to label
@@ -204,7 +208,7 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   merge, tag the squash commit `vX.Y.Z` on main, push the tag, and create the
   GitHub Release from it with that version's changelog section as the notes
   (`gh release create vX.Y.Z --verify-tag --notes-file <section>`). The package
-  is on npm (plans/DONE-13), but **`npm publish` is the maintainer's step —
+  is on npm (plans/done/13-open-source-release.md), but **`npm publish` is the maintainer's step —
   agents never run it.** An agent's release work ends at the pushed tag + GitHub
   Release; the maintainer publishes to npm. **Cutting a release is the
   maintainer's call — open a release PR only when explicitly asked, never
@@ -237,7 +241,7 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   the worktree dirs (`.claude/worktrees/`, `.worktrees/`) including uncommitted
   work; clean inside subdirs (e.g. `dist/`) instead.
 - GitHub-side enforcement (require PR + green required checks, block
-  force-push) is **live** via the public-repo ruleset (plans/DONE-13).
+  force-push) is **live** via the public-repo ruleset (plans/done/13-open-source-release.md).
   Auto-merge is not enabled on the repo and admin-bypass is disallowed, so a
   blocked merge means "checks still pending" — wait them out, don't try to
   force it.
@@ -605,11 +609,12 @@ surface it, don't guess.
 
 Start from an up-to-date `main` (`git switch main && git pull`), then:
 
-1. **Backlog hygiene** (`plans/`) — for each open `- [ ]`, check whether the
-   code already *fully* satisfies it (implemented + tested + documented). If
-   so, check it off with a dated parenthetical; if only partial, leave the box
-   and append a short status. **Never delete, reorder, reword, or add to the
-   user's entries.**
+1. **Backlog hygiene** (`plans/open/`, `plans/draft/`) — for each open plan or
+   draft, check whether the code already *fully* satisfies it (implemented +
+   tested + documented). If so, flip `**Status:**` to `Done` and **move the file
+   to `plans/done/`** (updating inbound relative links); if only partial, leave
+   it in `open/` and append a short status. **Never delete, reorder, reword, or
+   add to the user's entries.**
 2. **Docs & changelog currency** — diff what merged since the last pass against
    `/docs`, `CHANGELOG.md` `[Unreleased]`, and `PLAN.md`. Any user-facing CLI /
    sync / data-model / guard / config change that landed without its docs +
@@ -631,7 +636,8 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    `git clean -fdx` from the repo root** — it nukes both worktree dirs.
 5. **Dependency PR triage** — review open Dependabot PRs; merge the safe ones
    (green CI, minor/patch). For majors, record the decision in the backlog
-   (e.g. TypeScript 7.x → `plans/BACKLOG.md`) rather than silently merging.
+   (e.g. TypeScript 7.x → [`plans/draft/49-typescript-7-native-major.md`](plans/draft/49-typescript-7-native-major.md))
+   rather than silently merging.
 6. **CI & tests green** — main's required checks are green, `npm test` and
    `npm run typecheck` pass locally, and no open PR is red.
 7. **Drift audits** — `template/*.example` still match their repo counterparts

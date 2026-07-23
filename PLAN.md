@@ -740,7 +740,7 @@ Unchanged by Plan 32 (the file layer is decanter's layer):
 4. ⬜ n8n folder hierarchy — rescoped 2026-07-22 to **read-only "Local
    Overview"** (pull mirrors n8n placement as local dir nesting; decanter
    never writes folders/placement); blocked on one upstream MCP read fix
-   ([Plan 8](plans/BLOCKED-8-folder-hierarchy-in-sync-layout.md)).
+   ([Plan 8](plans/blocked/8-folder-hierarchy-in-sync-layout.md)).
 5. ✅ QoL: `watch`, `status`.
 6. ✅ `init`; 7. ✅ compliance guard + `check`; 8. ✅ structural validation +
    `rename` (plans/2).
