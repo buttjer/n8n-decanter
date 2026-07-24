@@ -18,6 +18,12 @@ needs to behave:
   hard invariant are blocked *before the write happens*; a Claude Code
   PostToolUse hook runs [check](/docs/cli/check/) after node edits. The same
   rules are enforced by the CLI at push time regardless of who made the edit.
+  On Claude Code these live in **`.claude/settings.json`** — *project* scope,
+  meant to be committed, so everyone who clones the repo gets the same
+  permissions and hooks. `.claude/settings.local.json` stays yours for
+  machine-specific rules: permission lists merge across the two and a `deny`
+  beats an `allow`, so your local file can add to the policy but cannot unblock
+  what the project denies.
 
 ## The hard invariants
 

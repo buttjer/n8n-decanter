@@ -596,6 +596,70 @@ await step("init: writes .env (MCP token + optional API key), copies whole templ
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`, ".env must survive --force");
 });
 
+await step("init: a renamed template file migrates (settings.local.json -> settings.json), never silently doubled (Plan 56)", async () => {
+  const SETTINGS = path.join(".claude", "settings.json");
+  const LEGACY = path.join(".claude", "settings.local.json");
+  const templateSettings = read(path.join(PROJECT, "template"), `${SETTINGS}.example`);
+
+  /** A sync dir inited at the old CLI: legacy filename, tracked in the manifest. */
+  const legacyDir = async (name: string, content: string): Promise<string> => {
+    const dir = path.join(TMP, name);
+    const pending = execFile(process.execPath, [CLI, "init", dir], { encoding: "utf8" });
+    pending.child.stdin!.write(`${env.N8N_HOST}\n${MCP_TOKEN}\n\n`);
+    pending.child.stdin!.end();
+    await pending;
+    // rewind to the pre-rename world: legacy name on disk + in the baseline
+    rmSync(path.join(dir, SETTINGS));
+    writeFileSync(path.join(dir, LEGACY), content);
+    const manifestPath = path.join(dir, ".decanter-template.json");
+    const m = JSON.parse(readFileSync(manifestPath, "utf8")) as { version: string; files: Record<string, string> };
+    m.files[LEGACY] = m.files[SETTINGS]!;
+    delete m.files[SETTINGS];
+    writeFileSync(manifestPath, JSON.stringify(m, null, 2) + "\n");
+    return dir;
+  };
+  const reinit = async (dir: string, ...flags: string[]) => {
+    const p = execFile(process.execPath, [CLI, "init", dir, ...flags], { encoding: "utf8" });
+    p.child.stdin!.end();
+    const r = await p;
+    return r.stdout + r.stderr;
+  };
+
+  // 1. pristine legacy file → removed, scaffolded under the new name
+  const clean = await legacyDir("init-rename-clean", templateSettings);
+  const cleanOut = await reinit(clean);
+  assert.ok(!existsSync(path.join(clean, LEGACY)), "a pristine legacy file must be removed, not left to shadow");
+  assert.equal(read(clean, SETTINGS), templateSettings, "the new name gets the template content");
+  assert.match(cleanOut, /renamed \.claude\/settings\.local\.json -> \.claude\/settings\.json/);
+  assert.ok(!(LEGACY in (JSON.parse(read(clean, ".decanter-template.json")) as { files: Record<string, string> }).files), "the stale manifest key is dropped");
+
+  // 2. locally edited legacy file → kept, and the new name is NOT written
+  //    (both files' hooks would fire); the user is told what to do
+  const edited = await legacyDir("init-rename-edited", `${templateSettings}\n// mine\n`);
+  const editedOut = await reinit(edited);
+  assert.ok(existsSync(path.join(edited, LEGACY)), "an edited legacy file is never deleted");
+  assert.ok(!existsSync(path.join(edited, SETTINGS)), "the new name must not be scaffolded alongside an edited legacy file");
+  assert.match(editedOut, /has local edits, so \.claude\/settings\.json was NOT scaffolded/);
+  // …and --force resolves it, per --force's documented "reset everything" contract
+  const forcedOut = await reinit(edited, "--force");
+  assert.ok(!existsSync(path.join(edited, LEGACY)), "--force removes the stale legacy file");
+  assert.equal(read(edited, SETTINGS), templateSettings, "--force lands the template version under the new name");
+  assert.match(forcedOut, /--force: removed \.claude\/settings\.local\.json \(had local changes\)/);
+
+  // 3. a settings.local.json decanter never wrote is the USER's — left alone,
+  //    and the project-scoped file is scaffolded next to it as normal
+  const mine = path.join(TMP, "init-rename-user-owned");
+  const first = execFile(process.execPath, [CLI, "init", mine], { encoding: "utf8" });
+  first.child.stdin!.write(`${env.N8N_HOST}\n${MCP_TOKEN}\n\n`);
+  first.child.stdin!.end();
+  await first;
+  writeFileSync(path.join(mine, LEGACY), '{ "permissions": { "allow": ["Bash(ls)"] } }\n');
+  const mineOut = await reinit(mine);
+  assert.equal(read(mine, LEGACY), '{ "permissions": { "allow": ["Bash(ls)"] } }\n', "the user's own local settings are never touched");
+  assert.equal(read(mine, SETTINGS), templateSettings, "the project-scoped file stays scaffolded");
+  assert.ok(!mineOut.includes("renamed .claude/settings.local.json"), "a file decanter never wrote must not be reported as migrated");
+});
+
 await step("init: a first init points at the n8n skills pack (shell commands, not slash commands); re-init stays quiet (Plan 55)", async () => {
   // decanter PRINTS the install commands and never runs them or asks about
   // them, so a piped init must still consume EXACTLY the three answers it

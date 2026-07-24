@@ -143,6 +143,17 @@ working copy and the current template on each re-run:
   flagged as a conflict to resolve manually (or `--force` to take the template
   version).
 - **Files new to the template** → copied in.
+- **Files the template *renamed*** → migrated, never silently doubled. Your
+  copy is removed and re-scaffolded under the new name if you hadn't touched it;
+  if you had, it is left exactly where it is and the new name is **not** written
+  (two overlapping settings files would fire their hooks twice) — `init` tells
+  you to move it, and picks up where you left off next run. A file `init` never
+  wrote is always left alone. `--force` resolves a pending rename by removing
+  the old file, per its "reset everything" contract.
+
+  The one rename so far: **`.claude/settings.local.json` →
+  `.claude/settings.json`** (it holds shared project policy, not per-machine
+  preferences — see [Agents](/docs/agents/overview/)).
 
 Commit `.decanter-template.json` — it's the shared baseline, so a teammate who
 clones and re-inits sees the same drift picture. `.env` is never tracked in it.
