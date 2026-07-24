@@ -14,6 +14,18 @@ and the **typecheck** over pulled workflows — the same two gates
 pulled workflow is checked; with refs, the typecheck output is scoped too.
 Exits 1 on any error.
 
+> **Green means well-formed, not live.** `check` never contacts the instance, so
+> a pass says your files are valid — not that n8n is running them. The success
+> line says so:
+>
+> ```
+> ✓ Order Sync: OK (local layout — `status` compares with n8n)
+> ```
+>
+> Use [status](/docs/cli/status/) to compare local against the instance, and
+> [push](/docs/cli/push/) to make your edits real. Editing and then stopping at a
+> green `check` leaves the workflow unchanged in n8n.
+
 ## What the compliance guard catches
 
 - inline code in `workflow.json` without a `//@file:` placeholder
@@ -29,7 +41,12 @@ Exits 1 on any error.
   `fixtures/` / `simulate --pin` mechanism is retired; recreate the data as a
   [scenario](/docs/cli/scenario/), then delete the dir
 
-Warn without blocking: unresolved `.remote.js` leftovers; a Python Code node's
+Warn without blocking: **local work not yet registered with the instance** — a
+node whose `//@file:` placeholder has moved off what `.decanter.json` records
+(the shape of a `.js`→`.ts` conversion), or whose recorded file is gone from
+disk. `push` reconciles the map, so this is a pending sync, not a violation —
+and it stays a warning deliberately, because `push` runs this guard *before* it
+reconciles. Also: unresolved `.remote.js` leftovers; a Python Code node's
 inline `pythonCode` (decanter extracts JS/TS only — Python extraction is
 planned); and a committed scenario whose `workflowData` embeds inline Code-node
 source (`jsCode` not starting with `//@file:`).

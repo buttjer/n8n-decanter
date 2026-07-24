@@ -160,6 +160,38 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     }
   }
 
+  // Local work that hasn't been registered with the instance yet.
+  //
+  // `.decanter.json`'s id→file map is rewritten by push/pull
+  // (reconcileFileMapFromSnapshot); the snapshot's //@file: placeholders are the
+  // authoritative map. So a placeholder that has moved off what the state
+  // records — the shape of a `.js`→`.ts` conversion — means "converted, not yet
+  // pushed", and a state entry naming a file that no longer exists means the
+  // same thing from the other side.
+  //
+  // This MUST stay a warning. `push` runs this guard (assertCompliant, which
+  // throws on errors) BEFORE it reconciles the map, so making this an error
+  // would refuse the exact command that heals it. A field-test agent hit this
+  // state, read `check`'s green line as "done", and never pushed (Plan 35).
+  try {
+    const state = readState(dir);
+    if (state) {
+      for (const node of nodes) {
+        if (!isJsCodeNode(node)) continue;
+        const recorded = state.nodes[node.id]?.file;
+        if (recorded === undefined) continue;
+        const placeholder = placeholderFile(node);
+        if (placeholder !== null && placeholder !== recorded) {
+          warnings.push(`node "${node.name}": .decanter.json still records ${recorded}, but the placeholder now points at ${placeholder} — push to register the change with n8n`);
+        } else if (placeholder === recorded && !existsSync(path.join(dir, recorded))) {
+          warnings.push(`node "${node.name}": .decanter.json records ${recorded}, which is missing on disk — pull to restore it, or push to register the change`);
+        }
+      }
+    }
+  } catch {
+    // corrupt state already reported above
+  }
+
   // Dangling $('…') inside expression parameters of any node (the n8n UI
   // rewrites these on rename; a dangling one breaks at run time).
   for (const node of nodes) {

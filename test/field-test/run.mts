@@ -4,7 +4,7 @@
 // sessions against a staged n8n, captures transcripts + the guard's stderr, and
 // runs the scripted invariant verifier after each. This is the REPRODUCIBLE
 // spine — it replays each scenario's linear scripted turns (the `## Orchestration`
-// block in scripts/field-test/scenarios/S*.md). ADAPTIVE beats (the prose
+// block in test/field-test/scenarios/S*.md). ADAPTIVE beats (the prose
 // "Beats" sections) are for a live orchestrator/grader to layer on; a fully
 // deterministic script cannot judge "did the agent stall". GRADING (Opus over
 // transcripts) is a separate, unblinded pass.
@@ -22,11 +22,11 @@
 //     `sh -c 'n8n-decanter mcp connect 2>><harnessRoot>/guard.log'`
 //
 // Usage:
-//   node scripts/field-test/run.mts <manifest.json> [S1 S2 …]   # default: S1–S4
-//   node scripts/field-test/run.mts <manifest.json> --dry-run    # print turns, spawn nothing
-//   node scripts/field-test/run.mts --help
+//   node test/field-test/run.mts <manifest.json> [S1 S2 …]   # default: S1–S4
+//   node test/field-test/run.mts <manifest.json> --dry-run    # print turns, spawn nothing
+//   node test/field-test/run.mts --help
 import { execFile as execFileCb, execFileSync, spawn } from "node:child_process";
-import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -41,20 +41,20 @@ const REPORT = path.join(HERE, "report.mts");
 // ---------- args ----------
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log("usage: node scripts/field-test/run.mts <manifest.json> [S1 S2 …] [--dry-run]");
+  console.log("usage: node test/field-test/run.mts <manifest.json> [S1 S2 …] [--dry-run]");
   process.exit(0);
 }
 const dryRun = argv.includes("--dry-run");
 // Container mode (Plan 35): run the blind agents in a Docker container, egress
 // fenced to Anthropic-only — the safe way to run them UNATTENDED (see the
-// container-mode design in the plan + scripts/field-test/docker/).
+// container-mode design in the plan + test/field-test/docker/).
 const containerMode = argv.includes("--container");
 const positional = argv.filter((a) => !a.startsWith("--"));
 const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
 
-interface Manifest { host: string; container: string | null; mcpToken: string; apiKey: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
+interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const WORKDIR = manifest.workDir;
 const HARNESS = manifest.harnessRoot;
@@ -121,7 +121,7 @@ async function dockerCompose(args: string[]): Promise<{ stdout: string; stderr: 
  */
 async function containerSetup(): Promise<void> {
   if (!manifest.container) throw new Error("--container needs a Docker-booted n8n (manifest.container is null — external/FIELD_N8N_URL mode is host-only)");
-  if (!existsSync(ENV_FILE)) throw new Error(`--container needs ${ENV_FILE} with ANTHROPIC_API_KEY (cp scripts/field-test/.env.example scripts/field-test/.env)`);
+  if (!existsSync(ENV_FILE)) throw new Error(`--container needs ${ENV_FILE} with ANTHROPIC_API_KEY (cp test/field-test/.env.example test/field-test/.env)`);
   if (!manifest.cliTarball && !manifest.decanterSpec) throw new Error("no CLI to bake — manifest.cliTarball and decanterSpec are both null (re-stage)");
 
   console.log("container mode: building fenced images (unfenced build) …");
@@ -295,27 +295,26 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
 }
 
 /**
- * Harness-owned, per-TURN snapshot of the workflows tree.
+ * Harness-owned commit of the workflows tree after each turn.
  *
- * Deliberately does NOT rely on the system under test for observability. The
- * workDir's git history only contains what decanter chose to auto-commit (on
- * pull/push) — so a change the agent never pushed is INVISIBLE there. Round 2's
- * S4 is the proof: the `.js`→`.ts` conversion (write .ts, re-point placeholder,
- * rm .js) was followed by `check`, never `push`, so it never reached a commit.
- * A field test must not measure with the instrument it is testing. These
- * snapshots are actor-agnostic (agent edits, pull overwrites, live-mirror
- * writes, harness drift injection all show up) and complete at a known cadence.
- * Cheap: the workflows tree is a few KB of text.
+ * Observability must not depend on the system under test: decanter only
+ * auto-commits on pull/push, so a change the agent never pushed is invisible in
+ * git — round-2 S4's .js→.ts conversion (write .ts, re-point placeholder, rm .js,
+ * then `check` instead of `push`) was exactly that. Committing HERE gives
+ * per-TURN granularity that is actor-agnostic (agent edits, pull overwrites,
+ * live-mirror writes, drift injection all land), while reusing git's
+ * baseline+delta format instead of copying the tree once per turn. Scoped to
+ * `workflows/` so the scaffold — identical in every run — never bloats the archive.
  */
-function snapshotWorkflows(scenario: string, turn: number): void {
-  const src = path.join(WORKDIR, "workflows");
-  if (!existsSync(src)) return; // nothing pulled yet (e.g. before turn 1's init)
-  const dest = path.join(HARNESS, "snapshots", scenario, `turn-${turn}`);
+function commitTurn(scenario: string, turn: number): void {
+  if (!existsSync(path.join(WORKDIR, "workflows"))) return; // nothing pulled yet
   try {
-    mkdirSync(path.dirname(dest), { recursive: true });
-    cpSync(src, dest, { recursive: true });
+    execFileSync("git", ["-C", WORKDIR, "add", "--", "workflows"], { stdio: "ignore" });
+    const staged = execFileSync("git", ["-C", WORKDIR, "diff", "--cached", "--name-only", "--", "workflows"], { encoding: "utf8" }).trim();
+    if (!staged) return; // nothing changed this turn — no empty commits
+    execFileSync("git", ["-C", WORKDIR, "commit", "-q", "-m", `harness: ${scenario} after turn ${turn}`], { stdio: "ignore" });
   } catch (e) {
-    console.warn(`  snapshot ${scenario}/turn-${turn} failed: ${(e as Error).message.split("\n")[0]}`);
+    console.warn(`  turn commit ${scenario}/turn-${turn} failed: ${(e as Error).message.split("\n")[0]}`);
   }
 }
 
@@ -338,14 +337,19 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   // so re-running it per scenario is harmless).
   applyPostInit();
   let sessionId: string | undefined;
-  snapshotWorkflows(id, 0); // baseline, so turn 1's effect is diffable
+  commitTurn(id, 0); // baseline commit, so turn 1's effect is diffable
   for (let i = 0; i < turns.length; i++) {
     console.log(`\n[${id}] turn ${i + 1}/${turns.length} ${sessionId ? `(resume ${sessionId.slice(0, 8)})` : "(new session)"}`);
     const transcript = path.join(outDir, `turn-${i + 1}.jsonl`);
+    // The prompt is passed as argv, so it appears NOWHERE in the stream-json
+    // transcript (its `user` events are tool results). Record it verbatim —
+    // public-filled, secrets still placeholders — so a round's prompts are a fact
+    // of the round, not something re-derived from scenario files that move on.
+    writeFileSync(path.join(outDir, `turn-${i + 1}.prompt.txt`), `${turns[i]}\n`);
     const { sessionId: sid, resultText } = await claudeTurn(fillSecrets(turns[i]), i + 1, sessionId, transcript);
     sessionId ??= sid;
     console.log(`  → ${resultText.slice(0, 200).replace(/\n/g, " ")}${resultText.length > 200 ? "…" : ""}`);
-    snapshotWorkflows(id, i + 1); // tool-independent record of what actually changed
+    commitTurn(id, i + 1); // tool-independent, per-turn record of what actually changed
   }
 
   // scripted invariant verifier
@@ -364,41 +368,97 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
 }
 
 // ---------- archive: render the HTML view + STORE EVERYTHING RAW (survives teardown) ----------
+//
+// Archives land in `test/field-test/runs/<iso>-<runId>/` and are COMMITTED —
+// that, not a path outside the worktree, is what makes them prune-proof: a
+// `git worktree remove` can't take a committed run with it, and a round's
+// findings stay reviewable in the PR that produced them. `raw.tgz` is the
+// source of truth (any view re-renders from it); `report.html` sits next to it
+// so the run is readable straight from the repo. Both must be committed before
+// the worktree is removed — `run.mts` deliberately does NOT commit for you.
+/** Scrub run credentials from a text artifact — the archive is COMMITTED. */
+function scrubFile(file: string, secrets: string[]): void {
+  try {
+    let text = readFileSync(file, "utf8");
+    let hit = false;
+    for (const s of secrets) if (text.includes(s)) { text = text.split(s).join("‹redacted›"); hit = true; }
+    if (hit) writeFileSync(file, text);
+  } catch { /* binary or unreadable — nothing to scrub */ }
+}
+function scrubTree(dir: string, secrets: string[]): void {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) scrubTree(p, secrets);
+    else scrubFile(p, secrets);
+  }
+}
+
 async function archiveRun(): Promise<void> {
-  // 1. render the HTML report (a derived VIEW) into harnessRoot
+  // Assemble the RAW payload, then commit it compressed next to the harness.
+  //    Only what a view actually needs, and each fact stored ONCE:
+  //      transcripts/  — the conversation + every agent edit (per-EDIT record)
+  //      work.git      — a BARE clone: the whole workflows/ history as
+  //                      baseline+deltas (per-TURN harness commits + decanter's
+  //                      own), which is git's job and replaces the old per-turn
+  //                      tree copies, the flat .diff dump and the workDir copy
+  //      verify-*.json / guard.log / manifest.json
+  //    Deliberately NOT archived: the working tree (reconstructable from
+  //    work.git) and the vendored skills pack (identical every run; provenance
+  //    lives in manifest.skills).
+  // harnessRoot is `…/ftrun-<pid>` for a live run, but a re-archived older run
+  // may sit a level down (`…/ftrun-<pid>/harness`) — take the id, not the leaf
+  const runId = HARNESS.split(path.sep).reverse().find((s) => /^ftrun-\d+$/.test(s)) ?? path.basename(HARNESS);
+  // the RUN's time, not the archive's — so a re-archive (--archive) of an old
+  // round keeps its original identity instead of minting a second dated dir
+  const stamp = (manifest.createdAt ?? new Date().toISOString()).replace(/:/g, "-").replace(/\.\d+Z$/, "Z");
+  const dest = process.env.FIELD_ARCHIVE_DIR ?? path.join(HERE, "runs", `${stamp}-${runId}`);
+  const staging = path.join(HARNESS, "__raw");
+  const secrets = [manifest.mcpToken, manifest.apiKey].filter((s) => typeof s === "string" && s.length > 8);
   try {
-    const { stdout } = await execFile(process.execPath, [REPORT, manifestPath], { maxBuffer: 64 * 1024 * 1024 });
-    if (stdout.trim()) console.log(stdout.trim());
-  } catch (e) { console.warn(`report generation failed (${(e as Error).message.split("\n")[0]}) — raw artifacts are still archived below`); }
-  // 2. store EVERYTHING raw to a durable, gitignored dir that teardown never
-  //    touches: harnessRoot (stream-json transcripts + verify JSON + guard.log +
-  //    report.html) AND the workDir WITH its .git (the turn-by-turn diffs). The
-  //    RAW is the source of truth — any view (html/md/json) re-renders from it, so
-  //    "what I want to see" can change later without re-running (Plan 35 §archive).
-  const base = process.env.FIELD_ARCHIVE_DIR ?? path.join(process.cwd(), ".field-test-runs");
-  const dest = path.join(base, path.basename(HARNESS));
-  const noNodeModules = { recursive: true as const, filter: (s: string) => !/[/\\]node_modules([/\\]|$)/.test(s) };
-  try {
+    rmSync(staging, { recursive: true, force: true });
+    mkdirSync(staging, { recursive: true });
+    if (existsSync(path.join(HARNESS, "transcripts"))) cpSync(path.join(HARNESS, "transcripts"), path.join(staging, "transcripts"), { recursive: true });
+    // the scenario files AS RUN — the report renders each turn's prompt from
+    // them, so without a copy an archived round would re-render against whatever
+    // the scenarios say today (they get reworked between rounds; that's the point
+    // of a round). This is the run's input; the transcripts are its output.
+    cpSync(SCENARIO_DIR, path.join(staging, "scenarios"), { recursive: true });
+    for (const f of readdirSync(HARNESS)) {
+      if (/^verify-.*\.json$/.test(f) || f === "guard.log") copyFileSync(path.join(HARNESS, f), path.join(staging, f));
+    }
+    // committed-history only — no working tree, no node_modules, no scaffold
+    if (existsSync(path.join(WORKDIR, ".git"))) {
+      execFileSync("git", ["clone", "--quiet", "--bare", WORKDIR, path.join(staging, "work.git")], { stdio: "ignore" });
+    }
+    // the manifest travels WITHOUT credentials (this lands in git). `scenariosAsRun`
+    // is false when re-archiving an older round: the scenarios/ copy is then
+    // today's, not provably the ones that ran, and the report says so.
+    writeFileSync(path.join(staging, "manifest.json"), JSON.stringify({ ...manifest, mcpToken: "‹redacted›", apiKey: "‹redacted›", scenariosAsRun: !argv.includes("--archive") }, null, 2) + "\n");
+    scrubTree(staging, secrets); // transcripts/guard.log may echo a token in tool output
+
     mkdirSync(dest, { recursive: true });
-    cpSync(HARNESS, path.join(dest, "harness"), { recursive: true });
-    if (existsSync(WORKDIR)) cpSync(WORKDIR, path.join(dest, "work"), noNodeModules);
-    // ALSO dump the synced progression as plain text — readable without git, and a
-    // hedge against the .git copy being awkward to use. (Three layers are kept on
-    // purpose: transcripts = per-EDIT, .git = per-SYNC canonical, this = flat view.)
+    const tgz = path.join(dest, "raw.tgz");
+    execFileSync("tar", ["-czf", tgz, "-C", staging, "."], { stdio: "ignore" });
+    rmSync(staging, { recursive: true, force: true });
+    // Render the shipped view FROM the tarball, not from the live run. Two
+    // reasons: the committed report is then provably what the raw yields (every
+    // round self-tests its own archive), and rendering after packing means a
+    // renderer failure can no longer cost us the raw.
     try {
-      const diff = execFileSync("git", ["-C", WORKDIR, "log", "-p", "--", "workflows"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-      if (diff.trim()) writeFileSync(path.join(dest, "workflow-progression.diff"), diff);
-    } catch { /* no git / no commits yet — the .git copy and transcripts still carry it */ }
-    // a manifest whose paths point at the ARCHIVED copies, so a view re-renders
-    // straight from the archive: `node scripts/field-test/report.mts <dest>/manifest.json`
-    writeFileSync(path.join(dest, "manifest.json"), JSON.stringify({ ...manifest, harnessRoot: path.join(dest, "harness"), workDir: path.join(dest, "work") }, null, 2));
-    console.log(`\narchived (raw + report) -> ${dest}`);
-    console.log(`  read now:                  open ${path.join(dest, "harness", "report.html")}`);
-    console.log(`  re-render a view later:    node scripts/field-test/report.mts ${path.join(dest, "manifest.json")}`);
+      const { stdout } = await execFile(process.execPath, [REPORT, "--from", tgz, "--out", path.join(dest, "report.html")], { maxBuffer: 64 * 1024 * 1024 });
+      if (stdout.trim()) console.log(stdout.trim());
+    } catch (e) { console.warn(`report generation failed (${(e as Error).message.split("\n")[0]}) — the raw archive is intact; re-render with --from`); }
+    console.log(`\narchived (committed) -> ${dest}`);
+    console.log(`  read now:               open ${path.join(dest, "report.html")}`);
+    console.log(`  re-render from the raw: node test/field-test/report.mts --from ${path.join(dest, "raw.tgz")}`);
   } catch (e) { console.warn(`archive failed: ${(e as Error).message.split("\n")[0]}`); }
 }
 
 // ---------- main ----------
+// re-archive an already-finished round without re-running it (recovery path when
+// archiving failed, and how the archive mechanics get exercised for $0)
+if (argv.includes("--archive")) { await archiveRun(); process.exit(0); }
+
 if (!existsSync(WORKDIR)) { console.error(`workDir missing: ${WORKDIR} — run stage.mts first`); process.exit(2); }
 
 let exitCode = 0;

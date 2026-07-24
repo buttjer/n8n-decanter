@@ -2,7 +2,7 @@
 //
 // Boots + provisions a throwaway n8n (or targets an existing one) and scaffolds
 // the neutral scratch project a blind Sonnet session will run in, then prints a
-// stage manifest for the orchestrator (scripts/field-test/run.mts). Reuses the
+// stage manifest for the orchestrator (test/field-test/run.mts). Reuses the
 // smoke-suite recipe facts (AGENTS.md "Driving a real n8n in Docker"); talks to
 // n8n with plain fetch only.
 //
@@ -12,9 +12,9 @@
 // never cd's into, so the manifest's metadata can't leak into a blind session.
 //
 // Usage:
-//   node scripts/field-test/stage.mts                # boot + provision + scaffold
-//   node scripts/field-test/stage.mts --down <manifest.json>   # teardown
-//   node scripts/field-test/stage.mts --help
+//   node test/field-test/stage.mts                # boot + provision + scaffold
+//   node test/field-test/stage.mts --down <manifest.json>   # teardown
+//   node test/field-test/stage.mts --help
 //
 // Env knobs:
 //   FIELD_N8N_TAG=<image>   override the pinned n8n image (default matches smoke)
@@ -35,7 +35,7 @@ import { promisify } from "node:util";
 import { installSkillsPack, type SkillsInstall } from "./skills-install.mts";
 
 const execFile = promisify(execFileCb);
-/** The n8n-decanter repo this stage lives in — the CLI under test (scripts/field-test/ → ../..). */
+/** The n8n-decanter repo this stage lives in — the CLI under test (test/field-test/ → ../..). */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const docker = (...args: string[]) => execFile("docker", args, { encoding: "utf8" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -48,7 +48,7 @@ const OWNER = { email: "priya@flows.local", firstName: "Priya", lastName: "Ops",
 
 // ---------- teardown mode ----------
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log("usage: node scripts/field-test/stage.mts [--down <manifest.json>]");
+  console.log("usage: node test/field-test/stage.mts [--down <manifest.json>]");
   process.exit(0);
 }
 if (process.argv.includes("--down")) {
@@ -226,6 +226,48 @@ function mergeLocalSettings(workDir: string, patch: Record<string, unknown>): vo
   writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2) + '\n');
 }
 
+/**
+ * Strip the harness's own npm scripts from a packed CLI tarball — IN PLACE.
+ *
+ * `npm pack` ships the whole `scripts` block, so an installed decanter carries
+ * `"field-test:stage": …` into the blind session's `node_modules`. A round-2
+ * agent read that `package.json` and saw them (it did not infer an evaluation,
+ * so the round stayed gradeable — but the next one might).
+ *
+ * Rewriting the TARBALL rather than an installed copy is deliberate: it is the
+ * single point both install paths flow through — host mode's
+ * `npm install <tgz>` into the workDir, and container mode's `npm install -g`
+ * inside the fenced image, which the harness never touches afterwards.
+ *
+ * Only `field-test:*` is removed. Everything else (`test`, `test:smoke`,
+ * `lint`, …) is what a genuine `npm i n8n-decanter` also shows, and stripping
+ * more would make the blind environment LESS like a real user's — the opposite
+ * of what this harness is for.
+ */
+async function unblindTarball(tgz: string): Promise<string[]> {
+  const work = path.join(path.dirname(tgz), ".unblind");
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+  try {
+    await execFile("tar", ["-xzf", tgz, "-C", work]);
+    const pkgFile = path.join(work, "package", "package.json");
+    const pkg = JSON.parse(readFileSync(pkgFile, "utf8")) as { scripts?: Record<string, string> };
+    const removed = Object.keys(pkg.scripts ?? {}).filter((s) => s.startsWith("field-test:"));
+    if (removed.length === 0) return [];
+    for (const s of removed) delete pkg.scripts![s];
+    writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + "\n");
+    // repack with the same `package/` root npm expects
+    await execFile("tar", ["-czf", tgz, "-C", work, "package"]);
+    return removed;
+  } catch (err) {
+    // never fail a stage over blinding hygiene — say so and carry on
+    console.warn(`could not strip field-test scripts from the packed CLI (${(err as Error).message.split("\n")[0]}) — the blind session may see them`);
+    return [];
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
 // ---------- scaffold the neutral scratch project ----------
 async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null }> {
   const base = os.tmpdir();
@@ -290,8 +332,9 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
       const { stdout } = await execFile("npm", ["pack", "--pack-destination", workDir, "--json"], { cwd: PACKAGE_ROOT });
       const tgz = (JSON.parse(stdout) as Array<{ filename: string }>)[0].filename;
       cliTarball = path.join(workDir, tgz);
+      const stripped = await unblindTarball(cliTarball);
       await execFile("npm", ["install", "--no-audit", "--no-fund", cliTarball], { cwd: workDir });
-      console.log(`packed + locally installed n8n-decanter (${tgz}) — no global link`);
+      console.log(`packed + locally installed n8n-decanter (${tgz}) — no global link${stripped.length ? `; stripped ${stripped.length} blinding script(s): ${stripped.join(", ")}` : ""}`);
     }
     decanterInstalled = true;
   } catch (err) {
@@ -395,7 +438,7 @@ try {
   console.log("seeded workflows:");
   for (const s of seeded) console.log(`  ${s.availableInMCP ? "✓" : "·"} ${s.name}  [${s.kind}]  ${s.id}`);
   console.log(`\nmanifest    ${manifestPath}`);
-  console.log(`teardown    node scripts/field-test/stage.mts --down ${manifestPath}`);
+  console.log(`teardown    node test/field-test/stage.mts --down ${manifestPath}`);
   // machine-readable last line for the orchestrator
   console.log(`\nMANIFEST=${manifestPath}`);
 } catch (err) {

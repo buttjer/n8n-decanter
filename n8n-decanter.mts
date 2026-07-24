@@ -673,7 +673,10 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         const { errors, warnings } = validateWorkflowDir(dir);
         for (const w of warnings) log.warn(`${name}: ${w}`);
         for (const e of errors) log.error(`${name}: ${e}`);
-        if (errors.length === 0) log.ok(`${name}: OK`);
+        // Say what green means. `check` is offline — it proves the layout is
+        // well-formed, NOT that the code is live in n8n. Field-test agents read
+        // a bare "OK" as "done" and stopped without pushing (Plan 35).
+        if (errors.length === 0) log.ok(`${name}: OK (local layout — \`status\` compares with n8n)`);
         errorCount += errors.length;
       }
       if (!noTypecheck) {

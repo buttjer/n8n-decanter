@@ -27,9 +27,9 @@
 //      the other half; this catches a bypass)
 //
 // Usage:
-//   node scripts/field-test/verify.mts <manifest.json> [--scenario <name>]
+//   node test/field-test/verify.mts <manifest.json> [--scenario <name>]
 //        [--out <file.json>] [workflowId …]
-//   node scripts/field-test/verify.mts --help
+//   node test/field-test/verify.mts --help
 //
 // With no workflow ids, every folder under <workDir>/<root> that has a
 // .decanter.json is checked. --out writes a machine-readable summary for the
@@ -46,7 +46,7 @@ const execFile = promisify(execFileCb);
 // ---------- args ----------
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log("usage: node scripts/field-test/verify.mts <manifest.json> [--scenario <name>] [--out <file.json>] [workflowId …]");
+  console.log("usage: node test/field-test/verify.mts <manifest.json> [--scenario <name>] [--out <file.json>] [workflowId …]");
   process.exit(0);
 }
 function flag(name: string): string | undefined {
