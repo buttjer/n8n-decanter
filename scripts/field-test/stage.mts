@@ -212,7 +212,7 @@ async function provision(): Promise<{ container: string | null; seeded: SeedResu
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; cliTarball: string | null; decanterSpec: string | null }> {
+async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null }> {
   const base = os.tmpdir();
   const workDir = path.join(base, `flows-ops-${PID}`);
   const harnessRoot = path.join(base, `ftrun-${PID}`);
@@ -281,9 +281,36 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
     console.warn(`providing n8n-decanter failed (${(err as Error).message.split("\n")[0]}) — the agent may not discover the CLI`);
   }
 
+  // Pre-run `init` so the blind session starts from a READY project (maintainer
+  // call 2026-07-24: setup is not what the scenarios measure — the agent should
+  // arrive at a configured dir like a returning user). Scaffolds .mcp.json (the
+  // guard the agent will use), AGENTS.md, .claude/, decanter.config.json,
+  // tsconfig, n8n-globals.d.ts. Driven by the NON-INTERACTIVE flags (#144) — the
+  // very path round-1 finding 3 produced — so it also works under
+  // FIELD_NO_SEED_ENV=1, where there is no .env to reuse.
+  let inited = false;
+  if (decanterInstalled) {
+    try {
+      const bin = path.join(workDir, "node_modules", ".bin", "n8n-decanter");
+      const args = ["init", ".", "--host", HOST, "--token", MCP];
+      if (KEY) args.push("--api-key", KEY);
+      await execFile(bin, args, { cwd: workDir });
+      inited = true;
+      console.log("ran `n8n-decanter init` (non-interactive) — the agent arrives at a configured project");
+      // …and install the sync dir's own devDeps (typescript, the ts plugin) that
+      // init's package.json declares, so the blind agent never has to run
+      // `npm install` either. Setup is not what the scenarios measure.
+      await execFile("npm", ["install", "--no-audit", "--no-fund"], { cwd: workDir })
+        .then(() => console.log("ran `npm install` in the project — devDeps present before the blind session"))
+        .catch((e) => console.warn(`npm install after init failed (${(e as Error).message.split("\n")[0]})`));
+    } catch (err) {
+      console.warn(`init failed (${(err as Error).message.split("\n")[0]}) — the blind agent would have to run it itself`);
+    }
+  }
+
   // install the official n8n skills pack the way a real user would
   const skills = await installSkillsPack(workDir);
-  return { workDir, harnessRoot, skills, decanterInstalled, cliTarball, decanterSpec: spec ?? null };
+  return { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec: spec ?? null };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -309,7 +336,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, harnessRoot, skills, decanterInstalled, cliTarball, decanterSpec } = await scaffold();
+  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -323,6 +350,8 @@ try {
     root: "workflows",
     skills,
     decanterInstalled,
+    // the stage pre-ran init, so scenarios start from a configured project
+    inited,
     // Container mode (run.mts --container) bakes one of these into the fenced
     // agent image: the local packed tarball, or the npm spec (FIELD_DECANTER_SPEC).
     cliTarball,

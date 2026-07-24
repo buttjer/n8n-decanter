@@ -23,6 +23,12 @@ RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code typescript@^5.
 
 # Run as a non-root user — the container is the isolation boundary; least-privilege inside.
 RUN useradd -m -u 1001 agent
+
+# The /work/node_modules volume is INITIALIZED FROM THIS PATH, so create it here
+# owned by `agent`. Otherwise Docker mounts the volume root-owned and the agent
+# hits `EACCES: permission denied, mkdir '/work/node_modules/@esbuild'` — round-2
+# S1 burned turns "fixing" exactly that harness bug instead of testing decanter.
+RUN mkdir -p /work/node_modules && chown -R agent:agent /work
 USER agent
 WORKDIR /work
 
