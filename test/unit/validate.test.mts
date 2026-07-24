@@ -123,6 +123,51 @@ describe("validateWorkflowDir", () => {
     ]);
   });
 
+  // Plan 35 field-test finding: an agent converted a node .js→.ts, ran `check`,
+  // read the green line as "done", and never pushed — so the code never reached
+  // n8n and .decanter.json still named the deleted .js.
+  describe("unpushed local work", () => {
+    /**
+     * The exact post-conversion state: placeholder re-pointed to .ts, the .js
+     * deleted (leaving it behind would trip the orphan check — removing it is
+     * what made `check` green for the agent), state still recording the .js.
+     */
+    const converted = () => {
+      const dir = scaffold({
+        workflow: { nodes: [{ id: "n2", name: "Main", type: "n8n-nodes-base.code", parameters: { jsCode: "//@file:code/main.ts" } }] },
+        files: { "code/main.ts": "return [];\n" },
+      });
+      rmSync(path.join(dir, "code/main.js"));
+      return dir;
+    };
+
+    it("warns when the placeholder has moved off what .decanter.json records", () => {
+      const { errors, warnings } = validateWorkflowDir(converted());
+      assert.deepEqual(warnings, [
+        `node "Main": .decanter.json still records code/main.js, but the placeholder now points at code/main.ts — push to register the change with n8n`,
+      ]);
+      // MUST stay a warning: push runs this guard before it reconciles the map,
+      // so an error here would refuse the very command that heals the state.
+      assert.deepEqual(errors, [], "a pending push is not a layout violation");
+    });
+
+    it("warns when .decanter.json records a file that is gone from disk", () => {
+      const dir = scaffold({
+        workflow: { nodes: [{ id: "n2", name: "Main", type: "n8n-nodes-base.code", parameters: { jsCode: "//@file:code/main.js" } }] },
+      });
+      rmSync(path.join(dir, "code/main.js"));
+      const { warnings } = validateWorkflowDir(dir);
+      assert.ok(
+        warnings.some((w) => /\.decanter\.json records code\/main\.js, which is missing on disk/.test(w)),
+        `expected a missing-file warning, got ${JSON.stringify(warnings)}`,
+      );
+    });
+
+    it("stays silent once the map agrees with the placeholder", () => {
+      assert.deepEqual(validateWorkflowDir(scaffold()), { errors: [], warnings: [] });
+    });
+  });
+
   it("warns on a stray .remote.js no placeholder covers", () => {
     const { warnings, errors } = validateWorkflowDir(scaffold({ files: { "code/gone.remote.js": "// old\n" } }));
     assert.deepEqual(errors, []);

@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`check` now warns when local work has not been registered with n8n** — a
+  node whose `//@file:` placeholder has moved off what `.decanter.json` records
+  (the shape of a `.js`→`.ts` conversion), or whose recorded file is gone from
+  disk. It stays a *warning*, not an error: `push` reconciles the file map, and
+  the compliance guard runs before that reconcile, so failing here would refuse
+  the one command that fixes it.
+
 ### Changed
+
+- **`check`'s success line now states its scope** —
+  `OK (local layout — status compares with n8n)` instead of a bare `OK`. `check`
+  is offline by definition, so green means "well-formed", never "live in n8n".
+  The agent guide gained the matching rule, and the `.js`→`.ts` recipe now ends
+  at `push` rather than `check` — it previously told you to stop one step short
+  of the conversion actually reaching the instance. *(Surfaced by the Plan 35
+  blind field test: three separate sessions authored code, read a green `check`
+  as "done", and never pushed.)*
 
 - **`scenario create` / `scenario check` with no workflow now open the picker on
   a terminal**, like every other ref-taking verb (`pull`, `push`, `backup …`, …).
