@@ -54,7 +54,8 @@ const usage = (): string => {
   ${d("Run with no arguments in a terminal for the interactive picker; `help` prints this.")}
 
 ${b("Setup")}
-  ${b("init")} [dir] [--force]                    ${d("interactive setup: .env, starter files, config")}
+  ${b("init")} [dir] [--force] [--host <url> --token <tok> --api-key <key>]
+  ${d("                                              setup: .env, starter files, config (flags drive it non-interactively)")}
   ${b("completion")} zsh|bash                     ${d("print a shell completion script for your rc file")}
 
 ${b("Sync")} ${d("(over n8n's MCP server — Code-node source only; structure lives in n8n)")}
@@ -155,12 +156,12 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|version|at)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|version|at|host|token|api-key)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
       }
-      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : "123";
+      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : m[1] === "host" ? "http://localhost:5678" : m[1] === "token" ? "<mcp-token>" : m[1] === "api-key" ? "<api-key>" : "123";
       let value = m[2];
       if (value === undefined) {
         // Space-separated form (`--limit 5`): consume the next token — but not
@@ -270,7 +271,8 @@ async function main() {
   if (command === "init") {
     // must run before loadConfig: a fresh directory has no config/.env yet
     if (rest.length > 1) throw new Error("init takes at most one directory argument");
-    await init(rest[0], { force }, log);
+    // --host/--token/--api-key drive init non-interactively (Plan 35 finding).
+    await init(rest[0], { force, host: valueFlags.get("host"), token: valueFlags.get("token"), apiKey: valueFlags.get("api-key") }, log);
     return;
   }
 
@@ -293,7 +295,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--version=", "--at=", "--help");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--version=", "--at=", "--host=", "--token=", "--api-key=", "--help");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);

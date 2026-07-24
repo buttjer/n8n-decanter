@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`init` can run non-interactively via `--host` / `--token` / `--api-key`.**
+  Passing any of them drives setup purely from the flags plus any existing
+  `.env` and issues **no prompt** — so a script or coding agent can bootstrap a
+  sync dir without the interactive stdin dance (the field-test agents needed
+  20+ tries to drive the old prompt path). `--host` is required in this mode
+  (a scheme-less local host is normalized to `http://`, like a typed one) and
+  wins over an existing `.env` value; `--token` sets `N8N_MCP_TOKEN` (headless
+  OAuth is still terminal-only); `--api-key` sets the optional `N8N_API_KEY`.
+  The flag-less path (interactive, or piped answers) is unchanged. *(Plan 35
+  field-test finding.)*
 - **`node run` now emulates `$jmespath`.** A Code node that calls
   `$jmespath(data, expr)` (or the `$jmesPath` alias) runs offline, matching
   n8n's result (backed by `jmespath@0.16.0`, the version n8n pins). It also

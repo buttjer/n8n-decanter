@@ -6,7 +6,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { normalizeHostInput, packageRootFrom } from "../../lib/init.mts";
+import { init, normalizeHostInput, packageRootFrom } from "../../lib/init.mts";
+import type { Log } from "../../lib/types.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-init-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -54,5 +55,17 @@ describe("normalizeHostInput", () => {
     assert.equal(normalizeHostInput("n8n.example.com"), "https://n8n.example.com");
     assert.equal(normalizeHostInput("my-instance.app.n8n.cloud"), "https://my-instance.app.n8n.cloud");
     assert.equal(normalizeHostInput("203.0.113.10:5678"), "https://203.0.113.10:5678");
+  });
+});
+
+describe("init (non-interactive flags)", () => {
+  const nullLog: Log = { info: () => {}, ok: () => {}, warn: () => {}, error: () => {} };
+
+  it("throws instead of prompting when a setup flag is passed but the host is missing (Plan 35 finding)", async () => {
+    const dir = path.join(TMP, "flag-no-host");
+    // A setup flag makes init non-interactive: with no host (and no .env), a
+    // flag-less init would prompt "n8n host:" and hang on non-TTY stdin; flag
+    // mode must error with the fix-it hint and read no stdin at all.
+    await assert.rejects(init(dir, { token: "tok" }, nullLog), /host is required — pass --host <url>/);
   });
 });

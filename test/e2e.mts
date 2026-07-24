@@ -596,6 +596,24 @@ await step("init: writes .env (MCP token + optional API key), copies whole templ
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`, ".env must survive --force");
 });
 
+await step("init --host/--token/--api-key: fully non-interactive, no stdin (Plan 35 finding)", async () => {
+  const target = path.join(TMP, "init-flags");
+  // Pass the host scheme-less (local → normalized to http://) to prove the flag
+  // is normalized like a typed one. NO stdin is written — the flags supply
+  // everything; if init prompted, it would show below (and hang without a TTY).
+  const schemeless = env.N8N_HOST!.replace(/^https?:\/\//, "");
+  const pending = execFile(process.execPath, [CLI, "init", target, "--host", schemeless, "--token", MCP_TOKEN, "--api-key", "test-key"], { encoding: "utf8" });
+  pending.child.stdin!.end();
+  const { stdout, stderr } = await pending;
+  const out = stdout + stderr;
+  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`, "flags populate .env; scheme-less local host normalized to http");
+  assert.match(out, /using --host/);
+  assert.match(out, /using MCP token from --token/);
+  assert.match(out, /MCP connection verified/, "the MCP probe still runs with flag creds");
+  assert.match(out, /API key verified/, "the API probe still runs with the flag key");
+  assert.ok(!/n8n host:/.test(out) && !/public API key \(optional/.test(out), "flag mode issues no prompts");
+});
+
 await step("init: credential probes — skipped MCP, non-2xx and unreachable API outcomes get their own log lines", async () => {
   // non-2xx: a real server that answers, but rejects
   const rejecting = http.createServer((_req, res) => void res.writeHead(403).end("nope"));

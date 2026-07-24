@@ -12,7 +12,7 @@ argument (no special rule). Flags may still sit anywhere.
 n8n-decanter                        # interactive picker (terminal, inited project)
 
 # Setup
-n8n-decanter init [dir] [--force]   # interactive bootstrap
+n8n-decanter init [dir] [--force]   # bootstrap (add --host/--token/--api-key to skip prompts)
 n8n-decanter completion zsh|bash
 
 # Sync — over n8n's MCP server, Code-node source only (structure lives in n8n)
