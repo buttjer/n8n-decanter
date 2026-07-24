@@ -26,7 +26,10 @@ if (argv.includes("--help") || argv.includes("-h")) {
 }
 const outFlag = argv.indexOf("--out");
 const outArg = outFlag >= 0 ? argv[outFlag + 1] : undefined;
-const positional = argv.filter((a, i) => !a.startsWith("--") && i !== outFlag + 1);
+// NB: only skip the token AFTER --out when --out is actually present. Without
+// this guard, outFlag === -1 makes `outFlag + 1 === 0` swallow the manifest
+// itself, so `report.mts <manifest>` always failed with "pass <manifest.json>".
+const positional = argv.filter((a, i) => !a.startsWith("--") && !(outFlag >= 0 && i === outFlag + 1));
 const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("report: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 
