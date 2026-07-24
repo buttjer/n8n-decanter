@@ -107,6 +107,46 @@ function fillSecrets(text: string): string {
   return text.replaceAll("{{MCP_TOKEN}}", manifest.mcpToken).replaceAll("{{API_KEY}}", manifest.apiKey || "(none — skip it)");
 }
 
+// ---------- the one credential that crosses the fence ----------
+/** Minimal KEY=VALUE reader for the harness `.env` (no deps; ignores comments). */
+function readEnvFile(file: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!existsSync(file)) return out;
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!m || line.trimStart().startsWith("#")) continue;
+    out[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, "$2");
+  }
+  return out;
+}
+
+/**
+ * Choose the single auth credential passed into the fenced container.
+ *
+ * Two accepted shapes, both plain env vars — which is what keeps the isolation
+ * contract intact: no mounted credential store, no browser inside the fence.
+ *   - `CLAUDE_CODE_OAUTH_TOKEN` — a Claude subscription token (`claude
+ *     setup-token`). Costs quota from your 5-hour windows instead of dollars.
+ *   - `ANTHROPIC_API_KEY` — pay-per-token API billing. Scope it with a LOW
+ *     spend cap; that cap is a backstop a subscription token does NOT have,
+ *     so with a token `FIELD_RUN_BUDGET_MIN` is the only limit left.
+ *
+ * Exactly ONE is exported, never both and never an empty one: an empty
+ * `ANTHROPIC_API_KEY` in the container is worse than an absent one, because the
+ * CLI would try to use it. The token wins when both are present.
+ */
+function credentialEnv(): { env: Record<string, string>; described: string } {
+  const file = readEnvFile(ENV_FILE);
+  const pick = (name: string) => (file[name] ?? process.env[name] ?? "").trim();
+  const token = pick("CLAUDE_CODE_OAUTH_TOKEN");
+  const key = pick("ANTHROPIC_API_KEY");
+  if (token) {
+    return { env: { CLAUDE_CODE_OAUTH_TOKEN: token }, described: `subscription token${key ? " (ANTHROPIC_API_KEY also set — ignored)" : ""} — billed as quota, no spend cap; FIELD_RUN_BUDGET_MIN is the limit` };
+  }
+  if (key) return { env: { ANTHROPIC_API_KEY: key }, described: "API key — pay-per-token" };
+  throw new Error(`--container needs a credential in ${ENV_FILE}: CLAUDE_CODE_OAUTH_TOKEN (from \`claude setup-token\`) or ANTHROPIC_API_KEY (cp test/field-test/.env.example test/field-test/.env)`);
+}
+
 // ---------- container-mode orchestration (Plan 35: fenced, unattended) ----------
 /** `docker compose` with the fixed -f/--env-file + the interpolation env. */
 async function dockerCompose(args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -121,7 +161,8 @@ async function dockerCompose(args: string[]): Promise<{ stdout: string; stderr: 
  */
 async function containerSetup(): Promise<void> {
   if (!manifest.container) throw new Error("--container needs a Docker-booted n8n (manifest.container is null — external/FIELD_N8N_URL mode is host-only)");
-  if (!existsSync(ENV_FILE)) throw new Error(`--container needs ${ENV_FILE} with ANTHROPIC_API_KEY (cp test/field-test/.env.example test/field-test/.env)`);
+  const cred = credentialEnv(); // throws with the fix-it message when neither is set
+  console.log(`container mode: auth = ${cred.described}`);
   if (!manifest.cliTarball && !manifest.decanterSpec) throw new Error("no CLI to bake — manifest.cliTarball and decanterSpec are both null (re-stage)");
 
   console.log("container mode: building fenced images (unfenced build) …");
@@ -146,6 +187,10 @@ async function containerSetup(): Promise<void> {
     FIELD_HARNESS: HARNESS,
     // n8n (by container name) + loopback bypass the proxy — they're on the internal net
     FIELD_NO_PROXY: `${manifest.container},localhost,127.0.0.1`,
+    // the chosen credential, exported to the compose child so the bare
+    // pass-through entries in docker-compose.yml resolve deterministically
+    // (rather than depending on --env-file semantics for un-valued names)
+    ...cred.env,
   };
 
   // the agent reaches n8n by its container name on the internal net (the host's
