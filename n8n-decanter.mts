@@ -6,7 +6,7 @@ import { loadConfig, requireApiKey } from "./lib/config.mts";
 import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { assertNoLegacyFixtures, cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId, migrateScenariosDir } from "./lib/executions.mts";
-import { init, printBanner } from "./lib/init.mts";
+import { cliVersion, init, printBanner } from "./lib/init.mts";
 import { checkScenarios, listScenarioSlugs, runSimulation, writeScenario, type SimulationReport } from "./lib/simulate.mts";
 import { publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, prepareTestPinData, searchWorkflows } from "./lib/mcp.mts";
@@ -86,7 +86,7 @@ ${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-sca
 
 ${b("Backup")} ${d("(git-native, redeployable disaster-recovery store — REST, needs N8N_API_KEY)")}
   ${b("backup create")} <workflow>                  ${d("capture the workflow's full REST export into backups/ (not auto-committed)")}
-  ${b("backup restore")} <workflow> [--version <id> | --at <ts>]   ${d("redeploy a backup as a NEW, unpublished workflow (node ids preserved)")}
+  ${b("backup restore")} <workflow> [<backup>]      ${d("redeploy a backup as a NEW, unpublished workflow (node ids preserved)")}
   ${b("backup list")} <workflow>                    ${d("list retained backups: timestamp · versionId · node count")}
 
 ${b("Node")}
@@ -149,6 +149,23 @@ const COMPLETION_SCRIPTS: Record<string, string> = {
 };
 
 async function main() {
+  // `--version`/`-v` is the one flag name every CLI is expected to answer, so it
+  // stays out of every verb's namespace and is handled before anything else — no
+  // config load, no verb. Alongside a verb it is a hard error instead: no verb
+  // takes a `--version`, and staying silent would mean swallowing the command
+  // (printing a version and skipping the work the user asked for).
+  {
+    const raw = process.argv.slice(2);
+    if (raw.some((a) => a === "--version" || a === "-v" || a.startsWith("--version="))) {
+      const verb = raw.find((a) => VERBS.has(a));
+      if (verb === undefined) {
+        console.log(cliVersion());
+        return;
+      }
+      const hint = verb === "backup" ? " — `backup restore` takes the backup as an argument: `backup restore <workflow> [<timestamp|versionId>]`" : "";
+      throw new Error(`--version prints the CLI version and takes no value; it is not a \`${verb}\` flag${hint}`);
+    }
+  }
   // --status/--limit take a value (--limit=5 or --limit 5); they're peeled
   // off first so the boolean-flag and positional logic below stays untouched.
   const valueFlags = new Map<string, string>();
@@ -156,7 +173,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|version|at|host|token|api-key)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|host|token|api-key)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -179,6 +196,13 @@ async function main() {
   // dropping `--mock` (it no longer matches the value-flag regex above).
   if (process.argv.slice(2).some((a) => a === "--mock" || a.startsWith("--mock=") || a === "--pin" || a.startsWith("--pin="))) {
     throw new Error("`--mock`/`--pin` were removed (Plan 37): use `--scenario <slug>` (create scenarios with `scenario create`; `simulate --pin` is gone — use `scenario create --execution <id>`)");
+  }
+  // Same treatment for `backup restore`'s v0.6.0 selectors, now a positional
+  // backup ref. Silence would be worse than for most retired flags: `--at=<ts>`
+  // matches nothing, gets dropped from the positionals, and the restore would
+  // quietly land the LATEST backup instead of the requested one.
+  if (process.argv.slice(2).some((a) => a === "--at" || a.startsWith("--at=") || a === "--version-id" || a.startsWith("--version-id="))) {
+    throw new Error("`--at`/`--version-id` were removed: `backup restore` takes the backup as an argument — `n8n-decanter backup restore <workflow> [<timestamp|versionId>]` (see `backup list`)");
   }
   const force = args.includes("--force");
   const publishFlag = args.includes("--publish");
@@ -295,7 +319,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--version=", "--at=", "--host=", "--token=", "--api-key=", "--help");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--host=", "--token=", "--api-key=", "--help", "--version");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -925,7 +949,9 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (command === "backup:create") {
         await backupCreate(backupApi, dir, { limit: config.backupLimit }, log);
       } else {
-        await backupRestore(backupApi, dir, { host: config.host, version: valueFlags.get("version"), at: valueFlags.get("at"), interactive: interactive() }, log);
+        // refs[1] is an optional backup ref (timestamp or versionId, see
+        // matchesBackupRef); absent, restore takes the latest or opens the chooser.
+        await backupRestore(backupApi, dir, { host: config.host, ref: refs[1], interactive: interactive() }, log);
       }
       break;
     }

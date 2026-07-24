@@ -124,20 +124,33 @@ describe("backupRestore", () => {
     assert.equal(body.pinData, undefined, "no runtime state in the create body");
   });
 
-  it("selects by --version and defaults to the latest", async () => {
+  it("resolves the positional backup ref by timestamp or versionId, else the latest", async () => {
     const dir = workflowDir("wf5");
     writeBackup(dir, "ver-old", 0);
     writeBackup(dir, "ver-new", 5);
+    const [older, newer] = listBackups(dir);
 
-    let created: { body?: Record<string, unknown> } = {};
-    await backupRestore(stubApi(restWorkflow("wf5", "x"), created), dir, { host: "http://n8n.local", version: "ver-old" }, silent);
-    assert.equal((created.body as { name: string }).name, "Order Sync");
-    // pick by full inner versionId; the assembled body came from the ver-old file — assert via a marker
-    // (both files share structure; assert selection by checking backupRestore didn't throw and returned)
+    // The POSTed body is identical for both files, so selection is asserted on
+    // the `restored … from <file>` line — the only place the pick surfaces.
+    const restoredFrom = async (ref?: string): Promise<string> => {
+      let line = "";
+      const capture: Log = { ...silent, ok: (m) => { line = m; } };
+      const res = await backupRestore(stubApi(restWorkflow("wf5", "x"), {}), dir, { host: "http://n8n.local", ref }, capture);
+      assert.ok(res?.id, "restore returned a new workflow id");
+      return line;
+    };
 
-    created = {};
-    const res = await backupRestore(stubApi(restWorkflow("wf5", "x"), created), dir, { host: "http://n8n.local" }, silent);
-    assert.ok(res?.id, "default latest restores without a selector");
+    assert.match(await restoredFrom("ver-old"), new RegExp(older.name), "short versionId from the filename");
+    assert.match(await restoredFrom(older.timestamp), new RegExp(older.name), "exact timestamp");
+    assert.match(await restoredFrom(older.timestamp.slice(0, 10)), new RegExp(older.name), "timestamp prefix (bare date)");
+    assert.match(await restoredFrom("ver-new"), new RegExp(newer.name), "the other backup, so the match is real");
+    assert.match(await restoredFrom(), new RegExp(newer.name), "no ref -> the latest");
+
+    await assert.rejects(
+      () => backupRestore(stubApi(restWorkflow("wf5", "x"), {}), dir, { host: "http://n8n.local", ref: "nope" }, silent),
+      /no backup matching "nope"/,
+      "an unresolvable ref fails loudly instead of falling back to the latest",
+    );
   });
 
   it("errors clearly when the selected backup references a missing code file", async () => {

@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`n8n-decanter --version` prints the installed version** (`-v` too), the way
+  every CLI is expected to. It answers before any config load or verb dispatch,
+  so it works from anywhere — including outside a sync dir. Passed *alongside* a
+  verb it is a hard error naming the flag you meant, so a stray `--version`
+  can't quietly swallow a command.
+
 - **A first `init` points at n8n's official skills pack.** Setup now closes by
   naming [n8n-io/skills](https://github.com/n8n-io/skills) — the knowledge layer
   that makes agentic workflow building work — and printing the install commands
@@ -78,6 +84,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `$vars`/`$secrets` when a node reads them.
 
 ### Changed
+
+- **Breaking: `backup restore` takes the backup as an argument, not a flag —
+  `backup restore <workflow> [<backup>]`.** `--version <id>` and `--at <ts>`
+  are gone. The argument is a **backup ref** resolved by shape, exactly like a
+  `<workflow>` ref: paste a timestamp (or a prefix — a bare date is enough) or a
+  `versionId` (short or full), whichever column of `backup list` you have to
+  hand. `backup restore order-sync 2026-07-24` and `backup restore order-sync
+  a1b2c3d4` both just work; a ref that matches nothing is an error, never a
+  silent fall back to the latest. The retired flags fail loudly with the
+  replacement. This also un-squats `--version`, which no CLI can spend on a
+  verb-scoped meaning (see Added).
 
 - **`node run` signposts instead of crashing on instance-scoped globals.** A
   global whose value lives on the running instance (`$vars`/`$secrets` when
