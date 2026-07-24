@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-24
+
 ### Changed
+
+- **Breaking: `backup restore` takes the backup as an argument, not a flag —
+  `backup restore <workflow> [<backup>]`.** `--version <id>` and `--at <ts>`
+  are gone. The argument is a **backup ref** resolved by shape, exactly like a
+  `<workflow>` ref: paste a timestamp (or a prefix — a bare date is enough) or a
+  `versionId` (short or full), whichever column of `backup list` you have to
+  hand. `backup restore order-sync 2026-07-24` and `backup restore order-sync
+  a1b2c3d4` both just work; a ref that matches nothing is an error, never a
+  silent fall back to the latest. The retired flags fail loudly with the
+  replacement. This also un-squats `--version`, which no CLI can spend on a
+  verb-scoped meaning (see Added).
 
 - **`scenario create` / `scenario check` with no workflow now open the picker on
   a terminal**, like every other ref-taking verb (`pull`, `push`, `backup …`, …).
@@ -30,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--force` resolves it by removing the old file. A `settings.local.json` that
   `init` never wrote is never touched. *(Plan 56.)*
 
+- **`node run` signposts instead of crashing on instance-scoped globals.** A
+  global whose value lives on the running instance (`$vars`/`$secrets` when
+  unpinned, `$evaluateExpression`) now throws a friendly message that names the
+  global and points to `test` (or the fixture field) — never a bare
+  `ReferenceError`. `docs/cli/node-run.md` documents the covered / partial /
+  unsupported boundary.
+
 ### Added
 
 - **`n8n-decanter --version` prints the installed version** (`-v` too), the way
@@ -48,6 +68,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mid-session isn't active until the agent reloads. Said once per sync dir (no
   re-init repeats it), on every path including piped and `--host`-driven runs,
   and it consumes no input — no existing script's stdin changes. *(Plan 55.)*
+
+- **`init` can run non-interactively via `--host` / `--token` / `--api-key`.**
+  Passing any of them drives setup purely from the flags plus any existing
+  `.env` and issues **no prompt** — so a script or coding agent can bootstrap a
+  sync dir without the interactive stdin dance (the field-test agents needed
+  20+ tries to drive the old prompt path). `--host` is required in this mode
+  (a scheme-less local host is normalized to `http://`, like a typed one) and
+  wins over an existing `.env` value; `--token` sets `N8N_MCP_TOKEN` (headless
+  OAuth is still terminal-only); `--api-key` sets the optional `N8N_API_KEY`.
+  The flag-less path (interactive, or piped answers) is unchanged. *(Plan 35
+  field-test finding.)*
+
+- **`node run` now emulates `$jmespath`.** A Code node that calls
+  `$jmespath(data, expr)` (or the `$jmesPath` alias) runs offline, matching
+  n8n's result (backed by `jmespath@0.16.0`, the version n8n pins). It also
+  fills in `$items()`/`$node` (views over the fixture's `nodes`), `$vars`/
+  `$secrets` (new fixture fields), and `$nodeId`/`$nodeVersion`/`$webhookId`.
+
+- **`node run` fixtures gained `vars` and `secrets`** to pin the instance-scoped
+  `$vars`/`$secrets` when a node reads them.
 
 ### Fixed
 
@@ -69,48 +109,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing`. Pull now honors the re-pointed placeholder exactly as push does
   (they share one reconcile step). *(Plan 35 field-test finding.)*
 
-### Added
-
-- **`init` can run non-interactively via `--host` / `--token` / `--api-key`.**
-  Passing any of them drives setup purely from the flags plus any existing
-  `.env` and issues **no prompt** — so a script or coding agent can bootstrap a
-  sync dir without the interactive stdin dance (the field-test agents needed
-  20+ tries to drive the old prompt path). `--host` is required in this mode
-  (a scheme-less local host is normalized to `http://`, like a typed one) and
-  wins over an existing `.env` value; `--token` sets `N8N_MCP_TOKEN` (headless
-  OAuth is still terminal-only); `--api-key` sets the optional `N8N_API_KEY`.
-  The flag-less path (interactive, or piped answers) is unchanged. *(Plan 35
-  field-test finding.)*
-- **`node run` now emulates `$jmespath`.** A Code node that calls
-  `$jmespath(data, expr)` (or the `$jmesPath` alias) runs offline, matching
-  n8n's result (backed by `jmespath@0.16.0`, the version n8n pins). It also
-  fills in `$items()`/`$node` (views over the fixture's `nodes`), `$vars`/
-  `$secrets` (new fixture fields), and `$nodeId`/`$nodeVersion`/`$webhookId`.
-- **`node run` fixtures gained `vars` and `secrets`** to pin the instance-scoped
-  `$vars`/`$secrets` when a node reads them.
-
-### Changed
-
-- **Breaking: `backup restore` takes the backup as an argument, not a flag —
-  `backup restore <workflow> [<backup>]`.** `--version <id>` and `--at <ts>`
-  are gone. The argument is a **backup ref** resolved by shape, exactly like a
-  `<workflow>` ref: paste a timestamp (or a prefix — a bare date is enough) or a
-  `versionId` (short or full), whichever column of `backup list` you have to
-  hand. `backup restore order-sync 2026-07-24` and `backup restore order-sync
-  a1b2c3d4` both just work; a ref that matches nothing is an error, never a
-  silent fall back to the latest. The retired flags fail loudly with the
-  replacement. This also un-squats `--version`, which no CLI can spend on a
-  verb-scoped meaning (see Added).
-
-- **`node run` signposts instead of crashing on instance-scoped globals.** A
-  global whose value lives on the running instance (`$vars`/`$secrets` when
-  unpinned, `$evaluateExpression`) now throws a friendly message that names the
-  global and points to `test` (or the fixture field) — never a bare
-  `ReferenceError`. `docs/cli/node-run.md` documents the covered / partial /
-  unsupported boundary.
-
-### Fixed
-
 - **`init` no longer breaks local `http` instances.** A scheme-less host typed
   at the `n8n host:` prompt now defaults to `http://` for local addresses
   (`localhost`, loopback, private LAN ranges, `*.local`) and `https://`
@@ -122,7 +120,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   throw in a real Code node too — so declaring them wrongly type-checked broken
   code. The declared surface now matches what a Code node actually sees, and is
   single-sourced (init copies the one root file — no duplicate template copy).
-- The scaffolded agent permission allowlist (`.claude/settings.local.json`) now
+- The scaffolded agent permission allowlist (`.claude/settings.json`, moved this
+  release — see Changed) now
   pre-approves the read-only **`preflight`** gate, so an agent following the
   template's recommended `edit → check → preflight → push` loop no longer stalls
   on a permission prompt at the gate itself. Also dropped the obsolete
