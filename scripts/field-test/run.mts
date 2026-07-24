@@ -181,17 +181,21 @@ async function containerTeardown(): Promise<void> {
 
 // ---------- post-init scaffolding tweaks (guard-log capture + allow extension) ----------
 function applyPostInit(): void {
-  // 1. merge allowExtension into the init-scaffolded settings.local.json (keep deny)
+  // 1. merge allowExtension into the LOCAL settings layer — the harness's own
+  //    (highest precedence). Never the template's settings.json: that is the
+  //    project contract whose DENY rules (push --force, .decanter.json, .env)
+  //    are under test, and deny wins over allow regardless of layer. Created
+  //    when absent, so this holds whichever filename the template ships.
   const settingsPath = path.join(WORKDIR, ".claude", "settings.local.json");
-  if (existsSync(settingsPath)) {
-    const s = JSON.parse(readFileSync(settingsPath, "utf8"));
-    s.permissions ??= {};
-    s.permissions.allow = Array.from(new Set([...(s.permissions.allow ?? []), ...manifest.allowExtension]));
-    writeFileSync(settingsPath, JSON.stringify(s, null, 2) + "\n");
-    console.log(`  merged allowExtension into ${settingsPath}`);
-  } else {
-    console.warn(`  WARN no settings.local.json after init — did init scaffold the template? (${settingsPath})`);
-  }
+  let s: { permissions?: { allow?: string[] } } = {};
+  try {
+    s = JSON.parse(readFileSync(settingsPath, "utf8")) as typeof s;
+  } catch { /* absent or unreadable — start fresh */ }
+  s.permissions ??= {};
+  s.permissions.allow = Array.from(new Set([...(s.permissions.allow ?? []), ...manifest.allowExtension]));
+  mkdirSync(path.dirname(settingsPath), { recursive: true });
+  writeFileSync(settingsPath, JSON.stringify(s, null, 2) + "\n");
+  console.log(`  merged allowExtension into ${settingsPath}`);
   // 2. rewrite .mcp.json's n8n-instance command to capture the guard's stderr
   const mcpPath = path.join(WORKDIR, ".mcp.json");
   if (existsSync(mcpPath)) {
