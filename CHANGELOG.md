@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.0] - 2026-07-24
+### Changed
+
+- **The scaffolded agent contract now treats `push` as part of finishing the
+  work, and reserves "ask the user first" for `publish`.** A push lands on the
+  workflow's **draft** and never changes what is running; only `publish` /
+  `push --publish` / `unpublish` do. The old rule gated both behind "only when
+  the user asks", so an agent handed "build me an hourly job that tags orders"
+  would build the structure in n8n, write and verify all the Code, and then
+  **stop** — leaving every Code node empty on the instance and the real code in
+  the repo, reporting "ready to push". Correct by the old rule, and not what
+  anybody asked for. Agents are now told to push once offline checks pass, to
+  say what landed, and to still ask first when the workflow is published/active
+  or a teammate is editing it. Going live remains a deliberate, user-requested
+  step. Affects `template/AGENTS.md.example` (copied into new sync dirs by
+  `init`) and the `/docs/agents` surfaces. *(Surfaced by the Plan 35 blind field
+  test, where the "failing" agent was following the old contract exactly.)*
 
 ### Added
 

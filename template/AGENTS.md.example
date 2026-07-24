@@ -30,9 +30,10 @@ This document is the contract for creating and editing these files.
 - **Never hand-edit `.decanter.json`, and never write a `// @ts-n8n sha256:`
   marker.** These are machine-owned; touching them corrupts sync state and the
   CLI blocks it at `push`.
-- **`push` writes the DRAFT of the live instance — only when the user asks;
-  `publish` (or `push --publish`) is the deliberate go-live step.** Edit, then
-  verify offline with `n8n-decanter check` and `n8n-decanter node run`.
+- **`push` writes the DRAFT and is part of finishing the work — code that only
+  exists in this folder is not done. `publish` (or `push --publish`) changes
+  what is actually running and needs the user's say-so.** Edit, verify offline
+  with `n8n-decanter check` and `n8n-decanter node run`, then push.
 
 The rest of this document is the full contract behind those points.
 
@@ -557,16 +558,26 @@ Rules:
   executions <workflow>` (fetches execution data, read-only), and `n8n-decanter
   data-tables [table…]` (fetches data-table schema + rows, read-only) — safe to
   run, but they do contact the instance.
-- **Live n8n instance — only when the user explicitly asks:** `n8n-decanter
-  pull` / `push` / `watch` sync code with the real instance (pushes land on
-  the **draft**); `publish` / `unpublish` change what is live (`publish`
-  takes the draft live, `unpublish` returns it to draft-only; `push
-  --publish` combines the two). Otherwise finish edits, verify with `check` +
-  `run`, and report that the change is ready to push (or publish).
+- **Syncs code with the instance — part of doing the work:** `n8n-decanter
+  pull` / `push` / `watch`. **A push lands on the DRAFT — it never changes what
+  is running.** So when the user's request only makes sense with the code in
+  n8n ("build me an hourly job…", "fix the normalise step"), pushing is how you
+  finish it: leaving the code in this folder means the workflow still runs the
+  old version, or nothing at all. Verify offline first (`check` + `node run`),
+  then push, then say what you pushed. Two cases still call for a word first:
+  the workflow is **published/active** (a stale draft can be published by
+  someone else), or a **teammate is editing it** (n8n holds a single-writer
+  lock and the push will fail with a lock error anyway).
+- **Changes what is LIVE — only when the user explicitly asks:** `publish`
+  takes the draft live, `unpublish` returns it to draft-only, `push --publish`
+  combines push and go-live. This is the deliberate step; never fold it into
+  "finishing the work" on your own initiative.
 - **Structure and lifecycle acts** (creating/renaming workflows, adding/
   renaming/wiring nodes, archiving) go through **n8n's MCP tools** via the
-  guarded `n8n-instance` server — they also touch the live instance, so the
-  same rule applies: only when the user asks. **Archiving is outward-facing**
+  guarded `n8n-instance` server. Building the structure a request describes is
+  part of the work, like a push; **renaming or archiving something that already
+  exists is not** — those change what the user sees and finds, so ask first.
+  **Archiving is outward-facing**
   (the workflow leaves the active list; a published one goes offline;
   reversible only in the n8n UI) — never without an explicit instruction
   naming that workflow. After any structure act the **live mirror** refreshes

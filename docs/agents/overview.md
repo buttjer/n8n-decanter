@@ -49,11 +49,13 @@ that boundary safe by construction.
 | --- | --- |
 | `check`, `node run`, `scenario` | Offline and safe — run freely (`scenario create --scaffold` is the exception; it needs MCP). |
 | `status`, `list --remote` | Read the remote, no writes — safe, but they do contact the instance. |
-| `pull`, `push`, `watch`, `publish`, `unpublish` | Touch the live instance — only when the user explicitly asks. Pushes land on the **draft**; `publish` (or `push --publish`) takes it live. |
-| Structure/lifecycle acts over n8n's MCP (create, rename, add/wire nodes — via the [guard](/docs/cli/mcp-connect/)) | Touch the live instance too — same rule: only when the user asks. After a structure act, `pull` reconciles the local mirror. |
-| `test` | Executes the workflow's **draft** on the instance (pinned trigger/network nodes, real logic nodes) — code runs remotely, so treat like a push: only when the user asks. Non-interactive runs never write; the live version is never affected. |
+| `pull`, `push`, `watch` | Sync code with the instance. A push lands on the **draft** and never changes what is running, so it is **part of finishing the work** — code that only exists in the folder is not done. Say a word first if the workflow is published/active or a teammate is editing it. |
+| `publish`, `unpublish`, `push --publish` | **Change what is actually live — only when the user explicitly asks.** Never fold going live into "finishing the work". |
+| Structure/lifecycle acts over n8n's MCP (create, add/wire nodes — via the [guard](/docs/cli/mcp-connect/)) | Building the structure a request describes is part of the work. **Renaming or archiving something that already exists is not** — ask first. After a structure act, `pull` reconciles the local mirror. |
+| `test` | Executes the workflow's **draft** on the instance (pinned trigger/network nodes, real logic nodes) — code runs remotely, but the live version is never affected and non-interactive runs never write. Fine as part of verifying your own change. |
 | Archiving (MCP `archive_workflow`) | **Outward-facing** — the workflow leaves the active list; a published one goes offline. Reversible only in the n8n UI. Never without an explicit instruction to archive *that* workflow. |
 | `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. |
 
-The default loop for an agent: edit → verify offline → report that the change
-is ready to push. See [The offline feedback loop](/docs/agents/offline-loop/).
+The default loop for an agent: edit → verify offline → **push** → say what
+landed. Stop before `publish` unless the user asked for it. See
+[The offline feedback loop](/docs/agents/offline-loop/).
