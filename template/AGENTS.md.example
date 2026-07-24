@@ -325,8 +325,15 @@ import; give them JSDoc `@typedef`s or convert to `.ts`.
 1. Rename the file, convert JSDoc ↔ annotations.
 2. Update the `//@file:` placeholder in `workflow.json` (the one meaningful
    local edit there — it re-points the file map).
-3. `n8n-decanter check`. The tool picks up the new extension on next push;
-   direction of sync changes accordingly (`.ts` = one-way).
+3. `n8n-decanter check` to verify the layout, then **`n8n-decanter push`** —
+   the push is what registers the conversion: it rewrites `.decanter.json`'s
+   file map and sends the compiled code to n8n. Direction of sync changes
+   accordingly (`.ts` = one-way).
+
+**Stopping after step 2 or 3's `check` leaves the conversion local**: n8n still
+runs the old code and `.decanter.json` still names the file you deleted. `check`
+warns about exactly this (it is a pending sync, not an error) — heed the warning
+rather than reading the green typecheck line as done.
 
 ## Verification
 
@@ -336,6 +343,12 @@ Two offline tools, always available (no credentials, no network, no live n8n):
   typecheck (the same wrapper that maps top-level-`return` node bodies back to
   real line numbers). Run it after editing any code file or `n8n-globals.d.ts`;
   treat a failure as a blocker. `npm run typecheck` is an alias for it.
+  **A green `check` is not a finished task.** It is offline by definition, so it
+  proves the files are well-formed — never that n8n is running them. Its success
+  line says so: `OK (local layout — status compares with n8n)`. Editing and then
+  stopping here is the single most common way to leave work unfinished: the repo
+  looks right and the instance is unchanged. Finish with `status` (compare) and
+  `push` (make it real).
 - **`n8n-decanter node run <file> [fixture.json]`** — actually executes a node's body
   against a faked n8n context (`$input`, `$json`, `$('Node')`, `DateTime`, …) and
   prints the items it returns. Prefer this over hand-rolling a throwaway test

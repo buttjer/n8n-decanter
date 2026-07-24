@@ -178,6 +178,25 @@ Grouped by theme; each theme is independently shippable (split the PRs by theme)
    a stale `.decanter.json` hash was considered and rejected: detecting staleness
    means a network call to the instance on every edit — too costly/flaky for the
    benefit.)* Theme A ships as pure documentation.
+4. **✅ DONE — "finish the loop", the closing counterpart to the orient step
+   (2026-07-24).** Theme A guarded the *start* of a task; the Plan 35 blind field
+   test showed the *end* leaking just as badly: **three separate sessions
+   authored code, ran `check`, read its green line as "done", and never pushed**
+   — so the repo looked right and n8n was untouched (S2 `ftrun-81310`: a whole
+   6-node workflow, `check ✓ OK` twice, remote `0b`). Landed, still docs-first
+   but with the one-line signal at the moment of the mistake:
+   - `check`'s success line now states its scope —
+     `OK (local layout — status compares with n8n)` instead of a bare `OK`.
+   - `check` **warns** (never errors) when a node's `//@file:` placeholder has
+     moved off what `.decanter.json` records, or the recorded file is gone. It
+     must stay a warning: `push` runs the compliance guard *before*
+     `reconcileFileMapFromSnapshot`, so erroring would refuse the very command
+     that heals the state.
+   - `template/AGENTS.md.example`: the `.js`→`.ts` recipe **ended at `check`** —
+     literally instructing the behaviour that failed — and now ends at `push`;
+     the Verification section states that a green `check` is not a finished task.
+   - Consistent with task 3's rejection of a network-calling guard hook: nothing
+     added here contacts the instance.
 
 ### B. Surface the n8n instance version in `status` (small, P2)
 
