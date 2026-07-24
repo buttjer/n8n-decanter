@@ -557,10 +557,13 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     // the rest are literals (a scenario slug) — not resolved.
     refs = [await resolveRef(rest[0]), ...rest.slice(1)];
   }
-  // No-ref → picker (Plan 27): a pure ref verb (or a backup sub-verb) with no
-  // workflow, on a terminal, picks one; piped/non-TTY falls through to the
-  // config default / error below.
-  if (refs.length === 0 && (REF_VERBS.has(command) || command.startsWith("backup:")) && interactive()) {
+  // No-ref → picker (Plan 27): a pure ref verb (or a backup/scenario sub-verb)
+  // with no workflow, on a terminal, picks one; piped/non-TTY falls through to
+  // the config default / error below. `scenario:` belongs here for the same
+  // reason `backup:` does — both take a workflow ref as their first argument, so
+  // hard-erroring on a terminal while every sibling verb offers the picker was
+  // an inconsistency (a blind field-test agent tripped it twice, Plan 35).
+  if (refs.length === 0 && (REF_VERBS.has(command) || command.startsWith("backup:") || command.startsWith("scenario:")) && interactive()) {
     const picked = await pickOneWorkflow(config, command, log);
     if (picked !== undefined) refs = [picked];
   }

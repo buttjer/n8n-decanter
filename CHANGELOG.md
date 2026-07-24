@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`scenario create` / `scenario check` with no workflow now open the picker on
+  a terminal**, like every other ref-taking verb (`pull`, `push`, `backup …`, …).
+  They previously hard-errored with a usage line even on a TTY, which made them
+  the odd ones out. Piped / non-TTY runs are unchanged — still the usage error —
+  so scripts and agent harnesses never block on a prompt. *(Surfaced by the Plan
+  35 blind field test, where an agent tripped the inconsistency twice.)*
 - **Breaking:** the scaffolded Claude Code settings moved from
   **`.claude/settings.local.json` to `.claude/settings.json`**, and `init` now
   migrates existing sync dirs. The file holds *project policy* — decanter's verb

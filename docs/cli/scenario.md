@@ -9,6 +9,11 @@ n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffol
 n8n-decanter scenario check  <workflow> ["<slug>"] [--json]
 ```
 
+Both take a workflow ref first. Leaving it off **on a terminal** opens the
+[picker](/docs/cli/overview/#interactive-picker) to choose one (same as every
+other ref-taking verb); piped/non-TTY runs still error with the usage line, so
+scripts and agents never block.
+
 A **scenario** is a named, committed input set for your workflow — captured
 from a real run or scaffolded from its schemas — that
 [test](/docs/cli/test/)/[simulate](/docs/cli/simulate/) replay and diff

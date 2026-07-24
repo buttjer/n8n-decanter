@@ -89,9 +89,10 @@ and LLM harnesses never see the picker.
 the picker to choose one and then runs that verb on it (the verb menu is
 skipped). For `pull` the list includes **remote** workflows too (as in the bare
 picker), so a fresh setup with nothing pulled still gets a menu to pick from;
-the other verbs act on already-pulled workflows only. Piped/non-TTY runs keep
-the config-default / error path unchanged, so scripts and LLM harnesses never
-block.
+the other verbs act on already-pulled workflows only. This includes the
+`backup …` and `scenario …` sub-verbs, whose first argument is a workflow ref.
+Piped/non-TTY runs keep the config-default / error path unchanged, so scripts
+and LLM harnesses never block.
 
 ## Workflow refs
 
