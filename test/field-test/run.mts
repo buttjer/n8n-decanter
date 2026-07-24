@@ -84,13 +84,49 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[] }
 function loadScenario(id: string): Scenario {
   const file = path.join(SCENARIO_DIR, `${id}.md`);
   const md = readFileSync(file, "utf8");
   const m = md.match(/##\s*Orchestration[\s\S]*?```json\n([\s\S]*?)\n```/);
   if (!m) throw new Error(`${id}.md has no \`\`\`json Orchestration block`);
   return JSON.parse(m[1]) as Scenario;
+}
+
+/**
+ * Refuse a scenario subset whose prerequisites are missing — BEFORE spending.
+ *
+ * Some scenarios act on state an earlier one built: S4 opens with "let's tidy
+ * *the orders workflow* … the step that tags high value", which is the workflow
+ * **S2 creates**. A full S1–S4 round satisfies that implicitly, so the coupling
+ * stayed invisible until someone ran a subset.
+ *
+ * Run `S4` alone and the round is not merely wrong, it is wrong in the most
+ * expensive way: the agent hunts for a workflow that does not exist, never
+ * pulls, and `verify.mts` reports "no tracked workflow folders" — a FAIL that
+ * reads like a product defect but is an operator error. That happened
+ * (ftrun-93355, $0.70 burned for zero signal).
+ *
+ * So: declare the dependency in the scenario spine and check it here. Refusing
+ * beats silently auto-including the prerequisite, which would double the spend
+ * without asking.
+ */
+function assertPrerequisites(ids: string[]): void {
+  const problems: string[] = [];
+  ids.forEach((id, i) => {
+    const earlier = new Set(ids.slice(0, i));
+    for (const need of loadScenario(id).requires ?? []) {
+      if (!earlier.has(need)) problems.push(`${id} requires ${need} to run first (it acts on state ${need} creates)`);
+    }
+  });
+  if (problems.length === 0) return;
+  const suggested = [...new Set(ids.flatMap((id) => [...(loadScenario(id).requires ?? []), id]))];
+  // plain message + exit 2, like the other preconditions — a stack trace here
+  // would bury the one line that tells the operator what to run instead
+  console.error("scenario prerequisites unmet — nothing was spent:");
+  for (const p of problems) console.error(`  ${p}`);
+  console.error(`try: node test/field-test/run.mts <manifest> ${suggested.join(" ")}`);
+  process.exit(2);
 }
 
 // Non-secret placeholders — safe to log / dry-run print / store in the turns
@@ -505,6 +541,11 @@ async function archiveRun(): Promise<void> {
 if (argv.includes("--archive")) { await archiveRun(); process.exit(0); }
 
 if (!existsSync(WORKDIR)) { console.error(`workDir missing: ${WORKDIR} — run stage.mts first`); process.exit(2); }
+
+// Gate the subset BEFORE the image build and long before any claude turn — the
+// whole value of this check is that it costs nothing when it fires.
+const diagnosticOnly = argv.includes("--precheck") || argv.includes("--netcheck") || argv.includes("--smoke");
+if (!diagnosticOnly) assertPrerequisites(scenarioIds);
 
 let exitCode = 0;
 if (containerMode && !dryRun) await containerSetup();

@@ -91,6 +91,23 @@ node test/field-test/stage.mts --down <manifest>                 # teardown
 
 `run.mts <manifest> S1 --dry-run` prints the filled turns and spawns nothing.
 
+**Scenario prerequisites.** Some scenarios act on state an earlier one built —
+**S4 requires S2** (it opens with "let's tidy *the orders workflow*", which is
+the workflow S2 creates). A full `S1 S2 S3 S4` round satisfies that implicitly;
+a *subset* does not. Running `S4` alone used to produce the most expensive kind
+of wrong answer: the agent hunts for a workflow that isn't there, never pulls,
+and `verify.mts` reports `no tracked workflow folders` — a FAIL that reads like a
+product defect but is an operator error. Prerequisites are now declared in the
+scenario spine (`"requires": ["S2"]`) and checked **before the image build and
+before any turn**, so an unmet subset costs nothing:
+
+```
+$ node test/field-test/run.mts <manifest> --container S4
+scenario prerequisites unmet — nothing was spent:
+  S4 requires S2 to run first (it acts on state S2 creates)
+try: node test/field-test/run.mts <manifest> S2 S4
+```
+
 ## Debugging
 
 - **Diagnostics first.** `--smoke` proves headless `claude -p` works (auth, flags,
