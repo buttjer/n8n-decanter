@@ -767,10 +767,27 @@ verb uses a dedicated client with a ≥320 s timeout):
 
 ## Preflight — the scored verification gate (`preflight`, plans/36)
 
-`lib/preflight.mts` orchestrates the whole ladder into one read-only, scored
-verdict. It adds **zero execution paths** — it reuses `check`/`status`/`test`/
-`simulate`/`executions` quietly (a silent `Log`) and scores their returned
-facts. Nothing it does mutates (no push/publish/restore/draft write).
+`lib/preflight.mts` orchestrates the ladder into one read-only, scored verdict.
+It adds **zero execution paths** — it reuses `check`/`status`/`simulate`/
+`executions` quietly (a silent `Log`) and scores their returned facts. Nothing
+it does mutates (no push/publish/restore/draft write) **and nothing it does
+runs the workflow on the instance**.
+
+**Plan 58 — the ordering fix.** `preflight` originally ran `test` as its
+instance-side runtime stage. `test_workflow` executes n8n's **draft**, while
+every other stage grades **local files**, so whenever a push was pending one
+score described two different artifacts — flagged only by the `parity` warn's
+−10. The verb surface now encodes the honest order:
+
+```
+preflight → push → test → publish
+```
+
+Each step verifies the artifact the previous one produced: `preflight` grades
+local code (reads the instance for sync facts only), `push` makes it the draft,
+`test` runs what was pushed, `publish` goes live. `runTest`'s `neverMutate` flag
+is gone with the stage — the read-only guarantee is now structural (preflight
+never calls `runTest`) rather than a mode.
 
 - **Ladder (stable check ids agents key on), fast → slow:** static `layout`
   (`validateWorkflowDir`), `types` (`runTypecheckResult`); sync `connect` +
@@ -781,12 +798,15 @@ facts. Nothing it does mutates (no push/publish/restore/draft write).
   `statusWorkflow`, which is now a thin renderer over it so `status` stays
   byte-identical), `lifecycle` (`publicationState`/`publishedVersionLagsDraft`),
   `history` (production-run health), `capture` (a pin source exists + matches
-  the draft); runtime `test` (`runTest` in a new **`neverMutate`** mode) and
-  `simulate` (`runSimulation` headless, `networkNone` forced).
-- **Profiles** (deterministic, no auto-escalation): `--quick` = static+sync,
-  default = +`test`, `--full` = +`simulate`, `--offline` = static+`simulate`
-  (no instance — joins the dispatcher's `offline` set so `loadConfig` skips
-  `requireHost`). A check outside the active profile is a `skip` with an unlock.
+  the draft); runtime `simulate` (`runSimulation` headless, `networkNone`
+  forced) — the **only** runtime stage since Plan 58, and it replays *local*
+  code on a *local* engine.
+- **Profiles** (deterministic, no auto-escalation): `--quick` = static only
+  (Plan 58 — it was identical to the default once `test` left), default =
+  +sync, `--full` = +`simulate`, `--offline` = static+`simulate` (no instance —
+  joins the dispatcher's `offline` set so `loadConfig` skips `requireHost`). A
+  check outside the active profile is a `skip` with an unlock. `--require=test`
+  is rejected via `RETIRED_CHECK_IDS` with the flow as its remediation.
 - **Scoring/verdict/coverage are pure functions** (unit-tested without IO):
   score starts at 100, each `fail` −40 (a `CONFLICT` `drift` −30), each `warn`
   −10, floor 0. Verdict: any `fail` → `not ready` (exit 1); else any `warn` →
@@ -798,7 +818,9 @@ facts. Nothing it does mutates (no push/publish/restore/draft write).
 - **Executions in the gate:** before the runtime tier, a `capture`-source run
   with no explicit `--execution` auto-fetches the newest capture when
   `N8N_API_KEY` is set and the local one is missing/stale (`--no-fetch` opts
-  out; read-only, gitignored). `history` reads recent production runs via a new
+  out; read-only, gitignored). Since Plan 58 this only fires when a runtime
+  stage is active (`--full`/`--offline`) — the default profile has none, so a
+  missing capture there is `info`, not `warn`. `history` reads recent production runs via a new
   MCP `searchExecutions` wrapper (`search_executions` — shape source-verified
   and smoke-asserted on 2.30.7: `{data:[{id,workflowId,status,mode,startedAt,
   stoppedAt}],count,estimated}`) with a REST `listExecutions({includeData:

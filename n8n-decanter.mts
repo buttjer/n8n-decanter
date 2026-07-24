@@ -14,7 +14,7 @@ import { runStdioGuard } from "./lib/mcpconnect.mts";
 import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { createMirror } from "./lib/mirror.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
-import { ALL_CHECK_IDS, type CheckId, exitCodeOf, formatCheckLine, type Palette, type Profile, renderPreflightSummary, runPreflight } from "./lib/preflight.mts";
+import { ALL_CHECK_IDS, type CheckId, exitCodeOf, formatCheckLine, type Palette, type Profile, renderPreflightSummary, RETIRED_CHECK_IDS, runPreflight } from "./lib/preflight.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { printTestReport, runTest } from "./lib/testrun.mts";
@@ -838,6 +838,9 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       const failOnWarn = failOn === "warn";
       const requireIds: CheckId[] = [];
       for (const r of (valueFlags.get("require") ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
+        // a retired id gets its reason + replacement, not a bare "unknown check" —
+        // `--require=test` shipped in 0.7.0 and may sit in a user's CI config
+        if (RETIRED_CHECK_IDS[r] !== undefined) throw new Error(`--require: "${r}" is no longer a preflight check — ${RETIRED_CHECK_IDS[r]}`);
         if (!ALL_CHECK_IDS.includes(r as CheckId)) throw new Error(`--require: unknown check "${r}" — valid ids: ${ALL_CHECK_IDS.join(", ")}`);
         requireIds.push(r as CheckId);
       }
@@ -848,9 +851,6 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       const simVersion = valueFlags.get("n8n-version") ?? config.n8nVersion ?? DEFAULT_N8N_VERSION;
       const hasApiKey = config.apiKey !== "";
       const palette: Palette = { green: style.green, yellow: style.yellow, red: style.red, dim: style.dim, bold: style.bold };
-      // test_workflow is synchronous with a 5-min server cap — its client's timeout must outlive it
-      let testMcpClient: McpClient | undefined;
-      const testMcp = (): McpClient => (testMcpClient ??= createMcpClient({ ...config, requestTimeoutMs: Math.max(config.requestTimeoutMs, 320_000) }, log));
       // read-only REST client (auto-fetch + history fallback) — only invoked when hasApiKey, so it never needs requireApiKey
       const restApi = (): N8nApi => new N8nApi({ host: config.host, apiKey: config.apiKey, requestTimeoutMs: config.requestTimeoutMs });
 
@@ -878,7 +878,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
           config, dir, id, name, profile,
           scenarioSlug, executionId: valueFlags.get("execution"), trigger: valueFlags.get("trigger"),
           noFetch: noFetchFlag, failFast: failFastFlag, requireIds, simVersion, hasApiKey,
-          mcp, testMcp, api: restApi, dockerAvailable,
+          mcp, api: restApi, dockerAvailable,
           onCheck: jsonFlag ? undefined : (f) => log.info(formatCheckLine(f, palette)),
         });
         reports.push(report);

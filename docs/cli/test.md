@@ -33,21 +33,26 @@ per-node diff is asserted, and `ok` reflects only that the instance run
 succeeded. A capture-only run keeps the diff/exit-1 semantics above
 unchanged. `--json` adds `syntheticPins: boolean` and `provenance`.
 
-## Preflights — which one when?
+## Where `test` sits: after the push
 
-**Preflights** are decanter's three ways to verify a workflow before you ship
-it: `check` (static, offline), `simulate` (offline engine replay), and `test`
-(instance-side pinned run). All are CI-gateable — the two runtime ones diff
-every node against a real capture and exit 1 on divergence.
-[**`preflight`**](/docs/cli/preflight/) runs the whole ladder as one scored,
-read-only gate — reach for it (not the three individually) as the pre-push gate.
+```sh
+n8n-decanter preflight <workflow>   # 1. is my local code sound?   (local, changes nothing)
+n8n-decanter push     <workflow>    # 2. make it the draft
+n8n-decanter test     <workflow>    # 3. ← you are here
+n8n-decanter publish  <workflow>    # 4. go live
+```
 
-| Preflight | Where it runs | What it needs | Reach for it when |
+`test_workflow` runs n8n's **draft**. Before step 2 the draft is not your code,
+so an instance run would grade something you aren't shipping — which is why
+[`preflight`](/docs/cli/preflight/) does **not** run `test` as a stage. Push
+first, then test what you pushed.
+
+| Verb | Where it runs | What it needs | Reach for it when |
 | --- | --- | --- | --- |
 | [check](/docs/cli/check/) | locally, static | nothing | every edit — layout + types, offline |
-| **`test`** (recommended) | **your instance**, runtime | MCP + a capture/scenario | the default runtime check: instance-exact engine, community nodes, no Docker |
-| [simulate](/docs/cli/simulate/) | local engine, runtime | Docker + a capture/scenario | pre-push verification of *uncommitted local* code, CI without an instance, `--network-none` isolation, engine-version rehearsal |
-| [**preflight**](/docs/cli/preflight/) | all of the above, scored | as available | the one-command pre-publish gate — a single verdict over the whole ladder |
+| [simulate](/docs/cli/simulate/) | local engine, runtime | Docker + a capture/scenario | runtime evidence about **local** code, before pushing; CI without an instance; `--network-none` isolation |
+| [**preflight**](/docs/cli/preflight/) | the above, scored | as available | **before `push`** — one verdict over your local code |
+| **`test`** | **your instance**, runtime | MCP + a capture/scenario | **after `push`** — instance-exact engine, community nodes, no Docker |
 
 ## What gets tested — local code or the draft?
 
