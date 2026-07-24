@@ -363,6 +363,25 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   return { id, verifyExit, turns: turns.length };
 }
 
+/**
+ * The MAIN checkout root — where run archives belong.
+ *
+ * NOT `process.cwd()`: rounds are usually driven from a linked worktree, so a
+ * cwd-relative archive lands INSIDE that worktree, and `git worktree remove`
+ * then deletes the very artifacts the archive exists to protect (an expensive
+ * round's transcripts + report). `--git-common-dir` resolves to the main
+ * repository's `.git` from a worktree AND from the main checkout, so its parent
+ * is a stable, prune-proof home. Falls back to cwd outside a repo.
+ */
+function mainCheckoutRoot(): string {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" }).trim();
+    return out ? path.dirname(out) : process.cwd();
+  } catch {
+    return process.cwd();
+  }
+}
+
 // ---------- archive: render the HTML view + STORE EVERYTHING RAW (survives teardown) ----------
 async function archiveRun(): Promise<void> {
   // 1. render the HTML report (a derived VIEW) into harnessRoot
@@ -375,7 +394,7 @@ async function archiveRun(): Promise<void> {
   //    report.html) AND the workDir WITH its .git (the turn-by-turn diffs). The
   //    RAW is the source of truth — any view (html/md/json) re-renders from it, so
   //    "what I want to see" can change later without re-running (Plan 35 §archive).
-  const base = process.env.FIELD_ARCHIVE_DIR ?? path.join(process.cwd(), ".field-test-runs");
+  const base = process.env.FIELD_ARCHIVE_DIR ?? path.join(mainCheckoutRoot(), ".field-test-runs");
   const dest = path.join(base, path.basename(HARNESS));
   const noNodeModules = { recursive: true as const, filter: (s: string) => !/[/\\]node_modules([/\\]|$)/.test(s) };
   try {

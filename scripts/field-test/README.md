@@ -75,6 +75,16 @@ node scripts/field-test/stage.mts --down <manifest>                 # teardown
 - **Artifacts** (in `<harnessRoot>`, a sibling dir the agent never enters):
   `transcripts/<S>/turn-N.jsonl` (stream-json), `verify-<S>.json`, `guard.log`,
   and `report.html`. The **report** is the fastest way to read a session.
+- **Every round auto-archives** — at the end of a run, `run.mts` renders the
+  report and copies the whole `harnessRoot` **plus** the workDir (with its
+  `.git`) and per-turn `snapshots/` into
+  **`<main-checkout>/.field-test-runs/<runId>/`** (gitignored), together with a
+  `manifest.json` whose paths point at the archived copies — so any view
+  re-renders from the raw without re-running:
+  `node scripts/field-test/report.mts .field-test-runs/<runId>/manifest.json`.
+  The archive deliberately lands in the **main checkout**, never the cwd: rounds
+  are usually driven from a linked worktree, and `git worktree remove` would
+  otherwise delete the artifacts. `FIELD_ARCHIVE_DIR` overrides the location.
 - **Guard evidence** (`guard.log`): a blocked `jsCode`-over-MCP write shows as a
   guard warn-line; an empty/connection-only log means the agent went file-first.
 
