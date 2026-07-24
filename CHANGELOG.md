@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** the scaffolded Claude Code settings moved from
+  **`.claude/settings.local.json` to `.claude/settings.json`**, and `init` now
+  migrates existing sync dirs. The file holds *project policy* — decanter's verb
+  permissions plus the `verify.mjs` and `mcp-route-check.mjs` hooks — with
+  nothing machine-specific in it; it was already being committed and tracked in
+  the shared `.decanter-template.json`, so `local` was the wrong scope, and it
+  squatted the one file Claude Code reserves for **your** own overrides. The
+  local slot is now yours: permission lists merge across the two files and a
+  `deny` beats an `allow`, so a local file can add to the policy but cannot
+  unblock what the project denies. On re-init, an untouched copy is moved for
+  you; a copy you edited is left exactly where it is and the new file is **not**
+  written (both would register their hooks) — `init` says what to move, and
+  `--force` resolves it by removing the old file. A `settings.local.json` that
+  `init` never wrote is never touched. *(Plan 56.)*
+
 ### Added
 
 - **A first `init` points at n8n's official skills pack.** Setup now closes by

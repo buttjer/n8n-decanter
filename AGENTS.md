@@ -490,7 +490,7 @@ mock server.
   `X.example` are inert in this repo on purpose (so agent tooling ignores
   them here) and materialize as `X` in the target — keep that suffix
   convention when adding agent/tool config to the template, and always use
-  the full real filename before `.example` (`settings.local.json.example`).
+  the full real filename before `.example` (`settings.json.example`).
 
 ## Type checking
 

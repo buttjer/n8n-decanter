@@ -1,9 +1,10 @@
 # Plan 56 — scaffold the n8n skills plugin declaratively for Claude Code
 
-**Status:** Draft
+**Status:** In progress — **(A) done, (B) not started** (see
+[Ship it as two PRs](#ship-it-as-two-prs-in-this-order))
 **Priority:** P3
 **Source:** Deferred alternative recorded in [Plan 55](../done/55-init-skills-offer.md).
-**Snapshot:** 2026-07-24T08:17Z @ f419108
+**Snapshot:** 2026-07-24T09:11Z @ 683955c
 
 Plan 55 deliberately stops at **printing** the install commands. Actually
 installing is this plan's job, and for Claude Code the right mechanism is
@@ -67,12 +68,36 @@ documents `codex plugin …`). skills.sh has none.
 
 The two halves have different risk profiles and should not share a squash commit:
 
-- **(A) the rename + migration** — a correctness fix touching a manifest-tracked
-  file in *every existing sync dir*. `Changed`, plausibly `Breaking:`. No new
-  feature; reviewable on its own.
-- **(B) the two plugin keys** — ~6 lines once (A) exists, `Added`.
+- ✅ **(A) the rename + migration** — a correctness fix touching a
+  manifest-tracked file in *every existing sync dir*. `Breaking:` `Changed`. No
+  new feature; reviewable on its own. **Shipped** — see below.
+- ⬜ **(B) the two plugin keys** — ~6 lines once (A) exists, `Added`. Blocked on
+  open decision 1.
 
-Doing (A) alone is worth it even if (B) is never picked up.
+Doing (A) alone was worth it even if (B) is never picked up.
+
+### (A), as shipped
+
+- `template/.claude/settings.local.json.example` → `settings.json.example`
+  (contents unchanged).
+- `TEMPLATE_RENAMES` + `migrateRenamedTemplateFiles` in `lib/init.mts` — the
+  template machinery had no way to express a *renamed* file, since the manifest
+  is keyed by path. Resolved before the scan, file-driven (a rename doesn't
+  change contents, so hashing settles provenance even for pre-manifest dirs):
+  not ours → untouched; ours + pristine → deleted so the scan lands the new
+  name; ours + edited → kept and the new name **skipped** this run, with the old
+  key carried over in the manifest so the next re-init still knows it is ours;
+  both present → reported. `--force` removes the old file regardless.
+- Field-test harness: `stage.mts` now writes its sandbox override to
+  `settings.local.json` — it used to pre-write `settings.json`, which after the
+  rename would have made the scan `adopt` it and **never scaffold decanter's
+  permissions or hooks**. `run.mts` likewise writes its allow-extension to the
+  local slot, so the field test now exercises a pristine template.
+- e2e coverage for all four migration branches; docs/CHANGELOG/PLAN.md updated.
+
+**Confirmed while building it:** permission lists merge across scopes and `deny`
+beats `allow`, so demoting decanter's denies from `local` to `project` does not
+weaken them — open decision "precedence" is settled, not just mitigated.
 
 ## Open decisions (settle before executing)
 
@@ -84,15 +109,11 @@ Doing (A) alone is worth it even if (B) is never picked up.
    Code still asks on folder trust and never installs unprompted; it is two
    readable lines in a git-tracked file. Options: default-on / shipped commented
    out / behind an `init` opt-in. **Not obvious — decide deliberately.**
-2. **Migration semantics.** The template machinery is drift-aware, so the
-   natural rule is: a *pristine* `settings.local.json` (hash == manifest
-   baseline) is removed and replaced by `settings.json`; a **locally modified**
-   one is never deleted — it is left in place with a loud warning that it now
-   shadows the new file. Confirm that is the wanted behavior.
-3. **What else belongs in the shared file?** Once a committed
-   `.claude/settings.json` exists, does the template still ship a
-   `settings.local.json.example` for genuinely per-user allows, or does the
-   local slot stay empty for the user?
+2. ~~**Migration semantics.**~~ Settled in (A): pristine → moved; edited → kept
+   and the new name deferred (not "written alongside with a warning" — two live
+   settings files would double-register the hooks); never-ours → untouched.
+3. ~~**What else belongs in the shared file?**~~ Settled in (A): the template
+   ships **only** `settings.json`; the local slot is left empty for the user.
 4. **Codex.** No verified declarative equivalent. Shipping Claude-Code-only
    (Codex/skills.sh keep the printed commands) is fine, but it should be a
-   conscious asymmetry.
+   conscious asymmetry. Still open for (B).
