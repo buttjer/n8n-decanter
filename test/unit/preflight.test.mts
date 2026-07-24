@@ -46,24 +46,34 @@ describe("preflight verdict + exit code (pure)", () => {
 
 describe("preflight coverage + require (pure)", () => {
   it("coverage splits ran vs skipped with reasons", () => {
-    const cov = coverageOf([finding({ id: "layout", status: "pass" }), finding({ id: "test", status: "skip", reason: "no capture", unlock: "run executions" })]);
+    const cov = coverageOf([finding({ id: "layout", status: "pass" }), finding({ id: "simulate", status: "skip", reason: "no capture", unlock: "run executions" })]);
     assert.deepEqual(cov.ran, ["layout"]);
-    assert.deepEqual(cov.skipped, [{ id: "test", reason: "no capture", unlock: "run executions" }]);
+    assert.deepEqual(cov.skipped, [{ id: "simulate", reason: "no capture", unlock: "run executions" }]);
   });
   it("--require promotes a skip of a named check to a fail; a ran check is untouched", () => {
-    const promoted = applyRequire([finding({ id: "test", status: "skip", reason: "no capture", unlock: "run executions" }), finding({ id: "layout", status: "pass" })], ["test", "layout"]);
+    const promoted = applyRequire([finding({ id: "simulate", status: "skip", reason: "no capture", unlock: "run executions" }), finding({ id: "layout", status: "pass" })], ["simulate", "layout"]);
     assert.equal(promoted[0].status, "fail");
-    assert.match(promoted[0].message, /required check "test" did not run/);
+    assert.match(promoted[0].message, /required check "simulate" did not run/);
     assert.equal(promoted[1].status, "pass", "a required check that ran is left alone");
   });
 });
 
 describe("preflight profiles (pure)", () => {
+  // Plan 58: no `test` tier. `--quick` took over the fastest-gate role (static
+  // only) — before, with `test` removed, it was identical to the default.
   it("maps each profile to its active tiers", () => {
-    assert.deepEqual(profileSpec("quick"), { sync: true, test: false, simulate: false });
-    assert.deepEqual(profileSpec("default"), { sync: true, test: true, simulate: false });
-    assert.deepEqual(profileSpec("full"), { sync: true, test: true, simulate: true });
-    assert.deepEqual(profileSpec("offline"), { sync: false, test: false, simulate: true });
+    assert.deepEqual(profileSpec("quick"), { sync: false, simulate: false });
+    assert.deepEqual(profileSpec("default"), { sync: true, simulate: false });
+    assert.deepEqual(profileSpec("full"), { sync: true, simulate: true });
+    assert.deepEqual(profileSpec("offline"), { sync: false, simulate: true });
+  });
+  it("no two profiles are identical", () => {
+    const seen = new Map<string, string>();
+    for (const p of ["quick", "default", "full", "offline"] as const) {
+      const key = JSON.stringify(profileSpec(p));
+      assert.equal(seen.get(key), undefined, `${p} is identical to ${seen.get(key)} — a profile flag with no effect`);
+      seen.set(key, p);
+    }
   });
 });
 
@@ -140,11 +150,11 @@ describe("runPreflight (stubbed)", () => {
   const baseCtx = (dir: string, root: string, mcp: McpClient, over: Partial<PreflightContext> = {}): PreflightContext => ({
     config: config(root), dir, id: "wf1", name: "Order Sync", profile: "default",
     noFetch: true, failFast: false, simVersion: "1.100.0", hasApiKey: false,
-    mcp: () => mcp, testMcp: () => mcp, api: () => { throw new Error("no api in this test"); },
+    mcp: () => mcp, api: () => { throw new Error("no api in this test"); },
     dockerAvailable: async () => false, ...over,
   });
 
-  it("default profile: runs the full ladder, passes, and NEVER mutates", async () => {
+  it("default profile: runs the ladder, passes, and NEVER mutates", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
@@ -155,33 +165,39 @@ describe("runPreflight (stubbed)", () => {
     assert.equal(byId.get("access")?.status, "pass");
     assert.equal(byId.get("parity")?.status, "pass");
     assert.equal(byId.get("drift")?.status, "pass");
-    assert.equal(byId.get("test")?.status, "pass", "instance test matched the capture");
-    assert.equal(byId.get("simulate")?.status, "skip", "simulate not in default profile");
+    assert.equal(byId.get("simulate")?.status, "skip", "simulate is --full only");
     assert.equal(report.verdict, "ready");
     assert.equal(report.subject.parity, "match");
     assert.ok(!calls.some((c) => /update_workflow|publish|restore/.test(c)), "preflight issued no writes: " + calls.join(","));
   });
 
-  it("parity warns and test still runs when local differs from the draft (never pushes)", async () => {
+  // Plan 58's core contract: preflight never EXECUTES the workflow on the
+  // instance. Not a write — a run. `test_workflow` grades the draft, which
+  // before a push is not the code being shipped.
+  it("never runs the workflow on the instance, in any profile", async () => {
+    for (const profile of ["quick", "default", "full", "offline"] as const) {
+      tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+      const dir = seed(tmp);
+      const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
+      await runPreflight(baseCtx(dir, tmp, mcp, { profile }));
+      assert.ok(!calls.some((c) => /test_workflow|execute_workflow|get_execution/.test(c)), `${profile} executed on the instance: ${calls.join(",")}`);
+      rmSync(tmp, { recursive: true, force: true });
+      tmp = undefined;
+    }
+  });
+
+  it("no check id reports on the draft: every verdict-bearing stage grades local code", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp, "return [{json:{x:999}}];\n"); // local ahead of the draft
     const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
     const report = await runPreflight(baseCtx(dir, tmp, mcp));
     const byId = new Map(report.checks.map((c) => [c.id, c]));
-    assert.equal(byId.get("parity")?.status, "warn");
+    assert.equal(byId.get("parity")?.status, "warn", "the divergence is reported…");
+    assert.match(byId.get("parity")!.message, /push to make it the draft, then test/, "…and points at the flow");
     assert.equal(report.subject.parity, "local-ahead");
-    assert.equal(byId.get("test")?.status, "pass", "tests the draft as-is");
-    assert.ok(!calls.some((c) => /update_workflow|publish/.test(c)), "never pushed local: " + calls.join(","));
+    assert.equal(byId.get("simulate")?.status, "skip", "the only runtime stage is local-engine and opt-in");
+    assert.ok(!calls.some((c) => /test_workflow/.test(c)), "no instance run of the stale draft: " + calls.join(","));
     assert.equal(report.verdict, "caution");
-  });
-
-  it("test divergence fails the gate", async () => {
-    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
-    const dir = seed(tmp);
-    const { mcp } = stub(wf(), { Compute: runData([{ x: 42 }]) }); // instance produced something else
-    const report = await runPreflight(baseCtx(dir, tmp, mcp));
-    assert.equal(report.checks.find((c) => c.id === "test")?.status, "fail");
-    assert.equal(report.verdict, "not ready");
   });
 
   it("history warns when recent production runs failed", async () => {
@@ -194,7 +210,7 @@ describe("runPreflight (stubbed)", () => {
     assert.match(hist!.message, /1 of 2 recent runs failed/);
   });
 
-  it("offline profile skips the whole sync tier and test; runs simulate (skipped without Docker)", async () => {
+  it("offline profile skips the whole sync tier; runs simulate (skipped without Docker)", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp, calls } = stub(wf(), {});
@@ -202,18 +218,28 @@ describe("runPreflight (stubbed)", () => {
     const byId = new Map(report.checks.map((c) => [c.id, c]));
     assert.equal(byId.get("layout")?.status, "pass", "static tier still runs offline");
     for (const id of ["connect", "access", "parity", "drift", "history"] as const) assert.equal(byId.get(id)?.status, "skip", `${id} skipped offline`);
-    assert.equal(byId.get("test")?.status, "skip", "test skipped offline");
     assert.equal(byId.get("simulate")?.status, "skip", "simulate skipped without Docker");
     assert.equal(calls.length, 0, "offline made no MCP calls");
+  });
+
+  it("quick profile is static-only: no MCP, no runtime", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    const { mcp, calls } = stub(wf(), {});
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "quick" }));
+    const byId = new Map(report.checks.map((c) => [c.id, c]));
+    assert.equal(byId.get("layout")?.status, "pass");
+    assert.equal(byId.get("simulate")?.status, "skip", "no runtime in --quick");
+    assert.equal(calls.length, 0, "quick made no MCP calls");
   });
 
   it("--require promotes a skipped required check to a fail", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "quick", requireIds: ["test"] }));
-    const test = report.checks.find((c) => c.id === "test");
-    assert.equal(test?.status, "fail", "test was skipped by --quick then promoted by --require");
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "default", requireIds: ["simulate"] }));
+    const sim = report.checks.find((c) => c.id === "simulate");
+    assert.equal(sim?.status, "fail", "simulate was skipped by the default profile then promoted by --require");
     assert.equal(report.verdict, "not ready");
   });
 
@@ -231,20 +257,21 @@ describe("runPreflight (stubbed)", () => {
     assert.ok(lines.some((l) => /verdict:/.test(l)));
   });
 
-  it("stays read-only even on a TTY where local differs (the neverMutate seam)", async () => {
+  it("stays read-only on a TTY where local differs from an unpublished draft", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp, "return [{json:{x:999}}];\n"); // local ahead of the (unpublished) draft
     const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
-    // force interactive: without neverMutate, runTest would push local to the
-    // unpublished draft here (no prompt) — the safety seam must prevent it.
+    // The sharpest case: `test` on an unpublished workflow pushes WITHOUT a
+    // prompt. Plan 58 removed the seam that used to hold preflight back — the
+    // guarantee now comes from preflight never invoking runTest at all.
     const origIn = process.stdin.isTTY;
     const origOut = process.stdout.isTTY;
     try {
       (process.stdin as any).isTTY = true;
       (process.stdout as any).isTTY = true;
       const report = await runPreflight(baseCtx(dir, tmp, mcp));
-      assert.equal(report.checks.find((c) => c.id === "test")?.status, "pass", "tested the draft as-is");
-      assert.ok(!calls.some((c) => /update_workflow|publish|restore/.test(c)), "no mutation on a TTY: " + calls.join(","));
+      assert.equal(report.checks.find((c) => c.id === "parity")?.status, "warn");
+      assert.ok(!calls.some((c) => /update_workflow|publish|restore|test_workflow/.test(c)), "no mutation and no run on a TTY: " + calls.join(","));
     } finally {
       (process.stdin as any).isTTY = origIn;
       (process.stdout as any).isTTY = origOut;
@@ -259,11 +286,10 @@ describe("runPreflight (stubbed)", () => {
     const byId = new Map(report.checks.map((c) => [c.id, c]));
     assert.equal(byId.get("connect")?.status, "fail");
     for (const id of ["access", "parity", "drift", "history"] as const) assert.equal(byId.get(id)?.status, "skip", `${id} skipped after connect fail`);
-    assert.equal(byId.get("test")?.status, "skip", "test skipped — instance unreachable");
     assert.equal(report.verdict, "not ready");
   });
 
-  it("an unavailable-in-MCP workflow passes connect, fails access, skips parity/drift/test", async () => {
+  it("an unavailable-in-MCP workflow passes connect, fails access, skips parity/drift", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp } = stub(wf(), {}, { detailsError: new Error("Workflow is not available in MCP.") });
@@ -272,7 +298,6 @@ describe("runPreflight (stubbed)", () => {
     assert.equal(byId.get("connect")?.status, "pass", "reached + authed the server");
     assert.equal(byId.get("access")?.status, "fail", "the workflow is not opted into MCP");
     for (const id of ["parity", "drift", "snapshot", "lifecycle"] as const) assert.equal(byId.get(id)?.status, "skip");
-    assert.equal(byId.get("test")?.status, "skip", "no remote → the test stage can't run");
     assert.equal(report.verdict, "not ready");
   });
 
@@ -309,21 +334,33 @@ describe("runPreflight (stubbed)", () => {
         return [{ id: 305, workflowId: "wf1", data: { resultData: { runData: { Hook: runData([{ n: 1 }]), Compute: runData([{ x: 1 }]) } } } }];
       },
     }) as any;
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { hasApiKey: true, noFetch: false, api }));
+    // --full: `simulate` is the runtime consumer that makes a pin source worth fetching
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "full", hasApiKey: true, noFetch: false, api }));
     assert.equal(fetched, true, "auto-fetch ran");
     const capture = report.checks.find((c) => c.id === "capture");
     assert.match(capture!.message, /auto-fetched/);
-    assert.equal(report.checks.find((c) => c.id === "test")?.status, "pass", "the fetched capture pinned the test run");
+  });
+
+  it("the default profile does not auto-fetch — nothing consumes a capture", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    rmSync(path.join(dir, "executions", "301.json"));
+    const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
+    let fetched = false;
+    const api = () => ({ listExecutions: async () => { fetched = true; return []; } }) as any;
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { hasApiKey: true, noFetch: false, api }));
+    assert.equal(fetched, false, "no runtime stage in the default profile → no fetch");
+    assert.equal(report.checks.find((c) => c.id === "capture")?.status, "info", "a missing capture is informational, not a warning");
   });
 
   it("a missing --execution id warns on capture and skips the runtime tier (no throw)", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { executionId: "99999" }));
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "full", executionId: "99999" }));
     const capture = report.checks.find((c) => c.id === "capture");
     assert.equal(capture?.status, "warn");
     assert.match(capture!.message, /#99999 not found/);
-    assert.equal(report.checks.find((c) => c.id === "test")?.status, "skip", "runtime skips cleanly, no mid-run throw");
+    assert.equal(report.checks.find((c) => c.id === "simulate")?.status, "skip", "runtime skips cleanly, no mid-run throw");
   });
 });

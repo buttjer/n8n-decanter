@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: `preflight` no longer runs the instance-side `test` stage.** It
+  ran `test_workflow` against n8n's **draft**, while every other stage graded
+  your **local files** — so whenever a push was pending, one score described
+  two different versions of the workflow, flagged only by a `-10` parity warn.
+  A report could read *caution, 90/100* while its runtime evidence was about
+  code you weren't shipping. `preflight` now grades local code only; the
+  instance is read for sync facts and never executed.
+
+  The documented flow is **`preflight` → `push` → `test` → `publish`**: verify
+  local code, make it the draft, run what you actually pushed, then go live.
+  Nothing was removed from the toolbox — the instance run moved to where it
+  means something.
+
+- **Breaking: `--quick` is now static-only** (layout + types; no network, no
+  Docker). With the `test` stage gone it was byte-identical to the default
+  profile, so it took over the fastest-gate role its name always implied.
+  `--offline` is unchanged (no network, but still replays via `simulate`).
+
+- **Breaking: `preflight --require=test` is rejected**, with a message pointing
+  at the new flow rather than a bare "unknown check". The `test` id is gone
+  from `--require`, from `--json` `checks[]`, and from `coverage`.
+
+- **`preflight` auto-fetches a capture only when a runtime stage is active**
+  (`--full` / `--offline`). The default profile has no runtime stage, so it no
+  longer fetches, and a missing capture is reported as `info` rather than
+  `warn` — nothing there consumes one.
+
+- The `parity` warn is reworded. It was a caveat about the runtime tier
+  grading the wrong artifact; that's no longer possible, so it is now the plain
+  next step: *"local code differs from the draft in N node(s) — push to make it
+  the draft, then test"*.
+
+- **`--full` is now the only profile with a runtime check.** `simulate` is the
+  sole runtime stage and needs Docker. For runtime evidence without Docker,
+  push and then run `test`.
+
 ## [0.7.0] - 2026-07-24
 
 ### Added
