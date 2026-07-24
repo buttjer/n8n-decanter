@@ -31,6 +31,8 @@ Interactive setup for a new (or existing) sync dir:
   `.decanter-template.json` (see [Re-running init](#re-running-init)).
 - Scaffolds `decanter.config.json` and a `.gitignore` (which covers `.env`
   and `.decanter-auth.json`).
+- Closes by pointing at **n8n's official skills pack** — see
+  [The n8n skills pointer](#the-n8n-skills-pointer) below.
 
 The instance needs MCP access enabled once (n8n → Settings → MCP; ~2.20+),
 and each workflow you sync needs its "Available in MCP" flag — see
@@ -61,6 +63,43 @@ n8n-decanter init ./flows --host n8n.example.com --token "$TOK" --api-key "$KEY"
 
 An explicit flag wins over an existing `.env` value; the end-of-init connection
 checks run exactly as they do interactively. `--force` composes with all three.
+
+## The n8n skills pointer
+
+decanter owns Code-node source; **[n8n's official skills pack](/docs/agents/n8n-skills/)**
+teaches your agent everything else. A **first** `init` closes by naming it and
+printing the install commands for the agent it detects:
+
+```text
+Recommended: n8n's official skills pack (n8n-io/skills) — it teaches your agent to
+build workflow structure over MCP while decanter keeps every Code node a file.
+  Claude Code (detected)
+    claude plugin marketplace add n8n-io/skills
+    claude plugin install n8n-skills@n8n-io
+    then /reload-plugins (or restart Claude Code)
+  Codex
+    codex plugin marketplace add n8n-io/skills
+    codex plugin add n8n-skills@n8n-io
+    then restart Codex and approve the plugin's hooks (needs Codex >= 0.142.0)
+  other agents (skills.sh)
+    npx skills add n8n-io/skills -y
+    no plugin hooks on this route — the scaffolded AGENTS.md carries the routing cue it needs
+  guide: /docs/agents/n8n-skills/
+```
+
+The `(detected)` marker comes from your environment (running inside an agent,
+its binary on `PATH`, or a `~/.claude` / `~/.codex` marker) and only decides
+which route is listed first — every route is always shown.
+
+**`init` prints; it never installs.** Running `claude`/`codex`/`npx skills` for
+you would mean decanter spawning three third-party CLIs with their own version
+floors, mutating agent state that lives outside the sync dir, at the most
+fragile moment of setup — and a plugin installed mid-session isn't active until
+the agent reloads anyway, so the subprocess buys nothing the printed command
+doesn't. It is printed **once**, on a first init (before
+`.decanter-template.json` exists); every re-run stays quiet, so there is no
+flag to turn it off. Piped and `--host`-driven runs get it too — an agent
+bootstrapping a sync dir should learn the pack exists as much as a human does.
 
 ## TypeScript tooling
 

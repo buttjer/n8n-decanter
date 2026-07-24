@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A first `init` points at n8n's official skills pack.** Setup now closes by
+  naming [n8n-io/skills](https://github.com/n8n-io/skills) — the knowledge layer
+  that makes agentic workflow building work — and printing the install commands
+  for **Claude Code**, **Codex**, and **skills.sh**, with the agent it detects
+  from your environment listed first and the activation step each one still
+  needs. It prints; it does not install: that would mean spawning a third-party
+  CLI to mutate agent state outside the sync dir, and a plugin installed
+  mid-session isn't active until the agent reloads. Said once per sync dir (no
+  re-init repeats it), on every path including piped and `--host`-driven runs,
+  and it consumes no input — no existing script's stdin changes. *(Plan 55.)*
+
 ### Fixed
+
+- **The documented Claude Code skills-install commands are no longer
+  copy-paste-broken.** `/plugin marketplace add` / `/plugin install` are
+  in-session slash commands, but the docs and the scaffolded `AGENTS.md`
+  presented them as shell commands. Both now show the in-session form and the
+  real shell equivalents (`claude plugin marketplace add …` /
+  `claude plugin install …`) separately, plus the post-install activation step
+  each agent needs.
 
 - **A `.js`→`.ts` conversion is no longer reverted by a pull that fires before
   the first TS push.** Re-pointing a node's `//@file:` placeholder to a `.ts`

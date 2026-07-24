@@ -806,6 +806,25 @@ Bootstraps a sync directory. Plan 32 made it OAuth-first:
    workflows are visible and how many are `availableInMCP` (with a hint about
    the per-workflow switch), plus the old `GET /api/v1/workflows?limit=1`
    probe when an API key was given.
+6. **The official-skills pointer** (Plan 55, `lib/skills.mts`) — dead last, so
+   it can never block credential setup. On a **first** init (no
+   `.decanter-template.json` yet) decanter names the pack and prints the
+   **shell** install commands for all three routes (Claude Code / Codex /
+   skills.sh), detected agent first, each with its activation step. Detection
+   reads env / `PATH` / home markers and **spawns nothing**.
+
+   It is **output only, on every path, consuming no input** — deliberately not
+   a prompt and not a subprocess. A prompt would add a fourth positional answer
+   to init's stdin and break every existing script; a subprocess would mean
+   decanter driving three third-party CLIs with their own version floors to
+   mutate user-global agent state, at the most fragile moment of setup, for a
+   plugin that isn't active until the agent reloads anyway. No flag tunes it:
+   once per sync dir is cheap enough that a CLI surface isn't warranted.
+
+   Claude Code's `<claude-code-hint/>` stderr protocol would be the natural fit
+   but is silently dropped for non-Anthropic marketplaces, so it isn't used.
+   Actually *installing* — declaratively, via `.claude/settings.json`
+   (`extraKnownMarketplaces` + `enabledPlugins`) — is Plan 56.
 
 **One shared prompt session** serves every question — a second
 `createPrompt()` would lose piped answers the first one buffered (the same
@@ -821,7 +840,10 @@ read-only snapshot; structure/lifecycle may go through n8n's MCP tools and
 the official n8n skills pack, whose **knowledge** skills are recommended
 while the build/lifecycle skills are subordinated to the decanter override
 (Task 9 — the override, not selective installation, holds the boundary; the
-pack installs whole).
+pack installs whole). Plan 55 added the install instructions there in both
+forms (in-session slash commands *and* the shell CLI — they are not
+interchangeable) plus the `using-n8n-skills-official` routing cue the
+plugin-less skills.sh route needs, since that route ships no SessionStart hook.
 
 ## Type checking
 

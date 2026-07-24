@@ -596,6 +596,38 @@ await step("init: writes .env (MCP token + optional API key), copies whole templ
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`, ".env must survive --force");
 });
 
+await step("init: a first init points at the n8n skills pack (shell commands, not slash commands); re-init stays quiet (Plan 55)", async () => {
+  // decanter PRINTS the install commands and never runs them or asks about
+  // them, so a piped init must still consume EXACTLY the three answers it
+  // consumed before — no new question may enter that stream.
+  const target = path.join(TMP, "init-skills-print");
+  const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
+  pending.child.stdin!.write(`${env.N8N_HOST}\n${MCP_TOKEN}\ntest-key\n`);
+  pending.child.stdin!.end();
+  const { stdout, stderr } = await pending;
+  const out = stdout + stderr;
+  assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`, "a piped init must still consume exactly host/token/api-key");
+  assert.match(out, /Recommended: n8n's official skills pack/, "first init recommends the pack");
+  // the SHELL commands, not the /plugin slash commands (which are in-session only)
+  assert.match(out, /claude plugin marketplace add n8n-io\/skills/);
+  assert.match(out, /claude plugin install n8n-skills@n8n-io/);
+  assert.match(out, /codex plugin add n8n-skills@n8n-io/);
+  assert.match(out, /npx skills add n8n-io\/skills/);
+  assert.ok(!out.includes("/plugin marketplace add"), "the printed commands must be shell, not in-session slash commands");
+  // said once per sync dir: a re-init must not repeat it
+  const again = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
+  again.child.stdin!.end();
+  const againResult = await again;
+  assert.ok(!(againResult.stdout + againResult.stderr).includes("official skills pack"), "re-init must not repeat the pointer");
+
+  // the flag-driven path prints it too — an agent bootstrapping a sync dir
+  // should learn the pack exists as much as a human does
+  const flagged = path.join(TMP, "init-skills-flagged");
+  const f = execFile(process.execPath, [CLI, "init", flagged, "--host", env.N8N_HOST!, "--token", MCP_TOKEN], { encoding: "utf8" });
+  const flaggedResult = await f;
+  assert.match(flaggedResult.stdout + flaggedResult.stderr, /Recommended: n8n's official skills pack/);
+});
+
 await step("init --host/--token/--api-key: fully non-interactive, no stdin (Plan 35 finding)", async () => {
   const target = path.join(TMP, "init-flags");
   // Pass the host scheme-less (local → normalized to http://) to prove the flag

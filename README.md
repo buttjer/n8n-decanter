@@ -105,6 +105,9 @@ through [`mcp connect`](docs/cli/mcp-connect.md), a guard that forwards
 everything except writes to a Code node's `jsCode` — those redirect back to
 the repo (edit the file, `push`). No secret to manage.
 
+**A first [`init`](docs/cli/init.md) prints the install commands** for Claude
+Code, Codex, or any skills.sh-supported agent, listing the one it detects first.
+
 **Full guide: [Using n8n's official skills](docs/agents/n8n-skills.md).**
 
 ## Commands

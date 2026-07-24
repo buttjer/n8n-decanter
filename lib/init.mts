@@ -14,6 +14,7 @@ import {
 } from "./mcp.mts";
 import { PROXY_STATE_FILE } from "./mcpserve.mts";
 import { createPrompt, type Prompt } from "./prompt.mts";
+import { detectAgent, printSkillsRecommendation } from "./skills.mts";
 import { style } from "./style.mts";
 import { classifyTemplateFile, MANIFEST_FILE, readManifest, writeManifest, type TemplateOutcome } from "./template.mts";
 import type { Log } from "./types.mts";
@@ -267,6 +268,9 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
  * values come from the flags + the existing .env, and NOT ONE prompt is issued
  * (a missing MCP token just warns, a missing API key is skipped). The flag-less
  * invocation is unchanged (interactive, or answers piped over stdin).
+ *
+ * Plan 55: a first init closes by pointing at n8n's official skills pack — a
+ * printed recommendation, never a prompt, so no run's stdin changes.
  */
 export async function init(
   targetDir: string | undefined,
@@ -287,6 +291,10 @@ export async function init(
   // Any setup flag → non-interactive: drive init purely from flags + existing
   // .env, issuing no prompts (and no OAuth-fallback token prompt either).
   const flagDriven = hostFlag !== undefined || tokenFlag !== undefined || apiKeyFlag !== undefined;
+  // Plan 55: point at the official skills pack once, on a FIRST init (= no
+  // baseline manifest yet). Printed, never asked — every run's stdin stays
+  // exactly as it was.
+  const firstInit = !existsSync(path.join(dir, MANIFEST_FILE));
   // ONE shared prompt session for every question: a second createPrompt()
   // would lose piped answers the first one already buffered, so the session
   // opens lazily on the first question and closes once at the end.
@@ -427,4 +435,9 @@ export async function init(
       log.warn(`could not reach ${host} (${reason}) — .env written anyway`);
     }
   }
+
+  // --- the official n8n skills pack (Plan 55). Dead last, and output-only:
+  // decanter names the pack and prints the commands for the detected agent,
+  // but installs nothing (see lib/skills.mts for why).
+  if (firstInit) printSkillsRecommendation(detectAgent(), log);
 }
