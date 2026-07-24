@@ -417,6 +417,56 @@ logging). Cost envelope is the same small ~4–6 Sonnet sessions + Opus grading.
 This validates that a real bug the field test surfaced is fixed *the way it's
 consumed* — the payoff loop of the whole exercise.
 
+## Container mode — safe, unattended blind runs (2026-07-24)
+
+**Why.** Round 1/2 run the blind Sonnet sessions **unsandboxed on the host** with
+`Bash` auto-approved and no human review — fine *supervised*, but the maintainer
+wants **unattended** rounds, and unattended + unsandboxed-auto-`Bash` is the one
+combination that's genuinely unsafe (nothing to Ctrl-C an injected/looping
+agent). A container is also a *cleaner* user analogue than the tool developer's
+own machine (neutral env, pinned toolchain), so isolation improves fidelity here
+rather than hurting it. Decision (2026-07-24, after a safety review with the
+maintainer): the nested agents run in a **Docker container, egress-fenced**.
+
+**Isolation contract** (`scripts/field-test/docker/`, the compose file *is* the
+audit surface):
+- The `agent` container is on an **`internal`-only** docker network — no host
+  filesystem, no host loopback, no host env beyond a single `ANTHROPIC_API_KEY`
+  (from a gitignored `scripts/field-test/.env`, via `--env-file`).
+- Its **only** egress is a `proxy` sidecar (tinyproxy allowlist) that forwards to
+  **`api.anthropic.com` and nothing else** (`FilterDefaultDeny`). So an injected
+  or looping agent cannot exfiltrate the key or reach any other host. **Fail-closed:**
+  a misconfig means claude can't reach Anthropic and the run dies, never leaks.
+- The staged **throwaway n8n** is `docker network connect`-ed to the internal net
+  so the agent reaches it by container name; the host keeps its published port for
+  `verify.mts` / provisioning.
+- **Validated 2026-07-24** against a real key: from inside the fenced container,
+  `example.com` is unreachable *and* proxy-denied while `api.anthropic.com` is
+  reachable, and `claude -p` authenticates via `ANTHROPIC_API_KEY` **through
+  `HTTPS_PROXY`** and returns a result (Claude Code honors the proxy — the one
+  real unknown, now retired).
+
+**Design constraints the wiring must respect:**
+- **The fence blocks the npm registry**, so the decanter CLI + deps are **baked
+  into the agent image at build time** (build is unfenced) — a per-run image
+  `FROM` a stable base + the stage's packed tarball; **no runtime `npm install`**
+  inside the fenced container. (Widening the allowlist to npm was rejected — it
+  reopens a large egress surface.)
+- The host's macOS `node_modules` must never run in Linux (native deps like
+  esbuild): the container uses its **baked, Linux-native** CLI, not the workDir's.
+- The in-container `.env` `N8N_HOST` is rewritten to the n8n's **in-network name**
+  (`http://<container>:5678`); `manifest.host` stays the host-published URL for
+  host-side `verify.mts`. The agent works in-container; verify works on the host.
+- `S1–S4` run in-container; **`S5` (`watch`) stays host/optional** — `fs.watch`
+  on container bind-mounts is unreliable. A **total wall-clock kill** (default 60
+  min, `FIELD_RUN_BUDGET_MIN`) bounds an unattended round on top of the per-turn
+  timeout.
+
+**Status (2026-07-24):** container foundation built + core isolation **validated
+and committed**; `run.mts`/`stage.mts` container-mode wiring (per-run baked
+image, network wiring, per-turn `docker exec`, artifact extraction, wall-clock
+cap) is the next commit, then a full staged unattended round.
+
 ## Harness status — capabilities (2026-07-23)
 
 **Built (Tasks 1–3 + 6), in `scripts/field-test/`:**
