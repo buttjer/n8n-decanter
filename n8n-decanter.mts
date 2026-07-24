@@ -19,6 +19,7 @@ import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { printTestReport, runTest } from "./lib/testrun.mts";
 import { runNode } from "./lib/run.mts";
+import { isSkillsTarget, SKILLS_TARGETS } from "./lib/skills.mts";
 import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, readState } from "./lib/state.mts";
 import { statusWorkflow } from "./lib/status.mts";
 import { style, styleErr, transientLine } from "./lib/style.mts";
@@ -54,8 +55,9 @@ const usage = (): string => {
   ${d("Run with no arguments in a terminal for the interactive picker; `help` prints this.")}
 
 ${b("Setup")}
-  ${b("init")} [dir] [--force] [--host <url> --token <tok> --api-key <key>]
+  ${b("init")} [dir] [--force] [--host <url> --token <tok> --api-key <key>] [--skills <target>]
   ${d("                                              setup: .env, starter files, config (flags drive it non-interactively)")}
+  ${d("                                              --skills claude-code|codex|skills-sh|none|print installs n8n's official skills pack")}
   ${b("completion")} zsh|bash                     ${d("print a shell completion script for your rc file")}
 
 ${b("Sync")} ${d("(over n8n's MCP server — Code-node source only; structure lives in n8n)")}
@@ -156,12 +158,12 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|version|at|host|token|api-key)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|version|at|host|token|api-key|skills)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
       }
-      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : m[1] === "host" ? "http://localhost:5678" : m[1] === "token" ? "<mcp-token>" : m[1] === "api-key" ? "<api-key>" : "123";
+      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : m[1] === "host" ? "http://localhost:5678" : m[1] === "token" ? "<mcp-token>" : m[1] === "api-key" ? "<api-key>" : m[1] === "skills" ? "claude-code" : "123";
       let value = m[2];
       if (value === undefined) {
         // Space-separated form (`--limit 5`): consume the next token — but not
@@ -272,7 +274,13 @@ async function main() {
     // must run before loadConfig: a fresh directory has no config/.env yet
     if (rest.length > 1) throw new Error("init takes at most one directory argument");
     // --host/--token/--api-key drive init non-interactively (Plan 35 finding).
-    await init(rest[0], { force, host: valueFlags.get("host"), token: valueFlags.get("token"), apiKey: valueFlags.get("api-key") }, log);
+    // --skills picks the n8n skills-pack route (Plan 55) and is deliberately NOT
+    // one of those flags — it must not suppress the credential prompts.
+    const skillsValue = valueFlags.get("skills");
+    if (skillsValue !== undefined && !isSkillsTarget(skillsValue)) {
+      throw new Error(`unknown --skills target: ${skillsValue} (expected ${SKILLS_TARGETS.join(" | ")})`);
+    }
+    await init(rest[0], { force, host: valueFlags.get("host"), token: valueFlags.get("token"), apiKey: valueFlags.get("api-key"), skills: skillsValue }, log);
     return;
   }
 

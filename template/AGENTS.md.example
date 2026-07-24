@@ -135,11 +135,26 @@ The skills pack installs whole (no cherry-pick) and is not aware of this
 repo's layout — this override plus the guard-proxy, not selective
 installation, is what holds the boundary.
 
-Not installed yet? It's a plugin (not an npm dependency): Claude Code
-`/plugin marketplace add n8n-io/skills` then `/plugin install n8n-skills@n8n-io`;
-Codex `codex plugin marketplace add n8n-io/skills` then
-`codex plugin add n8n-skills@n8n-io`; other agents `npx skills add n8n-io/skills`
-(skills.sh, support varies).
+Not installed yet? `n8n-decanter init` offers to install it; you can also run
+`n8n-decanter init --skills claude-code` (or `codex` / `skills-sh` / `print`)
+at any time. By hand it's a plugin, not an npm dependency:
+
+- **Claude Code** — in a session: `/plugin marketplace add n8n-io/skills` then
+  `/plugin install n8n-skills@n8n-io`. From a shell: `claude plugin marketplace
+  add n8n-io/skills` then `claude plugin install n8n-skills@n8n-io`. Either way,
+  `/reload-plugins` (or a restart) activates it.
+- **Codex** (≥ 0.142.0) — `codex plugin marketplace add n8n-io/skills` then
+  `codex plugin add n8n-skills@n8n-io`, then restart and approve its hooks.
+- **Other agents** — `npx skills add n8n-io/skills` (skills.sh; support varies).
+
+### Routing cue for plain-skills installs
+
+The plugin routes every n8n task through the pack automatically (SessionStart
+hook). The skills.sh route has no such hook, so **if the pack was installed as
+plain skills**: when working with workflows, nodes, expressions, or the n8n MCP
+tools, start by loading the `using-n8n-skills-official` meta-skill and follow
+its routing into the matching capability skill before acting — then apply the
+Code-node override above, which wins over anything a skill says.
 
 ## File ownership
 

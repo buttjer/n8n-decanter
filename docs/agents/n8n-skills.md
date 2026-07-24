@@ -75,20 +75,52 @@ it); the skills and MCP own the rest.**
 
 ### 1. Install the skills
 
-The pack is a plugin. Pick your agent:
+**[`init`](/docs/cli/init/) offers this for you.** At the end of a first
+`init`, on a terminal, decanter asks whether to install the pack and
+pre-selects the agent it detected:
 
-```sh
-# Claude Code
+```text
+Install n8n's official skills pack? — recommended for agentic workflow building
+  1) Claude Code (detected)
+  2) Codex
+  3) Other agent (skills.sh)
+  4) Skip — just print the commands
+Choice [1]:
+```
+
+It prints each command before running it, and a failure never fails `init`.
+Piped runs and re-inits are never asked — they get the commands printed.
+`init --skills <claude-code|codex|skills-sh|print|none>` drives it without a
+prompt (and, unlike `--host`/`--token`/`--api-key`, does **not** switch `init`
+into non-interactive mode).
+
+To do it by hand, pick your agent — note that Claude Code's `/plugin …` are
+**in-session slash commands**, not shell commands:
+
+```text
+# Claude Code — inside a session
 /plugin marketplace add n8n-io/skills
 /plugin install n8n-skills@n8n-io
+```
 
-# Codex
+```sh
+# Claude Code — from a shell (what init runs; add --scope project to share it
+# with the repo instead of installing for your user)
+claude plugin marketplace add n8n-io/skills
+claude plugin install n8n-skills@n8n-io
+
+# Codex (needs Codex >= 0.142.0)
 codex plugin marketplace add n8n-io/skills
 codex plugin add n8n-skills@n8n-io
 
 # Others (skills.sh — support varies by agent)
 npx skills add n8n-io/skills
 ```
+
+Afterwards: Claude Code needs `/reload-plugins` or a restart; Codex needs a
+restart and a one-time approval of the plugin's hooks. The skills.sh route
+installs the markdown only — no SessionStart router — which is why the
+scaffolded `AGENTS.md` carries the `using-n8n-skills-official` routing cue.
 
 ### 2. There is no step 2
 

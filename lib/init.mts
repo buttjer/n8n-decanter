@@ -14,6 +14,16 @@ import {
 } from "./mcp.mts";
 import { PROXY_STATE_FILE } from "./mcpserve.mts";
 import { createPrompt, type Prompt } from "./prompt.mts";
+import {
+  detectAgent,
+  parseSkillsAnswer,
+  printSkillsRecommendation,
+  resolveSkillsTarget,
+  runSkillsInstall,
+  skillsPromptLines,
+  skillsPromptQuestion,
+  type SkillsTarget,
+} from "./skills.mts";
 import { style } from "./style.mts";
 import { classifyTemplateFile, MANIFEST_FILE, readManifest, writeManifest, type TemplateOutcome } from "./template.mts";
 import type { Log } from "./types.mts";
@@ -267,10 +277,14 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
  * values come from the flags + the existing .env, and NOT ONE prompt is issued
  * (a missing MCP token just warns, a missing API key is skipped). The flag-less
  * invocation is unchanged (interactive, or answers piped over stdin).
+ *
+ * Plan 55: a first init closes by offering n8n's official skills pack.
+ * `--skills` drives that headlessly and is deliberately NOT part of `flagDriven`
+ * — asking for a skills route must not silently suppress the credential prompts.
  */
 export async function init(
   targetDir: string | undefined,
-  { force = false, host: hostFlag, token: tokenFlag, apiKey: apiKeyFlag }: { force?: boolean; host?: string; token?: string; apiKey?: string } = {},
+  { force = false, host: hostFlag, token: tokenFlag, apiKey: apiKeyFlag, skills: skillsFlag }: { force?: boolean; host?: string; token?: string; apiKey?: string; skills?: SkillsTarget } = {},
   log: Log,
 ): Promise<void> {
   printBanner(log);
@@ -287,6 +301,12 @@ export async function init(
   // Any setup flag → non-interactive: drive init purely from flags + existing
   // .env, issuing no prompts (and no OAuth-fallback token prompt either).
   const flagDriven = hostFlag !== undefined || tokenFlag !== undefined || apiKeyFlag !== undefined;
+  // Plan 55: the skills offer is asked only on a FIRST init, on a TTY, when no
+  // --skills target was given. First init = no baseline manifest yet. A piped
+  // run must consume exactly the answers it consumes today, so it is never
+  // prompted — it gets the printed commands instead.
+  const firstInit = !existsSync(path.join(dir, MANIFEST_FILE));
+  const skillsPlan = resolveSkillsTarget({ flag: skillsFlag, interactive, flagDriven, firstInit });
   // ONE shared prompt session for every question: a second createPrompt()
   // would lose piped answers the first one already buffered, so the session
   // opens lazily on the first question and closes once at the end.
@@ -337,7 +357,9 @@ export async function init(
       apiKey = await ask("n8n public API key (optional — executions/data-tables/backup) [Enter to skip]: ");
     }
   } finally {
-    rl?.close();
+    // Keep the one session open when the skills question is still to come —
+    // reopening would be the second-createPrompt() bug all over again.
+    if (skillsPlan !== "ask") rl?.close();
   }
 
   // Rewrite .env preserving any other keys the user added (comments are not preserved).
@@ -426,5 +448,23 @@ export async function init(
       const reason = e.name === "TimeoutError" ? "timed out after 10s" : e.cause?.code ?? e.message;
       log.warn(`could not reach ${host} (${reason}) — .env written anyway`);
     }
+  }
+
+  // --- the official n8n skills pack (Plan 55). Dead last: the credential and
+  // scaffold work must never be blocked by it, and a failure here never fails
+  // init. Precedence: --skills > the TTY question > print (first init) > silence.
+  try {
+    const detected = detectAgent();
+    let target: SkillsTarget;
+    if (skillsPlan === "ask") {
+      for (const line of skillsPromptLines(detected)) log.info(line);
+      target = parseSkillsAnswer(await ask(skillsPromptQuestion(detected)), detected);
+    } else {
+      target = skillsPlan;
+    }
+    if (target === "print") printSkillsRecommendation(detected, log);
+    else if (target !== "none") await runSkillsInstall(target, dir, detected, log);
+  } finally {
+    rl?.close();
   }
 }
