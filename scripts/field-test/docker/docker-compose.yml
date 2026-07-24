@@ -27,6 +27,9 @@ volumes:
 
 services:
   proxy:
+    # Built by run.mts (docker build) before `up`; `build:` documents provenance
+    # and lets a standalone `docker compose up --build` work for a dev smoke.
+    image: decanter-fieldtest-proxy
     build:
       context: .
       dockerfile: Dockerfile.proxy
@@ -34,6 +37,10 @@ services:
     restart: unless-stopped
 
   agent:
+    # Default: the CLI-less base (for the claude-through-proxy smoke). run.mts
+    # sets FIELD_AGENT_IMAGE to the per-run image that bakes the decanter CLI
+    # (build-time, unfenced) — the fence blocks a runtime npm install.
+    image: ${FIELD_AGENT_IMAGE:-decanter-fieldtest-agent}
     build:
       context: .
       dockerfile: Dockerfile.agent
@@ -43,14 +50,14 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in scripts/field-test/.env}
       HTTPS_PROXY: http://proxy:8888
       HTTP_PROXY: http://proxy:8888
-      # n8n (and localhost) must bypass the proxy — they live on the internal net.
+      # n8n (by container name) + localhost must bypass the proxy — they're on the
+      # internal net; the proxy would deny them (Anthropic-only allowlist).
       NO_PROXY: ${FIELD_NO_PROXY:-localhost,127.0.0.1}
       no_proxy: ${FIELD_NO_PROXY:-localhost,127.0.0.1}
     volumes:
       - ${FIELD_WORKDIR:-./.smoke-work}:/work
-      - agent_node_modules:/work/node_modules
-      - ${FIELD_CLI_TARBALL:-/dev/null}:/opt/cli.tgz:ro
-      - ${FIELD_HARNESS:-./.smoke-work}:/harness
+      - agent_node_modules:/work/node_modules   # shadow the host's macOS node_modules
+      - ${FIELD_HARNESS:-./.smoke-work}:/harness # guard.log + artifacts land back on the host
     mem_limit: 2g
     cpus: "2"
     # kept alive per scenario; each turn is `docker compose exec agent claude …`

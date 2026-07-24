@@ -6,13 +6,18 @@
 # nothing macOS-native ever runs here.
 set -e
 
-if [ -f /opt/cli.tgz ]; then
-  echo "entrypoint: installing decanter CLI (Linux-native) from /opt/cli.tgz" >&2
+# The CLI is normally BAKED into the per-run image (build-time, unfenced) — see
+# the container-mode design. This runtime install is only a fallback for an
+# unfenced dev run where the tarball is mounted instead of baked; it needs the
+# npm registry, so it does nothing (and cannot) inside the egress-fenced round.
+if command -v n8n-decanter >/dev/null 2>&1; then
+  echo "entrypoint: n8n-decanter (baked) -> $(command -v n8n-decanter)" >&2
+elif [ -f /opt/cli.tgz ]; then
+  echo "entrypoint: installing decanter CLI from /opt/cli.tgz (unfenced fallback)" >&2
   npm install -g --no-audit --no-fund /opt/cli.tgz >/tmp/cli-install.log 2>&1 \
-    || { echo "entrypoint: CLI install FAILED — see /tmp/cli-install.log" >&2; tail -20 /tmp/cli-install.log >&2 || true; exit 1; }
-  echo "entrypoint: n8n-decanter -> $(command -v n8n-decanter || echo '(not on PATH!)')" >&2
+    || { echo "entrypoint: CLI install FAILED — see /tmp/cli-install.log" >&2; tail -20 /tmp/cli-install.log >&2 || true; }
 else
-  echo "entrypoint: WARN no /opt/cli.tgz mounted — n8n-decanter will be missing" >&2
+  echo "entrypoint: WARN n8n-decanter not baked and no /opt/cli.tgz — CLI missing" >&2
 fi
 
 exec "$@"

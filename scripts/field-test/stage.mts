@@ -212,7 +212,7 @@ async function provision(): Promise<{ container: string | null; seeded: SeedResu
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean }> {
+async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; cliTarball: string | null; decanterSpec: string | null }> {
   const base = os.tmpdir();
   const workDir = path.join(base, `flows-ops-${PID}`);
   const harnessRoot = path.join(base, `ftrun-${PID}`);
@@ -261,6 +261,9 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   const spec = process.env.FIELD_DECANTER_SPEC;
   writeFileSync(path.join(workDir, "package.json"), JSON.stringify({ name: "flows-ops", private: true, dependencies: { "n8n-decanter": spec ?? "^0.6.0" } }, null, 2) + "\n");
   let decanterInstalled = false;
+  // The packed tarball (host mode installs it into workDir; CONTAINER mode bakes
+  // it into the fenced agent image at build time — the runtime fence has no npm).
+  let cliTarball: string | null = null;
   try {
     if (spec) {
       await execFile("npm", ["install", "--no-audit", "--no-fund", spec], { cwd: workDir });
@@ -269,7 +272,8 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
       // `npm pack` runs prepack (build → dist/) and prints the tarball name as JSON.
       const { stdout } = await execFile("npm", ["pack", "--pack-destination", workDir, "--json"], { cwd: PACKAGE_ROOT });
       const tgz = (JSON.parse(stdout) as Array<{ filename: string }>)[0].filename;
-      await execFile("npm", ["install", "--no-audit", "--no-fund", path.join(workDir, tgz)], { cwd: workDir });
+      cliTarball = path.join(workDir, tgz);
+      await execFile("npm", ["install", "--no-audit", "--no-fund", cliTarball], { cwd: workDir });
       console.log(`packed + locally installed n8n-decanter (${tgz}) — no global link`);
     }
     decanterInstalled = true;
@@ -279,7 +283,7 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
 
   // install the official n8n skills pack the way a real user would
   const skills = await installSkillsPack(workDir);
-  return { workDir, harnessRoot, skills, decanterInstalled };
+  return { workDir, harnessRoot, skills, decanterInstalled, cliTarball, decanterSpec: spec ?? null };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -305,7 +309,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, harnessRoot, skills, decanterInstalled } = await scaffold();
+  const { workDir, harnessRoot, skills, decanterInstalled, cliTarball, decanterSpec } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -319,6 +323,10 @@ try {
     root: "workflows",
     skills,
     decanterInstalled,
+    // Container mode (run.mts --container) bakes one of these into the fenced
+    // agent image: the local packed tarball, or the npm spec (FIELD_DECANTER_SPEC).
+    cliTarball,
+    decanterSpec,
     seeded,
     allowExtension: ALLOW_EXTENSION,
   };
