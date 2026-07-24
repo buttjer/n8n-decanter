@@ -13,24 +13,18 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates tini curl \
   && rm -rf /var/lib/apt/lists/*
 
-# Claude Code CLI, installed globally as root (default prefix, on PATH).
-RUN npm install -g @anthropic-ai/claude-code
+# Claude Code CLI + `typescript` (the sync dir's devDep, matching
+# template/package.json.example), installed globally as ROOT → /usr/local. The
+# decanter CLI (baked into the per-run image, also as root) lands in the SAME
+# prefix, so: n8n-decanter is on the standard PATH (survives a login shell's
+# profile PATH reset) and `check`'s typecheck fallback resolver finds typescript
+# beside it. The fence blocks the npm registry at runtime, so deps bake at build.
+RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code typescript@^5.6.0
 
-# Non-root agent user with a WRITABLE global npm prefix, so the decanter CLI
-# tarball installs into the SAME prefix as typescript (below) — that's where the
-# CLI's typecheck fallback resolver (scripts/typecheck.mts) finds `typescript`.
+# Run as a non-root user — the container is the isolation boundary; least-privilege inside.
 RUN useradd -m -u 1001 agent
-ENV NPM_CONFIG_PREFIX=/home/agent/.npm-global
-ENV PATH=/home/agent/.npm-global/bin:$PATH
 USER agent
 WORKDIR /work
-
-# Bake `typescript` (the sync dir's devDep, matching template/package.json.example)
-# into the agent's global prefix at BUILD time. The fence blocks the npm registry
-# at runtime, so nothing can `npm install` inside the container — but `check`'s
-# typecheck resolves typescript from here (createRequire fallback), and the CLI
-# tarball (baked in the per-run image FROM this base) lands in the same prefix.
-RUN npm install -g --no-audit --no-fund typescript@^5.6.0
 
 COPY --chown=agent:agent entrypoint.sh /usr/local/bin/entrypoint.sh
 # Invoked via `sh` so the copied script needs no +x bit (Write-tool default 644).
