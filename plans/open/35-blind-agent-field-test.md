@@ -711,4 +711,49 @@ end-to-end**.
    proven in a real round.
 
 **Artifacts:** transcripts + `verify-S*.json` + `guard.log` in the scratch
-`harnessRoot` (not committed); container torn down clean.
+`harnessRoot`; **archived retroactively** to `test/field-test/runs/` (see "Run
+archives" above), container torn down clean.
+
+## S2 re-run — the same scenario failed the way S2 passed before (2026-07-24, `ftrun-81310`)
+
+First round produced by the new archive path end-to-end (per-turn prompt capture
++ harness turn commits): `test/field-test/runs/2026-07-24T11-02-17Z-ftrun-81310/`
+— **$3.87**, 3 turns (59 / 7 / 26 model turns), 284 KB archived.
+
+**Result: verify FAIL (4 violations) — `remote (0b) ≠ local`** on every Code
+node. The agent built the whole 6-node workflow, authored all the code locally…
+and **never ran `push`**. Commands it did run: `pull`, `check` ×2, `node run`
+×5, `simulate`, `scenario create/check`. No `push`, no `status`.
+
+**Why this matters more than a single red run: the previous S2 PASSED** — same
+scenario, same prompts, same model, and it pushed everything byte-equal. So the
+variable isn't the CLI's correctness, it's **whether the agent ever discovers
+that authoring locally is not the finishing move**. One session in two got it
+right.
+
+**The compounding factor is that `check` said it was fine.** Twice:
+
+```
+✓ Hourly Order Bucket Summary: OK
+✓ typecheck OK
+```
+
+`check` is the *local* compliance guard (layout + typecheck); it never consults
+the instance, so "OK" here means "your files are well-formed", not "your work is
+live". The agent used it as its done-oracle and stopped. `status` — the verb
+that *would* have shown `local ≠ remote` — was never reached for.
+
+**This is now the same finding three times**, across three different scenarios:
+S1 (authored, then *asked* whether to push), S4 (`.js`→`.ts` converted, ran
+`check` instead of `push`), and now S2. Each time the tool reported green while
+the code had never left the repo. That consistency makes it the strongest
+product signal the field test has produced — and it is a **UX/affordance** gap,
+not a bug: every individual command behaves as documented.
+
+**For maintainer triage** (this plan changes no product code — Task 5):
+- Should `check`'s green line say what it did *not* check (e.g. `✓ OK (local
+  only — run status to compare with n8n)`)?
+- Should `status` be what an agent naturally reaches for after editing — or
+  should `check` fold in a cheap sync comparison?
+- The scaffolded `AGENTS.md` steers agents file-first for *authoring*; nothing
+  states that a push is what makes it real.
