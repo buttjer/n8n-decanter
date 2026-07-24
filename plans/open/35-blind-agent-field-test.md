@@ -581,6 +581,53 @@ agents don't reach for is weaker than telling them the state they're in.
 **S3 is reliable** — 2/2 PASS here, on top of round 2's correct drift-guard
 firing. The drift path needs no further attention.
 
+## S2's failures were the agent obeying our own contract (2026-07-24)
+
+**The finding, from reading the transcripts rather than counting verbs.** Across
+five S2 rounds the correlation is exact — `push` executed → PASS, not executed →
+FAIL — but *why* it wasn't executed is not what the earlier write-ups assumed.
+The failing agent said so itself, in turn 2:
+
+> "Still local-only (not pushed to the draft) — let me know when you'd like me to
+> push/test/publish."
+
+It was never confused about state. It knew exactly what it had not done, said so,
+and **waited for authorisation** — because
+[`template/AGENTS.md.example`](../../template/AGENTS.md.example) tells it to, in
+bold, twice: *"`push` writes the DRAFT of the live instance — **only when the
+user asks**"*, and *"Otherwise finish edits, verify with `check` + `run`, and
+report that the change is ready to push."* Finish edits → verify with `check` +
+`node run` → report ready to push is, step for step, what it did. **It followed
+the documented contract and `verify.mts` scored it a violation.**
+
+**So S2 was mis-specified, not the product.** Its prompt said *"Build the
+structure in n8n and write the Code steps here in the repo"* — work to do, never
+a goal state — so it never granted the ask the contract requires. S1 was fixed
+this way after round 1 (*"make sure the finished code actually ends up there —
+not just sitting in this folder"*) and has passed reliably since; S2 never got
+the same treatment. The passing S2 rounds pushed *despite* the contract; the
+failing ones obeyed it. That is the whole variance.
+
+**Consequences to be honest about:**
+- The premise behind the `check` affordance work ([#154](https://github.com/buttjer/n8n-decanter/pull/154))
+  — "the agent mistakes a green `check` for done" — **was not the failure
+  occurring here**. The agent knew. That change is defensible on its own merits
+  (a green `check` genuinely isn't proof of anything remote) but it did not fix
+  this, and `status` uptake stayed at **zero across all seven rounds**.
+- Fixed: S2's turn 1 now ends *"It should actually be running in n8n when you're
+  done, not just sitting in this folder."* Goal level, no verb named — naming the
+  verb would make the scenario pass trivially and measure nothing.
+- Generalised into [`scenarios/STYLE.md`](../../test/field-test/scenarios/STYLE.md):
+  any scenario whose invariants include remote state must state the goal state in
+  the prompt, or it is testing obedience to the contract rather than the tool.
+
+**The real product question this leaves open** (maintainer call, Task 5): *"only
+when the user asks"* is a deliberate safety stance and probably right — but it
+means an agent handed a build task will routinely finish, leave the work local,
+and merely announce it. Should the contract distinguish "the user described a
+goal that includes it running" from "the user asked for an edit"? That is the
+finding worth acting on, and it is a wording decision, not a code one.
+
 ## Harness status — capabilities (2026-07-23)
 
 **Built (Tasks 1–3 + 6), in `test/field-test/`:**
