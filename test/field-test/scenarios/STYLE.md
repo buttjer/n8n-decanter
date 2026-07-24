@@ -47,6 +47,30 @@ the leak fixed, not graded**.
 | "Convert the node to TypeScript" | "I'd like types on that one so I stop fat-fingering fields" |
 | "Archive the obsolete workflow" | "we don't use the old import flow anymore, clean it up" |
 
+## State the GOAL-STATE, or you are testing the wrong thing (hard-won)
+
+The scaffolded `template/AGENTS.md.example` tells agents, in bold and twice,
+that `push` touches the live instance **"only when the user asks"**, and that
+otherwise they should *"finish edits, verify with `check` + `run`, and report
+that the change is ready to push"*. A compliant agent therefore stops at the
+instance boundary and says so — which is correct behaviour, not a failure.
+
+So **a prompt that only describes work to do never authorises going live**, and
+`verify.mts` (which checks remote == local) will score obedience as a violation.
+S2 lost ~2 of 5 rounds to exactly this: its agent wrote *"Still local-only (not
+pushed to the draft) — let me know when you'd like me to push"*, having followed
+the contract to the letter.
+
+**Every scenario whose invariants include remote state must say so in the
+prompt, at goal level.** S1 does: *"That step is still empty over in n8n, so make
+sure the finished code actually ends up there — not just sitting in this
+folder."* S2 now does too.
+
+**Goal level, never verb level.** *"It should actually be running in n8n when
+you're done"* grants the authorisation while leaving the mechanism to the agent —
+that discovery is the thing under test. *"Run a preflight and push"* would pass
+every time and measure nothing.
+
 ## Turn model (headless `claude -p`)
 
 One turn = one user message that kicks off an autonomous work burst (many tool
