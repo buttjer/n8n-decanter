@@ -545,6 +545,42 @@ was destroyed got destroyed.
 The three Round-2 S1 rounds (`ftrun-64582`, `-67810`, `-69297`) are archived
 retroactively under this scheme — 440 KB for all three.
 
+## Post-fix repetitions — S2 ×2, S3 ×2 (2026-07-24, subscription-billed)
+
+First rounds on a CLI carrying the [#154](https://github.com/buttjer/n8n-decanter/pull/154)
+`check` change, and the first billed as **subscription quota** rather than API
+tokens (`CLAUDE_CODE_OAUTH_TOKEN`, PR #157). One stage per repetition — a reused
+instance would have let repeat 1's workflows contaminate repeat 2.
+
+| round | S2 | S3 | push | status | check |
+| --- | --- | --- | --- | --- | --- |
+| `ftrun-81310` (pre-fix) | **FAIL(4)** | — | **0** | 0 | 4 |
+| `ftrun-88381` (S1) | PASS | — | 2 | 3 | 2 |
+| `ftrun-89930` (rep A) | PASS | PASS | 2 / 1 | 0 | 4 / 1 |
+| `ftrun-91178` (rep B) | PASS | PASS | 2 / 3 | 0 | 4 / 1 |
+
+**4/4 PASS, and both S2 repetitions pushed** — the exact failure is absent.
+
+**This does not establish that the fix caused it, and the numbers say so.** S2
+also passed in round 2, so its record across all runs is 3 PASS / 1 FAIL. If S2
+simply passed ~75% of the time all along, two consecutive passes would occur
+**56% of the time** — more likely than not. Two repetitions cannot separate "the
+fix worked" from "the coin landed the same way twice". Distinguishing them needs
+enough repetitions to bound the rate, which is a deliberate cost decision, not
+something to infer from these four.
+
+**A finding that IS solid, and inconvenient: `status` had zero uptake.** The
+`check` hint names `status` explicitly and was displayed in every S2 turn
+(verified in both archives) — yet **no S2 or S3 session ran `status` even once**.
+The agents go straight from `check` to `push`. So whatever helped here, it was
+**not** the mechanism that change was built around; the likelier lever is the
+template edit (a green `check` is not a finished task; the `.js`→`.ts` recipe now
+ends at `push`). Worth folding back into Plan 30 Theme A: pointing at a verb
+agents don't reach for is weaker than telling them the state they're in.
+
+**S3 is reliable** — 2/2 PASS here, on top of round 2's correct drift-guard
+firing. The drift path needs no further attention.
+
 ## Harness status — capabilities (2026-07-23)
 
 **Built (Tasks 1–3 + 6), in `test/field-test/`:**
