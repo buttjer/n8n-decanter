@@ -1,0 +1,3 @@
+# tinyproxy egress allowlist (POSIX extended regex, matched against the request
+# host). ONLY the Anthropic API is permitted; FilterDefaultDeny denies the rest.
+^(.*\.)?anthropic\.com$

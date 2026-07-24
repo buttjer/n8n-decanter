@@ -1,0 +1,31 @@
+# Blind-agent container (Plan 35 container mode). The nested `claude -p` runs
+# HERE, not on the host: no host filesystem, no host env beyond ANTHROPIC_API_KEY,
+# and egress fenced to api.anthropic.com (via the proxy sidecar) + the throwaway
+# n8n (on the private field-test network). Built by run.mts before an unattended
+# round; the decanter CLI is installed at RUNTIME from the stage's packed tarball
+# (Linux-native — the host's macOS node_modules must never leak in; esbuild &c.
+# are platform-specific), so this image stays generic across CLI versions.
+FROM node:22-bookworm-slim
+
+# git: the sync dir is a repo (pull/push auto-commit). tini: PID-1 signal reaping
+# so `docker stop` is clean. curl: the netcheck probe. ca-certificates: TLS.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates tini curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI, installed globally as root (default prefix, on PATH).
+RUN npm install -g @anthropic-ai/claude-code
+
+# Non-root agent user with a WRITABLE global npm prefix, so the runtime install
+# of the decanter CLI tarball (entrypoint) needs no root.
+RUN useradd -m -u 1001 agent
+ENV NPM_CONFIG_PREFIX=/home/agent/.npm-global
+ENV PATH=/home/agent/.npm-global/bin:$PATH
+USER agent
+WORKDIR /work
+
+COPY --chown=agent:agent entrypoint.sh /usr/local/bin/entrypoint.sh
+# Invoked via `sh` so the copied script needs no +x bit (Write-tool default 644).
+ENTRYPOINT ["/usr/bin/tini", "--", "sh", "/usr/local/bin/entrypoint.sh"]
+# Kept alive per scenario; each turn is a `docker exec … claude -p … --resume`.
+CMD ["tail", "-f", "/dev/null"]

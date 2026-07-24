@@ -1,0 +1,3 @@
+# Default bind-mount target for the bare `docker compose up` smoke (run.mts sets
+# FIELD_WORKDIR to a real staged dir for actual rounds). A scratch artifact.
+.smoke-work/
