@@ -33,14 +33,23 @@ jobs:
       - run: npm test
 
   # Dev-only integration smoke against a real n8n in Docker (plans/15).
-  # Not part of the merge gate: runs on manual dispatch and a weekly cron.
+  # Too slow/heavy for every PR, so it runs on manual dispatch, a weekly cron —
+  # and automatically on a RELEASE PR (`chore/release-*`), which is the one
+  # merge that must not go out without a real-instance run behind it. Releasing
+  # is the moment the version contract is fixed; the ordinary per-PR gate
+  # (lint/typecheck/npm test) never touches a real n8n.
+  # `github.head_ref` is set only on pull_request events, so the branch test
+  # can't accidentally fire on a push to main.
   # Matrix (Plan 22): oldest-supported / middle / latest verified 2.x tags —
   # this is what actually backs the "n8n 2.x" contract across versions,
   # instead of asserting it against one pinned point release. Keep in sync
   # with the passing set recorded in test/smoke-n8n.mts's header comment.
   smoke:
     name: n8n smoke (docker, ${{ matrix.n8n_tag }})
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event_name == 'schedule'
+      || startsWith(github.head_ref, 'chore/release-')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
