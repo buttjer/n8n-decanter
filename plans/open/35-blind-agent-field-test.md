@@ -267,6 +267,12 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
   reload proxy — it pushes on save and prints the editor deep link, relying on
   n8n's **native** reflection of MCP draft edits, so "just show up" is now n8n's
   behavior to observe, not a decanter surface to grade. Defer if flaky.
+- **S6–S12 — wave 2, [Plan 58](58-field-test-scenario-wave-2.md).** S1–S5 cover
+  the authoring loop on **hand-built greenfield** workflows; wave 2 adds a
+  **seed-pack** mechanism (import real workflows from `n8n-io/test-workflows`)
+  and the scenarios for everything downstream of authoring — `preflight`,
+  `simulate`, `executions`/`scenario`, `backup`, the publish lifecycle, bulk +
+  `data-tables`, and the documented failure modes.
 
 ### Observation & grading
 
