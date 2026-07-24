@@ -21,9 +21,10 @@ A typical agent iteration:
 # after editing code/parse-order.ts and workflow.json
 n8n-decanter node run workflows/order-sync/code/parse-order.ts fixture.json
 n8n-decanter check
-# both green -> report "ready to push" to the user
-# (the runtime checks — instance-side `test`, offline `simulate` — come after
-#  a push / with the user's go-ahead; see the taxonomy in docs/cli/test)
+# both green -> push: the draft is where the work lands, and code that only
+# exists in this folder is not done
+n8n-decanter push order-sync
+# going LIVE (`publish` / `push --publish`) stays the user's call
 ```
 
 Adding a Code node from scratch is a structure act — it happens **in n8n**
