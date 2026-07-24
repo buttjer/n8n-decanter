@@ -42,15 +42,35 @@ node test/field-test/stage.mts --down <manifest>     # teardown (container + scr
 
 Host mode runs the blind `claude` **unsandboxed on your machine** with auto-`Bash`
 — fine when you're watching, but risky unattended. `--container` runs each blind
-session inside a Docker container that is **egress-fenced to `api.anthropic.com`
+session inside a Docker container that is **egress-fenced to `anthropic.com`
 only** (a tinyproxy allowlist sidecar) with **no host filesystem and no host env
-beyond one `ANTHROPIC_API_KEY`**. Even an injected/looping agent can reach only
+beyond a single auth credential**. Even an injected/looping agent can reach only
 Anthropic + the throwaway n8n. See `docker/docker-compose.yml` — it *is* the
 isolation contract. Design + validation notes live in the Plan 35 "Container
 mode" section.
 
+### Auth — subscription or API key
+
+Set **one** of these in `test/field-test/.env`; `run.mts` picks it and exports
+exactly that one into the container (the token wins if both are set). Nothing is
+mounted and no browser runs inside the fence — that's why both shapes are plain
+env vars.
+
+| var | billing | cap |
+| --- | --- | --- |
+| `CLAUDE_CODE_OAUTH_TOKEN` | your Claude **subscription** — mint with `claude setup-token` | **none** — `FIELD_RUN_BUDGET_MIN` is the only backstop |
+| `ANTHROPIC_API_KEY` | pay-per-token API | the key's own spend cap |
+
+A subscription round costs **throughput, not dollars**: it draws on your 5-hour
+windows, so an unattended round competes with your own interactive usage. The
+unused variable is left **absent** rather than empty — an empty key is worse than
+no key, since the CLI would try to use it.
+
+Run `--smoke` first (one turn, ~a cent) to prove auth works through the fence
+before committing to a full round.
+
 ```sh
-cp test/field-test/.env.example test/field-test/.env   # then add ANTHROPIC_API_KEY (low spend cap)
+cp test/field-test/.env.example test/field-test/.env   # then set ONE credential (see above)
 npm run field-test:stage                                     # prints MANIFEST=<path>
 node test/field-test/run.mts <manifest> --container --precheck   # $0 plumbing check: baked CLI loads + n8n reachable
 node test/field-test/run.mts <manifest> --container --smoke      # one fenced claude turn → READY

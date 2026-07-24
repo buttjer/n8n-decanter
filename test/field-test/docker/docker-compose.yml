@@ -47,13 +47,20 @@ services:
     depends_on: [proxy]
     networks: [internal]
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in test/field-test/.env}
-      HTTPS_PROXY: http://proxy:8888
-      HTTP_PROXY: http://proxy:8888
+      # Auth: EXACTLY ONE of these, chosen by run.mts (credentialEnv) and exported
+      # to the compose child. Listed WITHOUT a value on purpose — a bare name is
+      # passed through only when it is actually set, so the unused one never lands
+      # in the container as an empty string the CLI would then try to use.
+      #   CLAUDE_CODE_OAUTH_TOKEN — Claude subscription (`claude setup-token`)
+      #   ANTHROPIC_API_KEY       — pay-per-token API billing (give it a low cap)
+      - CLAUDE_CODE_OAUTH_TOKEN
+      - ANTHROPIC_API_KEY
+      - HTTPS_PROXY=http://proxy:8888
+      - HTTP_PROXY=http://proxy:8888
       # n8n (by container name) + localhost must bypass the proxy — they're on the
       # internal net; the proxy would deny them (Anthropic-only allowlist).
-      NO_PROXY: ${FIELD_NO_PROXY:-localhost,127.0.0.1}
-      no_proxy: ${FIELD_NO_PROXY:-localhost,127.0.0.1}
+      - NO_PROXY=${FIELD_NO_PROXY:-localhost,127.0.0.1}
+      - no_proxy=${FIELD_NO_PROXY:-localhost,127.0.0.1}
     volumes:
       - ${FIELD_WORKDIR:-./.smoke-work}:/work
       - agent_node_modules:/work/node_modules   # shadow the host's macOS node_modules
