@@ -6,8 +6,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { dirtyJsFiles, findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, nodeFileContextDir, readState, renameNodeFilePair, writeState } from "../../lib/state.mts";
-import type { Log } from "../../lib/types.mts";
+import { dirtyJsFiles, findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, nodeFileContextDir, readState, reconcileFileMapFromSnapshot, renameNodeFilePair, writeState } from "../../lib/state.mts";
+import type { DecanterState, Log } from "../../lib/types.mts";
 import { sha256 } from "../../lib/util.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-state-"));
@@ -38,6 +38,44 @@ describe("readState", () => {
   it("throws a clear, file-naming error on corrupt JSON", () => {
     const dir = workflowDir("corrupt", "{ broken");
     assert.throws(() => readState(dir), /^Error: corrupt \.decanter\.json \(/);
+  });
+});
+
+describe("reconcileFileMapFromSnapshot", () => {
+  const codeNode = (id: string, name: string, jsCode: string) => ({ id, name, type: "n8n-nodes-base.code", parameters: { jsCode } });
+  const snapshotWith = (rel: string, nodes: unknown[]): string => {
+    const dir = path.join(TMP, rel);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "workflow.json"), JSON.stringify({ id: "wf1", name: "WF", nodes, connections: {} }));
+    return dir;
+  };
+
+  it("adopts a re-pointed placeholder (.js -> .ts) into the id-keyed map", () => {
+    const dir = snapshotWith("recon/convert", [codeNode("n1", "Transform", "//@file:code/transform.ts")]);
+    const state: DecanterState = { workflowId: "wf1", nodes: { n1: { file: "code/transform.js", lastPushedHash: "sha256:0", name: "Transform" } } };
+    reconcileFileMapFromSnapshot(dir, state);
+    assert.equal(state.nodes.n1.file, "code/transform.ts", "map follows the placeholder re-point");
+    assert.equal(state.nodes.n1.lastPushedHash, "sha256:0", "other fields untouched");
+  });
+
+  it("is a no-op when workflow.json is missing or unreadable", () => {
+    const dir = path.join(TMP, "recon/no-snapshot");
+    mkdirSync(dir, { recursive: true });
+    const state: DecanterState = { workflowId: "wf1", nodes: { n1: { file: "code/a.js" } } };
+    reconcileFileMapFromSnapshot(dir, state);
+    assert.equal(state.nodes.n1.file, "code/a.js");
+  });
+
+  it("only touches tracked JS Code nodes (skips untracked ids and non-code nodes)", () => {
+    const dir = snapshotWith("recon/mixed", [
+      codeNode("n1", "Kept", "//@file:code/kept.ts"),
+      codeNode("n2", "Untracked", "//@file:code/untracked.ts"),
+      { id: "n3", name: "Set", type: "n8n-nodes-base.set", parameters: {} },
+    ]);
+    const state: DecanterState = { workflowId: "wf1", nodes: { n1: { file: "code/kept.js" } } };
+    reconcileFileMapFromSnapshot(dir, state);
+    assert.equal(state.nodes.n1.file, "code/kept.ts");
+    assert.equal(state.nodes.n2, undefined, "an untracked node is not created");
   });
 });
 

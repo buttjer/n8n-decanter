@@ -1,9 +1,35 @@
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { DecanterState, Log } from "./types.mts";
-import { CODE_DIR, sha256 } from "./util.mts";
+import type { DecanterState, Log, Workflow } from "./types.mts";
+import { CODE_DIR, isJsCodeNode, placeholderFile, sha256 } from "./util.mts";
 
 export const STATE_FILE = ".decanter.json";
+
+/**
+ * Adopt the `//@file:` placeholders in the read-only `workflow.json` snapshot as
+ * the id-keyed node→file map. Re-pointing a placeholder is the sanctioned way to
+ * remap a node's source file (notably a `.js`→`.ts` conversion — see PLAN.md),
+ * so BOTH push and pull run this before doing anything else: push so the write
+ * reads the new file, pull so the background live-mirror refresh can't revert a
+ * conversion the agent just made (Plan 35 field-test finding — a pull firing
+ * between the re-point and the first TS push left `.decanter.json` pointing at
+ * the deleted `.js` and rewrote the placeholder back to `.js`). Missing or
+ * unreadable snapshot is a no-op (the compliance guard reports it elsewhere);
+ * only already-tracked nodes are touched.
+ */
+export function reconcileFileMapFromSnapshot(dir: string, state: DecanterState): void {
+  let snapshot: Workflow;
+  try {
+    snapshot = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as Workflow;
+  } catch {
+    return;
+  }
+  for (const node of snapshot.nodes ?? []) {
+    if (!isJsCodeNode(node)) continue;
+    const file = placeholderFile(node);
+    if (file !== null && state.nodes[node.id] !== undefined) state.nodes[node.id].file = file;
+  }
+}
 
 /**
  * Locate the workflow folder a node file belongs to: the file's own

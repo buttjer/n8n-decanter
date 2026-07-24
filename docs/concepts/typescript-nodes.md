@@ -33,7 +33,9 @@ discriminated unions). The local `.ts` is the only source of truth:
 
 To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
 its `//@file:` placeholder in `workflow.json` — the tool picks up the new
-extension on the next push.
+extension on the next push. A [pull](/docs/cli/pull/) in between (for example
+the live-mirror refresh after a structure edit) keeps your re-pointed `.ts` and
+won't revert the placeholder.
 
 The reverse works the same way: replace the `.ts` with a `code/<node>.js`
 (plain JavaScript — the file is pushed verbatim) and re-point the

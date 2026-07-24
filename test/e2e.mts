@@ -709,10 +709,25 @@ await step("pre-code/ layout migrates on pull; check flags it before", async () 
 
 const TS_SOURCE = 'interface FeedRow { sku: string; qty: number }\nconst rows: FeedRow[] = $input.all().map((i) => ({ sku: String(i.json.sku), qty: Number(i.json.qty) }));\nreturn rows.map((r) => ({ json: { ...r } }));\n';
 
-await step("convert node to .ts + push: compiles, appends marker (placeholder re-point drives the file map)", async () => {
+await step("convert node to .ts, then pull BEFORE pushing: a mirror pull must not revert the conversion (Plan 35 finding)", async () => {
   unlinkSync(path.join(dir1, "code", "amazon-feed.js"));
   writeFileSync(path.join(dir1, "code", "amazon-feed.ts"), TS_SOURCE);
   writeFileSync(path.join(dir1, "workflow.json"), read(dir1, "workflow.json").replace("//@file:code/amazon-feed.js", "//@file:code/amazon-feed.ts"));
+  // Remote still carries the plain .js body (no marker) — the exact window the
+  // live mirror pulls in after a structure edit. This pull used to rewrite the
+  // placeholder back to .js and leave .decanter.json pointing at the deleted
+  // amazon-feed.js; now it must honor the re-pointed placeholder.
+  const r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /keeping your \.ts/);
+  assert.match(r.out, /amazon-feed\.ts exists/, "warns about the .ts, not the deleted .js");
+  assert.equal(state(dir1).nodes.n3.file, "code/amazon-feed.ts", ".decanter.json follows the re-point, not the deleted .js");
+  assert.match(read(dir1, "workflow.json"), /"\/\/@file:code\/amazon-feed\.ts"/, "placeholder stays .ts, not reverted");
+  assert.ok(existsSync(path.join(dir1, "code", "amazon-feed.ts")));
+  assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.js")), "the deleted .js stays gone");
+});
+
+await step("push the converted .ts node: compiles, appends marker (placeholder re-point drove the file map)", async () => {
   const r = await cli("push");
   assert.equal(r.code, 0, r.out);
   const code = remoteNode("wf123", "n3").parameters.jsCode;
