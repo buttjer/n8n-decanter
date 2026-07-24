@@ -10,6 +10,8 @@ argument (no special rule). Flags may still sit anywhere.
 
 ```sh
 n8n-decanter                        # interactive picker (terminal, inited project)
+n8n-decanter --version              # print the installed version and exit (-v)
+n8n-decanter help                   # the command surface (also --help, or a bare run when piped)
 
 # Setup
 n8n-decanter init [dir] [--force]   # bootstrap (add --host/--token/--api-key to skip prompts)
@@ -37,7 +39,7 @@ n8n-decanter scenario check <workflow> ["<slug>"]                               
 
 # Backup — git-native, redeployable disaster recovery (REST; needs N8N_API_KEY)
 n8n-decanter backup create <workflow>                            # capture a full-export backup into backups/
-n8n-decanter backup restore <workflow> [--version <id> | --at <ts>]   # redeploy as a NEW, unpublished workflow
+n8n-decanter backup restore <workflow> [--version-id <id> | --at <ts>]   # redeploy as a NEW, unpublished workflow
 n8n-decanter backup list <workflow>                             # retained backups (offline)
 
 n8n-decanter list [--remote] [--json]

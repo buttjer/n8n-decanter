@@ -175,7 +175,7 @@ async function assembleForRestore(dir: string, backup: Workflow, log: Log): Prom
 
 /**
  * `backup restore` — git → instance. Select a backup (latest by default;
- * `--version`/`--at`, or a TTY chooser), re-inline the Code-node source,
+ * `--version-id`/`--at`, or a TTY chooser), re-inline the Code-node source,
  * compliance-guard the assembly, and REST-POST a NEW, unpublished workflow
  * (new workflow id; node ids preserved). Prints credential-rebind hints + the
  * editor URL; publish is the operator's next step.
@@ -183,13 +183,13 @@ async function assembleForRestore(dir: string, backup: Workflow, log: Log): Prom
 export async function backupRestore(
   api: N8nApi,
   dir: string,
-  { host, version, at, interactive = false }: { host: string; version?: string; at?: string; interactive?: boolean },
+  { host, versionId, at, interactive = false }: { host: string; versionId?: string; at?: string; interactive?: boolean },
   log: Log,
 ): Promise<{ id: string } | null> {
   const backups = listBackups(dir);
   if (backups.length === 0) throw new Error(`no backups in ${path.basename(dir)}/${BACKUPS_DIR}/ — run \`backup create\` first`);
 
-  const selected = await selectBackup(backups, { version, at, interactive }, log);
+  const selected = await selectBackup(backups, { versionId, at, interactive }, log);
   if (selected === null) return null; // user quit the chooser
 
   const backup = JSON.parse(readFileSync(selected.file, "utf8")) as Workflow;
@@ -215,20 +215,20 @@ export async function backupRestore(
 /** Pick which backup to restore: explicit flags, else a TTY chooser, else latest. */
 async function selectBackup(
   backups: BackupEntry[],
-  { version, at, interactive }: { version?: string; at?: string; interactive: boolean },
+  { versionId, at, interactive }: { versionId?: string; at?: string; interactive: boolean },
   log: Log,
 ): Promise<BackupEntry | null> {
-  if (version !== undefined) {
+  if (versionId !== undefined) {
     // match against the full inner versionId or the short one in the name
     const hit = backups.find((b) => {
-      if (b.versionId === version || version.startsWith(b.versionId)) return true;
+      if (b.versionId === versionId || versionId.startsWith(b.versionId)) return true;
       try {
-        return (JSON.parse(readFileSync(b.file, "utf8")) as Workflow).versionId === version;
+        return (JSON.parse(readFileSync(b.file, "utf8")) as Workflow).versionId === versionId;
       } catch {
         return false;
       }
     });
-    if (!hit) throw new Error(`no backup with versionId "${version}" — see \`backup list\``);
+    if (!hit) throw new Error(`no backup with versionId "${versionId}" — see \`backup list\``);
     return hit;
   }
   if (at !== undefined) {

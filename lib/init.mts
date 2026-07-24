@@ -67,8 +67,8 @@ export function packageRootFrom(startDir: string): string {
 const PACKAGE_ROOT = packageRootFrom(path.dirname(fileURLToPath(import.meta.url)));
 const TEMPLATE_DIR = path.join(PACKAGE_ROOT, "template");
 
-/** Own package version (banner); tolerant of an unreadable package.json. */
-function cliVersion(): string {
+/** Own package version (banner, `--version`); tolerant of an unreadable package.json. */
+export function cliVersion(): string {
   try {
     return (JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8")) as { version?: string }).version ?? "0.0.0";
   } catch {

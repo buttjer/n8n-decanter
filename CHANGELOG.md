@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`n8n-decanter --version` prints the installed version** (`-v` too), the way
+  every CLI is expected to. It answers before any config load or verb dispatch,
+  so it works from anywhere — including outside a sync dir.
+
 - **A first `init` points at n8n's official skills pack.** Setup now closes by
   naming [n8n-io/skills](https://github.com/n8n-io/skills) — the knowledge layer
   that makes agentic workflow building work — and printing the install commands
@@ -99,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pinData`/`staticData` stripped; each Code node's `jsCode` stays a `//@file:`
   placeholder, so no code is duplicated). It **dedupes** on an unchanged
   `versionId` and **rolling-prunes** the working set to `backupLimit` (config,
-  default 20; `0` keeps all). `backup restore <workflow> [--version <id> |
+  default 20; `0` keeps all). `backup restore <workflow> [--version-id <id> |
   --at <ts>]` re-inlines the Code from `code/` and REST-POSTs a **new,
   unpublished** workflow with **node ids preserved** — a real second version
   history that survives the instance being lost; it prints credential-rebind

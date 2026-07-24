@@ -348,6 +348,13 @@ The grammar is **verb-first** (Plan 27): `n8n-decanter <verb> [workflow…]`.
 (`create`/`check`), the agent guard under `mcp` (`connect`/`serve`). Flags may
 sit anywhere; `--publish` (Plan 32) joins `--force`/`--no-typecheck` on push.
 
+**`--version`/`-v` is reserved CLI-wide** and answered first — before the
+value-flag parser, config load, or verb dispatch — printing the installed
+package version. No verb may claim that spelling: `backup restore` originally
+did (Plan 51), which made the conventional `n8n-decanter --version` exit 1 with
+"`--version` needs a value"; the selector is now `--version-id`. Verb-scoped
+flags that mean "a version" spell it out (`--version-id`, `--n8n-version`).
+
 Every `[workflow…]` argument is a **ref**: an id, a workflow/folder name, or
 a unique name prefix. Resolution is tiered — exact id → exact name
 (case-insensitive) → unique prefix — and never prompts. An id-shaped ref that
@@ -685,8 +692,9 @@ with n8n.
   **Not auto-committed** and **not self-gitignored** — the file carries
   credential refs + any embedded secrets, so the user reviews + `git add`s
   deliberately; committing it is the whole point.
-- **`backup restore`** selects a backup (latest default; `--version <id>` /
-  `--at <ts>` / a TTY chooser), compliance-guards the folder, re-inlines each
+- **`backup restore`** selects a backup (latest default; `--version-id <id>` /
+  `--at <ts>` / a TTY chooser — the selector is *not* spelled `--version`, which
+  is reserved CLI-wide for printing the installed version), compliance-guards the folder, re-inlines each
   placeholdered Code node's source from `code/` (reusing `buildNodeCode`/
   `placeholderFile` from push — `.ts` compiled), and REST-POSTs an **allowlist
   body** (`name`/`nodes`/`connections`/`settings`) → a **new** workflow, node

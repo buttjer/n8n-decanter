@@ -6,7 +6,7 @@ import { loadConfig, requireApiKey } from "./lib/config.mts";
 import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { assertNoLegacyFixtures, cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId, migrateScenariosDir } from "./lib/executions.mts";
-import { init, printBanner } from "./lib/init.mts";
+import { cliVersion, init, printBanner } from "./lib/init.mts";
 import { checkScenarios, listScenarioSlugs, runSimulation, writeScenario, type SimulationReport } from "./lib/simulate.mts";
 import { publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, prepareTestPinData, searchWorkflows } from "./lib/mcp.mts";
@@ -86,7 +86,7 @@ ${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-sca
 
 ${b("Backup")} ${d("(git-native, redeployable disaster-recovery store — REST, needs N8N_API_KEY)")}
   ${b("backup create")} <workflow>                  ${d("capture the workflow's full REST export into backups/ (not auto-committed)")}
-  ${b("backup restore")} <workflow> [--version <id> | --at <ts>]   ${d("redeploy a backup as a NEW, unpublished workflow (node ids preserved)")}
+  ${b("backup restore")} <workflow> [--version-id <id> | --at <ts>]   ${d("redeploy a backup as a NEW, unpublished workflow (node ids preserved)")}
   ${b("backup list")} <workflow>                    ${d("list retained backups: timestamp · versionId · node count")}
 
 ${b("Node")}
@@ -149,6 +149,15 @@ const COMPLETION_SCRIPTS: Record<string, string> = {
 };
 
 async function main() {
+  // `--version`/`-v` is the one flag name every CLI is expected to answer, so
+  // it stays out of every verb's namespace and is handled before anything else
+  // — no config load, no verb. (`backup restore` selects a backup with
+  // `--version-id`; it used to squat on `--version` and made the conventional
+  // invocation die with "--version needs a value".)
+  if (process.argv.slice(2).some((a) => a === "--version" || a === "-v")) {
+    console.log(cliVersion());
+    return;
+  }
   // --status/--limit take a value (--limit=5 or --limit 5); they're peeled
   // off first so the boolean-flag and positional logic below stays untouched.
   const valueFlags = new Map<string, string>();
@@ -156,7 +165,7 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|version|at|host|token|api-key)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|version-id|at|host|token|api-key)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
@@ -295,7 +304,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--version=", "--at=", "--host=", "--token=", "--api-key=", "--help");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--version-id=", "--at=", "--host=", "--token=", "--api-key=", "--help", "--version");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -925,7 +934,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (command === "backup:create") {
         await backupCreate(backupApi, dir, { limit: config.backupLimit }, log);
       } else {
-        await backupRestore(backupApi, dir, { host: config.host, version: valueFlags.get("version"), at: valueFlags.get("at"), interactive: interactive() }, log);
+        await backupRestore(backupApi, dir, { host: config.host, versionId: valueFlags.get("version-id"), at: valueFlags.get("at"), interactive: interactive() }, log);
       }
       break;
     }

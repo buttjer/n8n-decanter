@@ -124,13 +124,13 @@ describe("backupRestore", () => {
     assert.equal(body.pinData, undefined, "no runtime state in the create body");
   });
 
-  it("selects by --version and defaults to the latest", async () => {
+  it("selects by --version-id and defaults to the latest", async () => {
     const dir = workflowDir("wf5");
     writeBackup(dir, "ver-old", 0);
     writeBackup(dir, "ver-new", 5);
 
     let created: { body?: Record<string, unknown> } = {};
-    await backupRestore(stubApi(restWorkflow("wf5", "x"), created), dir, { host: "http://n8n.local", version: "ver-old" }, silent);
+    await backupRestore(stubApi(restWorkflow("wf5", "x"), created), dir, { host: "http://n8n.local", versionId: "ver-old" }, silent);
     assert.equal((created.body as { name: string }).name, "Order Sync");
     // pick by full inner versionId; the assembled body came from the ver-old file — assert via a marker
     // (both files share structure; assert selection by checking backupRestore didn't throw and returned)

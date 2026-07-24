@@ -6,7 +6,7 @@ order: 18
 
 ```sh
 n8n-decanter backup create <workflow>                           # instance -> git
-n8n-decanter backup restore <workflow> [--version <id> | --at <ts>]   # git -> a NEW workflow
+n8n-decanter backup restore <workflow> [--version-id <id> | --at <ts>]   # git -> a NEW workflow
 n8n-decanter backup list <workflow>                             # retained backups (offline)
 ```
 
@@ -66,7 +66,7 @@ is the whole point.)
 
 ## `backup restore`
 
-Selects a backup — the **latest** by default, or `--version <id>` / `--at <ts>`,
+Selects a backup — the **latest** by default, or `--version-id <id>` / `--at <ts>`,
 or a chooser on a terminal — assembles the full JSON (structure + credential
 refs, each Code node's `jsCode` re-inlined from its `code/` file), runs it
 through the compliance guard, and REST-`POST`s it as a **new workflow**:
@@ -79,7 +79,7 @@ through the compliance guard, and REST-`POST`s it as a **new workflow**:
 
 | Flag | Meaning |
 | --- | --- |
-| `--version <id>` | Restore the backup with this `versionId` (full or short) |
+| `--version-id <id>` | Restore the backup with this `versionId` (full or short) |
 | `--at <ts>` | Restore the backup with this timestamp |
 
 ## `backup list`
