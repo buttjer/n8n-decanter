@@ -40,8 +40,10 @@ clean git diffs.
   per-node drift guard gate every push; `check` (offline), `simulate`
   (offline engine replay, Docker), and `test` (instance-side) each diff every
   node against a real captured execution and exit 1 on divergence — and
-  `preflight` runs the whole ladder as one **scored, read-only, CI-gateable
-  verdict** (never mutates), the single gate an agent runs before `push`.
+  `preflight` scores your local code into one **read-only, CI-gateable
+  verdict** (never writes, never runs on your instance). The flow is
+  **`preflight` → `push` → `test` → `publish`**: verify local, make it the
+  draft, run what you pushed, go live.
 - **Committed, schema-scaffolded scenarios** — `scenario create` turns a
   captured execution and/or the workflow's own output schemas
   (`--scaffold`, no LLM API) into a reviewable, git-tracked pin-data set that
@@ -130,7 +132,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `data-tables [table…]` | Fetch data-table schema + rows (read-only) |
 | `test <workflow>` | Pinned run **on the instance** (draft); diffs vs a capture |
 | `simulate <workflow>` | Offline engine replay (Docker); diffs vs a capture |
-| `preflight [workflow…]` | The whole verification ladder as one scored, read-only gate (exits 1 on *not ready*) |
+| `preflight [workflow…]` | Verifies your local code as one scored, read-only gate — run before `push` (exits 1 on *not ready*) |
 | `scenario create` / `scenario check` | Build / validate a committed scenario (captured and/or schema-scaffolded) |
 | `backup create` / `restore` / `list` | Git-native disaster recovery — capture / redeploy / list versioned full-export backups |
 | `list [--remote]` | Pulled workflows (`--remote` adds unpulled ones) |

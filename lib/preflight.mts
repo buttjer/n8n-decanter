@@ -1,18 +1,24 @@
 // The `preflight` verb (Plan 36): one command that runs the whole verification
 // ladder — local static (layout/types) → instance read-only (connect/access/
-// parity/drift/snapshot/lifecycle/history/capture) → pinned draft runs (test/
-// simulate) — ordered fast→slow, and condenses them into a scored, CI-gateable
+// parity/drift/snapshot/lifecycle/history/capture) → local-engine replay
+// (simulate) — ordered fast→slow, and condenses them into a scored, CI-gateable
 // verdict. It adds ZERO execution paths: every stage reuses existing machinery
-// (validate/status/testrun/simulate/executions), quietly (a silent Log), and
-// scores the returned facts. Nothing here mutates: no push, no publish, no
-// restore, no draft write — `runTest` is always invoked in its never-mutate mode
-// and `runSimulation` headless with `--network-none` forced on.
+// (validate/status/simulate/executions), quietly (a silent Log), and scores the
+// returned facts. Nothing here mutates: no push, no publish, no restore, no
+// draft write — `runSimulation` runs headless with `--network-none` forced on.
+//
+// Plan 58 — preflight does NOT run the instance-side `test` stage. Every stage
+// that produces a *verdict* now reads the same artifact: the LOCAL code. The
+// instance is read for sync facts only. `test_workflow` grades the n8n draft,
+// which before a push is not the code being shipped — folding that into the
+// same score meant one number describing two artifacts. The honest order is
+// `preflight → push → test → publish`: preflight clears local code, push makes
+// it the draft, and only then does an instance run mean anything.
 import { existsSync, readFileSync } from "node:fs";
 import type { N8nApi } from "./api.mts";
 import { fetchExecutions, latestCaptureId, migrateScenariosDir } from "./executions.mts";
 import { ENABLE_MCP_HINT, getWorkflowDetails, isUnavailableInMcp, type McpClient, searchExecutions } from "./mcp.mts";
 import { computeSyncFacts, type SyncFacts } from "./status.mts";
-import { runTest } from "./testrun.mts";
 import { readScenarioMeta, runSimulation, type SimSource, sourceFile } from "./simulate.mts";
 import type { DecanterConfig, Execution, Log, Workflow } from "./types.mts";
 import { runTypecheckResult, validateWorkflowDir } from "./validate.mts";
@@ -23,7 +29,16 @@ import { publicationState, publishedVersionLagsDraft } from "./util.mts";
 export type CheckId =
   | "layout" | "types"
   | "connect" | "access" | "parity" | "drift" | "snapshot" | "lifecycle" | "history" | "capture"
-  | "test" | "simulate";
+  | "simulate";
+
+/**
+ * Check ids retired from the ladder, kept so `--require=<id>` can reject them
+ * with the reason and the replacement instead of a bare "unknown check".
+ * `test` left in Plan 58 — it is now a post-push verb, not a preflight stage.
+ */
+export const RETIRED_CHECK_IDS: Record<string, string> = {
+  test: 'the instance run is no longer a preflight stage — run "n8n-decanter test" after pushing (preflight → push → test → publish)',
+};
 
 export type Tier = "static" | "sync" | "runtime";
 export type CheckStatus = "pass" | "warn" | "fail" | "skip" | "info";
@@ -31,7 +46,7 @@ export type Verdict = "ready" | "caution" | "not ready";
 export type Profile = "quick" | "default" | "full" | "offline";
 
 export const ALL_CHECK_IDS: readonly CheckId[] = [
-  "layout", "types", "connect", "access", "parity", "drift", "snapshot", "lifecycle", "history", "capture", "test", "simulate",
+  "layout", "types", "connect", "access", "parity", "drift", "snapshot", "lifecycle", "history", "capture", "simulate",
 ];
 
 export interface CheckFinding {
@@ -52,7 +67,7 @@ export interface CheckFinding {
 export interface PreflightSubject {
   draftVersionId?: string;
   publishedVersionId?: string | null;
-  /** Local code vs the draft the runtime checks actually cover. */
+  /** Local code vs the draft on the instance. Preflight always grades local. */
   parity: "match" | "local-ahead" | "unknown";
 }
 
@@ -126,17 +141,21 @@ export function applyRequire(checks: CheckFinding[], requireIds: CheckId[]): Che
 interface ProfileSpec {
   /** run the instance read-only tier (connect/access/parity/drift/…/history/capture). */
   sync: boolean;
-  /** run the instance-side pinned `test_workflow` run. */
-  test: boolean;
   /** run the local-engine `simulate` replay. */
   simulate: boolean;
 }
 
+/**
+ * Plan 58 redefined `--quick`. With the instance `test` stage gone it was
+ * byte-identical to the default profile (both: sync on, simulate off), so it
+ * takes over the role it always implied — the **fastest** gate: static only,
+ * no network, no Docker. `--offline` remains "no network, but do replay".
+ */
 const PROFILES: Record<Profile, ProfileSpec> = {
-  quick: { sync: true, test: false, simulate: false },
-  default: { sync: true, test: true, simulate: false },
-  full: { sync: true, test: true, simulate: true },
-  offline: { sync: false, test: false, simulate: true },
+  quick: { sync: false, simulate: false },
+  default: { sync: true, simulate: false },
+  full: { sync: true, simulate: true },
+  offline: { sync: false, simulate: true },
 };
 
 export function profileSpec(profile: Profile): ProfileSpec {
@@ -168,8 +187,6 @@ export interface PreflightContext {
   hasApiKey: boolean;
   /** Lazy default-timeout MCP client (throws on missing creds — caught by `connect`). */
   mcp: () => McpClient;
-  /** Lazy ≥320 s-timeout MCP client for `test_workflow`'s 5-min server cap. */
-  testMcp: () => McpClient;
   /** Lazy REST client (throws without a key). */
   api: () => N8nApi;
   /** Docker probe for the `simulate` stage. */
@@ -283,11 +300,14 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
           }
           subject.parity = "local-ahead";
           const missing = off.some((n) => n.state === "local-missing");
+          // Plan 58: every preflight verdict now covers LOCAL code, so this is
+          // no longer a caveat about the runtime tier grading the wrong thing —
+          // it is the plain next step in the flow: push, then test.
           return {
             status: "warn",
             message: missing
-              ? `${off.length} node(s) differ from the draft (a local file is missing) — the runtime verdict covers the draft, not local`
-              : `local code differs from the draft in ${off.length} node(s) — the runtime verdict covers the draft; push first, or --full to simulate local`,
+              ? `${off.length} node(s) differ from the draft (a local file is missing) — pull, or push to make the draft match local`
+              : `local code differs from the draft in ${off.length} node(s) — push to make it the draft, then test`,
             remediation: cli("push"),
           };
         });
@@ -333,13 +353,14 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
 
   // ---- capture (+ auto-fetch): a pin source for the runtime tier ----
   migrateScenariosDir(ctx.dir, SILENT);
-  const runtimeActive = spec.test || spec.simulate;
-  const src = await resolveSource(ctx, remote, runtimeActive);
+  const src = await resolveSource(ctx, remote, spec.simulate);
   await run("capture", "sync", async () => src.finding);
 
-  // ---- RUNTIME (executes; minutes) ----
-  await runtimeCheck(ctx, "test", spec.test, remote !== undefined, src, run, () => runTestStage(ctx, src));
-  await runtimeCheck(ctx, "simulate", spec.simulate, true, src, run, () => runSimulateStage(ctx, src));
+  // ---- RUNTIME (executes locally; minutes) ----
+  // `simulate` is the only runtime stage — it replays LOCAL code on a local
+  // engine. The instance-side `test` run left in Plan 58 (it graded the draft,
+  // not local); it is now its own verb, run after `push`.
+  await runtimeCheck(ctx, "simulate", spec.simulate, src, run, () => runSimulateStage(ctx, src));
 
   const score = scoreFindings(checks);
   const verdict = verdictOf(checks);
@@ -428,23 +449,17 @@ function staleFinding(label: string, stale: Staleness, ctx: PreflightContext): O
   return { status: "pass", message: `${label}${stale === "fresh" ? " (fresh)" : ""} available to pin from` };
 }
 
-/** Shared skip/gating logic for the two runtime checks. */
+/** Skip/gating logic for the runtime tier (`simulate` — the only stage since Plan 58). */
 async function runtimeCheck(
   ctx: PreflightContext,
-  id: "test" | "simulate",
+  id: "simulate",
   active: boolean,
-  instanceOk: boolean,
   src: ResolvedSource,
   run: (id: CheckId, tier: Tier, fn: () => Promise<Omit<CheckFinding, "id" | "tier" | "durationMs">>) => Promise<CheckFinding>,
   stage: () => Promise<Omit<CheckFinding, "id" | "tier" | "durationMs">>,
 ): Promise<void> {
   if (!active) {
-    const unlock = id === "test" ? "run the default profile (drop --quick / --offline)" : "pass --full (or --offline) to add simulate";
-    await run(id, "runtime", async () => ({ status: "skip", message: `${id} not in the ${ctx.profile} profile`, reason: `${id} not in the ${ctx.profile} profile`, unlock }));
-    return;
-  }
-  if (id === "test" && !instanceOk) {
-    await run(id, "runtime", async () => ({ status: "skip", message: "instance unreachable / workflow not available in MCP", reason: "instance unreachable / workflow not available in MCP", unlock: ENABLE_MCP_HINT }));
+    await run(id, "runtime", async () => ({ status: "skip", message: `${id} not in the ${ctx.profile} profile`, reason: `${id} not in the ${ctx.profile} profile`, unlock: "pass --full (or --offline) to add simulate" }));
     return;
   }
   if (src.ref === undefined) {
@@ -452,14 +467,6 @@ async function runtimeCheck(
     return;
   }
   await run(id, "runtime", stage);
-}
-
-async function runTestStage(ctx: PreflightContext, src: ResolvedSource): Promise<Omit<CheckFinding, "id" | "tier" | "durationMs">> {
-  const report = await runTest(ctx.testMcp(), ctx.config, ctx.dir, ctx.id, { ref: src.ref!, source: src.source, trigger: ctx.trigger, neverMutate: true }, SILENT);
-  if (report.status !== "success") return { status: "fail", message: `instance run failed: ${report.error ?? report.status}`, remediation: `${cliRef(ctx, "test")} --execution <id>` };
-  if (report.syntheticPins) return { status: "pass", message: `ran on the instance — synthetic pins (authored/scaffolded): proves executability, not output correctness (no per-node diff)` };
-  if (report.divergent.length > 0) return { status: "fail", message: `${report.divergent.length} node(s) diverged from the capture: ${report.divergent.join(", ")}`, remediation: `${cliRef(ctx, "test")} --execution <id> --diff` };
-  return { status: "pass", message: `${report.diffs.length} node(s) ran on the instance, all matched the capture (${report.pinned.length} pinned)` };
 }
 
 async function runSimulateStage(ctx: PreflightContext, src: ResolvedSource): Promise<Omit<CheckFinding, "id" | "tier" | "durationMs">> {

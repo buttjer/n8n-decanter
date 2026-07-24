@@ -67,7 +67,7 @@ first push seeds a node born empty.
 | `<node-file>` | a path to a node source file (`node run`) |
 | `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
 | `<slug>` | a scenario name — `scenario create`/`scenario check`, `simulate --scenario`/`test --scenario` (kebab-cased) |
-| `<ids>` | a comma list of [preflight](/docs/cli/preflight/) check ids — `preflight --require=layout,test` |
+| `<ids>` | a comma list of [preflight](/docs/cli/preflight/) check ids — `preflight --require=layout,simulate` |
 | `<backup>` | a backup: **timestamp (or a prefix, e.g. a bare date) · versionId (short or full)** — `backup restore` |
 
 ## Interactive picker
@@ -116,7 +116,7 @@ errors with *unknown verb*. Flags may still appear in any position.
 | `status`, `list --remote`, `executions`, `data-tables`, `backup create`/`restore` | Read the remote (`backup restore` also writes a **new** workflow, never touching the source) |
 | `backup list` | Fully offline — reads the local `backups/` store |
 | `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
-| `preflight` | Runs the whole verification ladder read-only — static + instance reads + a pinned draft `test`/`simulate` run; **never writes** (no push/publish/restore), in every profile |
+| `preflight` | Verifies your **local** code as one scored gate — static + instance reads + an optional local-engine `simulate` run; **never writes and never runs on the instance**, in every profile. Run it *before* `push`; `test` comes after |
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |
 | `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes; a forwarded structure edit also triggers a background `workflow.json` refresh (`liveMirror`, on by default) |
 
