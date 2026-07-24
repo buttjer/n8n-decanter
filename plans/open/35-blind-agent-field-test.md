@@ -4,12 +4,13 @@
 Breaking rework of the entire agent-facing surface, **now released in 0.6.0
 (2026-07-23, #133)**; this validates it the way it will actually be consumed,
 before further releases build on it untested.
-**Status:** In progress — **harness built + stabilized, and round-1 blind
-execution RUN** (2026-07-23, `scripts/field-test/`). Tasks 1–3 + 6 done; **S1 +
-S2 passed** (full flow + a blind-built 6-node workflow, all Code via files+push);
-5 findings captured (see "Round-1" below). **Detailed per-turn grading + a full
-Task-4 run report are the next pass** (Task 5 triage still pending).
-**Snapshot:** 2026-07-23T14:05Z @ 7995d22
+**Status:** In progress — **harness built + stabilized, round-1 blind
+execution RUN**, and **3 of the 5 findings now fixed** (#142 host scheme, #144
+non-interactive `init`, #143 `.js→.ts` pull reconcile). Tasks 1–3 + 6 done;
+**S1 + S2 passed**; finding #1 (discoverability) stays open. **Next pass is
+Round 2** (see "Round 2" below): re-run the blind harness on the fixed CLI +
+the deferred per-turn grading / Task-4 run report.
+**Snapshot:** 2026-07-23T21:55Z @ aef18b1
 **Theme:** Put the whole product — `init` → skills/MCP structure work →
 Code-node authoring → `push` → runs — in front of **blind** Sonnet coding
 agents acting as typical users against a real n8n in Docker, and grade what
@@ -340,17 +341,24 @@ per-turn grading + Task-4 run report are the next pass.
   node-rename handled; the `.js→.ts` conversion exposed finding 4 below.
 
 **Findings (ranked, for maintainer triage — Task 5):**
-1. **Discoverability (P1).** No project-level `n8n-decanter` ⇒ a blind agent
-   never finds it and hand-rolls raw n8n MCP. Harness now installs the CLI so
-   the project carries the breadcrumb; the gap itself is the finding.
-2. **`init` writes `https://` for a local `http://` host (P1, product).** Breaks
-   the guard (reads `.env` directly → `upstream request failed: fetch failed`)
-   and the CLI. Repro: `FIELD_NO_SEED_ENV=1`.
-3. **`init` is hard for agents to drive (P2, product).** Interactive stdin took
-   20+ attempts; no non-interactive flag path.
-4. **`.js→.ts` conversion leaves `.decanter.json` stale (P2, product).** Agent
-   swapped the file + re-pointed the `//@file:` placeholder correctly, but the
-   node→file map still pointed at the deleted `.js`.
+1. **Discoverability (P1) — OPEN.** No project-level `n8n-decanter` ⇒ a blind
+   agent never finds it and hand-rolls raw n8n MCP. Harness now installs the CLI
+   so the project carries the breadcrumb; the gap itself is the finding.
+   Positioning/onboarding, not a one-line fix — no PR yet.
+2. **`init` writes `https://` for a local `http://` host (P1, product) — ✅
+   FIXED (#142).** Broke the guard (reads `.env` directly → `upstream request
+   failed: fetch failed`) and the CLI. Now scheme-less local hosts default to
+   `http://` (`normalizeHostInput`, unit-tested). Repro was `FIELD_NO_SEED_ENV=1`.
+3. **`init` is hard for agents to drive (P2, product) — ✅ FIXED (#144).**
+   Interactive stdin took 20+ attempts; no non-interactive flag path. Now
+   `--host`/`--token`/`--api-key` drive `init` fully non-interactively (no
+   prompt); the flag-less piped path is unchanged.
+4. **`.js→.ts` conversion leaves `.decanter.json` stale (P2, product) — ✅
+   FIXED (#143).** The agent swapped the file + re-pointed the `//@file:`
+   placeholder correctly, but a pull in the window before the first TS push
+   (notably the live-mirror refresh) rewrote the placeholder back to `.js` and
+   left the node→file map at the deleted `.js`. Pull now runs the same
+   placeholder→file-map reconcile push does.
 5. **Positive.** Decanter's scaffolded `AGENTS.md` steered the agent **file-first**
    for code before it ever tried `jsCode` over MCP — the guard never had to block
    (Plan 50 evidence: the contract pre-empts the nudge). Contamination check
@@ -363,6 +371,51 @@ no machine-global state to clean up), pre-seeds a correct `.env`, disables the
 nested session's sandbox (so the agent can reach the local n8n); `run.mts` gained
 a per-turn timeout + `--smoke`/`--netcheck`/`--dry-run` probes; `report.mts` renders a
 self-contained HTML timeline of the agentic sessions.
+
+## Round 2 — re-run + full grading (validate the fixes)
+
+Round 1 surfaced 5 findings; **three product bugs are now fixed** (#142 host
+scheme, #144 non-interactive `init`, #143 `.js→.ts` pull reconcile). Round 2
+re-runs the blind harness on the **fixed** CLI to confirm the friction is gone
+end-to-end and to finish the Task-4/Task-5 grading that round 1 deferred. Same
+blinding protocol, same Sonnet cast — **maintainer-run, UNSANDBOXED** (nested
+`claude` needs the Anthropic API + the local n8n; `fs.watch` dies sandboxed).
+
+**Scope (short):**
+1. **Rebuild + stage on the fixed CLI.** `npm run field-test:stage` (or
+   `FIELD_N8N_URL=…` against a running instance) — the stage packs + locally
+   installs *our built CLI*, so build from a checkout that includes #142/#143/#144
+   (merge them first, or stage from a worktree that has all three). No global
+   `npm link` needed.
+2. **Regression-confirm the three fixes (fast, targeted, before the full run):**
+   - #144 — drive `init` **non-interactively**: `n8n-decanter init <dir> --host
+     <local-http> --token <mcp> [--api-key <key>]` with no stdin; assert `.env`
+     is correct, host is `http://…`, and no prompt hangs. This is the exact beat
+     that cost round 1 20+ tries — it should now be one clean call.
+   - #142 — with `FIELD_NO_SEED_ENV=1` (init writes its own `.env`), confirm a
+     scheme-less local host lands as `http://…` and the `mcp connect` guard
+     reaches the instance (no `fetch failed`).
+   - #143 — in S4, convert a node `.js→.ts` (swap file + re-point `//@file:`),
+     let the **live mirror** fire (or run `pull`) *before* the first TS push,
+     then push: `.decanter.json` + the placeholder must stay `.ts` and the push
+     must succeed (no `referenced node file missing`).
+3. **Full blind run S1–S4** (round 1's flow), then `verify.mts` per scenario →
+   contamination check → **Opus grading** (the per-turn grading round 1
+   deferred) → append `## Run report — round 1/2` here: per-scenario verdicts,
+   invariant results, classified guard events, captured `guard.log` evidence for
+   [Plan 50](../draft/50-code-node-authoring-skill.md).
+4. **S3 must actually exercise the drift guard this time.** Round 1's S3 was
+   inconclusive — the drift preHook edited the *wrong* workflow (Contact
+   normalizer vs. the *orders* target), so the guard never fired. The prompt is
+   already realigned to the drifted node; confirm the run trips the per-node
+   drift guard and grades the conflict messaging.
+
+**Out of scope / notes.** Finding #1 (discoverability) is positioning, not a
+code fix — track separately, don't gate round 2 on it. `backup` stays out of
+the round-1 scenarios (add only if a scenario reaches for it — signal worth
+logging). Cost envelope is the same small ~4–6 Sonnet sessions + Opus grading.
+This validates that a real bug the field test surfaced is fixed *the way it's
+consumed* — the payoff loop of the whole exercise.
 
 ## Harness status — capabilities (2026-07-23)
 
