@@ -462,10 +462,14 @@ audit surface):
   min, `FIELD_RUN_BUDGET_MIN`) bounds an unattended round on top of the per-turn
   timeout.
 
-**Status (2026-07-24):** container foundation built + core isolation **validated
-and committed**; `run.mts`/`stage.mts` container-mode wiring (per-run baked
-image, network wiring, per-turn `docker exec`, artifact extraction, wall-clock
-cap) is the next commit, then a full staged unattended round.
+**Status (2026-07-24):** container mode **BUILT + VALIDATED end-to-end** (foundation
++ `run.mts --container`/`stage.mts` wiring: per-run baked image, internal network
++ n8n join, per-turn `docker exec`, in-network `.env`, guard.log/artifact
+extraction, wall-clock cap). Proven against a real stage with **zero claude
+spend** via `run.mts --container --precheck` (baked CLI loads + n8n reachable
+from inside the fence) on top of the earlier egress-fence + claude-auth
+validation. The one remaining step is the actual billable **unattended round**
+(`--container S1 S2 S3 S4`) → verify → grade → run report.
 
 ## Harness status — capabilities (2026-07-23)
 
