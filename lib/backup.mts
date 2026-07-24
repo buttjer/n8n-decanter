@@ -174,8 +174,8 @@ async function assembleForRestore(dir: string, backup: Workflow, log: Log): Prom
 }
 
 /**
- * `backup restore` — git → instance. Select a backup (latest by default;
- * `--version-id`/`--at`, or a TTY chooser), re-inline the Code-node source,
+ * `backup restore` — git → instance. Select a backup (latest by default; a
+ * positional backup ref, or a TTY chooser), re-inline the Code-node source,
  * compliance-guard the assembly, and REST-POST a NEW, unpublished workflow
  * (new workflow id; node ids preserved). Prints credential-rebind hints + the
  * editor URL; publish is the operator's next step.
@@ -183,13 +183,13 @@ async function assembleForRestore(dir: string, backup: Workflow, log: Log): Prom
 export async function backupRestore(
   api: N8nApi,
   dir: string,
-  { host, versionId, at, interactive = false }: { host: string; versionId?: string; at?: string; interactive?: boolean },
+  { host, ref, interactive = false }: { host: string; ref?: string; interactive?: boolean },
   log: Log,
 ): Promise<{ id: string } | null> {
   const backups = listBackups(dir);
   if (backups.length === 0) throw new Error(`no backups in ${path.basename(dir)}/${BACKUPS_DIR}/ — run \`backup create\` first`);
 
-  const selected = await selectBackup(backups, { versionId, at, interactive }, log);
+  const selected = await selectBackup(backups, { ref, interactive }, log);
   if (selected === null) return null; // user quit the chooser
 
   const backup = JSON.parse(readFileSync(selected.file, "utf8")) as Workflow;
@@ -212,28 +212,39 @@ export async function backupRestore(
   return { id: created.id };
 }
 
-/** Pick which backup to restore: explicit flags, else a TTY chooser, else latest. */
+/**
+ * A **backup ref** resolves like a workflow ref does — untyped, by shape, over
+ * the two keys `backup list` prints. Both are in the filename
+ * (`<timestamp>.<shortVersionId>.json`), so one positional covers both without
+ * the caller having to say which it meant:
+ *
+ * - **timestamp** — exact, or any prefix of the filename (a bare date works)
+ * - **versionId** — the short one in the filename, the full one the user pastes
+ *   from n8n (a prefix of which the short id is the head), or the full one
+ *   stored *inside* the backup
+ *
+ * The two key spaces don't collide in practice (timestamps lead with a date,
+ * versionIds are uuids), so first-match-wins needs no tie-break.
+ */
+function matchesBackupRef(b: BackupEntry, ref: string): boolean {
+  if (b.timestamp === ref || b.name.startsWith(ref)) return true;
+  if (b.versionId === ref || ref.startsWith(b.versionId)) return true;
+  try {
+    return (JSON.parse(readFileSync(b.file, "utf8")) as Workflow).versionId === ref;
+  } catch {
+    return false;
+  }
+}
+
+/** Pick which backup to restore: an explicit ref, else a TTY chooser, else latest. */
 async function selectBackup(
   backups: BackupEntry[],
-  { versionId, at, interactive }: { versionId?: string; at?: string; interactive: boolean },
+  { ref, interactive }: { ref?: string; interactive: boolean },
   log: Log,
 ): Promise<BackupEntry | null> {
-  if (versionId !== undefined) {
-    // match against the full inner versionId or the short one in the name
-    const hit = backups.find((b) => {
-      if (b.versionId === versionId || versionId.startsWith(b.versionId)) return true;
-      try {
-        return (JSON.parse(readFileSync(b.file, "utf8")) as Workflow).versionId === versionId;
-      } catch {
-        return false;
-      }
-    });
-    if (!hit) throw new Error(`no backup with versionId "${versionId}" — see \`backup list\``);
-    return hit;
-  }
-  if (at !== undefined) {
-    const hit = backups.find((b) => b.timestamp === at || b.name.startsWith(at));
-    if (!hit) throw new Error(`no backup at "${at}" — see \`backup list\``);
+  if (ref !== undefined) {
+    const hit = backups.find((b) => matchesBackupRef(b, ref));
+    if (!hit) throw new Error(`no backup matching "${ref}" in ${BACKUPS_DIR}/ — pass a timestamp or versionId from \`backup list\``);
     return hit;
   }
   const latest = backups.at(-1)!;

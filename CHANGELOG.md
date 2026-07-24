@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`n8n-decanter --version` prints the installed version** (`-v` too), the way
   every CLI is expected to. It answers before any config load or verb dispatch,
-  so it works from anywhere — including outside a sync dir.
+  so it works from anywhere — including outside a sync dir. Passed *alongside* a
+  verb it is a hard error naming the flag you meant, so a stray `--version`
+  can't quietly swallow a command.
 
 - **A first `init` points at n8n's official skills pack.** Setup now closes by
   naming [n8n-io/skills](https://github.com/n8n-io/skills) — the knowledge layer
@@ -66,6 +68,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking: `backup restore` takes the backup as an argument, not a flag —
+  `backup restore <workflow> [<backup>]`.** `--version <id>` and `--at <ts>`
+  are gone. The argument is a **backup ref** resolved by shape, exactly like a
+  `<workflow>` ref: paste a timestamp (or a prefix — a bare date is enough) or a
+  `versionId` (short or full), whichever column of `backup list` you have to
+  hand. `backup restore order-sync 2026-07-24` and `backup restore order-sync
+  a1b2c3d4` both just work; a ref that matches nothing is an error, never a
+  silent fall back to the latest. The retired flags fail loudly with the
+  replacement. This also un-squats `--version`, which no CLI can spend on a
+  verb-scoped meaning (see Added).
+
 - **`node run` signposts instead of crashing on instance-scoped globals.** A
   global whose value lives on the running instance (`$vars`/`$secrets` when
   unpinned, `$evaluateExpression`) now throws a friendly message that names the
@@ -103,7 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pinData`/`staticData` stripped; each Code node's `jsCode` stays a `//@file:`
   placeholder, so no code is duplicated). It **dedupes** on an unchanged
   `versionId` and **rolling-prunes** the working set to `backupLimit` (config,
-  default 20; `0` keeps all). `backup restore <workflow> [--version-id <id> |
+  default 20; `0` keeps all). `backup restore <workflow> [--version <id> |
   --at <ts>]` re-inlines the Code from `code/` and REST-POSTs a **new,
   unpublished** workflow with **node ids preserved** — a real second version
   history that survives the instance being lost; it prints credential-rebind

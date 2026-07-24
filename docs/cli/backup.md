@@ -6,7 +6,7 @@ order: 18
 
 ```sh
 n8n-decanter backup create <workflow>                           # instance -> git
-n8n-decanter backup restore <workflow> [--version-id <id> | --at <ts>]   # git -> a NEW workflow
+n8n-decanter backup restore <workflow> [<backup>]   # git -> a NEW workflow
 n8n-decanter backup list <workflow>                             # retained backups (offline)
 ```
 
@@ -66,8 +66,8 @@ is the whole point.)
 
 ## `backup restore`
 
-Selects a backup — the **latest** by default, or `--version-id <id>` / `--at <ts>`,
-or a chooser on a terminal — assembles the full JSON (structure + credential
+Selects a backup — the **latest** by default, or the one named by the optional
+`<backup>` argument, or a chooser on a terminal — assembles the full JSON (structure + credential
 refs, each Code node's `jsCode` re-inlined from its `code/` file), runs it
 through the compliance guard, and REST-`POST`s it as a **new workflow**:
 
@@ -77,10 +77,27 @@ through the compliance guard, and REST-`POST`s it as a **new workflow**:
   refs point at the *source* instance; recreate/rebind them on the target) and
   the editor URL; **publish** is your next step.
 
-| Flag | Meaning |
+### The `<backup>` argument
+
+A **backup ref**, resolved by shape the way a `<workflow>` ref is — no flag, and
+no need to say which kind you have. Paste either column
+[`backup list`](#backup-list) prints:
+
+| You pass | Matches |
 | --- | --- |
-| `--version-id <id>` | Restore the backup with this `versionId` (full or short) |
-| `--at <ts>` | Restore the backup with this timestamp |
+| `2026-07-24T09-15-02Z` | that timestamp exactly |
+| `2026-07-24` | the first backup whose filename starts with it (a bare date is enough) |
+| `a1b2c3d4` | the short `versionId` in the filename |
+| `a1b2c3d4-…-full-uuid` | the full `versionId`, as pasted from n8n |
+
+```sh
+n8n-decanter backup restore order-sync                  # the latest (or the chooser, on a terminal)
+n8n-decanter backup restore order-sync 2026-07-24       # the first backup from that day
+n8n-decanter backup restore order-sync a1b2c3d4         # that exact version
+```
+
+A ref that matches nothing is an **error** — restore never quietly falls back to
+the latest.
 
 ## `backup list`
 

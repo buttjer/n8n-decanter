@@ -350,10 +350,20 @@ sit anywhere; `--publish` (Plan 32) joins `--force`/`--no-typecheck` on push.
 
 **`--version`/`-v` is reserved CLI-wide** and answered first — before the
 value-flag parser, config load, or verb dispatch — printing the installed
-package version. No verb may claim that spelling: `backup restore` originally
-did (Plan 51), which made the conventional `n8n-decanter --version` exit 1 with
-"`--version` needs a value"; the selector is now `--version-id`. Verb-scoped
-flags that mean "a version" spell it out (`--version-id`, `--n8n-version`).
+package version. No verb may claim that spelling: `backup restore` did in v0.6.0
+(Plan 51), and because the value-flag parser peels flags off *globally*, it
+broke the conventional `n8n-decanter --version` on **every** verb — exit 1 with
+"`--version` needs a value". Verb-scoped flags that mean "a version" spell out
+which one (`--n8n-version`); `backup restore` now takes a positional backup ref
+instead. **The lesson generalizes: a globally-peeled value flag is a CLI-wide
+name claim, not a verb-local one** — check a new one against the conventional
+globals (`--version`, `--help`) before adding it to that regex.
+
+Reserving a name can't be a bare early return, because that just trades a loud
+failure for a silent one: `<verb> … --version <id>` would print the version and
+skip the work the user asked for. So the version flag only answers when **no
+verb is present**; alongside a verb it is a hard error naming the replacement.
+Same rule for any future reserved global.
 
 Every `[workflow…]` argument is a **ref**: an id, a workflow/folder name, or
 a unique name prefix. Resolution is tiered — exact id → exact name
@@ -692,15 +702,25 @@ with n8n.
   **Not auto-committed** and **not self-gitignored** — the file carries
   credential refs + any embedded secrets, so the user reviews + `git add`s
   deliberately; committing it is the whole point.
-- **`backup restore`** selects a backup (latest default; `--version-id <id>` /
-  `--at <ts>` / a TTY chooser — the selector is *not* spelled `--version`, which
-  is reserved CLI-wide for printing the installed version), compliance-guards the folder, re-inlines each
+- **`backup restore`** selects a backup (latest default; an optional positional
+  **backup ref** / a TTY chooser), compliance-guards the folder, re-inlines each
   placeholdered Code node's source from `code/` (reusing `buildNodeCode`/
   `placeholderFile` from push — `.ts` compiled), and REST-POSTs an **allowlist
   body** (`name`/`nodes`/`connections`/`settings`) → a **new** workflow, node
   ids preserved, landing **unpublished**. Prints credential-rebind hints (refs
   point at the source instance) + the editor URL; publish is the operator's
   next step.
+  - A **backup ref** resolves by shape, like a workflow ref: timestamp (exact or
+    a filename prefix — a bare date works) **or** versionId (the short one in
+    the filename, the full one pasted from n8n, or the one stored inside the
+    file). Both keys are in the filename `<timestamp>.<versionId>.json`, so one
+    argument covers both and the caller never declares which kind it has; the
+    two key spaces don't collide (dates vs. uuids), so first-match-wins needs no
+    tie-break. **v0.6.0 shipped this as `--version <id>` / `--at <ts>`**; both
+    were removed in favour of the positional (breaking) because `--version` is
+    reserved CLI-wide — and are hard-errored rather than ignored, since a
+    dropped `--at=<ts>` would silently restore the *latest* backup. An
+    unresolvable ref is an error, never a fallback.
 - **`backup list`** (offline) prints the retained set: timestamp · versionId ·
   node count.
 - **Auth:** REST-only → `requireApiKey` gates `create`/`restore` (`list` is
