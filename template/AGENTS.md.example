@@ -135,9 +135,8 @@ The skills pack installs whole (no cherry-pick) and is not aware of this
 repo's layout — this override plus the guard-proxy, not selective
 installation, is what holds the boundary.
 
-Not installed yet? `n8n-decanter init` offers to install it; you can also run
-`n8n-decanter init --skills claude-code` (or `codex` / `skills-sh` / `print`)
-at any time. By hand it's a plugin, not an npm dependency:
+Not installed yet? It's a plugin, not an npm dependency — a first
+`n8n-decanter init` prints these too:
 
 - **Claude Code** — in a session: `/plugin marketplace add n8n-io/skills` then
   `/plugin install n8n-skills@n8n-io`. From a shell: `claude plugin marketplace

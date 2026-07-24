@@ -596,10 +596,10 @@ await step("init: writes .env (MCP token + optional API key), copies whole templ
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`, ".env must survive --force");
 });
 
-await step("init: the n8n skills offer prints (never prompts) when piped, and --skills none silences it (Plan 55)", async () => {
-  // The regression this feature most risks: a fourth prompt would eat a piped
-  // script's stdin positionally. A piped init must still consume EXACTLY the
-  // three answers it consumed before, and merely PRINT the skills commands.
+await step("init: a first init points at the n8n skills pack (shell commands, not slash commands); re-init stays quiet (Plan 55)", async () => {
+  // decanter PRINTS the install commands and never runs them or asks about
+  // them, so a piped init must still consume EXACTLY the three answers it
+  // consumed before — no new question may enter that stream.
   const target = path.join(TMP, "init-skills-print");
   const pending = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
   pending.child.stdin!.write(`${env.N8N_HOST}\n${MCP_TOKEN}\ntest-key\n`);
@@ -613,40 +613,19 @@ await step("init: the n8n skills offer prints (never prompts) when piped, and --
   assert.match(out, /claude plugin install n8n-skills@n8n-io/);
   assert.match(out, /codex plugin add n8n-skills@n8n-io/);
   assert.match(out, /npx skills add n8n-io\/skills/);
-  assert.ok(!out.includes("Install n8n's official skills pack?"), "a piped run must never ask the question");
-  // a re-init has already made the offer once — it must not repeat it
+  assert.ok(!out.includes("/plugin marketplace add"), "the printed commands must be shell, not in-session slash commands");
+  // said once per sync dir: a re-init must not repeat it
   const again = execFile(process.execPath, [CLI, "init", target], { encoding: "utf8" });
   again.child.stdin!.end();
   const againResult = await again;
-  assert.ok(!(againResult.stdout + againResult.stderr).includes("official skills pack"), "re-init must not repeat the offer");
+  assert.ok(!(againResult.stdout + againResult.stderr).includes("official skills pack"), "re-init must not repeat the pointer");
 
-  // --skills none silences the block entirely, even on a first init
-  const quiet = path.join(TMP, "init-skills-none");
-  const q = execFile(process.execPath, [CLI, "init", quiet, "--skills", "none"], { encoding: "utf8" });
-  q.child.stdin!.write(`${env.N8N_HOST}\n${MCP_TOKEN}\n\n`);
-  q.child.stdin!.end();
-  const quietResult = await q;
-  assert.ok(!(quietResult.stdout + quietResult.stderr).includes("official skills pack"), "--skills none prints nothing about skills");
-  // …and --skills must NOT flip init into non-interactive mode: the piped
-  // host/token answers above still have to land in .env
-  assert.match(read(quiet, ".env"), new RegExp(`^N8N_MCP_TOKEN=${MCP_TOKEN}$`, "m"), "--skills must not suppress the credential prompts");
-
-  // --skills print works on a re-init too (the escape hatch after skipping)
-  const reprint = execFile(process.execPath, [CLI, "init", target, "--skills", "print"], { encoding: "utf8" });
-  reprint.child.stdin!.end();
-  const reprintResult = await reprint;
-  assert.match(reprintResult.stdout + reprintResult.stderr, /Recommended: n8n's official skills pack/);
-
-  // an unknown target is rejected loudly rather than silently ignored
-  try {
-    const bad = execFile(process.execPath, [CLI, "init", target, "--skills", "emacs"], { encoding: "utf8" });
-    bad.child.stdin!.end();
-    await bad;
-    assert.fail("an unknown --skills target must exit non-zero");
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string };
-    assert.match((e.stdout ?? "") + (e.stderr ?? ""), /unknown --skills target: emacs/);
-  }
+  // the flag-driven path prints it too — an agent bootstrapping a sync dir
+  // should learn the pack exists as much as a human does
+  const flagged = path.join(TMP, "init-skills-flagged");
+  const f = execFile(process.execPath, [CLI, "init", flagged, "--host", env.N8N_HOST!, "--token", MCP_TOKEN], { encoding: "utf8" });
+  const flaggedResult = await f;
+  assert.match(flaggedResult.stdout + flaggedResult.stderr, /Recommended: n8n's official skills pack/);
 });
 
 await step("init --host/--token/--api-key: fully non-interactive, no stdin (Plan 35 finding)", async () => {

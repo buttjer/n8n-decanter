@@ -9,18 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`init` offers to install n8n's official skills pack.** The last step of a
-  *first* `init` on a terminal asks whether to install
-  [n8n-io/skills](https://github.com/n8n-io/skills) — the knowledge layer that
-  makes agentic workflow building work — for **Claude Code**, **Codex**, or any
-  **skills.sh**-supported agent, pre-selecting the one it detects from your
-  environment. Every command is printed before it runs, and a missing or
-  outdated tool degrades to a warning plus the manual commands: the step never
-  fails `init`. It is asked only once (never on a re-init) and only on a TTY —
-  piped runs consume exactly the answers they always did and just get the
-  commands printed. `--skills <claude-code|codex|skills-sh|print|none>` drives
-  it without a prompt and, unlike `--host`/`--token`/`--api-key`, does **not**
-  switch `init` into non-interactive mode. *(Plan 55.)*
+- **A first `init` points at n8n's official skills pack.** Setup now closes by
+  naming [n8n-io/skills](https://github.com/n8n-io/skills) — the knowledge layer
+  that makes agentic workflow building work — and printing the install commands
+  for **Claude Code**, **Codex**, and **skills.sh**, with the agent it detects
+  from your environment listed first and the activation step each one still
+  needs. It prints; it does not install: that would mean spawning a third-party
+  CLI to mutate agent state outside the sync dir, and a plugin installed
+  mid-session isn't active until the agent reloads. Said once per sync dir (no
+  re-init repeats it), on every path including piped and `--host`-driven runs,
+  and it consumes no input — no existing script's stdin changes. *(Plan 55.)*
 
 ### Fixed
 

@@ -5,7 +5,7 @@ order: 2
 ---
 
 ```sh
-n8n-decanter init [dir] [--force] [--skills <target>]
+n8n-decanter init [dir] [--force]
 n8n-decanter init [dir] --host <url> [--token <mcp-token>] [--api-key <key>]   # non-interactive
 ```
 
@@ -31,8 +31,8 @@ Interactive setup for a new (or existing) sync dir:
   `.decanter-template.json` (see [Re-running init](#re-running-init)).
 - Scaffolds `decanter.config.json` and a `.gitignore` (which covers `.env`
   and `.decanter-auth.json`).
-- Closes by offering **n8n's official skills pack** — see
-  [The n8n skills offer](#the-n8n-skills-offer) below.
+- Closes by pointing at **n8n's official skills pack** — see
+  [The n8n skills pointer](#the-n8n-skills-pointer) below.
 
 The instance needs MCP access enabled once (n8n → Settings → MCP; ~2.20+),
 and each workflow you sync needs its "Available in MCP" flag — see
@@ -64,61 +64,42 @@ n8n-decanter init ./flows --host n8n.example.com --token "$TOK" --api-key "$KEY"
 An explicit flag wins over an existing `.env` value; the end-of-init connection
 checks run exactly as they do interactively. `--force` composes with all three.
 
-## The n8n skills offer
+## The n8n skills pointer
 
 decanter owns Code-node source; **[n8n's official skills pack](/docs/agents/n8n-skills/)**
-teaches your agent everything else — so the last thing a *first* `init` does, on
-a terminal, is offer to install it:
+teaches your agent everything else. A **first** `init` closes by naming it and
+printing the install commands for the agent it detects:
 
 ```text
-Install n8n's official skills pack? — recommended for agentic workflow building
-  1) Claude Code (detected)
-  2) Codex
-  3) Other agent (skills.sh)
-  4) Skip — just print the commands
-Choice [1]:
+Recommended: n8n's official skills pack (n8n-io/skills) — it teaches your agent to
+build workflow structure over MCP while decanter keeps every Code node a file.
+  Claude Code (detected)
+    claude plugin marketplace add n8n-io/skills
+    claude plugin install n8n-skills@n8n-io
+    then /reload-plugins (or restart Claude Code)
+  Codex
+    codex plugin marketplace add n8n-io/skills
+    codex plugin add n8n-skills@n8n-io
+    then restart Codex and approve the plugin's hooks (needs Codex >= 0.142.0)
+  other agents (skills.sh)
+    npx skills add n8n-io/skills -y
+    no plugin hooks on this route — the scaffolded AGENTS.md carries the routing cue it needs
+  guide: /docs/agents/n8n-skills/
 ```
 
 The `(detected)` marker comes from your environment (running inside an agent,
-its binary on `PATH`, or a `~/.claude` / `~/.codex` marker) and only picks the
-default answer. Every command is **printed before it runs**, and a missing or
-outdated tool degrades to a warning plus the manual commands — the skills step
-never fails `init`.
+its binary on `PATH`, or a `~/.claude` / `~/.codex` marker) and only decides
+which route is listed first — every route is always shown.
 
-Deliberately narrow, so it can't get in your way:
-
-- **Only on a first init** (before `.decanter-template.json` exists). Re-runs
-  never ask again.
-- **Only on a TTY.** A piped run (`printf "host\ntoken\nkey\n" | n8n-decanter
-  init`) consumes exactly the three answers it always did and just **prints**
-  the commands — adding a fourth question to that stream would have broken every
-  existing script.
-- **Never on the `--host`/`--token`/`--api-key` path**, which stays
-  prompt-free.
-
-### `--skills <target>`
-
-Drives the step without a prompt, in any mode:
-
-| Value | Effect |
-|---|---|
-| `claude-code` | `claude plugin marketplace add n8n-io/skills` → `claude plugin install n8n-skills@n8n-io` |
-| `codex` | `codex plugin marketplace add n8n-io/skills` → `codex plugin add n8n-skills@n8n-io` (needs Codex ≥ 0.142.0) |
-| `skills-sh` | `npx skills add n8n-io/skills -y` (skills.sh; support varies by agent) |
-| `print` | Print the commands, install nothing — works on a re-init too |
-| `none` | Say nothing about skills at all |
-
-`--skills` is **not** one of the non-interactive flags: passing it does not
-suppress the host / token / API-key prompts.
-
-```sh
-n8n-decanter init --skills claude-code          # install for Claude Code
-n8n-decanter init ./flows --skills none         # never mention it
-```
-
-After an install, Claude Code needs `/reload-plugins` (or a restart) and Codex
-needs a restart plus a one-time approval of the plugin's hooks — so an agent
-that installs the pack mid-session won't see it until the next one.
+**`init` prints; it never installs.** Running `claude`/`codex`/`npx skills` for
+you would mean decanter spawning three third-party CLIs with their own version
+floors, mutating agent state that lives outside the sync dir, at the most
+fragile moment of setup — and a plugin installed mid-session isn't active until
+the agent reloads anyway, so the subprocess buys nothing the printed command
+doesn't. It is printed **once**, on a first init (before
+`.decanter-template.json` exists); every re-run stays quiet, so there is no
+flag to turn it off. Piped and `--host`-driven runs get it too — an agent
+bootstrapping a sync dir should learn the pack exists as much as a human does.
 
 ## TypeScript tooling
 
@@ -171,5 +152,3 @@ clones and re-inits sees the same drift picture. `.env` is never tracked in it.
 - `--force` — the escape hatch: overwrites **every** template file with its
   template version, including ones you edited (each such file is flagged
   `(had local changes)`), then re-records the baseline. `.env` is never touched.
-- `--skills <claude-code|codex|skills-sh|print|none>` — drive the
-  [skills offer](#the-n8n-skills-offer) without a prompt.

@@ -75,27 +75,14 @@ it); the skills and MCP own the rest.**
 
 ### 1. Install the skills
 
-**[`init`](/docs/cli/init/) offers this for you.** At the end of a first
-`init`, on a terminal, decanter asks whether to install the pack and
-pre-selects the agent it detected:
+**A first [`init`](/docs/cli/init/) prints these commands for you**, with the
+agent it detects listed first. It prints them — it doesn't run them: installing
+would mean decanter spawning a third-party CLI to mutate agent state outside
+the sync dir, and a plugin installed mid-session isn't active until the agent
+reloads anyway.
 
-```text
-Install n8n's official skills pack? — recommended for agentic workflow building
-  1) Claude Code (detected)
-  2) Codex
-  3) Other agent (skills.sh)
-  4) Skip — just print the commands
-Choice [1]:
-```
-
-It prints each command before running it, and a failure never fails `init`.
-Piped runs and re-inits are never asked — they get the commands printed.
-`init --skills <claude-code|codex|skills-sh|print|none>` drives it without a
-prompt (and, unlike `--host`/`--token`/`--api-key`, does **not** switch `init`
-into non-interactive mode).
-
-To do it by hand, pick your agent — note that Claude Code's `/plugin …` are
-**in-session slash commands**, not shell commands:
+Pick your agent — note that Claude Code's `/plugin …` are **in-session slash
+commands**, not shell commands:
 
 ```text
 # Claude Code — inside a session
@@ -104,7 +91,7 @@ To do it by hand, pick your agent — note that Claude Code's `/plugin …` are
 ```
 
 ```sh
-# Claude Code — from a shell (what init runs; add --scope project to share it
+# Claude Code — from a shell (what init prints; add --scope project to share it
 # with the repo instead of installing for your user)
 claude plugin marketplace add n8n-io/skills
 claude plugin install n8n-skills@n8n-io

@@ -806,21 +806,25 @@ Bootstraps a sync directory. Plan 32 made it OAuth-first:
    workflows are visible and how many are `availableInMCP` (with a hint about
    the per-workflow switch), plus the old `GET /api/v1/workflows?limit=1`
    probe when an API key was given.
-6. **The official-skills offer** (Plan 55, `lib/skills.mts`) — dead last, so it
-   can never block credential setup. On a **first** init (no
-   `.decanter-template.json` yet) **on a TTY**, a four-way question (Claude
-   Code / Codex / other via skills.sh / skip) with the detected agent
-   pre-selected runs the pack's real **shell** installers; every argv is echoed
-   first and any failure degrades to a warning plus the manual commands. Piped
-   and re-init runs are never prompted — a fourth positional answer would break
-   every existing script — they get the commands printed instead. `--skills
-   <target>` drives it headlessly and is deliberately **excluded** from
-   `flagDriven`, so it cannot suppress the credential prompts. Detection reads
-   env / `PATH` / home markers and **spawns nothing**. Claude Code's
-   `<claude-code-hint/>` protocol would be the natural fit but is dropped for
-   non-Anthropic marketplaces, so it isn't used; the declarative
-   `.claude/settings.json` (`extraKnownMarketplaces` + `enabledPlugins`) route
-   is a deferred alternative recorded in the plan.
+6. **The official-skills pointer** (Plan 55, `lib/skills.mts`) — dead last, so
+   it can never block credential setup. On a **first** init (no
+   `.decanter-template.json` yet) decanter names the pack and prints the
+   **shell** install commands for all three routes (Claude Code / Codex /
+   skills.sh), detected agent first, each with its activation step. Detection
+   reads env / `PATH` / home markers and **spawns nothing**.
+
+   It is **output only, on every path, consuming no input** — deliberately not
+   a prompt and not a subprocess. A prompt would add a fourth positional answer
+   to init's stdin and break every existing script; a subprocess would mean
+   decanter driving three third-party CLIs with their own version floors to
+   mutate user-global agent state, at the most fragile moment of setup, for a
+   plugin that isn't active until the agent reloads anyway. No flag tunes it:
+   once per sync dir is cheap enough that a CLI surface isn't warranted.
+
+   Claude Code's `<claude-code-hint/>` stderr protocol would be the natural fit
+   but is silently dropped for non-Anthropic marketplaces, so it isn't used.
+   Actually *installing* — declaratively, via `.claude/settings.json`
+   (`extraKnownMarketplaces` + `enabledPlugins`) — is Plan 56.
 
 **One shared prompt session** serves every question — a second
 `createPrompt()` would lose piped answers the first one buffered (the same
