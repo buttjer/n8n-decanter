@@ -8,7 +8,7 @@ workflow creation"), **scoped down by the same conversation** to print-only (see
 [Design decision](#design-decision--why-it-prints-instead-of-installing)). Closes
 the discoverability gap left by [`docs/agents/n8n-skills.md`](../../docs/agents/n8n-skills.md)
 and [Plan 30](../open/30-agent-llm-working-ergonomics.md); reuses the field-test prior
-art in `scripts/field-test/skills-install.mts` ([Plan 35](../open/35-blind-agent-field-test.md)).
+art in `test/field-test/skills-install.mts` ([Plan 35](../open/35-blind-agent-field-test.md)).
 **Snapshot:** 2026-07-24T08:17Z @ f419108
 **Theme:** Setup is the only moment the user is in "wire up my agent" mindset —
 name the pack there instead of on a docs page they read afterwards, if ever.

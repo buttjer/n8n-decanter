@@ -7,7 +7,7 @@
 #    and nothing else (Dockerfile.proxy / tinyproxy allowlist). So an injected or
 #    looping agent cannot exfiltrate the key or reach arbitrary hosts. Fail-closed.
 #  - the agent gets ONE credential — ANTHROPIC_API_KEY, from --env-file
-#    scripts/field-test/.env — and no other host env.
+#    test/field-test/.env — and no other host env.
 #  - no published ports on the agent; the host reaches the throwaway n8n by its
 #    own published port (set up by stage.mts), never through here.
 #
@@ -47,7 +47,7 @@ services:
     depends_on: [proxy]
     networks: [internal]
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in scripts/field-test/.env}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in test/field-test/.env}
       HTTPS_PROXY: http://proxy:8888
       HTTP_PROXY: http://proxy:8888
       # n8n (by container name) + localhost must bypass the proxy — they're on the

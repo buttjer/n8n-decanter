@@ -1,0 +1,1390 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S2" class="navlink fail">S2 <span class="badge fail">FAIL (4)</span></a><a href="#progression" class="navlink">progression</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:50392</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+
+<section id="S2"><h2>S2 <span class="badge fail">FAIL (4)</span></h2><div class="persona">same user, later session, skills pack installed, guard live</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Next flow. I want a scheduled job (say hourly) that: generates a small batch of fake 'order' records in a Code step (each with an id and an amount), then splits them by amount — 100 or more is 'high value', under 100 is 'low value' — tags each side in its own Code step, merges them back together, and a final Code step prints a summary of how many landed in each bucket. Build the structure in n8n and write the Code steps here in the repo. No external services — pure Code/IF/Merge nodes.</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll start by loading the n8n skills routing meta-skill, since this task involves building workflow structure and Code nodes.</div></div><details class="tool"><summary><span class="ticon">◆</span> <span class="tname">Skill </span></summary><pre class="tin">{
+  "skill": "using-n8n-skills-official"
+}</pre><div class="tres "><span class="tlab">result</span><pre>Launching skill: using-n8n-skills-official</pre></div></details><details class="tool"><summary><span class="ticon">◆</span> <span class="tname">Skill </span></summary><pre class="tin">{
+  "skill": "n8n-workflow-lifecycle-official"
+}</pre><div class="tres "><span class="tlab">result</span><pre>Launching skill: n8n-workflow-lifecycle-official</pre></div></details><details class="tool"><summary><span class="ticon">◆</span> <span class="tname">Skill </span></summary><pre class="tin">{
+  "skill": "n8n-code-nodes-official"
+}</pre><div class="tres "><span class="tlab">result</span><pre>Launching skill: n8n-code-nodes-official</pre></div></details><details class="tool"><summary><span class="ticon">◆</span> <span class="tname">Skill </span></summary><pre class="tin">{
+  "skill": "n8n-node-configuration-official"
+}</pre><div class="tres "><span class="tlab">result</span><pre>Launching skill: n8n-node-configuration-official</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls /work</pre><div class="tres "><span class="tlab">result</span><pre>AGENTS.md
+CLAUDE.md
+decanter-ts-plugin
+decanter.config.json
+n8n-decanter-0.6.0.tgz
+n8n-globals.d.ts
+node_modules
+opencode.json
+package-lock.json
+package.json
+shared
+tsconfig.json
+workflows</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__get_sdk_reference,mcp__n8n-instance__get_workflow_best_practices,mcp__n8n-instance__search_nodes,mcp__n8n-instance__get_node_types,mcp__n8n-instance__create_workflow_from_code,mcp__n8n-instance__validate_workflow,mcp__n8n-instance__get_workflow_details,mcp__n8n-instance__update_workflow",
+  "max_results": 10
+}</pre><div class="tres "><span class="tlab">result</span><pre>
+
+
+
+
+
+
+</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_sdk_reference</span></summary><pre class="tin">{
+  "section": "all"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"reference":"# n8n Workflow SDK Reference\n\n## SDK Import Statement\n\n```javascript\nimport { workflow, node, trigger, sticky, placeholder, newCredential, ifElse, switchCase, merge, splitInBatches, nextBatch, languageModel, memory, tool, outputParser, embedding, embeddings, vectorStore, retriever, documentLoader, textSplitter, reranker, fromAi, expr } from '@n8n/workflow-sdk';\n```\n\n## Workflow Patterns\n\n&lt;linear_chain&gt;\n```javascript\nimport { workflow, node, trigger, sticky, placeholder, newCredential, ifElse, switchCase, merge, splitInBatches, nextBatch, languageModel, memory, tool, outputParser, embedding, embeddings, vectorStore, retriever, documentLoader, textSplitter, fromAi, expr } from '@n8n/workflow-sdk';\n\n// 1. Define all nodes first\nconst startTrigger = trigger({\n  type: 'n8n-nodes-base.manualTrigger',\n  version: 1,\n  config: { name: 'Start' }\n});\n\nconst fetchData = node({\n  type: 'n8n-nodes-base.httpRequest',\n  version: 4.3,\n  config: { name: 'Fetch Data', parameters: { method: 'GET', url: '...' } }\n});\n\nconst processData = node({\n  type: 'n8n-nodes-base.set',\n  version: 3.4,\n  config: {\n    name: 'Process Data',\n    parameters: {\n      mode: 'manual',\n      includeOtherFields: true,\n      assignments: {\n        assignments: [\n          { id: 'processed-title', name: 'processedTitle', value: expr('{{ $json.title }}'), type: 'string' }\n        ]\n      }\n    }\n  }\n});\n\n// 2. Compose workflow\nexport default workflow('id', 'name')\n  .add(startTrigger)\n  .to(fetchData)\n  .to(processData);\n```\n\n&lt;/linear_chain&gt;\n\n&lt;independent_sources&gt;\nWhen nodes return more than 1 item, chaining causes item multiplication: if Source A returns N items, a chained Source B runs N times instead of once.\n\n**When to use `executeOnce: true`:**\n- A node fetches data independently but is chained after another data source (prevents N×M multiplication)\n- A node should summarize/aggregate all upstream items in a single call (e.g., AI summary, send one notification)\n- A node calls an API that doesn't vary per input item\n\nFix with `executeOnce: true` (simplest) or parallel branches + Merge (when combining results):\n\n```javascript\n// sourceA outputs 10 items. sourceB outputs 10 items.\n// WRONG - processResults runs 100 times\n// startTrigger.to(sourceA.to(sourceB.to(processResults)))\n\n// FIX 1 - executeOnce: sourceB runs once regardless of input items\nconst sourceB = node({ ..., config: { ..., executeOnce: true } });\nstartTrigger.to(sourceA.to(sourceB.to(processResults)));\n\n// FIX 2 - parallel branches + Merge (combine by position)\n// .input(n) is 0-based: .input(0) = first input, .input(1) = second input.\nconst combineResults = merge({\n  version: 3.2,\n  config: { name: 'Combine Results', parameters: { mode: 'combine', combineBy: 'combineByPosition' } }\n});\nexport default workflow('id', 'name')\n  .add(startTrigger)\n  .to(sourceA.to(combineResults.input(0))) // first input (index 0)\n  .add(startTrigger)\n  .to(sourceB.to(combineResults.input(1))) // second input (index 1)\n  .add(combineResults)\n  .to(processResults);\n\n// FIX 3 - parallel branches + Merge (append)\nconst allResults = merge({\n  version: 3.2,\n  config: { name: 'All Results', parameters: { mode: 'append' } }\n});\nexport default workflow('id', 'name')\n  .add(startTrigger)\n  .to(sourceA.to(allResults.input(0))) // first input (index 0)\n  .add(startTrigger)\n  .to(sourceB.to(allResults.input(1))) // second input (index 1)\n  .add(allResults)\n  .to(processResults);\n```\n\n&lt;/independent_sources&gt;\n\n&lt;zero_item_safety&gt;\nWhen a node returns 0 items, downstream nodes are skipped for that execution. **This is usually the correct behavior** — the scheduler / trigger fires again later, and when there is data, the chain runs normally. Don't paper over an empty result with `alwaysOutputData: true` by default.\n\n**`alwaysOutputData: true` forces a synthetic `{json: {}}` item downstream.** This is a footgun: downstream no
+… (39456 more chars)</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_best_practices</span></summary><pre class="tin">{
+  "technique": "scheduling"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"technique":"scheduling","message":"Best-practices documentation for \"scheduling\" retrieved.","documentation":"# Best Practices: Scheduling Workflows\n\n## Workflow Design\n\nStructure scheduled workflows to perform focused, well-defined tasks.\n\nFor recurring tasks, use Schedule Trigger node with clear naming (e.g., \"Daily 08:00 Trigger\", \"Every 6h Cron\").\n\nPrevent overlapping executions by ensuring worst-case execution time &lt; schedule interval. For frequent schedules, implement mutex/lock mechanisms using external systems if needed.\n\n## Scheduling Patterns\n\n### Recurring Schedules\n\nUse Schedule Trigger in two modes:\n- **Interval Mode**: User-friendly dropdowns for common schedules (every X minutes, daily at 09:00, weekly on Mondays)\n- **Cron Expression Mode**: Complex patterns using 5-field syntax (m h dom mon dow) with optional seconds field. Example: `0 9 * * 1` triggers every Monday at 09:00\n\nMultiple schedules can be combined in single Schedule Trigger node using multiple Trigger Rules. Useful when same logic applies to different timings.\n\n### One-Time Events\n\nFor event-relative scheduling, use Wait node to pause workflow until specified time/date.\n\nNote: Cron expressions with specific dates (e.g., `0 12 22 10 *` for Oct 22 at 12:00) will repeat annually on that date.\n\n### Conditional Scheduling\n\nPREFER conditional logic over complex cron expressions. Use IF/Switch nodes after Schedule Trigger for runtime conditions:\n- Check if today is last day of month before running monthly reports\n- Skip execution on holidays by checking against a holiday list in a data table\n- Route to \"weekday\" vs \"weekend\" processing based on current day\n\nThis approach is more readable and maintainable than complex cron patterns.\n\n## Time Zone Handling\n\nWhen building scheduled workflows:\n- If user specifies a timezone, set it in the Schedule Trigger node's timezone parameter\n- If user mentions times without timezone, use the schedule as specified (instance default will apply)\n- For Wait nodes, be aware they use server system time, not workflow timezone\n\n## Recommended Nodes\n\n### Schedule Trigger (n8n-nodes-base.scheduleTrigger)\n\nPrimary node for running workflows on schedule. Supports interval mode for simple schedules and cron mode for complex patterns.\n\n### Wait (n8n-nodes-base.wait)\n\nPause workflow execution until specified time or duration.\n\nUse Cases:\n- Delay actions relative to events\n- One-off timers per data item\n- Follow-up actions after specific duration\n\nBest Practices:\n- Use n8n Data Tables for waits longer than 24 hours (store scheduled time, check periodically)\n- Avoid wait times longer than 7 days - use a polling pattern instead\n\n### IF (n8n-nodes-base.if)\n\nAdd conditional logic to scheduled workflows.\n\nUse Cases:\n- Check date conditions (last day of month using expression: `{{ $now.day === $now.endOf('month').day }}`)\n- Skip execution based on external data (e.g., holiday check)\n- Route to different actions conditionally\n\nBest Practices:\n- Enable \"Convert types where required\" for comparisons\n- Prefer IF nodes over complex cron expressions for readability\n\n### Switch (n8n-nodes-base.switch)\n\nMultiple conditional branches for complex routing.\n\nUse Cases:\n- Different actions based on day of week (e.g., `{{ $now.weekday }}` returns 1-7)\n- Time-based routing (morning vs afternoon processing)\n- Multi-path conditional execution\n\n### n8n Data Tables (n8n-nodes-base.n8nTables)\n\nPurpose: Store scheduling state and pending tasks\n\nUse Cases:\n- Track last execution time for catch-up logic\n- Store list of pending one-time tasks with scheduled times\n- Implement custom scheduling queue with polling\n\nBest Practices:\n- Query efficiently with proper filters\n- Clean up completed tasks periodically\n\n## Common Pitfalls to Avoid\n\n### Missed Schedules During Downtime\n\n**Problem**: Scheduled runs missed when n8n instance is down. No automatic catch-
+… (1675 more chars)</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_best_practices</span></summary><pre class="tin">{
+  "technique": "data_transformation"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"technique":"data_transformation","message":"Best-practices documentation for \"data_transformation\" retrieved.","documentation":"# Best Practices: Data Transformation\n\n## Workflow Design\n\n### Core Principles\n- **Structure**: Always follow Input → Transform → Output pattern\n- **Optimization**: Filter and reduce data early to improve performance\n\n### Design Best Practices\n- Plan transformation requirements in plain language before building\n- Use Modular Design: Create reusable sub-workflows for common tasks like \"Data Cleaning\" or \"Error Handler\"\n- Batch datasets over 100 items using Split In Batches node to prevent timeouts\n\n## Recommended Nodes\n\n### Essential Transformation Nodes\n\n#### Edit Fields (Set) (n8n-nodes-base.set)\n\n**Purpose**: Create, modify, rename fields; change data types\n\n**Key Setting**: \"Keep Only Set\" - drops all fields not explicitly defined (default: disabled)\n\n**Use Cases**:\n- Extract specific columns\n- Add calculated fields\n- Convert data types (string to number)\n- Format dates using expressions\n\n**Pitfalls**:\n- Not understanding \"Keep Only Set\" behavior can lead to data loss\n- Enabled: Drops all fields not explicitly defined (data loss risk)\n- Disabled: Carries forward all fields (potential bloat)\n- Always verify output structure after configuration\n\n**Testing tip**: When transforming data from a workflow trigger, you can set values with a fallback default e.g. set name to {{$json.name || 'Jane Doe'}} to help test the workflow.\n\n#### IF/Filter Nodes\n\n**IF Node** (n8n-nodes-base.if):\n- **Purpose**: Conditional processing and routing\n- **Best Practice**: Use early to validate inputs and remove bad data\n- **Example**: Check if required fields exist before processing\n\n**Filter Node** (n8n-nodes-base.filter):\n- **Purpose**: Filter items based on conditions\n- **Best Practice**: Use early in workflow to reduce data volume\n\n#### Merge Node (n8n-nodes-base.merge)\n\n**Purpose**: Combine two data streams\n\n**Modes**:\n- Merge by Key (like database join)\n- Merge by Index\n- Append\n\n**Pitfalls**:\n- **Missing Keys**: Trying to merge on non-existent fields\n- **Field Name Mismatch**: Different field names in sources\n- **Solution**: Use Edit Fields node to normalize field names before merging\n\n#### Code Node (n8n-nodes-base.code)\n\n**Execution Modes**:\n- \"Run Once per Item\": Process each item independently\n- \"Run Once for All Items\": Access entire dataset (for aggregation)\n\n**Return Format**: Must return array of objects with json property\n```javascript\nreturn items; // or return [{ json: {...} }];\n```\n\n**Pitfalls**:\n- Wrong return format: Not returning array of objects with json property\n- Overly complex: Stuffing entire workflow logic in one Code node\n- Keep code nodes focused on single transformation aspect\n\n#### Summarize Node (n8n-nodes-base.summarize)\n\n**Purpose**: Pivot table-style aggregations (count, sum, average, min/max)\n\n**Configuration**:\n- Fields to Summarize: Choose aggregation function\n- Fields to Split By: Grouping keys\n\n**Output**: Single item with summary or multiple items per group\n\n### Data Restructuring Nodes\n\n- **Split Out** (n8n-nodes-base.splitOut): Convert single item with array into multiple items\n- **Aggregate** (n8n-nodes-base.aggregate): Combine multiple items into one\n- **Remove Duplicates** (n8n-nodes-base.removeDuplicates): Delete duplicate items based on field criteria\n- **Sort** (n8n-nodes-base.sort): Order items alphabetically/numerically\n- **Limit** (n8n-nodes-base.limit): Trim to maximum number of items\n\n### Batch Processing\n\n**Split In Batches** (n8n-nodes-base.splitInBatches):\n- **Purpose**: Process large datasets in chunks\n- **Use When**: Handling 100+ items with expensive operations (API calls, AI)\n\n## Input Data Validation\n- Validate external data before processing: check for nulls, empty values, and edge cases (special chars, empty arrays)\n\n## Common Pitfalls to Av
+… (1073 more chars)</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_nodes</span></summary><pre class="tin">{
+  "queries": [
+    "schedule trigger",
+    "code",
+    "if",
+    "merge"
+  ]
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"results":"## \"schedule trigger\"\nFound 5 nodes:\n\n- n8n-nodes-base.scheduleTrigger [TRIGGER]\n  Display Name: Schedule Trigger\n  Version: 1.3\n  Description: Triggers the workflow on a given schedule\n  Discriminators: none (use node directly without resource/operation/mode)\n\n- n8n-nodes-base.n8nTrigger [TRIGGER]\n  Display Name: n8n Trigger\n  Version: 1\n  Description: Handle events and perform actions on your n8n instance\n  Discriminators: none (use node directly without resource/operation/mode)\n\n- n8n-nodes-base.formTrigger [TRIGGER]\n  Display Name: n8n Form Trigger\n  Version: 2.6\n  Description: Generate webforms in n8n and pass their responses to the workflow\n  @relatedNodes\n    - n8n-nodes-base.form: \"Add pages and final page to the form\"\n  Discriminators: none (use node directly without resource/operation/mode)\n\n- n8n-nodes-base.boxTrigger [TRIGGER]\n  Display Name: Box Trigger\n  Version: 1\n  Description: Starts the workflow when Box events occur\n  Discriminators: none (use node directly without resource/operation/mode)\n\n- n8n-nodes-base.sseTrigger [TRIGGER]\n  Display Name: SSE Trigger\n  Version: 1\n  Description: Triggers the workflow when Server-Sent Events occur\n  Discriminators: none (use node directly without resource/operation/mode)\n\n---\n\n## \"code\"\nFound 5 nodes:\n\n- n8n-nodes-base.code\n  Display Name: Code\n  Version: 2\n  Description: Run custom JavaScript or Python code\n  @builderHint Use Code node as a LAST RESORT — it runs in a sandboxed environment and is slower than native nodes. Code node is ONLY appropriate for complex multi-step algorithms that cannot be expressed in single expressions, or operations requiring complex data structures. The sandbox has NO network access: fetch(), axios, XMLHttpRequest and require of http modules are unavailable and FAIL at runtime. NEVER make HTTP requests in a Code node — use the HTTP Request node and process its output instead.\n  @relatedNodes\n    - n8n-nodes-base.httpRequest: \"Use this instead for ANY HTTP/API call — the Code node sandbox cannot make network requests\"\n    - n8n-nodes-base.set: \"Use this instead for data manipulation: add/modify/rename fields, set values, map data\"\n    - n8n-nodes-base.filter: \"Use this instead for filtering items by condition\"\n    - n8n-nodes-base.if: \"Use this instead for routing by condition\"\n    - n8n-nodes-base.switch: \"Use this instead for multi-way routing by condition\"\n    - n8n-nodes-base.splitOut: \"Use this instead for splitting arrays into separate items\"\n    - n8n-nodes-base.aggregate: \"Use this instead for combining multiple items into one\"\n    - n8n-nodes-base.summarize: \"Use this instead for summarizing or pivoting data\"\n    - n8n-nodes-base.removeDuplicates: \"Use this instead for removing duplicates\"\n    - n8n-nodes-base.limit: \"Use this instead to reduce the number of items returned\"\n    - n8n-nodes-base.merge: \"Use this instead for merging data from multiple branches\"\n    - n8n-nodes-base.dateTime: \"Use this instead for date time operations\"\n    - n8n-nodes-base.html: \"Use this instead for creating html pages\"\n  Discriminators:\n    mode:\n      - runOnceForAllItems: \"Run Once for All Items\"\n        Run this code only once, no matter how many input items there are\n      - runOnceForEachItem: \"Run Once for Each Item\"\n        Run this code as many times as there are input items\n\n  Use get_node_types with discriminators:\n    get_node_types({ nodeIds: [{ nodeId: \"n8n-nodes-base.code\", mode: \"runOnceForAllItems\" }] })\n\n- @n8n/n8n-nodes-langchain.code\n  Display Name: LangChain Code\n  Version: 1\n  Description: LangChain Code Node\n  Discriminators: none (use node directly without resource/operation/mode)\n\n- @n8n/n8n-nodes-langchain.toolCode\n  Display Name: Code Tool\n  Version: 1.3\n  Description: Write a tool in JS or Python\n  Discriminators: none (use node directly without resource/operation/mode)\n\n- @n8n/n8n-nodes-langch
+… (6350 more chars)</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_node_types</span></summary><pre class="tin">{
+  "nodeIds": [
+    {
+      "nodeId": "n8n-nodes-base.scheduleTrigger"
+    },
+    {
+      "nodeId": "n8n-nodes-base.code",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "nodeId": "n8n-nodes-base.if"
+    },
+    {
+      "nodeId": "n8n-nodes-base.merge",
+      "mode": "append"
+    }
+  ]
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"definitions":"# TypeScript Type Definitions\n\n## n8n-nodes-base.scheduleTrigger (v13)\n\n```typescript\n/**\n * Schedule Trigger Node - Version 1.3\n * Triggers the workflow on a given schedule\n */\n\n\nexport interface ScheduleTriggerV13Params {\n  rule?: {\n        /** Trigger Interval\n     * @builderHint You can add multiple intervals to trigger at different times. Use \"Custom (Cron)\" for more specific scheduling patterns.\n     */\n    interval?: Array&lt;{\n      /** Trigger Interval\n       * @default days\n       */\n      field?: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months' | 'cronExpression' | Expression&lt;string&gt;;\n      /** Number of seconds between each workflow trigger\n       * @hint Must be in range 1-59\n       * @displayOptions.show { field: [\"seconds\"] }\n       * @default 30\n       */\n      secondsInterval?: number | Expression&lt;number&gt;;\n      /** Number of minutes between each workflow trigger\n       * @hint Must be in range 1-59\n       * @displayOptions.show { field: [\"minutes\"] }\n       * @default 5\n       */\n      minutesInterval?: number | Expression&lt;number&gt;;\n      /** Number of hours between each workflow trigger\n       * @hint Must be in range 1-23\n       * @displayOptions.show { field: [\"hours\"] }\n       * @default 1\n       */\n      hoursInterval?: number | Expression&lt;number&gt;;\n      /** Number of days between each workflow trigger\n       * @hint Must be in range 1-31\n       * @displayOptions.show { field: [\"days\"] }\n       * @default 1\n       */\n      daysInterval?: number | Expression&lt;number&gt;;\n      /** Would run every week unless specified otherwise\n       * @displayOptions.show { field: [\"weeks\"] }\n       * @default 1\n       */\n      weeksInterval?: number | Expression&lt;number&gt;;\n      /** Would run every month unless specified otherwise\n       * @displayOptions.show { field: [\"months\"] }\n       * @default 1\n       */\n      monthsInterval?: number | Expression&lt;number&gt;;\n      /** The day of the month to trigger (1-31)\n       * @hint If a month doesn’t have this day, the node won’t trigger\n       * @displayOptions.show { field: [\"months\"] }\n       * @default 1\n       */\n      triggerAtDayOfMonth?: number | Expression&lt;number&gt;;\n      /** Trigger on Weekdays\n       * @displayOptions.show { field: [\"weeks\"] }\n       * @default [0]\n       */\n      triggerAtDay?: Array&lt;1 | 2 | 3 | 4 | 5 | 6 | 0&gt;;\n      /** The hour of the day to trigger\n       * @displayOptions.show { field: [\"days\", \"weeks\", \"months\"] }\n       * @default 0\n       */\n      triggerAtHour?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | Expression&lt;number&gt;;\n      /** The minute past the hour to trigger (0-59)\n       * @displayOptions.show { field: [\"hours\", \"days\", \"weeks\", \"months\"] }\n       * @default 0\n       */\n      triggerAtMinute?: number | Expression&lt;number&gt;;\n      /** Expression\n       * @hint Format: [Second] [Minute] [Hour] [Day of Month] [Month] [Day of Week]\n       * @displayOptions.show { field: [\"cronExpression\"] }\n       */\n      expression?: string | Expression&lt;string&gt;;\n    }&gt;;\n  };\n}\n\ninterface ScheduleTriggerV13NodeBase {\n  type: 'n8n-nodes-base.scheduleTrigger';\n  version: 1.3;\n  isTrigger: true;\n}\n\nexport type ScheduleTriggerV13ParamsNode = ScheduleTriggerV13NodeBase &amp; {\n  config: NodeConfig&lt;ScheduleTriggerV13Params&gt;;\n};\n\nexport type ScheduleTriggerV13Node = ScheduleTriggerV13ParamsNode;\n```\n\n---\n\n## n8n-nodes-base.code (v2)\n\n```typescript\n/**\n * Code Node - Version 2\n * Discriminator: mode=runOnceForAllItems\n */\n\n\n/** Run this code only once, no matter how many input items there are */\nexport type CodeV2RunOnceForAllItemsParams = {\n  mode: 'runOnceForAllItems';\n/**\n * Language\n * @default javaScript\n */\n    language?: 'javaScript' | 'pythonNative';\n/**\n * JavaScript code to execute.&amp;lt;br&amp;gt;&amp;lt;br&amp;gt;Tip: You can use 
+… (4182 more chars)</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · validate_workflow</span></summary><pre class="tin">{
+  "code": "import { workflow, node, trigger, ifElse, merge, expr, sticky } from '@n8n/workflow-sdk';\n\nconst scheduleTrigger = trigger({\n  type: 'n8n-nodes-base.scheduleTrigger',\n  version: 1.3,\n  config: {\n    name: 'Every Hour',\n    parameters: {\n      rule: {\n        interval: [\n          { field: 'hours', hoursInterval: 1 }\n        ]\n      }\n    },\n    position: [240, 300]\n  },\n  output: [{}]\n});\n\nconst generateOrders = node({\n  type: 'n8n-nodes-base.code',\n  version: 2,\n  config: {\n    name: 'Generate Fake Orders',\n    parameters: {\n      mode: 'runOnceForAllItems',\n      language: 'javaScript'\n    },\n    position: [540, 300]\n  },\n  output: [\n    { id: 'ord-1', amount: 42.5 },\n    { id: 'ord-2', amount: 187.2 }\n  ]\n});\n\nconst checkHighValue = ifElse({\n  version: 2.3,\n  config: {\n    name: 'Check High Value',\n    parameters: {\n      conditions: {\n        options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' },\n        conditions: [\n          {\n            leftValue: expr('{{ $json.amount }}'),\n            operator: { type: 'number', operation: 'gte' },\n            rightValue: 100\n          }\n        ],\n        combinator: 'and'\n      }\n    },\n    position: [840, 300]\n  }\n});\n\nconst tagHighValue = node({\n  type: 'n8n-nodes-base.code',\n  version: 2,\n  config: {\n    name: 'Tag High Value',\n    parameters: {\n      mode: 'runOnceForAllItems',\n      language: 'javaScript'\n    },\n    position: [1140, 200]\n  },\n  output: [{ id: 'ord-2', amount: 187.2, tier: 'high-value' }]\n});\n\nconst tagLowValue = node({\n  type: 'n8n-nodes-base.code',\n  version: 2,\n  config: {\n    name: 'Tag Low Value',\n    parameters: {\n      mode: 'runOnceForAllItems',\n      language: 'javaScript'\n    },\n    position: [1140, 400]\n  },\n  output: [{ id: 'ord-1', amount: 42.5, tier: 'low-value' }]\n});\n\nconst mergeBuckets = merge({\n  version: 3.2,\n  config: {\n    name: 'Merge Buckets',\n    parameters: {\n      mode: 'append'\n    },\n    position: [1440, 300]\n  }\n});\n\nconst summarizeBuckets = node({\n  type: 'n8n-nodes-base.code',\n  version: 2,\n  config: {\n    name: 'Summarize Buckets',\n    parameters: {\n      mode: 'runOnceForAllItems',\n      language: 'javaScript'\n    },\n    position: [1740, 300]\n  },\n  output: [{ total: 2, highValue: 1, lowValue: 1 }]\n});\n\nconst noteOverview = sticky(\n  '## Hourly order value triage\\nGenerates a fake batch of orders each hour, splits 
+… (543 more chars)</pre><div class="tres "><span class="tlab">result</span><pre>{"valid":true,"nodeCount":8}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Validated. Now creating the workflow in n8n.</div></div><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · create_workflow_from_code</span></summary><pre class="tin">{
+  "code": "import { workflow, node, trigger, ifElse, merge, expr, sticky } from '@n8n/workflow-sdk';\n\nconst scheduleTrigger = trigger({\n  type: 'n8n-nodes-base.scheduleTrigger',\n  version: 1.3,\n  config: {\n    name: 'Every Hour',\n    parameters: {\n      rule: {\n        interval: [\n          { field: 'hours', hoursInterval: 1 }\n        ]\n      }\n    },\n    position: [240, 300]\n  },\n  output: [{}]\n});\n\nconst generateOrders = node({\n  type: 'n8n-nodes-base.code',\n  version: 2,\n  config: {\n    name: 'Generate Fake Orders',\n    parameters: {\n      mode: 'runOnceForAllItems',\n      language: 'javaScript'\n    },\n    position: [540, 300]\n  },\n  output: [\n    { id: 'ord-1', amount: 42.5 },\n    { id: 'ord-2', amount: 187.2 }\n  ]\n});\n\nconst checkHighValue = ifElse({\n  version: 2.3,\n  config: {\n    name: 'Check High Value',\n    parameters: {\n      conditions: {\n        options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' },\n        conditions: [\n          {\n            leftValue: expr('{{ $json.amount }}'),\n            operator: { type: 'number', operation: 'gte' },\n            rightValue: 100\n          }\n        ],\n        combinator: 'and'\n      }\n    },\n    position: [840, 300]\n  }\n});\n\nconst tagHighValue = node({\n  type: 'n8n-nodes-base.code',\n  version: 2,\n  config: {\n    name: 'Tag High Value',\n    parameters: {\n      mode: 'runOnceForAllItems',\n      language: 'javaScript'\n    },\n    position: [1140, 200]\n  },\n  output: [{ id: 'ord-2', amount: 187.2, tier: 'high-value' }]\n});\n\nconst tagLowValue = node({\n  type: 'n8n-nodes-base.code',\n  version: 2,\n  config: {\n    name: 'Tag Low Value',\n    parameters: {\n      mode: 'runOnceForAllItems',\n      language: 'javaScript'\n    },\n    position: [1140, 400]\n  },\n  output: [{ id: 'ord-1', amount: 42.5, tier: 'low-value' }]\n});\n\nconst mergeBuckets = merge({\n  version: 3.2,\n  config: {\n    name: 'Merge Buckets',\n    parameters: {\n      mode: 'append'\n    },\n    position: [1440, 300]\n  }\n});\n\nconst summarizeBuckets = node({\n  type: 'n8n-nodes-base.code',\n  version: 2,\n  config: {\n    name: 'Summarize Buckets',\n    parameters: {\n      mode: 'runOnceForAllItems',\n      language: 'javaScript'\n    },\n    position: [1740, 300]\n  },\n  output: [{ total: 2, highValue: 1, lowValue: 1 }]\n});\n\nconst noteOverview = sticky(\n  '## Hourly order value triage\\nGenerates a fake batch of orders each hour, splits 
+… (951 more chars)</pre><div class="tres "><span class="tlab">result</span><pre>{"workflowId":"gNhokj13irV3lbfb","name":"Hourly Order Bucket Summary","nodeCount":8,"url":"http://localhost:5678/workflow/gNhokj13irV3lbfb","autoAssignedCredentials":[],"targetProject":{"id":"Ji17zpiWlsR02Mz6","name":"Priya Ops &lt;priya@flows.local&gt;","type":"personal"},"note":"Workflow description was shortened to 255 characters."}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Created. Now verifying connections landed as intended.</div></div><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_details</span></summary><pre class="tin">{
+  "workflowId": "gNhokj13irV3lbfb"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"workflow":{"id":"gNhokj13irV3lbfb","name":"Hourly Order Bucket Summary","active":false,"isArchived":false,"versionId":"ae19fe54-af96-476c-9065-aabcdc2551d0","activeVersionId":null,"triggerCount":0,"createdAt":"2026-07-24T11:05:21.672Z","updatedAt":"2026-07-24T11:05:21.672Z","settings":{"executionOrder":"v1","availableInMCP":true},"connections":{"Every Hour":{"main":[[{"node":"Generate Fake Orders","type":"main","index":0}]]},"Generate Fake Orders":{"main":[[{"node":"Check High Value","type":"main","index":0}]]},"Check High Value":{"main":[[{"node":"Tag High Value","type":"main","index":0}],[{"node":"Tag Low Value","type":"main","index":0}]]},"Tag High Value":{"main":[[{"node":"Merge Buckets","type":"main","index":0}]]},"Merge Buckets":{"main":[[{"node":"Summarize Buckets","type":"main","index":0}]]},"Tag Low Value":{"main":[[{"node":"Merge Buckets","type":"main","index":1}]]}},"nodes":[{"id":"a7c9d8d6-0b4a-4a7f-8fa0-ac2eb9ed7cdd","name":"Every Hour","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.3,"position":[240,300],"parameters":{"rule":{"interval":[{"field":"hours","hoursInterval":1}]}}},{"id":"a7d4a09f-a605-428e-a9d7-22361fc62b85","name":"Generate Fake Orders","type":"n8n-nodes-base.code","typeVersion":2,"position":[540,300],"parameters":{"mode":"runOnceForAllItems","language":"javaScript"}},{"id":"5bd57c08-8b87-4cb8-9d81-1f44ebb50920","name":"Check High Value","type":"n8n-nodes-base.if","typeVersion":2.3,"position":[840,300],"parameters":{"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict"},"conditions":[{"leftValue":"={{ $json.amount }}","operator":{"type":"number","operation":"gte"},"rightValue":100}],"combinator":"and"}}},{"id":"10d47546-66c0-453e-8c10-83336ad93032","name":"Tag High Value","type":"n8n-nodes-base.code","typeVersion":2,"position":[1140,200],"parameters":{"mode":"runOnceForAllItems","language":"javaScript"}},{"id":"903ac0d4-8ac2-4ed4-b918-e78a651396a3","name":"Merge Buckets","type":"n8n-nodes-base.merge","typeVersion":3.2,"position":[1440,300],"parameters":{"mode":"append"}},{"id":"97268b40-c442-4fca-b52a-577890ef9914","name":"Tag Low Value","type":"n8n-nodes-base.code","typeVersion":2,"position":[1140,400],"parameters":{"mode":"runOnceForAllItems","language":"javaScript"}},{"id":"d31f3d66-a0b6-4aa8-966e-e719e30a7546","name":"Summarize Buckets","type":"n8n-nodes-base.code","typeVersion":2,"position":[1740,300],"parameters":{"mode":"runOnceForAllItems","language":"javaScript"}},{"id":"f8f5df06-8856-4e59-9684-e831ef0c5a5e","name":"Sticky Note f56c52b8","type":"n8n-nodes-base.stickyNote","typeVersion":1,"position":[490,250],"parameters":{"content":"## Hourly order value triage\nGenerates a fake batch of orders each hour, splits by amount (&gt;=100 is high value), tags each side, merges back, then logs a bucket summary. No external services.","color":4,"width":1500,"height":200}}],"nodeGroups":[],"activeVersion":null,"tags":[],"meta":{"aiBuilderAssisted":true,"builderVariant":"mcp"},"parentFolderId":null,"description":"Hourly scheduled workflow that generates fake orders, buckets them into high/low value by amount, tags each bucket, merges the branches back, and logs a summary count per bucket. Built for a code/testing exercise — no external services, pure Code/IF/Merge","scopes":["execution:reveal","workflow:create","workflow:delete","workflow:disableRedaction","workflow:enableRedaction","workflow:execute","workflow:execute-chat","workflow:export","workflow:import","workflow:list","workflow:move","workflow:publish","workflow:read","workflow:share","workflow:unpublish","workflow:unshare","workflow:update"],"canExecute":true},"triggerInfo":"This workflow has the following trigger(s):\n\n\nSchedule trigger(s):\n\n\n\t\t\t\t&lt;trigger 1&gt;\n\t\t\t\t\t - Node name: Every Hour\n\t\t\t\t&lt;/trigger 1&gt;\n\nScheduled workflows can be executed directly through MCP clients and do not require external inputs."}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Connections are correct. Now registering the workflow with decanter and pulling it locally.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/decanter.config.json</span></summary><pre class="tin diff"><span class="dl ddel">-   <span class="ts">"workflows"</span>: []</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [<span class="ts">"gNhokj13irV3lbfb"</span>]</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull gNhokj13irV3lbfb 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote hourly-order-bucket-summary/code/generate-fake-orders.js
+wrote hourly-order-bucket-summary/code/tag-high-value.js
+wrote hourly-order-bucket-summary/code/tag-low-value.js
+wrote hourly-order-bucket-summary/code/summarize-buckets.js
+wrote hourly-order-bucket-summary/workflow.json
+committed: decanter: pulled "Hourly Order Bucket Summary" (gNhokj13irV3lbfb)
+✓ pulled "Hourly Order Bucket Summary" -&gt; /work/workflows/hourly-order-bucket-summary (0.1s)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Pulled successfully — four empty Code node stubs landed in `workflows/hourly-order-bucket-summary/code/`. Now writing the actual logic.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js</pre><div class="tres "><span class="tlab">result</span><pre>&lt;system-reminder&gt;Warning: the file exists but the contents are empty.&lt;/system-reminder&gt;</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/hourly-order-bucket-summary/code/tag-high-value.js</pre><div class="tres "><span class="tlab">result</span><pre>&lt;system-reminder&gt;Warning: the file exists but the contents are empty.&lt;/system-reminder&gt;</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/hourly-order-bucket-summary/code/tag-low-value.js</pre><div class="tres "><span class="tlab">result</span><pre>&lt;system-reminder&gt;Warning: the file exists but the contents are empty.&lt;/system-reminder&gt;</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/hourly-order-bucket-summary/code/summarize-buckets.js</pre><div class="tres "><span class="tlab">result</span><pre>&lt;system-reminder&gt;Warning: the file exists but the contents are empty.&lt;/system-reminder&gt;</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/n8n-globals.d.ts</pre><div class="tres "><span class="tlab">result</span><pre>1	// Ambient globals available inside n8n Code nodes ("Run Once for All Items" /
+2	// "Run Once for Each Item"). Pragmatic subset — loose where n8n is dynamic.
+3	
+4	interface N8nBinaryData {
+5	  data: string;
+6	  mimeType: string;
+7	  fileName?: string;
+8	  fileExtension?: string;
+9	  fileSize?: string;
+10	  directory?: string;
+11	  id?: string;
+12	  [key: string]: unknown;
+13	}
+14	
+15	interface N8nItem {
+16	  json: Record&lt;string, any&gt;;
+17	  binary?: Record&lt;string, N8nBinaryData&gt;;
+18	  pairedItem?: number | { item: number; input?: number };
+19	  error?: Error;
+20	}
+21	
+22	interface N8nInput {
+23	  all(branchIndex?: number, runIndex?: number): N8nItem[];
+24	  first(branchIndex?: number, runIndex?: number): N8nItem;
+25	  last(branchIndex?: number, runIndex?: number): N8nItem;
+26	  /** Only in "Run Once for Each Item" mode. */
+27	  item: N8nItem;
+28	  params?: Record&lt;string, any&gt;;
+29	}
+30	
+31	interface N8nNodeRef {
+32	  all(branchIndex?: number, runIndex?: number): N8nItem[];
+33	  first(branchIndex?: number, runIndex?: number): N8nItem;
+34	  last(branchIndex?: number, runIndex?: number): N8nItem;
+35	  /**
+36	   * The item on this node paired to the current item ("Run Once for Each
+37	   * Item" context). Non-undefined: a missing pairing throws at runtime, it
+38	   * doesn't yield `undefined`. Mirrors `$input.item`.
+39	   */
+40	  item: N8nItem;
+41	  itemMatching(itemIndex: number): N8nItem;
+42	  params: Record&lt;string, any&gt;;
+43	  context: Record&lt;string, any&gt;;
+44	  isExecuted: boolean;
+45	}
+46	
+47	/** Access output of an earlier node: `$("Node Name").all()` */
+48	declare function $(nodeName: string): N8nNodeRef;
+49	
+50	declare const $input: N8nInput;
+51	/** Shorthand for the current item's json ("Run Once for Each Item" mode). */
+52	declare const $json: Record&lt;string, any&gt;;
+53	declare const $binary: Record&lt;string, N8nBinaryData&gt;;
+54	declare const $env: Record&lt;string, string | undefined&gt;;
+55	
+56	declare const $execution: {
+57	  id: string;
+58	  mode: "test" | "production";
+59	  resumeUrl?: string;
+60	  resumeFormUrl?: string;
+61	  customData?: {
+62	    set(key: string, value: string): void;
+63	    get(key: string): string | undefined;
+64	    setAll(values: Record&lt;string, string&gt;): void;
+65	    getAll(): Record&lt;string, string&gt;;
+66	  };
+67	};
+68	
+69	declare const $workflow: { id: string; name: string; active: boolean };
+70	declare const $prevNode: { name: string; outputIndex: number; runIndex: number };
+71	declare const $runIndex: number;
+72	declare const $itemIndex: number;
+73	declare const $nodeVersion: number;
+74	declare const $nodeId: string;
+75	declare const $webhookId: string | undefined;
+76	
+77	/** Per-workflow / per-node persisted store. */
+78	declare function $getWorkflowStaticData(type: "global" | "node"): Record&lt;string, any&gt;;
+79	
+80	/** Query data with JMESPath. Both spellings work — `$jmesPath` is n8n's
+81	 * canonical name; `$jmespath` is an accepted (deprecated) alias. */
+82	declare function $jmespath(data: unknown, expression: string): any;
+83	declare function $jmesPath(data: unknown, expression: string): any;
+84	declare function $evaluateExpression(expression: string, itemIndex?: number): any;
+85	
+86	// NB: `$if`/`$min`/`$max`/`$ifEmpty` are n8n *expression-language* extensions
+87	// (resolved inside `{{ }}` expressions), NOT Code-node runtime globals — they
+88	// are absent from the Code node's `getSandboxContext`, so a Code node calling
+89	// them throws a ReferenceError in real n8n too. Deliberately not declared.
+90	
+91	/**
+92	 * Instance-scoped values — n8n workflow variables and external secrets. Their
+93	 * values live on the running instance, so `node run` can't know them offline:
+94	 * pin them in the fixture or use `test`. See docs/cli/node-run.md.
+95	 */
+96	declare const $vars: Record&lt;string, string&gt;;
+97	declare const $secrets: Record&lt;string, any&gt;;
+98	
+99	/** Legacy helpers */
+100	declare function $items(nodeName?: string, outputIndex?: number, runIndex?: number): N8nItem[];
+101	declare const $node: Record&lt;str
+… (4049 more chars)</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /work/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @typedef {{ id: string, amount: number }} Order */</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> ORDER_COUNT = <span class="tn">8</span>;</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {Order[]} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> orders = [];</span>
+<span class="dl dadd">+ <span class="tk">for</span> (<span class="tk">let</span> i = <span class="tn">0</span>; i &lt; ORDER_COUNT; i++) {</span>
+<span class="dl dadd">+   <span class="tk">const</span> amount = Math.round((Math.random() * <span class="tn">300</span> + <span class="tn">5</span>) * <span class="tn">100</span>) / <span class="tn">100</span>;</span>
+<span class="dl dadd">+   orders.push({ id: <span class="ts">`ord-${$execution.id}-${i + 1}`</span>, amount });</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> orders.map((order) =&gt; ({ json: order }));</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /work/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /work/workflows/hourly-order-bucket-summary/code/tag-high-value.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @typedef {{ id: string, amount: number }} Order */</span></span>
+<span class="dl dadd">+ <span class="tc">/** @typedef {Order &amp; { tier: 'high-value' }} TaggedOrder */</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> items = $input.all();</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {TaggedOrder[]} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> tagged = items.map((item) =&gt; {</span>
+<span class="dl dadd">+   <span class="tk">const</span> order = <span class="tc">/** @type {Order} */</span> (item.json);</span>
+<span class="dl dadd">+   <span class="tk">return</span> { ...order, tier: <span class="tc">/** @type {'high-value'} */</span> (<span class="ts">'high-value'</span>) };</span>
+<span class="dl dadd">+ });</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> tagged.map((order) =&gt; ({ json: order }));</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /work/workflows/hourly-order-bucket-summary/code/tag-high-value.js (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /work/workflows/hourly-order-bucket-summary/code/tag-low-value.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @typedef {{ id: string, amount: number }} Order */</span></span>
+<span class="dl dadd">+ <span class="tc">/** @typedef {Order &amp; { tier: 'low-value' }} TaggedOrder */</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> items = $input.all();</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {TaggedOrder[]} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> tagged = items.map((item) =&gt; {</span>
+<span class="dl dadd">+   <span class="tk">const</span> order = <span class="tc">/** @type {Order} */</span> (item.json);</span>
+<span class="dl dadd">+   <span class="tk">return</span> { ...order, tier: <span class="tc">/** @type {'low-value'} */</span> (<span class="ts">'low-value'</span>) };</span>
+<span class="dl dadd">+ });</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> tagged.map((order) =&gt; ({ json: order }));</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /work/workflows/hourly-order-bucket-summary/code/tag-low-value.js (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /work/workflows/hourly-order-bucket-summary/code/summarize-buckets.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @typedef {{ id: string, amount: number, tier: 'high-value' | 'low-value' }} TaggedOrder */</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> items = $input.all();</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {TaggedOrder[]} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> orders = items.map((item) =&gt; <span class="tc">/** @type {TaggedOrder} */</span> (item.json));</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> highValue = orders.filter((order) =&gt; order.tier === <span class="ts">'high-value'</span>);</span>
+<span class="dl dadd">+ <span class="tk">const</span> lowValue = orders.filter((order) =&gt; order.tier === <span class="ts">'low-value'</span>);</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> summary = {</span>
+<span class="dl dadd">+   total: orders.length,</span>
+<span class="dl dadd">+   highValueCount: highValue.length,</span>
+<span class="dl dadd">+   lowValueCount: lowValue.length,</span>
+<span class="dl dadd">+ };</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ console.log(</span>
+<span class="dl dadd">+   <span class="ts">`Order batch: ${summary.total} total — ${summary.highValueCount} high value, ${summary.lowValueCount} low value`</span></span>
+<span class="dl dadd">+ );</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> [{ json: summary }];</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /work/workflows/hourly-order-bucket-summary/code/summarize-buckets.js (file state is current in your context — no need to Read it back)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now verifying with `check` and running each node offline.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter check 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ Hourly Order Bucket Summary: OK
+✓ typecheck OK</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/generate-fake-orders.js 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running generate-fake-orders.js (runOnceForAllItems)
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 8 items:
+[
+  {
+    "json": {
+      "id": "ord-local-1",
+      "amount": 160.39
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-2",
+      "amount": 170.45
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-3",
+      "amount": 277.35
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-4",
+      "amount": 130.08
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-5",
+      "amount": 106.65
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-6",
+      "amount": 256.45
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-7",
+      "amount": 280.8
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-8",
+      "amount": 303.2
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Good, works. Now let's build a fixture to test the tag and summarize nodes against realistic mixed data.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">mkdir -p /tmp/fixtures
+cat &gt; /tmp/fixtures/mixed-orders.json &lt;&lt;'EOF'
+{
+  "input": [
+    { "json": { "id": "ord-1", "amount": 42.5 } },
+    { "json": { "id": "ord-2", "amount": 187.2 } },
+    { "json": { "id": "ord-3", "amount": 99.99 } },
+    { "json": { "id": "ord-4", "amount": 100 } }
+  ]
+}
+EOF
+cat /tmp/fixtures/mixed-orders.json</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "input": [
+    { "json": { "id": "ord-1", "amount": 42.5 } },
+    { "json": { "id": "ord-2", "amount": 187.2 } },
+    { "json": { "id": "ord-3", "amount": 99.99 } },
+    { "json": { "id": "ord-4", "amount": 100 } }
+  ]
+}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/tag-high-value.js /tmp/fixtures/mixed-orders.json 2&gt;&amp;1
+echo "---"
+npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/tag-low-value.js /tmp/fixtures/mixed-orders.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running tag-high-value.js (runOnceForAllItems) with fixture mixed-orders.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 4 items:
+[
+  {
+    "json": {
+      "id": "ord-1",
+      "amount": 42.5,
+      "tier": "high-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-2",
+      "amount": 187.2,
+      "tier": "high-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-3",
+      "amount": 99.99,
+      "tier": "high-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-4",
+      "amount": 100,
+      "tier": "high-value"
+    }
+  }
+]
+---
+running tag-low-value.js (runOnceForAllItems) with fixture mixed-orders.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 4 items:
+[
+  {
+    "json": {
+      "id": "ord-1",
+      "amount": 42.5,
+      "tier": "low-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-2",
+      "amount": 187.2,
+      "tier": "low-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-3",
+      "amount": 99.99,
+      "tier": "low-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-4",
+      "amount": 100,
+      "tier": "low-value"
+    }
+  }
+]</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat &gt; /tmp/fixtures/tagged-orders.json &lt;&lt;'EOF'
+{
+  "input": [
+    { "json": { "id": "ord-2", "amount": 187.2, "tier": "high-value" } },
+    { "json": { "id": "ord-4", "amount": 100, "tier": "high-value" } },
+    { "json": { "id": "ord-1", "amount": 42.5, "tier": "low-value" } },
+    { "json": { "id": "ord-3", "amount": 99.99, "tier": "low-value" } }
+  ]
+}
+EOF
+npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/summarize-buckets.js /tmp/fixtures/tagged-orders.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running summarize-buckets.js (runOnceForAllItems) with fixture tagged-orders.json
+────────────────────────────────────────────────
+Order batch: 4 total — 2 high value, 2 low value
+────────────────────────────────────────────────
+returned 1 item:
+[
+  {
+    "json": {
+      "total": 4,
+      "highValueCount": 2,
+      "lowValueCount": 2
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">All four Code nodes work as expected. Let's check the overall repo state before wrapping up.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git status &amp;&amp; echo "---" &amp;&amp; git log --oneline -5</pre><div class="tres "><span class="tlab">result</span><pre>On branch main
+Changes not staged for commit:
+  (use "git add &lt;file&gt;..." to update what will be committed)
+  (use "git restore &lt;file&gt;..." to discard changes in working directory)
+	modified:   workflows/hourly-order-bucket-summary/code/generate-fake-orders.js
+	modified:   workflows/hourly-order-bucket-summary/code/summarize-buckets.js
+	modified:   workflows/hourly-order-bucket-summary/code/tag-high-value.js
+	modified:   workflows/hourly-order-bucket-summary/code/tag-low-value.js
+
+Untracked files:
+  (use "git add &lt;file&gt;..." to include in what will be committed)
+	.claude/
+	.cursor/
+	.decanter-template.json
+	.gitignore
+	.mcp.json
+	.vscode/
+	AGENTS.md
+	CLAUDE.md
+	decanter-ts-plugin/
+	decanter.config.json
+	n8n-decanter-0.6.0.tgz
+	n8n-globals.d.ts
+	opencode.json
+	package-lock.json
+	package.json
+	shared/
+	tsconfig.json
+
+no changes added to commit (use "git add" and/or "git commit -a")
+---
+2474a86 decanter: pulled "Hourly Order Bucket Summary" (gNhokj13irV3lbfb)
+4698979 harness: S2 after turn 0</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Built and verified. Summary:
+
+**Workflow:** `Hourly Order Bucket Summary` (n8n id `gNhokj13irV3lbfb`, http://localhost:5678/workflow/gNhokj13irV3lbfb)
+
+Structure (built via n8n MCP, connections verified):
+```
+Every Hour (Schedule, hourly)
+  → Generate Fake Orders (Code)
+  → Check High Value (IF: amount &gt;= 100)
+      true  → Tag High Value (Code) ─┐
+      false → Tag Low Value (Code)  ─┴→ Merge Buckets (Merge, append)
+  → Summarize Buckets (Code: logs counts, returns {total, highValueCount, lowValueCount})
+```
+
+Code lives in `workflows/hourly-order-bucket-summary/code/`:
+- `generate-fake-orders.js` — makes 8 fake orders (`id`, `amount`)
+- `tag-high-value.js` / `tag-low-value.js` — stamp a `tier` field on their branch's items
+- `summarize-buckets.js` — counts each tier and `console.log`s the summary
+
+Verified offline: `n8n-decanter check` (layout + typecheck OK) and `node run` on all four files, including a mixed-amount fixture through the tag/summarize nodes — output shapes are correct.
+
+Two things still open, both need your go-ahead since they touch the live instance:
+1. **`push`** — the code only exists locally right now; n8n's Code nodes are still empty placeholders until pushed to the draft.
+2. **`publish`** — the workflow was created as an inactive draft, so the hourly schedule won't actually fire until you publish it.
+
+Want me to push and publish now, or would you like to review the code/workflow first?</div></div><div class="msg done"><div class="who">↳ turn result · $1.415</div><div class="bubble">Built and verified. Summary:
+
+**Workflow:** `Hourly Order Bucket Summary` (n8n id `gNhokj13irV3lbfb`, http://localhost:5678/workflow/gNhokj13irV3lbfb)
+
+Structure (built via n8n MCP, connections verified):
+```
+Every Hour (Schedule, hourly)
+  → Generate Fake Orders (Code)
+  → Check High Value (IF: amount &gt;= 100)
+      true  → Tag High Value (Code) ─┐
+      false → Tag Low Value (Code)  ─┴→ Merge Buckets (Merge, append)
+  → Summarize Buckets (Code: logs counts, returns {total, highValueCount, lowValueCount})
+```
+
+Code lives in `workflows/hourly-order-bucket-summary/code/`:
+- `generate-fake-orders.js` — makes 8 fake orders (`id`, `amount`)
+- `tag-high-value.js` / `tag-low-value.js` — stamp a `tier` field on their branch's items
+- `summarize-buckets.js` — counts each tier and `console.log`s the summary
+
+Verified offline: `n8n-decanter check` (layout + typecheck OK) and `node run` on all four files, including a mixed-amount fixture through the tag/summarize nodes — output shapes are correct.
+
+Two things still open, both need your go-ahead since they touch the live instance:
+1. **`push`** — the code only exists locally right now; n8n's Code nodes are still empty placeholders until pushed to the draft.
+2. **`publish`** — the workflow was created as an inactive draft, so the hourly schedule won't actually fire until you publish it.
+
+Want me to push and publish now, or would you like to review the code/workflow first?</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">for the summary at the end — just give me one field with the totals, like {high: n, low: n}, not separate items.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/hourly-order-bucket-summary/code/summarize-buckets.js</pre><div class="tres "><span class="tlab">result</span><pre>1	// @ts-check
+2	
+3	/** @typedef {{ id: string, amount: number, tier: 'high-value' | 'low-value' }} TaggedOrder */
+4	
+5	const items = $input.all();
+6	
+7	/** @type {TaggedOrder[]} */
+8	const orders = items.map((item) =&gt; /** @type {TaggedOrder} */ (item.json));
+9	
+10	const highValue = orders.filter((order) =&gt; order.tier === 'high-value');
+11	const lowValue = orders.filter((order) =&gt; order.tier === 'low-value');
+12	
+13	const summary = {
+14	  total: orders.length,
+15	  highValueCount: highValue.length,
+16	  lowValueCount: lowValue.length,
+17	};
+18	
+19	console.log(
+20	  `Order batch: ${summary.total} total — ${summary.highValueCount} high value, ${summary.lowValueCount} low value`
+21	);
+22	
+23	return [{ json: summary }];
+24	</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/workflows/hourly-order-bucket-summary/code/summarize-buckets.js</span></summary><pre class="tin diff"><span class="dl dctx">  <span class="tk">const</span> highValue = orders.filter((order) =&gt; order.tier === <span class="ts">'high-value'</span>);</span>
+<span class="dl dctx">  <span class="tk">const</span> lowValue = orders.filter((order) =&gt; order.tier === <span class="ts">'low-value'</span>);</span>
+<span class="dl dctx">  </span>
+<span class="dl ddel">- <span class="tk">const</span> summary = {</span>
+<span class="dl ddel">-   total: orders.length,</span>
+<span class="dl ddel">-   highValueCount: highValue.length,</span>
+<span class="dl ddel">-   lowValueCount: lowValue.length,</span>
+<span class="dl ddel">- };</span>
+<span class="dl dadd">+ <span class="tk">const</span> totals = { high: highValue.length, low: lowValue.length };</span>
+<span class="dl dctx">  </span>
+<span class="dl ddel">- console.log(</span>
+<span class="dl ddel">-   <span class="ts">`Order batch: ${summary.total} total — ${summary.highValueCount} high value, ${summary.lowValueCount} low value`</span></span>
+<span class="dl ddel">- );</span>
+<span class="dl dadd">+ console.log(<span class="ts">`Order batch: ${totals.high} high value, ${totals.low} low value`</span>);</span>
+<span class="dl dctx">  </span>
+<span class="dl ddel">- <span class="tk">return</span> [{ json: summary }];</span>
+<span class="dl dadd">+ <span class="tk">return</span> [{ json: { totals } }];</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/workflows/hourly-order-bucket-summary/code/summarize-buckets.js has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let's verify with check and a run against the fixture.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter check 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ Hourly Order Bucket Summary: OK
+✓ typecheck OK</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/summarize-buckets.js /tmp/fixtures/tagged-orders.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running summarize-buckets.js (runOnceForAllItems) with fixture tagged-orders.json
+────────────────────────────────────────────────
+Order batch: 2 high value, 2 low value
+────────────────────────────────────────────────
+returned 1 item:
+[
+  {
+    "json": {
+      "totals": {
+        "high": 2,
+        "low": 2
+      }
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Updated — `Summarize Buckets` now returns a single item with one `totals` field: `{ totals: { high: n, low: n } }`. Verified with `check` and a `node run` against the mixed fixture. Still just a local edit — let me know when you'd like this pushed (and published).</div></div><div class="msg done"><div class="who">↳ turn result · $0.963</div><div class="bubble">Updated — `Summarize Buckets` now returns a single item with one `totals` field: `{ totals: { high: n, low: n } }`. Verified with `check` and a `node run` against the mixed fixture. Still just a local edit — let me know when you'd like this pushed (and published).</div></div></div><div class="turn"><div class="turn-h">Turn 3</div><div class="msg user"><div class="who">user</div><div class="bubble">can you run it once so I can see it produces something sane before I trust it?</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter simulate --help 2&gt;&amp;1</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 1
+✗ simulate needs exactly one workflow ref: n8n-decanter simulate &lt;workflow&gt; [--execution &lt;id&gt; | --scenario &lt;slug&gt;]</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter simulate --help 2&gt;&amp;1; echo "---"; npx n8n-decanter --help 2&gt;&amp;1 | head -60</pre><div class="tres "><span class="tlab">result</span><pre>✗ simulate needs exactly one workflow ref: n8n-decanter simulate &lt;workflow&gt; [--execution &lt;id&gt; | --scenario &lt;slug&gt;]
+---
+Usage: n8n-decanter &lt;verb&gt; [workflow…] [flags]
+  Run with no arguments in a terminal for the interactive picker; `help` prints this.
+
+Setup
+  init [dir] [--force] [--host &lt;url&gt; --token &lt;tok&gt; --api-key &lt;key&gt;]
+                                                setup: .env, starter files, config (flags drive it non-interactively)
+  completion zsh|bash                     print a shell completion script for your rc file
+
+Sync (over n8n's MCP server — Code-node source only; structure lives in n8n)
+  pull [workflow…]                        pull code into workflows/&lt;kebab&gt;/ (default: config list)
+  push [workflow…] [--force] [--publish] [--no-typecheck]   push code to the draft (--publish takes it live)
+  watch [workflow]                        watch code/, push each save to the draft
+  publish [workflow…]                     take the draft(s) live
+  unpublish [workflow…]                   return the draft(s) to draft-only
+
+Inspect &amp; test
+  status [workflow…] [--diff]             drift report; exits 1 on conflict/remote drift
+  check [workflow…] [--no-typecheck]      offline layout-compliance check
+  executions [workflow…] [--status=…] [--limit=N]   fetch execution data (numeric arg = one by id)
+  executions [workflow…] clean            delete fetched execution data (offline)
+  data-tables [table…] [--filter=… --search=… --sort=… --limit=N --all]   fetch data-table schema + rows (read-only)
+  data-tables [table…] clean              delete fetched data-table data (offline)
+  test &lt;workflow&gt; [--execution &lt;execution-id&gt; | --scenario &lt;slug&gt;] [--trigger &lt;node&gt;] [--json]
+                                              pinned run on the INSTANCE (draft; recommended); exits 1 on divergence
+  simulate &lt;workflow&gt; [--execution &lt;execution-id&gt; | --scenario &lt;slug&gt;] [--network-none] [--json]
+                                              replay through a LOCAL n8n engine (Docker, offline); exits 1 on divergence
+  preflight [workflow…] [--quick|--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=&lt;ids&gt;]
+                                              the whole verification ladder as one scored, read-only gate (never mutates)
+  list [--remote] [--json]                pulled workflows: name, id, folder
+
+Scenario (named, committed pin-data sets — captured or schema-scaffolded)
+  scenario create &lt;workflow&gt; ["&lt;slug&gt;"] [--execution &lt;id&gt;] [--scaffold]   write a committed scenario from a capture and/or the workflow's schemas
+  scenario check &lt;workflow&gt; ["&lt;slug&gt;"]                     structurally validate a scenario (or all); exits 1 on invalid
+
+Backup (git-native, redeployable disaster-recovery store — REST, needs N8N_API_KEY)
+  backup create &lt;workflow&gt;                  capture the workflow's full REST export into backups/ (not auto-committed)
+  backup restore &lt;workflow&gt; [&lt;backup&gt;]      redeploy a backup as a NEW, unpublished workflow (node ids preserved)
+  backup list &lt;workflow&gt;                    list retained backups: timestamp · versionId · node count
+
+Node
+  node run &lt;node-file&gt; [fixture.json] [--allow-env]  run a node locally (offline)
+
+Agent guard (structure/lifecycle acts go through n8n's MCP — guarded; jsCode writes are blocked toward the file + push flow)
+  mcp connect                             stdio MCP guard for agents — the scaffolded .mcp.json spawns it; no secret
+  mcp serve [--port N]                    HTTP variant: localhost guard-proxy for URL-configured agents
+
+A &lt;workflow&gt; is its id, name, unique name-prefix, or folder name (case-insensitive;
+ambiguity is an error). A ref verb with no &lt;workflow&gt; on a terminal opens the picker.
+An &lt;execution-id&gt; is an n8n execution id (numeric).
+
+Config: decanter.config.json (searched upward from cwd). Credentials: N8N_HOST +
+MCP (OAuth via init, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional)
+powers executions, data-tables, and backup.</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter scenario create "Hourly Order Bucket Summary" happy-path --scaffold 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>scenario "happy-path" written from workflow schemas -&gt; workflows/hourly-order-bucket-summary/scenarios/happy-path.json
+scaffold coverage: 0 with schema, 1 without, 7 run for real (of 8)
+! author runData for 2 nodes: Every Hour, Sticky Note f56c52b8 — see "_decanterScenario", validate with `scenario check happy-path`, then `simulate --scenario happy-path`</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/hourly-order-bucket-summary/scenarios/happy-path.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "happy-path",
+3	  "mode": "manual",
+4	  "workflowVersionId": "ae19fe54-af96-476c-9065-aabcdc2551d0",
+5	  "data": {
+6	    "resultData": {
+7	      "runData": {}
+8	    }
+9	  },
+10	  "_decanterScenario": {
+11	    "source": "scaffold",
+12	    "createdAt": "2026-07-24",
+13	    "workflowVersionId": "ae19fe54-af96-476c-9065-aabcdc2551d0",
+14	    "guidance": "Scenario pin data — synthetic, not a full real capture. For each node in \"fill\", add data.resultData.runData[\"&lt;node&gt;\"] = [ { \"data\": { \"main\": [ [ { \"json\": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample/expectedSchema as context. Keep the \"fill\" list as-is — it records which nodes are synthetic (provenance) and is what \"scenario check\" validates. Validate offline: n8n-decanter scenario check &lt;workflow&gt; happy-path. Then replay: n8n-decanter simulate &lt;workflow&gt; --scenario happy-path.",
+15	    "fill": [
+16	      {
+17	        "node": "Every Hour",
+18	        "type": "n8n-nodes-base.scheduleTrigger",
+19	        "parameters": {
+20	          "rule": {
+21	            "interval": [
+22	              {
+23	                "field": "hours",
+24	                "hoursInterval": 1
+25	              }
+26	            ]
+27	          }
+28	        },
+29	        "inputSample": [],
+30	        "expectedSchema": {
+31	          "$comment": "no schema available from n8n — author a single empty item: [ { \"json\": {} } ]"
+32	        }
+33	      },
+34	      {
+35	        "node": "Sticky Note f56c52b8",
+36	        "type": "n8n-nodes-base.stickyNote",
+37	        "parameters": {
+38	          "color": 4,
+39	          "content": "## Hourly order value triage\nGenerates a fake batch of orders each hour, splits by amount (&gt;=100 is high value), tags each side, merges back, then logs a bucket summary. No external services.",
+40	          "height": 200,
+41	          "width": 1500
+42	        },
+43	        "inputSample": []
+44	      }
+45	    ]
+46	  }
+47	}
+48	</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Fill in the trigger's single empty-item output and the sticky note's no-op output.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/workflows/hourly-order-bucket-summary/scenarios/happy-path.json</span></summary><pre class="tin diff"><span class="dl dctx">    <span class="ts">"data"</span>: {</span>
+<span class="dl dctx">      <span class="ts">"resultData"</span>: {</span>
+<span class="dl ddel">-       <span class="ts">"runData"</span>: {}</span>
+<span class="dl dadd">+       <span class="ts">"runData"</span>: {</span>
+<span class="dl dadd">+         <span class="ts">"Every Hour"</span>: [</span>
+<span class="dl dadd">+           { <span class="ts">"data"</span>: { <span class="ts">"main"</span>: [ [ { <span class="ts">"json"</span>: {} } ] ] } }</span>
+<span class="dl dadd">+         ],</span>
+<span class="dl dadd">+         <span class="ts">"Sticky Note f56c52b8"</span>: [</span>
+<span class="dl dadd">+           { <span class="ts">"data"</span>: { <span class="ts">"main"</span>: [ [ { <span class="ts">"json"</span>: {} } ] ] } }</span>
+<span class="dl dadd">+         ]</span>
+<span class="dl dadd">+       }</span>
+<span class="dl dctx">      }</span>
+<span class="dl dctx">    },</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/workflows/hourly-order-bucket-summary/scenarios/happy-path.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter scenario check "Hourly Order Bucket Summary" happy-path 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ scenario "happy-path": valid</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let's replay the whole workflow offline.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter simulate "Hourly Order Bucket Summary" --scenario happy-path 2&gt;&amp;1</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 1
+✗ simulate needs a running Docker daemon (the engine backend) — start Docker and retry</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">which docker 2&gt;&amp;1; docker info 2&gt;&amp;1 | head -5</pre><div class="tres "><span class="tlab">result</span><pre>/bin/bash: line 1: docker: command not found</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Docker isn't available in this sandbox, so `simulate` (the offline full-workflow replay) can't run here, and `test` (the on-instance replay) would need a `push` first since the instance's Code nodes are still empty placeholders — that's a live-instance action I'd want your go-ahead for. Instead, let me chain the actual node outputs together locally to prove the full pipeline end-to-end.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const { execSync } = require('child_process');
+
+const gen = JSON.parse(execSync('npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/generate-fake-orders.js --json 2&gt;/dev/null || true').toString() || 'null');
+console.log('raw-gen-check');
+"
+</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 1
+&lt;anonymous_script&gt;:1
+running generate-fake-orders.js (runOnceForAllItems)
+^
+
+SyntaxError: Unexpected token 'r', "running ge"... is not valid JSON
+    at JSON.parse (&lt;anonymous&gt;)
+    at [eval]:4:18
+    at runScriptInThisContext (node:internal/vm:209:10)
+    at node:internal/process/execution:446:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:444:60)
+    at evalFunction (node:internal/process/execution:279:30)
+    at evalTypeScript (node:internal/process/execution:291:3)
+    at node:internal/main/eval_string:74:3
+
+Node.js v22.23.1</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/generate-fake-orders.js 2&gt;&amp;1 | tee /tmp/gen-output.txt</pre><div class="tres "><span class="tlab">result</span><pre>running generate-fake-orders.js (runOnceForAllItems)
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 8 items:
+[
+  {
+    "json": {
+      "id": "ord-local-1",
+      "amount": 150.79
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-2",
+      "amount": 168.08
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-3",
+      "amount": 98.39
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-4",
+      "amount": 100.66
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-5",
+      "amount": 150.96
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-6",
+      "amount": 279.59
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-7",
+      "amount": 45.93
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-8",
+      "amount": 208.64
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now applying the workflow's actual IF logic (amount ≥ 100), building the two branch fixtures, and running each Code step exactly as n8n would.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const fs = require('fs');
+const text = fs.readFileSync('/tmp/gen-output.txt', 'utf8');
+const jsonStart = text.indexOf('[');
+const items = JSON.parse(text.slice(jsonStart));
+const orders = items.map(i =&gt; i.json);
+const high = orders.filter(o =&gt; o.amount &gt;= 100);
+const low = orders.filter(o =&gt; o.amount &lt; 100);
+fs.writeFileSync('/tmp/fixtures/high-branch.json', JSON.stringify({ input: high.map(j =&gt; ({ json: j })) }, null, 2));
+fs.writeFileSync('/tmp/fixtures/low-branch.json', JSON.stringify({ input: low.map(j =&gt; ({ json: j })) }, null, 2));
+console.log('high:', high.length, 'low:', low.length);
+"
+</pre><div class="tres "><span class="tlab">result</span><pre>high: 6 low: 2</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/tag-high-value.js /tmp/fixtures/high-branch.json 2&gt;&amp;1 | tee /tmp/high-tagged.txt
+echo "==="
+npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/tag-low-value.js /tmp/fixtures/low-branch.json 2&gt;&amp;1 | tee /tmp/low-tagged.txt</pre><div class="tres "><span class="tlab">result</span><pre>running tag-high-value.js (runOnceForAllItems) with fixture high-branch.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 6 items:
+[
+  {
+    "json": {
+      "id": "ord-local-1",
+      "amount": 150.79,
+      "tier": "high-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-2",
+      "amount": 168.08,
+      "tier": "high-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-4",
+      "amount": 100.66,
+      "tier": "high-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-5",
+      "amount": 150.96,
+      "tier": "high-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-6",
+      "amount": 279.59,
+      "tier": "high-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-8",
+      "amount": 208.64,
+      "tier": "high-value"
+    }
+  }
+]
+===
+running tag-low-value.js (runOnceForAllItems) with fixture low-branch.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 2 items:
+[
+  {
+    "json": {
+      "id": "ord-local-3",
+      "amount": 98.39,
+      "tier": "low-value"
+    }
+  },
+  {
+    "json": {
+      "id": "ord-local-7",
+      "amount": 45.93,
+      "tier": "low-value"
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now merging (append, matching the Merge node's mode) and feeding into the final summary step.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const fs = require('fs');
+function parseItems(path) {
+  const text = fs.readFileSync(path, 'utf8');
+  const jsonStart = text.indexOf('[');
+  return JSON.parse(text.slice(jsonStart));
+}
+const high = parseItems('/tmp/high-tagged.txt');
+const low = parseItems('/tmp/low-tagged.txt');
+const merged = [...high, ...low]; // Merge node mode: append
+fs.writeFileSync('/tmp/fixtures/merged-branch.json', JSON.stringify({ input: merged }, null, 2));
+console.log('merged total:', merged.length);
+"
+npx n8n-decanter node run workflows/hourly-order-bucket-summary/code/summarize-buckets.js /tmp/fixtures/merged-branch.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>merged total: 8
+running summarize-buckets.js (runOnceForAllItems) with fixture merged-branch.json
+────────────────────────────────────────────────
+Order batch: 6 high value, 2 low value
+────────────────────────────────────────────────
+returned 1 item:
+[
+  {
+    "json": {
+      "totals": {
+        "high": 6,
+        "low": 2
+      }
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">That's a full end-to-end run of the actual pipeline logic, offline:
+
+- **Generate Fake Orders** → 8 orders, amounts from $45.93 to $279.59
+- **Check High Value** (amount ≥ 100) → split 6 high / 2 low
+- **Tag High Value** / **Tag Low Value** → each order stamped with its `tier`
+- **Merge Buckets** (append) → all 8 back together
+- **Summarize Buckets** → `{ "totals": { "high": 6, "low": 2 } }`, with the matching `console.log` line
+
+Numbers line up correctly at every stage. This was run node-by-node locally since Docker (needed for `simulate`) isn't available in this sandbox — it exercises the exact same code and logic that's in the repo, just stitched together by hand rather than via one CLI call. If you want a true single-command run through the real n8n engine, I can `push` the code to the draft and run `test`, but that touches the live instance so I'd want your go-ahead first.</div></div><div class="msg done"><div class="who">↳ turn result · $1.493</div><div class="bubble">That's a full end-to-end run of the actual pipeline logic, offline:
+
+- **Generate Fake Orders** → 8 orders, amounts from $45.93 to $279.59
+- **Check High Value** (amount ≥ 100) → split 6 high / 2 low
+- **Tag High Value** / **Tag Low Value** → each order stamped with its `tier`
+- **Merge Buckets** (append) → all 8 back together
+- **Summarize Buckets** → `{ "totals": { "high": 6, "low": 2 } }`, with the matching `console.log` line
+
+Numbers line up correctly at every stage. This was run node-by-node locally since Docker (needed for `simulate`) isn't available in this sandbox — it exercises the exact same code and logic that's in the repo, just stitched together by hand rather than via one CLI call. If you want a true single-command run through the real n8n engine, I can `push` the code to the draft and run `test`, but that touches the live instance so I'd want your go-ahead first.</div></div></div><div class="verify"><h4>Scripted invariants — FAIL (4)</h4><div class="vwf"><b>hourly-order-bucket-summary</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="bad">✗ node "code/generate-fake-orders.js": remote jsCode byte-equals local .js<br><span class="vdet">remote (0b) ≠ local (360b) — first diff around 0</span></li><li class="ok">✓ node "code/generate-fake-orders.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/generate-fake-orders.js": .decanter.json lastPushedHash matches remote</li><li class="bad">✗ node "code/tag-high-value.js": remote jsCode byte-equals local .js<br><span class="vdet">remote (0b) ≠ local (403b) — first diff around 0</span></li><li class="ok">✓ node "code/tag-high-value.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/tag-high-value.js": .decanter.json lastPushedHash matches remote</li><li class="bad">✗ node "code/tag-low-value.js": remote jsCode byte-equals local .js<br><span class="vdet">remote (0b) ≠ local (400b) — first diff around 0</span></li><li class="ok">✓ node "code/tag-low-value.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/tag-low-value.js": .decanter.json lastPushedHash matches remote</li><li class="bad">✗ node "code/summarize-buckets.js": remote jsCode byte-equals local .js<br><span class="vdet">remote (0b) ≠ local (568b) — first diff around 0</span></li><li class="ok">✓ node "code/summarize-buckets.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/summarize-buckets.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S2 after turn 0</span> <span class="vdet">2026-07-24 13:03</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Hourly Order Bucket Summary" (gNhokj13irV3lbfb)</span> <span class="vdet">2026-07-24 11:05</span></summary><pre class="tin"> .../hourly-order-bucket-summary/.decanter.json     |  26 +++
+ .../code/generate-fake-orders.js                   |   0
+ .../code/summarize-buckets.js                      |   0
+ .../code/tag-high-value.js                         |   0
+ .../code/tag-low-value.js                          |   0
+ .../hourly-order-bucket-summary/workflow.json      | 238 +++++++++++++++++++++
+ 6 files changed, 264 insertions(+)
+
+diff --git a/workflows/hourly-order-bucket-summary/.decanter.json b/workflows/hourly-order-bucket-summary/.decanter.json
+new file mode 100644
+index 0000000..7dbbcc4
+--- /dev/null
++++ b/workflows/hourly-order-bucket-summary/.decanter.json
+@@ -0,0 +1,26 @@
++{
++  "workflowId": "gNhokj13irV3lbfb",
++  "nodes": {
++    "a7d4a09f-a605-428e-a9d7-22361fc62b85": {
++      "file": "code/generate-fake-orders.js",
++      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "name": "Generate Fake Orders"
++    },
++    "10d47546-66c0-453e-8c10-83336ad93032": {
++      "file": "code/tag-high-value.js",
++      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "name": "Tag High Value"
++    },
++    "97268b40-c442-4fca-b52a-577890ef9914": {
++      "file": "code/tag-low-value.js",
++      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "name": "Tag Low Value"
++    },
++    "d31f3d66-a0b6-4aa8-966e-e719e30a7546": {
++      "file": "code/summarize-buckets.js",
++      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "name": "Summarize Buckets"
++    }
++  },
++  "name": "Hourly Order Bucket Summary"
++}
+diff --git a/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js b/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js
+new file mode 100644
+index 0000000..e69de29
+diff --git a/workflows/hourly-order-bucket-summary/code/summarize-buckets.js b/workflows/hourly-order-bucket-summary/code/summarize-buckets.js
+new file mode 100644
+index 0000000..e69de29
+diff --git a/workflows/hourly-order-bucket-summary/code/tag-high-value.js b/workflows/hourly-order-bucket-summary/code/tag-high-value.js
+new file mode 100644
+index 0000000..e69de29
+diff --git a/workflows/hourly-order-bucket-summary/code/tag-low-value.js b/workflows/hourly-order-bucket-summary/code/tag-low-value.js
+new file mode 100644
+index 0000000..e69de29
+diff --git a/workflows/hourly-order-bucket-summary/workflow.json b/workflows/hourly-order-bucket-summary/workflow.json
+new file mode 100644
+index 0000000..8c336ad
+--- /dev/null
++++ b/workflows/hourly-order-bucket-summary/workflow.json
+@@ -0,0 +1,238 @@
++{
++  "id": "gNhokj13irV3lbfb",
++  "name": "Hourly Order Bucket Summary",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-07-24T11:05:21.672Z",
++  "updatedAt": "2026-07-24T11:05:21.672Z",
++  "nodes": [
++    {
++      "id": "a7c9d8d6-0b4a-4a7f-8fa0-ac2eb9ed7cdd",
++      "name": "Every Hour",
++      "type": "n8n-nodes-base.scheduleTrigger",
++      "typeVersion": 1.3,
++      "position": [
++        240,
++        300
++      ],
++      "parameters": {
++        "rule": {
++          "interval": [
++            {
++              "field": "hours",
++              "hoursInterval": 1
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "a7d4a09f-a605-428e-a9d7-22361fc62b85",
++      "name": "Generate Fake Orders",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        540,
++        300
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/generate-fake-orders.js",
++        "language": "javaScript",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "5bd57c08-8b87-4cb8-9d81-1f44ebb50920",
++      "name": "Check High Value",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 2.3,
++      "position": [
++        840,
++        300
++      ],
++      "parameters": {
++        "conditions": {
++          "combinator": "and",
++          "conditions": [
++            {
++              "leftValue": "={{ $json.amount }}",
++              "operator": {
++                "operation": "gte",
++                "type": "number"
++              },
++              "rightValue": 100
++            }
++          ],
++          "options": {
++            "caseSensitive": true,
++            "leftValue": "",
++            "typeValidation": "strict"
++          }
++        }
++      }
++    },
++    {
++      "id": "10d47546-66c0-453e-8c10-83336ad93032",
++      "name": "Tag High Value",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        1140,
++        200
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/tag-high-value.js",
++        "language": "javaScript",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "903ac0d4-8ac2-4ed4-b918-e78a651396a3",
++      "name": "Merge Buckets",
++      "type": "n8n-nodes-base.merge",
++      "typeVersion": 3.2,
++      "position": [
++        1440,
++        300
++      ],
++      "parameters": {
++        "mode": "append"
++      }
++    },
++    {
++      "id": "97268b40-c442-4fca-b52a-577890ef9914",
++      "name": "Tag Low Value",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        1140,
++        400
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/tag-low-value.js",
++        "language": "javaScript",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d31f3d66-a0b6-4aa8-966e-e719e30a7546",
++      "name": "Summarize Buckets",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        1740,
++        300
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/summarize-buckets.js",
++        "language": "javaScript",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "f8f5df06-8856-4e59-9684-e831ef0c5a5e",
++      "name": "Sticky Note f56c52b8",
++      "type": "n8n-nodes-base.stickyNote",
++      "typeVersion": 1,
++      "position": [
++        490,
++        250
++      ],
++      "parameters": {
++        "color": 4,
++        "content": "## Hourly order value triage\nGenerates a fake batch of orders each hour, splits by amount (&gt;=100 is high value), tags each side, merges back, then logs a bucket summary. No external services.",
++        "height": 200,
++        "width": 1500
++      }
++    }
++  ],
++  "connections": {
++    "Check High Value": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Tag High Value",
++            "type": "main"
++          }
++        ],
++        [
++          {
++            "index": 0,
++            "node": "Tag Low Value",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Every Hour": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Generate Fake Orders",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Generate Fake Orders": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Check High Value",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Merge Buckets": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Summarize Buckets",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Tag High Value": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Merge Buckets",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Tag Low Value": {
++      "main": [
++        [
++          {
++            "index": 1,
++            "node": "Merge Buckets",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": {
++    "aiBuilderAssisted": true,
++    "builderVariant": "mcp"
++  },
++  "tags": [],
++  "versionId": "ae19fe54-af96-476c-9065-aabcdc2551d0",
++  "description": "Hourly scheduled workflow that generates fake orders, buckets them into high/low value by amount, tags each bucket, merges the branches back, and logs a summary count per bucket. Built for a code/testing exercise — no external services, pure Code/IF/Merge",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S2 after turn 1</span> <span class="vdet">2026-07-24 13:06</span></summary><pre class="tin"> .../code/generate-fake-orders.js                   | 14 +++++++++++++
+ .../code/summarize-buckets.js                      | 23 ++++++++++++++++++++++
+ .../code/tag-high-value.js                         | 14 +++++++++++++
+ .../code/tag-low-value.js                          | 14 +++++++++++++
+ 4 files changed, 65 insertions(+)
+
+diff --git a/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js b/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js
+index e69de29..9c2054b 100644
+--- a/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js
++++ b/workflows/hourly-order-bucket-summary/code/generate-fake-orders.js
+@@ -0,0 +1,14 @@
++// @ts-check
++
++/** @typedef {{ id: string, amount: number }} Order */
++
++const ORDER_COUNT = 8;
++
++/** @type {Order[]} */
++const orders = [];
++for (let i = 0; i &lt; ORDER_COUNT; i++) {
++  const amount = Math.round((Math.random() * 300 + 5) * 100) / 100;
++  orders.push({ id: `ord-${$execution.id}-${i + 1}`, amount });
++}
++
++return orders.map((order) =&gt; ({ json: order }));
+diff --git a/workflows/hourly-order-bucket-summary/code/summarize-buckets.js b/workflows/hourly-order-bucket-summary/code/summarize-buckets.js
+index e69de29..0708d2d 100644
+--- a/workflows/hourly-order-bucket-summary/code/summarize-buckets.js
++++ b/workflows/hourly-order-bucket-summary/code/summarize-buckets.js
+@@ -0,0 +1,23 @@
++// @ts-check
++
++/** @typedef {{ id: string, amount: number, tier: 'high-value' | 'low-value' }} TaggedOrder */
++
++const items = $input.all();
++
++/** @type {TaggedOrder[]} */
++const orders = items.map((item) =&gt; /** @type {TaggedOrder} */ (item.json));
++
++const highValue = orders.filter((order) =&gt; order.tier === 'high-value');
++const lowValue = orders.filter((order) =&gt; order.tier === 'low-value');
++
++const summary = {
++  total: orders.length,
++  highValueCount: highValue.length,
++  lowValueCount: lowValue.length,
++};
++
++console.log(
++  `Order batch: ${summary.total} total — ${summary.highValueCount} high value, ${summary.lowValueCount} low value`
++);
++
++return [{ json: summary }];
+diff --git a/workflows/hourly-order-bucket-summary/code/tag-high-value.js b/workflows/hourly-order-bucket-summary/code/tag-high-value.js
+index e69de29..27bb51c 100644
+--- a/workflows/hourly-order-bucket-summary/code/tag-high-value.js
++++ b/workflows/hourly-order-bucket-summary/code/tag-high-value.js
+@@ -0,0 +1,14 @@
++// @ts-check
++
++/** @typedef {{ id: string, amount: number }} Order */
++/** @typedef {Order &amp; { tier: 'high-value' }} TaggedOrder */
++
++const items = $input.all();
++
++/** @type {TaggedOrder[]} */
++const tagged = items.map((item) =&gt; {
++  const order = /** @type {Order} */ (item.json);
++  return { ...order, tier: /** @type {'high-value'} */ ('high-value') };
++});
++
++return tagged.map((order) =&gt; ({ json: order }));
+diff --git a/workflows/hourly-order-bucket-summary/code/tag-low-value.js b/workflows/hourly-order-bucket-summary/code/tag-low-value.js
+index e69de29..3491ed7 100644
+--- a/workflows/hourly-order-bucket-summary/code/tag-low-value.js
++++ b/workflows/hourly-order-bucket-summary/code/tag-low-value.js
+@@ -0,0 +1,14 @@
++// @ts-check
++
++/** @typedef {{ id: string, amount: number }} Order */
++/** @typedef {Order &amp; { tier: 'low-value' }} TaggedOrder */
++
++const items = $input.all();
++
++/** @type {TaggedOrder[]} */
++const tagged = items.map((item) =&gt; {
++  const order = /** @type {Order} */ (item.json);
++  return { ...order, tier: /** @type {'low-value'} */ ('low-value') };
++});
++
++return tagged.map((order) =&gt; ({ json: order }));
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S2 after turn 2</span> <span class="vdet">2026-07-24 13:07</span></summary><pre class="tin"> .../hourly-order-bucket-summary/code/summarize-buckets.js    | 12 +++---------
+ 1 file changed, 3 insertions(+), 9 deletions(-)
+
+diff --git a/workflows/hourly-order-bucket-summary/code/summarize-buckets.js b/workflows/hourly-order-bucket-summary/code/summarize-buckets.js
+index 0708d2d..f023efa 100644
+--- a/workflows/hourly-order-bucket-summary/code/summarize-buckets.js
++++ b/workflows/hourly-order-bucket-summary/code/summarize-buckets.js
+@@ -10,14 +10,8 @@ const orders = items.map((item) =&gt; /** @type {TaggedOrder} */ (item.json));
+ const highValue = orders.filter((order) =&gt; order.tier === 'high-value');
+ const lowValue = orders.filter((order) =&gt; order.tier === 'low-value');
+ 
+-const summary = {
+-  total: orders.length,
+-  highValueCount: highValue.length,
+-  lowValueCount: lowValue.length,
+-};
++const totals = { high: highValue.length, low: lowValue.length };
+ 
+-console.log(
+-  `Order batch: ${summary.total} total — ${summary.highValueCount} high value, ${summary.lowValueCount} low value`
+-);
++console.log(`Order batch: ${totals.high} high value, ${totals.low} low value`);
+ 
+-return [{ json: summary }];
++return [{ json: { totals } }];
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S2 after turn 3</span> <span class="vdet">2026-07-24 13:08</span></summary><pre class="tin"> .../scenarios/happy-path.json                      | 54 ++++++++++++++++++++++
+ 1 file changed, 54 insertions(+)
+
+diff --git a/workflows/hourly-order-bucket-summary/scenarios/happy-path.json b/workflows/hourly-order-bucket-summary/scenarios/happy-path.json
+new file mode 100644
+index 0000000..26320c9
+--- /dev/null
++++ b/workflows/hourly-order-bucket-summary/scenarios/happy-path.json
+@@ -0,0 +1,54 @@
++{
++  "id": "happy-path",
++  "mode": "manual",
++  "workflowVersionId": "ae19fe54-af96-476c-9065-aabcdc2551d0",
++  "data": {
++    "resultData": {
++      "runData": {
++        "Every Hour": [
++          { "data": { "main": [ [ { "json": {} } ] ] } }
++        ],
++        "Sticky Note f56c52b8": [
++          { "data": { "main": [ [ { "json": {} } ] ] } }
++        ]
++      }
++    }
++  },
++  "_decanterScenario": {
++    "source": "scaffold",
++    "createdAt": "2026-07-24",
++    "workflowVersionId": "ae19fe54-af96-476c-9065-aabcdc2551d0",
++    "guidance": "Scenario pin data — synthetic, not a full real capture. For each node in \"fill\", add data.resultData.runData[\"&lt;node&gt;\"] = [ { \"data\": { \"main\": [ [ { \"json\": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample/expectedSchema as context. Keep the \"fill\" list as-is — it records which nodes are synthetic (provenance) and is what \"scenario check\" validates. Validate offline: n8n-decanter scenario check &lt;workflow&gt; happy-path. Then replay: n8n-decanter simulate &lt;workflow&gt; --scenario happy-path.",
++    "fill": [
++      {
++        "node": "Every Hour",
++        "type": "n8n-nodes-base.scheduleTrigger",
++        "parameters": {
++          "rule": {
++            "interval": [
++              {
++                "field": "hours",
++                "hoursInterval": 1
++              }
++            ]
++          }
++        },
++        "inputSample": [],
++        "expectedSchema": {
++          "$comment": "no schema available from n8n — author a single empty item: [ { \"json\": {} } ]"
++        }
++      },
++      {
++        "node": "Sticky Note f56c52b8",
++        "type": "n8n-nodes-base.stickyNote",
++        "parameters": {
++          "color": 4,
++          "content": "## Hourly order value triage\nGenerates a fake batch of orders each hour, splits by amount (&gt;=100 is high value), tags each side, merges back, then logs a bucket summary. No external services.",
++          "height": 200,
++          "width": 1500
++        },
++        "inputSample": []
++      }
++    ]
++  }
++}
+</pre></details></section>
+
+</main>

@@ -390,7 +390,7 @@ npm run test:smoke    # OPT-IN, dev-only: real n8n in Docker (test/smoke-n8n.mts
                       #   plans/15); needs a running Docker daemon; never part
                       #   of npm test
 npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
-                      #   (scripts/field-test/, Plan 35). stage boots + provisions
+                      #   (test/field-test/, Plan 35). stage boots + provisions
                       #   a throwaway n8n (or FIELD_N8N_URL targets a running one)
                       #   and scaffolds a neutral scratch project, printing a
                       #   manifest. `field-test:run <manifest>` drives blind
@@ -404,6 +404,13 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   The stage packs + locally installs OUR built CLI (no
                       #   global link) + pre-seeds a correct
                       #   .env. Never part of npm test; grading is a separate pass.
+                      #   A round auto-archives to test/field-test/runs/<iso>-<runId>/
+                      #   as raw.tgz (transcripts + verify + guard.log + a
+                      #   credential-free manifest + a bare clone of the workflow
+                      #   history) + report.html — COMMIT BOTH: an agentic round is
+                      #   expensive and irreproducible, and being in git is what
+                      #   keeps it from dying with its worktree. Any view re-renders
+                      #   from the raw: `field-test:report -- --from <raw.tgz>`.
                       #   Teardown: `field-test:stage --down <manifest>`.
 
 node n8n-decanter.mts <init|pull|push|status|check|watch> …
