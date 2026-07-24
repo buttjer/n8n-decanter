@@ -34,6 +34,37 @@ npm run field-test:verify <manifest>           # re-run the invariant checks any
 node scripts/field-test/stage.mts --down <manifest>     # teardown (container + scratch dirs)
 ```
 
+## Container mode (`--container`) — safe UNATTENDED runs
+
+Host mode runs the blind `claude` **unsandboxed on your machine** with auto-`Bash`
+— fine when you're watching, but risky unattended. `--container` runs each blind
+session inside a Docker container that is **egress-fenced to `api.anthropic.com`
+only** (a tinyproxy allowlist sidecar) with **no host filesystem and no host env
+beyond one `ANTHROPIC_API_KEY`**. Even an injected/looping agent can reach only
+Anthropic + the throwaway n8n. See `docker/docker-compose.yml` — it *is* the
+isolation contract. Design + validation notes live in the Plan 35 "Container
+mode" section.
+
+```sh
+cp scripts/field-test/.env.example scripts/field-test/.env   # then add ANTHROPIC_API_KEY (low spend cap)
+npm run field-test:stage                                     # prints MANIFEST=<path>
+node scripts/field-test/run.mts <manifest> --container --precheck   # $0 plumbing check: baked CLI loads + n8n reachable
+node scripts/field-test/run.mts <manifest> --container --smoke      # one fenced claude turn → READY
+node scripts/field-test/run.mts <manifest> --container S1 S2 S3 S4  # the fenced blind round
+node scripts/field-test/stage.mts --down <manifest>                 # teardown
+```
+
+- The key is read via `docker compose --env-file scripts/field-test/.env`; it
+  flows only into the `agent` service (never the proxy, never a log, never git).
+- The CLI + `typescript` are **baked into a per-run image at build time** (the
+  fence has no npm registry); the host's macOS `node_modules` are shadowed so
+  nothing platform-wrong runs. `FIELD_RUN_BUDGET_MIN` (default 60) is a total
+  wall-clock kill so an unattended round can't run — or bill — forever.
+- `S5` (`watch`) stays host-only (`fs.watch` on container mounts is unreliable).
+- Invoke `run.mts`/`stage.mts` **directly** (not via `npm run …`) when driving
+  from a sandboxed agent, so the `node scripts/field-test/*` sandbox exclusion
+  applies and `docker build` can run.
+
 `run.mts <manifest> S1 --dry-run` prints the filled turns and spawns nothing.
 
 ## Debugging

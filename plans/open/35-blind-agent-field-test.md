@@ -417,6 +417,62 @@ logging). Cost envelope is the same small ~4–6 Sonnet sessions + Opus grading.
 This validates that a real bug the field test surfaced is fixed *the way it's
 consumed* — the payoff loop of the whole exercise.
 
+## Container mode — safe, unattended blind runs (2026-07-24)
+
+**Why.** Round 1/2 run the blind Sonnet sessions **unsandboxed on the host** with
+`Bash` auto-approved and no human review — fine *supervised*, but the maintainer
+wants **unattended** rounds, and unattended + unsandboxed-auto-`Bash` is the one
+combination that's genuinely unsafe (nothing to Ctrl-C an injected/looping
+agent). A container is also a *cleaner* user analogue than the tool developer's
+own machine (neutral env, pinned toolchain), so isolation improves fidelity here
+rather than hurting it. Decision (2026-07-24, after a safety review with the
+maintainer): the nested agents run in a **Docker container, egress-fenced**.
+
+**Isolation contract** (`scripts/field-test/docker/`, the compose file *is* the
+audit surface):
+- The `agent` container is on an **`internal`-only** docker network — no host
+  filesystem, no host loopback, no host env beyond a single `ANTHROPIC_API_KEY`
+  (from a gitignored `scripts/field-test/.env`, via `--env-file`).
+- Its **only** egress is a `proxy` sidecar (tinyproxy allowlist) that forwards to
+  **`api.anthropic.com` and nothing else** (`FilterDefaultDeny`). So an injected
+  or looping agent cannot exfiltrate the key or reach any other host. **Fail-closed:**
+  a misconfig means claude can't reach Anthropic and the run dies, never leaks.
+- The staged **throwaway n8n** is `docker network connect`-ed to the internal net
+  so the agent reaches it by container name; the host keeps its published port for
+  `verify.mts` / provisioning.
+- **Validated 2026-07-24** against a real key: from inside the fenced container,
+  `example.com` is unreachable *and* proxy-denied while `api.anthropic.com` is
+  reachable, and `claude -p` authenticates via `ANTHROPIC_API_KEY` **through
+  `HTTPS_PROXY`** and returns a result (Claude Code honors the proxy — the one
+  real unknown, now retired).
+
+**Design constraints the wiring must respect:**
+- **The fence blocks the npm registry**, so the decanter CLI + deps are **baked
+  into the agent image at build time** (build is unfenced) — a per-run image
+  `FROM` a stable base + the stage's packed tarball; **no runtime `npm install`**
+  inside the fenced container. (Widening the allowlist to npm was rejected — it
+  reopens a large egress surface.)
+- The host's macOS `node_modules` must never run in Linux (native deps like
+  esbuild): the container uses its **baked, Linux-native** CLI, not the workDir's.
+- The in-container `.env` `N8N_HOST` is rewritten to the n8n's **in-network name**
+  (`http://<container>:5678`); `manifest.host` stays the host-published URL for
+  host-side `verify.mts`. The agent works in-container; verify works on the host.
+- `S1–S4` run in-container; **`S5` (`watch`) stays host/optional** — `fs.watch`
+  on container bind-mounts is unreliable. A **total wall-clock kill** (default 60
+  min, `FIELD_RUN_BUDGET_MIN`) bounds an unattended round on top of the per-turn
+  timeout.
+
+**Status (2026-07-24):** container mode **BUILT + VALIDATED end-to-end** (foundation
++ `run.mts --container`/`stage.mts` wiring: per-run baked image, internal network
++ n8n join, per-turn `docker exec`, in-network `.env`, guard.log/artifact
+extraction, wall-clock cap). Proven against a real stage with **zero claude
+spend** via `run.mts --container --precheck` (baked CLI loads + n8n reachable
+from inside the fence) on top of the earlier egress-fence + claude-auth
+validation. **The first real fenced round RAN + was graded 2026-07-24** — see
+"Run report — round 2": S1+S2 pass, S3's drift guard fires, S4 surfaces a new
+`.js→.ts` "converted-but-not-pushed" finding; the container isolation held with
+no loss of test quality.
+
 ## Harness status — capabilities (2026-07-23)
 
 **Built (Tasks 1–3 + 6), in `scripts/field-test/`:**
@@ -518,3 +574,70 @@ the missing hooks in mind.
   the template for "field-test the release" passes.
 - Auth realism: S1's token-paste path is the *honest* headless story today;
   if a future wave makes OAuth consent agent-drivable, add a scenario then.
+
+## Run report — round 2 (fenced container, 2026-07-24)
+
+**First round run in the new egress-fenced container harness**
+(`run.mts --container`) — 4 blind Sonnet sessions, fully isolated
+(Anthropic-only egress, no host FS/env), unattended. This both **validates the
+three round-1 fixes under a real n8n** and **proves the container harness
+end-to-end**.
+
+**Per-scenario (verify = `verify.mts`):**
+- **S1 — PASS (5/5).** `init` (pre-seeded `.env`) → author `normalize.js` →
+  `push` → `publish` → `test`. Full flow, clean.
+- **S2 — PASS (headline).** The fenced agent **built a 6-node workflow**
+  (schedule → generate → IF → tag-high/tag-low → merge → summarize), **every
+  Code node via files + push, all byte-equal, zero rogue `jsCode`**, and ran it
+  live (execution 5). Core value prop holds — *inside the fence*.
+- **S3 — drift guard fired (verify "FAIL" = the drift itself, working as
+  designed).** The harness drifted the `Normalize` node instance-side; the agent
+  **detected the conflict and refused to push** ("someone edited … bypassing the
+  repo"). Round-1's S3 was inconclusive (wrong node drifted); the realigned S3
+  now exercises the guard correctly.
+- **S4 — mixed.** Workflow rename + node rename + `archive_workflow` via the
+  guard all worked; the **`.js`→`.ts` conversion surfaced finding 1**.
+
+**Three round-1 fixes — regression check:**
+- **#142 (init https-for-local): no recurrence.** S1's `init` on a pre-seeded
+  local-`http` `.env` synced fine; the guard reached n8n (no `fetch failed`).
+- **#143 (`.js`→`.ts` pull/push reconcile): not regressed** — see finding 1: the
+  agent never `push`ed the conversion, so the reconcile (which runs on
+  push/pull) never executed. #143 is correct for its scope.
+- **#144 (non-interactive init flags): not exercised** — the stage pre-seeds a
+  correct `.env`, so `init` reused it without prompting (a `FIELD_NO_SEED_ENV`
+  variant would exercise the flags).
+
+**Findings (ranked):**
+1. **`.js`→`.ts` conversion left unregistered — agent ran `check`, not `push`
+   (P2, product/UX).** S4 turn 3: the agent wrote `generate-fake-orders.ts`,
+   re-pointed the `//@file:` placeholder to `.ts` (correctly), `rm`'d the `.js`,
+   then ran **`n8n-decanter check`** — which reported **"All green"** — and
+   stopped. It **never pushed**, so the compiled `.ts` never reached the remote
+   and `.decanter.json` still points at the deleted `.js` (verify:
+   `… .js in .decanter.json but missing on disk`). **Not a #143 bug** (no sync
+   ran). Two sub-issues: (a) an agent doing MCP **structure** edits (rename/
+   archive, no push) didn't realize the **code** conversion still needs a
+   `push`; (b) **`check` passes green while `.decanter.json` references a file
+   missing on disk** — candidate product fix: `check`/`status` should flag a
+   stale/missing node-file reference (would have caught this immediately).
+2. **Blinding leak: the packed CLI's `package.json` exposes the `field-test:*`
+   scripts (P3, harness).** The S1 agent read the installed CLI's `package.json`
+   (npm-pack ships all `scripts`) and saw `"field-test:stage": …` etc. It did
+   **not** infer an evaluation (its own reasoning never mentions it; the broader
+   eval-awareness scan is clean), so the run is gradeable — but the harness
+   should strip the `field-test:*` (and other dev) scripts from the packed
+   `package.json` before install. Pre-existing (host mode too), not
+   container-specific.
+3. **Positive — file-first held, guard never blocked.** `guard.log` has **zero**
+   blocked `jsCode`-over-MCP writes across all four scenarios: the scaffolded
+   `AGENTS.md` steered the agent file-first for all code, even fenced (Plan 50
+   evidence: the contract pre-empts the routing nudge).
+4. **Positive — the container harness works and doesn't degrade the test.** Four
+   blind Sonnet sessions ran fully **egress-fenced** (Anthropic-only), no host
+   access, unattended, and produced the **same quality** as host mode (S1/S2
+   pass, S3 guard fires). The safety redesign the maintainer's concern drove is
+   proven in a real round.
+
+**Artifacts:** transcripts + `verify-S*.json` + `guard.log` in the scratch
+`harnessRoot` (not committed); container torn down clean.

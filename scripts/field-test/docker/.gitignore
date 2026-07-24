@@ -1,0 +1,7 @@
+# Default bind-mount target for the bare `docker compose up` smoke (run.mts sets
+# FIELD_WORKDIR to a real staged dir for actual rounds). A scratch artifact.
+.smoke-work/
+
+# Per-run artifacts run.mts generates to bake the CLI into the fenced agent image.
+cli.tgz
+Dockerfile.agent-baked

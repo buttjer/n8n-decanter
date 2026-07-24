@@ -1,0 +1,63 @@
+# Containerized blind-agent field test (Plan 35 container mode). The isolation
+# contract is THIS FILE — read it to see exactly what the nested Sonnet can touch:
+#
+#  - `agent` is on the `internal` network ONLY (internal: true → no route to the
+#    internet, no host loopback). Its sole path out is the `proxy`.
+#  - `proxy` is dual-homed (internal + egress); it forwards to api.anthropic.com
+#    and nothing else (Dockerfile.proxy / tinyproxy allowlist). So an injected or
+#    looping agent cannot exfiltrate the key or reach arbitrary hosts. Fail-closed.
+#  - the agent gets ONE credential — ANTHROPIC_API_KEY, from --env-file
+#    scripts/field-test/.env — and no other host env.
+#  - no published ports on the agent; the host reaches the throwaway n8n by its
+#    own published port (set up by stage.mts), never through here.
+#
+# run.mts sets the FIELD_* vars per run and `docker network connect`s the staged
+# n8n container to the `internal` net so the agent reaches it by name. The bare
+# `up` (defaults below) is enough for the claude-through-proxy smoke.
+name: decanter-fieldtest
+
+networks:
+  internal:
+    internal: true   # agent + proxy (+ the connected n8n): no external route
+  egress:            # the proxy's only way out
+    driver: bridge
+
+volumes:
+  agent_node_modules:   # Linux-native deps; shadows the host's macOS node_modules
+
+services:
+  proxy:
+    # Built by run.mts (docker build) before `up`; `build:` documents provenance
+    # and lets a standalone `docker compose up --build` work for a dev smoke.
+    image: decanter-fieldtest-proxy
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    networks: [internal, egress]
+    restart: unless-stopped
+
+  agent:
+    # Default: the CLI-less base (for the claude-through-proxy smoke). run.mts
+    # sets FIELD_AGENT_IMAGE to the per-run image that bakes the decanter CLI
+    # (build-time, unfenced) — the fence blocks a runtime npm install.
+    image: ${FIELD_AGENT_IMAGE:-decanter-fieldtest-agent}
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    depends_on: [proxy]
+    networks: [internal]
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in scripts/field-test/.env}
+      HTTPS_PROXY: http://proxy:8888
+      HTTP_PROXY: http://proxy:8888
+      # n8n (by container name) + localhost must bypass the proxy — they're on the
+      # internal net; the proxy would deny them (Anthropic-only allowlist).
+      NO_PROXY: ${FIELD_NO_PROXY:-localhost,127.0.0.1}
+      no_proxy: ${FIELD_NO_PROXY:-localhost,127.0.0.1}
+    volumes:
+      - ${FIELD_WORKDIR:-./.smoke-work}:/work
+      - agent_node_modules:/work/node_modules   # shadow the host's macOS node_modules
+      - ${FIELD_HARNESS:-./.smoke-work}:/harness # guard.log + artifacts land back on the host
+    mem_limit: 2g
+    cpus: "2"
+    # kept alive per scenario; each turn is `docker compose exec agent claude …`

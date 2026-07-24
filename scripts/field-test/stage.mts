@@ -27,7 +27,7 @@
 //   FIELD_API_KEY=<key>     (FIELD_N8N_URL mode) a public API key for that instance
 //   FIELD_KEEP=1            (--down) keep the container; only remove harness dirs
 import { execFile as execFileCb } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,7 +54,6 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 if (process.argv.includes("--down")) {
   const mfPath = process.argv[process.argv.indexOf("--down") + 1];
   if (!mfPath) { console.error("--down needs a manifest path"); process.exit(2); }
-  const { readFileSync } = await import("node:fs");
   const mf = JSON.parse(readFileSync(mfPath, "utf8")) as { container: string | null; harnessRoot: string; workDir: string };
   if (mf.container && process.env.FIELD_KEEP !== "1") {
     await docker("rm", "-f", mf.container).catch(() => {});
@@ -211,8 +210,24 @@ async function provision(): Promise<{ container: string | null; seeded: SeedResu
   return { container, seeded };
 }
 
+
+/**
+ * Merge harness overrides into the workDir's `.claude/settings.local.json` — the
+ * LOCAL layer (highest precedence), which the HARNESS owns. The template's
+ * `settings.json` (the project contract: the DENY rules this test verifies) is
+ * never touched, so the two layers stay separated regardless of which filename
+ * the template ships. Creates the file when absent.
+ */
+function mergeLocalSettings(workDir: string, patch: Record<string, unknown>): void {
+  const file = path.join(workDir, '.claude', 'settings.local.json');
+  let current: Record<string, unknown> = {};
+  try { current = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>; } catch { /* absent or unreadable — start fresh */ }
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2) + '\n');
+}
+
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean }> {
+async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null }> {
   const base = os.tmpdir();
   const workDir = path.join(base, `flows-ops-${PID}`);
   const harnessRoot = path.join(base, `ftrun-${PID}`);
@@ -221,13 +236,15 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   mkdirSync(workDir, { recursive: true });
   mkdirSync(path.join(harnessRoot, "transcripts"), { recursive: true });
 
-  // The blind session runs UNSANDBOXED (Plan 35 §Cast — nested claude needs to
-  // reach the local n8n; the default Claude Code Bash sandbox allowlists only
-  // npm/GitHub egress and would refuse 127.0.0.1:<n8n port>, forcing the agent
-  // offline). Disable the nested session's sandbox via a workDir settings.json
-  // (separate from the settings.local.json init scaffolds + run.mts extends).
   mkdirSync(path.join(workDir, ".claude"), { recursive: true });
-  writeFileSync(path.join(workDir, ".claude", "settings.json"), JSON.stringify({ sandbox: { enabled: false } }, null, 2) + "\n");
+  // NB: the harness's own overrides (sandbox-disable, allow-extension) are merged
+  // into `.claude/settings.local.json` AFTER init — see mergeLocalSettings below.
+  // They deliberately do NOT live in `.claude/settings.json`: that file is the
+  // TEMPLATE's project contract (the DENY rules this test verifies), while
+  // settings.local.json is the local override layer with the highest precedence.
+  // Writing them pre-init used to be necessary only because the stage ran before
+  // init could clobber the file; the stage runs init itself now, so the ordering
+  // constraint is gone and the two layers stay cleanly separated.
 
   // a git repo from the start (a real user "keeps flows in a git folder"); neutral author
   await execFile("git", ["-C", workDir, "init", "-q"]);
@@ -261,6 +278,9 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   const spec = process.env.FIELD_DECANTER_SPEC;
   writeFileSync(path.join(workDir, "package.json"), JSON.stringify({ name: "flows-ops", private: true, dependencies: { "n8n-decanter": spec ?? "^0.6.0" } }, null, 2) + "\n");
   let decanterInstalled = false;
+  // The packed tarball (host mode installs it into workDir; CONTAINER mode bakes
+  // it into the fenced agent image at build time — the runtime fence has no npm).
+  let cliTarball: string | null = null;
   try {
     if (spec) {
       await execFile("npm", ["install", "--no-audit", "--no-fund", spec], { cwd: workDir });
@@ -269,7 +289,8 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
       // `npm pack` runs prepack (build → dist/) and prints the tarball name as JSON.
       const { stdout } = await execFile("npm", ["pack", "--pack-destination", workDir, "--json"], { cwd: PACKAGE_ROOT });
       const tgz = (JSON.parse(stdout) as Array<{ filename: string }>)[0].filename;
-      await execFile("npm", ["install", "--no-audit", "--no-fund", path.join(workDir, tgz)], { cwd: workDir });
+      cliTarball = path.join(workDir, tgz);
+      await execFile("npm", ["install", "--no-audit", "--no-fund", cliTarball], { cwd: workDir });
       console.log(`packed + locally installed n8n-decanter (${tgz}) — no global link`);
     }
     decanterInstalled = true;
@@ -277,9 +298,42 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
     console.warn(`providing n8n-decanter failed (${(err as Error).message.split("\n")[0]}) — the agent may not discover the CLI`);
   }
 
+  // Pre-run `init` so the blind session starts from a READY project (maintainer
+  // call 2026-07-24: setup is not what the scenarios measure — the agent should
+  // arrive at a configured dir like a returning user). Scaffolds .mcp.json (the
+  // guard the agent will use), AGENTS.md, .claude/, decanter.config.json,
+  // tsconfig, n8n-globals.d.ts. Driven by the NON-INTERACTIVE flags (#144) — the
+  // very path round-1 finding 3 produced — so it also works under
+  // FIELD_NO_SEED_ENV=1, where there is no .env to reuse.
+  let inited = false;
+  if (decanterInstalled) {
+    try {
+      const bin = path.join(workDir, "node_modules", ".bin", "n8n-decanter");
+      const args = ["init", ".", "--host", HOST, "--token", MCP];
+      if (KEY) args.push("--api-key", KEY);
+      await execFile(bin, args, { cwd: workDir });
+      inited = true;
+      console.log("ran `n8n-decanter init` (non-interactive) — the agent arrives at a configured project");
+      // …and install the sync dir's own devDeps (typescript, the ts plugin) that
+      // init's package.json declares, so the blind agent never has to run
+      // `npm install` either. Setup is not what the scenarios measure.
+      await execFile("npm", ["install", "--no-audit", "--no-fund"], { cwd: workDir })
+        .then(() => console.log("ran `npm install` in the project — devDeps present before the blind session"))
+        .catch((e) => console.warn(`npm install after init failed (${(e as Error).message.split("\n")[0]})`));
+      // The blind session runs UNSANDBOXED (Plan 35 §Cast — nested claude must
+      // reach the local n8n; Claude Code's default Bash sandbox allowlists only
+      // npm/GitHub egress and would refuse 127.0.0.1:<n8n port>). In CONTAINER
+      // mode the container is the real boundary, so this is belt-and-braces.
+      // Merged into the LOCAL layer, never the template's settings.json.
+      mergeLocalSettings(workDir, { sandbox: { enabled: false } });
+    } catch (err) {
+      console.warn(`init failed (${(err as Error).message.split("\n")[0]}) — the blind agent would have to run it itself`);
+    }
+  }
+
   // install the official n8n skills pack the way a real user would
   const skills = await installSkillsPack(workDir);
-  return { workDir, harnessRoot, skills, decanterInstalled };
+  return { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec: spec ?? null };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -305,7 +359,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, harnessRoot, skills, decanterInstalled } = await scaffold();
+  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -319,6 +373,12 @@ try {
     root: "workflows",
     skills,
     decanterInstalled,
+    // the stage pre-ran init, so scenarios start from a configured project
+    inited,
+    // Container mode (run.mts --container) bakes one of these into the fenced
+    // agent image: the local packed tarball, or the npm spec (FIELD_DECANTER_SPEC).
+    cliTarball,
+    decanterSpec,
     seeded,
     allowExtension: ALLOW_EXTENSION,
   };
