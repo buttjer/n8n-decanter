@@ -25,7 +25,7 @@
 //   node scripts/field-test/run.mts <manifest.json> [S1 S2 …]   # default: S1–S4
 //   node scripts/field-test/run.mts <manifest.json> --dry-run    # print turns, spawn nothing
 //   node scripts/field-test/run.mts --help
-import { execFile as execFileCb, spawn } from "node:child_process";
+import { execFile as execFileCb, execFileSync, spawn } from "node:child_process";
 import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -334,6 +334,13 @@ async function archiveRun(): Promise<void> {
     mkdirSync(dest, { recursive: true });
     cpSync(HARNESS, path.join(dest, "harness"), { recursive: true });
     if (existsSync(WORKDIR)) cpSync(WORKDIR, path.join(dest, "work"), noNodeModules);
+    // ALSO dump the synced progression as plain text — readable without git, and a
+    // hedge against the .git copy being awkward to use. (Three layers are kept on
+    // purpose: transcripts = per-EDIT, .git = per-SYNC canonical, this = flat view.)
+    try {
+      const diff = execFileSync("git", ["-C", WORKDIR, "log", "-p", "--", "workflows"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+      if (diff.trim()) writeFileSync(path.join(dest, "workflow-progression.diff"), diff);
+    } catch { /* no git / no commits yet — the .git copy and transcripts still carry it */ }
     // a manifest whose paths point at the ARCHIVED copies, so a view re-renders
     // straight from the archive: `node scripts/field-test/report.mts <dest>/manifest.json`
     writeFileSync(path.join(dest, "manifest.json"), JSON.stringify({ ...manifest, harnessRoot: path.join(dest, "harness"), workDir: path.join(dest, "work") }, null, 2));
