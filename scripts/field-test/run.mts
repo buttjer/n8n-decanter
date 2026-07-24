@@ -276,6 +276,31 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
   });
 }
 
+/**
+ * Harness-owned, per-TURN snapshot of the workflows tree.
+ *
+ * Deliberately does NOT rely on the system under test for observability. The
+ * workDir's git history only contains what decanter chose to auto-commit (on
+ * pull/push) — so a change the agent never pushed is INVISIBLE there. Round 2's
+ * S4 is the proof: the `.js`→`.ts` conversion (write .ts, re-point placeholder,
+ * rm .js) was followed by `check`, never `push`, so it never reached a commit.
+ * A field test must not measure with the instrument it is testing. These
+ * snapshots are actor-agnostic (agent edits, pull overwrites, live-mirror
+ * writes, harness drift injection all show up) and complete at a known cadence.
+ * Cheap: the workflows tree is a few KB of text.
+ */
+function snapshotWorkflows(scenario: string, turn: number): void {
+  const src = path.join(WORKDIR, "workflows");
+  if (!existsSync(src)) return; // nothing pulled yet (e.g. before turn 1's init)
+  const dest = path.join(HARNESS, "snapshots", scenario, `turn-${turn}`);
+  try {
+    mkdirSync(path.dirname(dest), { recursive: true });
+    cpSync(src, dest, { recursive: true });
+  } catch (e) {
+    console.warn(`  snapshot ${scenario}/turn-${turn} failed: ${(e as Error).message.split("\n")[0]}`);
+  }
+}
+
 // ---------- run one scenario ----------
 async function runScenario(id: string): Promise<{ id: string; verifyExit: number | null; turns: number }> {
   const scn = loadScenario(id);
@@ -291,6 +316,7 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   if (scn.preHook === "remote-drift") await remoteDrift();
 
   let sessionId: string | undefined;
+  snapshotWorkflows(id, 0); // baseline, so turn 1's effect is diffable
   for (let i = 0; i < turns.length; i++) {
     console.log(`\n[${id}] turn ${i + 1}/${turns.length} ${sessionId ? `(resume ${sessionId.slice(0, 8)})` : "(new session)"}`);
     const transcript = path.join(outDir, `turn-${i + 1}.jsonl`);
@@ -298,6 +324,7 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
     sessionId ??= sid;
     console.log(`  → ${resultText.slice(0, 200).replace(/\n/g, " ")}${resultText.length > 200 ? "…" : ""}`);
     if (i === 0) applyPostInit(); // init scaffolded .claude/ + .mcp.json — wire capture + allows now
+    snapshotWorkflows(id, i + 1); // tool-independent record of what actually changed
   }
 
   // scripted invariant verifier
