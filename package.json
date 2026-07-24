@@ -1,6 +1,6 @@
 {
   "name": "n8n-decanter",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "The toolkit for building code-heavy n8n workflows — agent-first, MCP-native",
   "keywords": [
     "n8n",
