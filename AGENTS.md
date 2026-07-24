@@ -257,6 +257,16 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   on the required checks — markdown-only changes can't *fail* them, but they
   still gate the merge, so watch them to green (`gh pr checks <n> --watch`)
   before merging.
+- **A `chore/release-*` PR additionally runs the full Docker smoke suite
+  automatically** (`test/smoke-n8n.mts` across the 3 pinned n8n tags). Every
+  other PR skips it — it boots real containers and is far too slow for the
+  per-PR gate — so a release is the one merge that always has a real-instance
+  run behind it. It is deliberately **not** in the ruleset's required-check
+  list: a skipped matrix job reports its name with `${{ matrix.n8n_tag }}`
+  unexpanded, which would never match a required entry and would hang every
+  ordinary PR. So **read the smoke result yourself before merging a release**
+  (`gh pr checks <n> --watch`). Off-cycle, run it on any branch with
+  `gh workflow run ci.yml --ref <branch>`.
 - **Every repo-modifying task runs in its own worktree — no exceptions,
   docs and Markdown included.** There is no "fast path" that branches in the
   main checkout: the main checkout is *shared*, so a concurrent session (or the
