@@ -832,8 +832,27 @@ class of bug the buffering prompt helper solved in the API era; rediscovered
 when init grew multiple questions).
 
 The template machinery (dpkg-conffile-style `.decanter-template.json`
-manifest, `X.example` materialization, `--force` semantics) is unchanged from
-plans/16. The template's agent contract (`AGENTS.md.example`) was rewritten
+manifest, `X.example` materialization, `--force` semantics) is otherwise
+unchanged from plans/16, but Plan 56 added the one case it could not express:
+**a template file that changes NAME**. The manifest is keyed by path, so a
+rename otherwise reads as "delete one, add another" and both copies coexist —
+which for a settings file means the stale one silently keeps applying.
+`TEMPLATE_RENAMES` in `lib/init.mts` lists `{from, to}` pairs resolved *before*
+the scan, file-driven rather than manifest-driven (a rename doesn't change
+contents, so hashing answers "is this decanter's copy, untouched?" even for
+dirs pre-dating manifests): not ours → untouched; ours and pristine → deleted
+so the scan lands the new name; ours but edited → kept, and the new name is
+**skipped** this run (writing both would double-register the hooks), with the
+old key carried over in the manifest so the *next* re-init can still tell it
+from a user file; both present → reported only. `--force` removes the old file
+regardless, per its reset contract. Its first use:
+`.claude/settings.local.json` → `.claude/settings.json` — project policy
+(decanter's verb permissions + the `verify.mjs`/`mcp-route-check.mjs` hooks),
+already committed and manifest-tracked, so `local` was the wrong scope *and* it
+squatted Claude Code's per-user override slot. Permission lists merge across
+scopes and `deny` beats `allow`, so the demotion does not weaken the denies.
+
+The template's agent contract (`AGENTS.md.example`) was rewritten
 for Plan 32: Code-node source is authored as files and synced by decanter —
 never edited on the instance (UI, MCP tools, or skills); `workflow.json` is a
 read-only snapshot; structure/lifecycle may go through n8n's MCP tools and

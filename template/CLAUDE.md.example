@@ -4,11 +4,15 @@
 
 The contract above (from `AGENTS.md`) is authoritative. A few Claude-only notes:
 
-- **File-level invariants are enforced by `.claude/settings.local.json`.** Its
+- **File-level invariants are enforced by `.claude/settings.json`.** Its
   permission deny-list blocks edits to `.decanter.json` and `*.remote.js`, reads/edits
   of `.env`, and `push --force`. If an `Edit`/`Write` is blocked, it broke a hard rule —
   fix the edit, don't route around the guard. The content-level invariants (jsCode
   placeholder integrity, the `@ts-n8n` marker) are the CLI's wall at `push`/`check`.
+  That file is **project policy, committed and shared**; `.claude/settings.local.json`
+  stays yours for machine-specific rules. Permission lists merge across the two and
+  a `deny` beats an `allow`, so a local file adds to the policy — it can't unblock
+  what the project denies.
 - **After editing a node source (`.ts`/`.js`), a PostToolUse hook runs
   `n8n-decanter check`** (layout compliance + typecheck) via `.claude/hooks/verify.mjs`
   and feeds any failure back to you. Treat a failure as a blocker to finishing the task.

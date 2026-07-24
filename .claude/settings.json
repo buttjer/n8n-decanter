@@ -57,7 +57,7 @@
       "Bash(gh api repos/buttjer/n8n-decanter/*)",
       "Bash(gh run watch:*)",
       "Bash(docker info:*)",
-      "Bash(git pull --ff-only)"
+      "Bash(git pull --ff-only:*)"
     ],
     "deny": [
       "Bash(rm -rf *)",

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnvFile } from "./config.mts";
@@ -156,6 +156,83 @@ function copyEntry(entry: TemplateEntry): void {
 }
 
 /**
+ * Template files that changed NAME between CLI versions, as materialized rel
+ * paths. The manifest is keyed by path, so without this a rename reads as
+ * "delete one file, add another" and the two copies coexist — which for a
+ * settings file means the stale one silently keeps applying.
+ *
+ * Plan 56: `.claude/settings.local.json` → `.claude/settings.json`. The file
+ * holds *project policy* (decanter's verb permissions, the `verify.mjs` and
+ * `mcp-route-check.mjs` hooks) — nothing machine-specific — and it was already
+ * being committed (init's `.gitignore` never covered it) and tracked in the
+ * shared `.decanter-template.json`. Scaffolding it into the `local` slot both
+ * mislabeled it and squatted the one file Claude Code reserves for the *user's*
+ * own machine-specific overrides.
+ */
+const TEMPLATE_RENAMES: ReadonlyArray<{ from: string; to: string }> = [
+  { from: path.join(".claude", "settings.local.json"), to: path.join(".claude", "settings.json") },
+];
+
+/**
+ * Resolve each rename against a target dir, before the template scan runs.
+ * Returns the destination paths the scan must NOT write this run, plus manifest
+ * entries to carry over — a deferred migration has to stay tracked, or the next
+ * re-init (whose manifest is rebuilt from scanned template files, and so has
+ * forgotten the old name) can no longer tell decanter's leftover file from one
+ * the user wrote, and gives up on it forever.
+ *
+ * Deliberately file-driven rather than manifest-driven: a rename does not
+ * change the file's *contents*, so "is this decanter's copy, untouched?" is
+ * answerable by hashing — which also works for dirs that pre-date manifests.
+ *
+ * - The old file is not ours (no manifest entry, contents ≠ the template) →
+ *   leave it completely alone. It is the user's own personal settings file, and
+ *   the new project-scoped one is scaffolded alongside it as normal.
+ * - Ours and pristine → delete it; the scan then lands the new name.
+ * - Ours but locally edited → keep it and **skip scaffolding the new name**.
+ *   Writing both would double-register the PostToolUse/SessionStart hooks, so
+ *   the user is told to move their file instead. The next init picks up where
+ *   they left off, because this check reads the filesystem, not a flag.
+ * - Both names already present → touch nothing, just report the shadowing.
+ *
+ * `--force` keeps its documented meaning (reset every template file to its
+ * template version): it removes the old name even when edited, rather than
+ * leaving a stale file to shadow the reset copy.
+ */
+function migrateRenamedTemplateFiles(srcDir: string, destDir: string, manifest: Record<string, string>, force: boolean, log: Log): { skip: Set<string>; keep: Record<string, string> } {
+  const skip = new Set<string>();
+  const keep: Record<string, string> = {};
+  for (const { from, to } of TEMPLATE_RENAMES) {
+    const oldPath = path.join(destDir, from);
+    if (!existsSync(oldPath)) continue;
+    const newPath = path.join(destDir, to);
+    const oldHash = sha256(readFileSync(oldPath, "utf8"));
+    const templateSrc = path.join(srcDir, `${to}.example`);
+    const templateHash = existsSync(templateSrc) ? sha256(readFileSync(templateSrc, "utf8")) : "";
+    // Never touch a file decanter did not put there.
+    if (manifest[from] === undefined && oldHash !== templateHash) continue;
+    if (existsSync(newPath) && !force) {
+      keep[from] = manifest[from] ?? oldHash;
+      log.warn(`${from} and ${to} both exist — the old file still applies (and its hooks fire twice); merge it into ${to} and delete it`);
+      continue;
+    }
+    if (force && oldHash !== templateHash) {
+      rmSync(oldPath);
+      log.warn(`--force: removed ${from} (had local changes) — its content now lives at ${to}`);
+    } else if (oldHash === templateHash || oldHash === manifest[from]) {
+      rmSync(oldPath);
+      log.info(`renamed ${from} -> ${to} — it holds shared project policy, so the local slot is yours again`);
+    } else {
+      skip.add(newPath);
+      // stay tracked: this is still decanter's file until the user resolves it
+      keep[from] = manifest[from] ?? oldHash;
+      log.warn(`${from} has local edits, so ${to} was NOT scaffolded (both files' hooks would fire) — move your copy to ${to}, or delete it, then re-run init`);
+    }
+  }
+  return { skip, keep };
+}
+
+/**
  * Modification-aware template refresh (dpkg conffile-style). First init copies
  * everything and records a baseline manifest. Re-init copies files new to the
  * template, offers to refresh files the user hasn't touched (pristine), and
@@ -165,8 +242,13 @@ function copyEntry(entry: TemplateEntry): void {
 async function refreshTemplate(srcDir: string, destDir: string, { force, protect, version, extraSources }: { force: boolean; protect: Set<string>; version: string; extraSources?: Array<{ rel: string; srcPath: string }> }, log: Log): Promise<void> {
   const manifest = readManifest(destDir);
   const firstInit = !existsSync(path.join(destDir, MANIFEST_FILE));
-  const entries = scanTemplate(srcDir, destDir, manifest.files, protect, extraSources);
-  const nextFiles: Record<string, string> = {};
+  // Renames first: a file the migration deletes must look absent to the scan
+  // (so the new name is simply "added"), and one it defers must look protected.
+  const { skip: renameSkips, keep: renameKeep } = migrateRenamedTemplateFiles(srcDir, destDir, manifest.files, force, log);
+  const entries = scanTemplate(srcDir, destDir, manifest.files, new Set([...protect, ...renameSkips]), extraSources);
+  // A pending rename stays in the baseline; everything else is rebuilt from the
+  // scan, which is what retires the old key once the migration completes.
+  const nextFiles: Record<string, string> = { ...renameKeep };
 
   if (force) {
     let anyExisting = false;
