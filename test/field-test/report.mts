@@ -7,37 +7,66 @@
 //
 // Usage:
 //   node test/field-test/report.mts <manifest.json> [--out <file.html>] [S1 S2 …]
+//   node test/field-test/report.mts --from <raw.tgz>  [--out <file.html>] [S1 S2 …]
 //   node test/field-test/report.mts --help
 //
 // With no scenario ids, every folder under <harnessRoot>/transcripts is included.
 // Secrets (MCP token / API key from the manifest) are redacted everywhere.
+//
+// `--from` renders a COMMITTED archive (test/field-test/runs/<iso>-<runId>/raw.tgz)
+// with no live run around: the tarball is unpacked to a temp dir and rendered as
+// if it were a fresh harness root. That's what makes the raw the source of truth
+// — a view can change months later and still be regenerated from what git holds.
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SCENARIO_DIR = path.join(HERE, "scenarios");
 
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log("usage: node test/field-test/report.mts <manifest.json> [--out <file.html>] [S1 S2 …]");
+  console.log("usage: node test/field-test/report.mts <manifest.json>|--from <raw.tgz> [--out <file.html>] [S1 S2 …]");
   process.exit(0);
 }
 const outFlag = argv.indexOf("--out");
 const outArg = outFlag >= 0 ? argv[outFlag + 1] : undefined;
-// NB: only skip the token AFTER --out when --out is actually present. Without
-// this guard, outFlag === -1 makes `outFlag + 1 === 0` swallow the manifest
-// itself, so `report.mts <manifest>` always failed with "pass <manifest.json>".
-const positional = argv.filter((a, i) => !a.startsWith("--") && !(outFlag >= 0 && i === outFlag + 1));
-const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
-if (!manifestPath) { console.error("report: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
+const fromFlag = argv.indexOf("--from");
+const fromArg = fromFlag >= 0 ? argv[fromFlag + 1] : undefined;
+// NB: only skip the token AFTER a flag when that flag is actually present.
+// Without this guard, outFlag === -1 makes `outFlag + 1 === 0` swallow the
+// manifest itself, so `report.mts <manifest>` always failed with "pass …".
+const valueIdx = new Set([outFlag, fromFlag].filter((i) => i >= 0).map((i) => i + 1));
+const positional = argv.filter((a, i) => !a.startsWith("--") && !valueIdx.has(i));
 
-interface Manifest { host: string; mcpToken?: string; apiKey?: string; harnessRoot: string; workDir?: string; seeded?: Array<{ name: string; kind: string }>; }
+/** Unpack a committed raw.tgz into a temp dir and point the renderer at it. */
+function unpackArchive(tgz: string): string {
+  if (!existsSync(tgz)) { console.error(`report: no such archive: ${tgz}`); process.exit(2); }
+  const dir = mkdtempSync(path.join(tmpdir(), "field-raw-"));
+  execFileSync("tar", ["-xzf", path.resolve(tgz), "-C", dir], { stdio: "ignore" });
+  const mf = path.join(dir, "manifest.json");
+  if (!existsSync(mf)) { console.error(`report: ${tgz} has no manifest.json`); process.exit(2); }
+  // rebase the recorded (now-gone) run paths onto the unpacked copy
+  const m = JSON.parse(readFileSync(mf, "utf8")) as Manifest;
+  m.harnessRoot = dir;
+  m.workDir = path.join(dir, "work.git"); // bare clone — git -C works, no worktree
+  writeFileSync(mf, JSON.stringify(m, null, 2));
+  return mf;
+}
+
+interface Manifest { host: string; mcpToken?: string; apiKey?: string; harnessRoot: string; workDir?: string; scenariosAsRun?: boolean; seeded?: Array<{ name: string; kind: string }>; }
+const manifestPath = fromArg ? unpackArchive(fromArg) : (positional[0] ?? process.env.FIELD_MANIFEST);
+if (!manifestPath) { console.error("report: pass <manifest.json>, --from <raw.tgz>, or set FIELD_MANIFEST"); process.exit(2); }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const HR = manifest.harnessRoot;
 const TDIR = path.join(HR, "transcripts");
-const OUT = outArg ?? path.join(HR, "report.html");
+// An archive carries the scenario files AS RUN — always prefer them. Scenarios
+// get reworked between rounds, so rendering an old round against today's files
+// would caption its turns with prompts that were never sent.
+const SCENARIO_DIR = existsSync(path.join(HR, "scenarios")) ? path.join(HR, "scenarios") : path.join(HERE, "scenarios");
+// rendering an archive defaults next to the archive, not into the temp dir
+const OUT = outArg ?? (fromArg ? path.join(path.dirname(path.resolve(fromArg)), "report.html") : path.join(HR, "report.html"));
 
 // ---------- redaction + escaping ----------
 const SECRETS = [manifest.mcpToken, manifest.apiKey].filter((s): s is string => !!s && s.length > 8);
@@ -173,7 +202,10 @@ function gitOut(args: string[]): string {
   try { return execFileSync("git", ["-C", manifest.workDir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }); } catch { return ""; }
 }
 function renderProgression(): string {
-  if (!manifest.workDir || !existsSync(path.join(manifest.workDir, ".git"))) return "";
+  // a live run points at the workDir (has .git); an archive points at the bare
+  // work.git clone (has HEAD) — `git -C` reads both the same way
+  const repo = manifest.workDir;
+  if (!repo || !(existsSync(path.join(repo, ".git")) || existsSync(path.join(repo, "HEAD")))) return "";
   const log = gitOut(["log", "--reverse", "--format=%H%x1f%ci%x1f%s", "--", "workflows"]).trim();
   if (!log) return "";
   let rows = "";
@@ -200,7 +232,11 @@ function renderScenario(id: string): { nav: string; html: string; verdict: strin
     const evs = parseTurn(path.join(dir, tf));
     const resultById = new Map(evs.filter((e): e is Extract<Ev, { kind: "tool-result" }> => e.kind === "tool-result").map((e) => [e.id, e]));
     body += `<div class="turn"><div class="turn-h">Turn ${i + 1}</div>`;
-    if (turns[i]) body += `<div class="msg user"><div class="who">user</div><div class="bubble">${clean(turns[i])}</div></div>`;
+    // the recorded prompt is what was ACTUALLY sent; the scenario file is only a
+    // fallback for rounds predating that record (and may have moved on since)
+    const recorded = path.join(dir, tf.replace(/\.jsonl$/, ".prompt.txt"));
+    const prompt = existsSync(recorded) ? readFileSync(recorded, "utf8").trimEnd() : turns[i];
+    if (prompt) body += `<div class="msg user"><div class="who">user</div><div class="bubble">${clean(prompt)}</div></div>`;
     for (const e of evs) {
       if (e.kind === "agent-text") {
         body += `<div class="msg agent"><div class="who">agent</div><div class="bubble">${clean(e.text)}</div></div>`;
@@ -236,7 +272,9 @@ function renderScenario(id: string): { nav: string; html: string; verdict: strin
   return { nav, html, verdict };
 }
 
-const wanted = positional.slice(1).length ? positional.slice(1) : (existsSync(TDIR) ? readdirSync(TDIR).filter((d) => existsSync(path.join(TDIR, d))).sort() : []);
+// with --from the manifest isn't positional, so every positional is a scenario id
+const ids = fromArg ? positional : positional.slice(1);
+const wanted = ids.length ? ids : (existsSync(TDIR) ? readdirSync(TDIR).filter((d) => existsSync(path.join(TDIR, d))).sort() : []);
 if (wanted.length === 0) { console.error(`report: no scenario transcripts under ${TDIR}`); process.exit(2); }
 
 const parts = wanted.map(renderScenario);
@@ -283,6 +321,7 @@ code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-mon
 <header><h1>n8n-decanter · blind field test</h1>${parts.map((p) => p.nav).join("")}${progressionHtml ? `<a href="#progression" class="navlink">progression</a>` : ""}${guardHtml ? `<a href="#guard" class="navlink">guard.log</a>` : ""}</header>
 <main>
 <p class="persona">Host <code>${clean(manifest.host)}</code> · ${wanted.length} scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+${manifest.scenariosAsRun === false ? `<p class="persona"><b>Provenance:</b> this round was archived retroactively, so the bundled <code>scenarios/</code> are the files as of archiving — <i>not</i> provably the ones that ran. Turns showing a recorded prompt are verbatim; any without one fall back to those scenario files and may differ from what was sent.</p>` : ""}
 ${parts.map((p) => p.html).join("\n")}
 ${progressionHtml}
 ${guardHtml}

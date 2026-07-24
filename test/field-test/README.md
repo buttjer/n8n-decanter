@@ -13,7 +13,8 @@ rule that out). Never part of `npm test`.
 | `stage.mts` | Boots + provisions a throwaway n8n (or `FIELD_N8N_URL`), seeds workflows + an S1 skeleton, scaffolds a **neutral** scratch project: `git init`, **packs + locally installs OUR built CLI** (no global link; `run.mts` puts `node_modules/.bin` on the session PATH), **pre-seeds a correct `.env`**, disables the nested session's sandbox, vendors the n8n skills pack (`skills-install.mts`). Prints a **manifest**. |
 | `run.mts` | Orchestrator: replays each scenario's scripted turns as headless `claude -p --model sonnet` sessions (`--resume` per turn); post-init wires guard-stderr capture + the allow-extension; runs `verify.mts` after each. Diagnostics: `--smoke`, `--netcheck`, `--dry-run`. |
 | `verify.mts` | Scripted invariant oracle (no LLM): placeholder integrity, `.js` byte-equality, `.ts` marker-hash relation, `.decanter.json` git-history, `get_workflow_history` evidence. Exit 1 on any violation. |
-| `report.mts` | **Renders a run's transcripts into ONE self-contained HTML report** — a chat-style timeline of each blind session (prompts, agent reasoning, every tool call + result, guard log, verdicts). Secrets redacted. This is how you *see what happened in the agentic part*. |
+| `report.mts` | **Renders a run's transcripts into ONE self-contained HTML report** — a chat-style timeline of each blind session (prompts, agent reasoning, every tool call + result, guard log, verdicts), with each file change diffed under the action that caused it. Renders a live run (`<manifest>`) or a committed archive (`--from <raw.tgz>`) identically. |
+| `runs/<iso>-<runId>/` | **Committed round archives** — `raw.tgz` (the source of truth) + `report.html` (the view). See *Debugging* below. |
 | `scenarios/S1–S5.md` + `STYLE.md` | Persona / goal / adaptive-beats / checklist + a machine-readable `## Orchestration` turn spine; blinding rules verbatim. |
 
 ## Run it (UNSANDBOXED)
@@ -29,7 +30,10 @@ npm run field-test:stage                       # boots n8n, links our CLI, print
 node test/field-test/run.mts <manifest> --smoke      # (debug) one claude turn works? → READY
 node test/field-test/run.mts <manifest> --netcheck   # (debug) can the agent reach n8n? → 200
 node test/field-test/run.mts <manifest> S1 S2 S3 S4  # the blind round (or a subset)
-npm run field-test:report <manifest>           # → <harnessRoot>/report.html  (open it)
+                                               #   → auto-renders + archives to
+                                               #     test/field-test/runs/… (commit it)
+npm run field-test:report <manifest>           # re-render a live run
+npm run field-test:report -- --from test/field-test/runs/<dir>/raw.tgz   # …or an archived one
 npm run field-test:verify <manifest>           # re-run the invariant checks any time
 node test/field-test/stage.mts --down <manifest>     # teardown (container + scratch dirs)
 ```
@@ -75,16 +79,51 @@ node test/field-test/stage.mts --down <manifest>                 # teardown
 - **Artifacts** (in `<harnessRoot>`, a sibling dir the agent never enters):
   `transcripts/<S>/turn-N.jsonl` (stream-json), `verify-<S>.json`, `guard.log`,
   and `report.html`. The **report** is the fastest way to read a session.
-- **Every round auto-archives** — at the end of a run, `run.mts` renders the
-  report and copies the whole `harnessRoot` **plus** the workDir (with its
-  `.git`) and per-turn `snapshots/` into
-  **`<main-checkout>/.field-test-runs/<runId>/`** (gitignored), together with a
-  `manifest.json` whose paths point at the archived copies — so any view
-  re-renders from the raw without re-running:
-  `node test/field-test/report.mts .field-test-runs/<runId>/manifest.json`.
-  The archive deliberately lands in the **main checkout**, never the cwd: rounds
-  are usually driven from a linked worktree, and `git worktree remove` would
-  otherwise delete the artifacts. `FIELD_ARCHIVE_DIR` overrides the location.
+- **Every round auto-archives, into git** — at the end of a run `run.mts` renders
+  the report and writes **`test/field-test/runs/<iso>-<runId>/`**:
+
+  | file | what |
+  | --- | --- |
+  | `raw.tgz` | the **source of truth** — `transcripts/`, `verify-*.json`, `guard.log`, a credential-free `manifest.json`, and `work.git` (a bare clone: the whole `workflows/` history) |
+  | `report.html` | the rendered view, readable straight from the repo |
+
+  **Commit both** — being committed is what makes a round prune-proof (a
+  `git worktree remove` can't take it with it) and keeps a round's evidence in
+  the PR that produced it. `run.mts` does not commit for you.
+
+  Rendering is reproducible from the tarball alone, with no live run around:
+
+  ```sh
+  node test/field-test/report.mts --from test/field-test/runs/<dir>/raw.tgz
+  ```
+
+  So **what you look at can change later without re-running** — a new view
+  re-renders from the raw. Only two things are deliberately *not* archived: the
+  working tree (reconstructable from `work.git`) and the vendored skills pack
+  (identical every run; provenance is in `manifest.skills`). Together with
+  storing the workflow history as git deltas instead of per-turn tree copies,
+  that's ~1.5 MB of loose files per round down to **~75 KB compressed**.
+- **`run.mts --archive <manifest>`** re-archives a finished round without
+  re-running it — the recovery path if archiving failed, and how the archive
+  mechanics get exercised for $0. `FIELD_ARCHIVE_DIR` overrides the destination.
+- **Secrets are scrubbed at archive time**, not at render time: the manifest's
+  MCP token / API key are replaced with `‹redacted›` throughout the payload
+  before it is packed, because the archive lands in git.
+- **The shipped `report.html` is rendered *from* `raw.tgz`**, so every round
+  self-tests its own archive — and a renderer failure can no longer cost you the
+  raw, since packing happens first.
+- **Each turn's prompt is recorded verbatim** (`transcripts/<S>/turn-N.prompt.txt`).
+  It is passed to `claude -p` as argv and so appears nowhere in the stream-json
+  transcript; without the record, a re-render would caption turns from scenario
+  files that get reworked between rounds. A retroactively archived round
+  (`--archive`) is marked `scenariosAsRun: false` and its report says so.
+- **`npm test` covers all of this without spending a cent**
+  ([`test/unit/field-report.test.mts`](../unit/field-report.test.mts)): a synthetic
+  harness — hand-written transcript, verify verdict, guard log, a small git repo —
+  driven through the real `report.mts`/`run.mts`, asserting the rendered diffs,
+  the progression, redaction, and that `--from` reproduces the shipped report
+  byte-for-byte **after the live run is deleted**. The machinery that preserves an
+  expensive round must never be first exercised by an actual round.
 - **Guard evidence** (`guard.log`): a blocked `jsCode`-over-MCP write shows as a
   guard warn-line; an empty/connection-only log means the agent went file-first.
 

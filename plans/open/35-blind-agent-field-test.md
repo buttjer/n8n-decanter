@@ -473,6 +473,77 @@ validation. **The first real fenced round RAN + was graded 2026-07-24** — see
 `.js→.ts` "converted-but-not-pushed" finding; the container isolation held with
 no loss of test quality.
 
+## Run archives — a round is committed, not kept (2026-07-24)
+
+**The problem this closes.** A blind round costs real money (~$6 for one S1) and
+is **not reproducible** — same prompts, different session. Yet the first rounds'
+artifacts lived only in a temp dir that `stage.mts --down` deleted, and one round
+was in fact destroyed by tearing down before rendering the report. Deferring the
+archive to a human step is the wrong shape for something both expensive and
+irreplaceable.
+
+**Decision: every round auto-archives at the end of `run.mts`, into git**, at
+`test/field-test/runs/<iso>-<runId>/`:
+
+| file | what |
+| --- | --- |
+| `raw.tgz` | the **source of truth** — `transcripts/` (stream-json), `verify-*.json`, `guard.log`, a credential-free `manifest.json`, and `work.git` |
+| `report.html` | the rendered view, readable straight from the repo |
+
+Three properties, each load-bearing:
+
+1. **Raw-first, view-derived.** The tarball is authoritative; `report.html` is
+   one rendering of it. `report.mts --from <raw.tgz>` unpacks and renders with no
+   live run around — verified **byte-identical** to the live render. So *what we
+   want to look at can change months later* without re-running a round, which is
+   the whole point given rounds can't be reproduced.
+2. **Committed, not stashed outside the repo.** The earlier design wrote to
+   `<main-checkout>/.field-test-runs/` (gitignored) specifically so
+   `git worktree remove` couldn't eat it. Being **in git** subsumes that: nothing
+   local can lose it, and a round's evidence lands in the PR that produced it.
+   `run.mts` deliberately does not `git add` — committing stays a human act.
+3. **Deltas, not copies.** The workflow progression is stored as `work.git`, a
+   bare clone whose history the harness thickens with a `harness: <S> after turn
+   N` commit per turn (on top of decanter's own pull/push auto-commits). That
+   replaced per-turn tree snapshots, a flat `.diff` dump *and* a full workDir
+   copy — three encodings of one fact, ~780 KB of which the renderer never read.
+   Not archived at all: the working tree (reconstructable from `work.git`) and
+   the vendored skills pack (identical every run; provenance in
+   `manifest.skills`). **~1.5 MB loose → ~75 KB compressed per round.**
+
+Because it lands in git, **secrets are scrubbed at archive time, not render
+time** — the MCP token and API key are replaced with `‹redacted›` across the
+whole payload before packing (verified: zero JWTs across the committed
+tarballs). `run.mts --archive <manifest>` re-archives a finished round without
+re-running it: the recovery path if archiving failed, and how the mechanics are
+exercised for $0.
+
+**The shipped `report.html` is rendered *from* the tarball**, after packing —
+so every round self-tests its own archive, and a renderer failure can no longer
+cost us the raw.
+
+**Prompt provenance.** The report captions each turn with its prompt, which
+`claude -p` takes as **argv** — it appears nowhere in the stream-json transcript
+(whose `user` events are tool results). Rendering therefore used to depend on the
+scenario files, which are *deliberately* reworked between rounds, so an old round
+re-rendered against new scenarios would show prompts that were never sent. Fixed
+from both ends: each turn's prompt is recorded verbatim
+(`transcripts/<S>/turn-N.prompt.txt`), and the archive carries the `scenarios/`
+as run (the full input spec — persona, beats, checklist). A retroactively
+archived round is flagged `scenariosAsRun: false` and its report says so.
+
+**Tested without spend** (`test/unit/field-report.test.mts`, in `npm test`): a
+synthetic harness — hand-written stream-json transcript, verify verdict, guard
+log, a small git repo as the workDir — driven through the real `report.mts` /
+`run.mts --archive`, asserting rendered diffs, the progression, redaction, and
+that `--from` reproduces the shipped report **byte-for-byte after the live run is
+deleted**. The machinery that preserves an expensive, irreproducible round must
+not be first exercised by an actual round — which is exactly how the round that
+was destroyed got destroyed.
+
+The three Round-2 S1 rounds (`ftrun-64582`, `-67810`, `-69297`) are archived
+retroactively under this scheme — 440 KB for all three.
+
 ## Harness status — capabilities (2026-07-23)
 
 **Built (Tasks 1–3 + 6), in `test/field-test/`:**
