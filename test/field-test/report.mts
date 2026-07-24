@@ -6,8 +6,8 @@
 // grading (grading is a separate unblinded pass).
 //
 // Usage:
-//   node scripts/field-test/report.mts <manifest.json> [--out <file.html>] [S1 S2 …]
-//   node scripts/field-test/report.mts --help
+//   node test/field-test/report.mts <manifest.json> [--out <file.html>] [S1 S2 …]
+//   node test/field-test/report.mts --help
 //
 // With no scenario ids, every folder under <harnessRoot>/transcripts is included.
 // Secrets (MCP token / API key from the manifest) are redacted everywhere.
@@ -21,7 +21,7 @@ const SCENARIO_DIR = path.join(HERE, "scenarios");
 
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log("usage: node scripts/field-test/report.mts <manifest.json> [--out <file.html>] [S1 S2 …]");
+  console.log("usage: node test/field-test/report.mts <manifest.json> [--out <file.html>] [S1 S2 …]");
   process.exit(0);
 }
 const outFlag = argv.indexOf("--out");

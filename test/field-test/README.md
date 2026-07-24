@@ -22,16 +22,16 @@ Nested `claude` needs the Anthropic API and must reach the local n8n, and
 `fs.watch` dies under a sandbox — **run in a normal terminal**. If you drive this
 from a coding agent whose Bash is sandboxed, exclude the field-test commands from
 its sandbox (e.g. Claude Code `sandbox.excludedCommands`:
-`node scripts/field-test/run.mts *`, `node scripts/field-test/stage.mts *`).
+`node test/field-test/run.mts *`, `node test/field-test/stage.mts *`).
 
 ```sh
 npm run field-test:stage                       # boots n8n, links our CLI, prints MANIFEST=<path>
-node scripts/field-test/run.mts <manifest> --smoke      # (debug) one claude turn works? → READY
-node scripts/field-test/run.mts <manifest> --netcheck   # (debug) can the agent reach n8n? → 200
-node scripts/field-test/run.mts <manifest> S1 S2 S3 S4  # the blind round (or a subset)
+node test/field-test/run.mts <manifest> --smoke      # (debug) one claude turn works? → READY
+node test/field-test/run.mts <manifest> --netcheck   # (debug) can the agent reach n8n? → 200
+node test/field-test/run.mts <manifest> S1 S2 S3 S4  # the blind round (or a subset)
 npm run field-test:report <manifest>           # → <harnessRoot>/report.html  (open it)
 npm run field-test:verify <manifest>           # re-run the invariant checks any time
-node scripts/field-test/stage.mts --down <manifest>     # teardown (container + scratch dirs)
+node test/field-test/stage.mts --down <manifest>     # teardown (container + scratch dirs)
 ```
 
 ## Container mode (`--container`) — safe UNATTENDED runs
@@ -46,15 +46,15 @@ isolation contract. Design + validation notes live in the Plan 35 "Container
 mode" section.
 
 ```sh
-cp scripts/field-test/.env.example scripts/field-test/.env   # then add ANTHROPIC_API_KEY (low spend cap)
+cp test/field-test/.env.example test/field-test/.env   # then add ANTHROPIC_API_KEY (low spend cap)
 npm run field-test:stage                                     # prints MANIFEST=<path>
-node scripts/field-test/run.mts <manifest> --container --precheck   # $0 plumbing check: baked CLI loads + n8n reachable
-node scripts/field-test/run.mts <manifest> --container --smoke      # one fenced claude turn → READY
-node scripts/field-test/run.mts <manifest> --container S1 S2 S3 S4  # the fenced blind round
-node scripts/field-test/stage.mts --down <manifest>                 # teardown
+node test/field-test/run.mts <manifest> --container --precheck   # $0 plumbing check: baked CLI loads + n8n reachable
+node test/field-test/run.mts <manifest> --container --smoke      # one fenced claude turn → READY
+node test/field-test/run.mts <manifest> --container S1 S2 S3 S4  # the fenced blind round
+node test/field-test/stage.mts --down <manifest>                 # teardown
 ```
 
-- The key is read via `docker compose --env-file scripts/field-test/.env`; it
+- The key is read via `docker compose --env-file test/field-test/.env`; it
   flows only into the `agent` service (never the proxy, never a log, never git).
 - The CLI + `typescript` are **baked into a per-run image at build time** (the
   fence has no npm registry); the host's macOS `node_modules` are shadowed so
@@ -62,7 +62,7 @@ node scripts/field-test/stage.mts --down <manifest>                 # teardown
   wall-clock kill so an unattended round can't run — or bill — forever.
 - `S5` (`watch`) stays host-only (`fs.watch` on container mounts is unreliable).
 - Invoke `run.mts`/`stage.mts` **directly** (not via `npm run …`) when driving
-  from a sandboxed agent, so the `node scripts/field-test/*` sandbox exclusion
+  from a sandboxed agent, so the `node test/field-test/*` sandbox exclusion
   applies and `docker build` can run.
 
 `run.mts <manifest> S1 --dry-run` prints the filled turns and spawns nothing.
@@ -81,7 +81,7 @@ node scripts/field-test/stage.mts --down <manifest>                 # teardown
   **`<main-checkout>/.field-test-runs/<runId>/`** (gitignored), together with a
   `manifest.json` whose paths point at the archived copies — so any view
   re-renders from the raw without re-running:
-  `node scripts/field-test/report.mts .field-test-runs/<runId>/manifest.json`.
+  `node test/field-test/report.mts .field-test-runs/<runId>/manifest.json`.
   The archive deliberately lands in the **main checkout**, never the cwd: rounds
   are usually driven from a linked worktree, and `git worktree remove` would
   otherwise delete the artifacts. `FIELD_ARCHIVE_DIR` overrides the location.

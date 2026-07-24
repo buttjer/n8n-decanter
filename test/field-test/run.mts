@@ -4,7 +4,7 @@
 // sessions against a staged n8n, captures transcripts + the guard's stderr, and
 // runs the scripted invariant verifier after each. This is the REPRODUCIBLE
 // spine — it replays each scenario's linear scripted turns (the `## Orchestration`
-// block in scripts/field-test/scenarios/S*.md). ADAPTIVE beats (the prose
+// block in test/field-test/scenarios/S*.md). ADAPTIVE beats (the prose
 // "Beats" sections) are for a live orchestrator/grader to layer on; a fully
 // deterministic script cannot judge "did the agent stall". GRADING (Opus over
 // transcripts) is a separate, unblinded pass.
@@ -22,9 +22,9 @@
 //     `sh -c 'n8n-decanter mcp connect 2>><harnessRoot>/guard.log'`
 //
 // Usage:
-//   node scripts/field-test/run.mts <manifest.json> [S1 S2 …]   # default: S1–S4
-//   node scripts/field-test/run.mts <manifest.json> --dry-run    # print turns, spawn nothing
-//   node scripts/field-test/run.mts --help
+//   node test/field-test/run.mts <manifest.json> [S1 S2 …]   # default: S1–S4
+//   node test/field-test/run.mts <manifest.json> --dry-run    # print turns, spawn nothing
+//   node test/field-test/run.mts --help
 import { execFile as execFileCb, execFileSync, spawn } from "node:child_process";
 import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -41,13 +41,13 @@ const REPORT = path.join(HERE, "report.mts");
 // ---------- args ----------
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log("usage: node scripts/field-test/run.mts <manifest.json> [S1 S2 …] [--dry-run]");
+  console.log("usage: node test/field-test/run.mts <manifest.json> [S1 S2 …] [--dry-run]");
   process.exit(0);
 }
 const dryRun = argv.includes("--dry-run");
 // Container mode (Plan 35): run the blind agents in a Docker container, egress
 // fenced to Anthropic-only — the safe way to run them UNATTENDED (see the
-// container-mode design in the plan + scripts/field-test/docker/).
+// container-mode design in the plan + test/field-test/docker/).
 const containerMode = argv.includes("--container");
 const positional = argv.filter((a) => !a.startsWith("--"));
 const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
@@ -121,7 +121,7 @@ async function dockerCompose(args: string[]): Promise<{ stdout: string; stderr: 
  */
 async function containerSetup(): Promise<void> {
   if (!manifest.container) throw new Error("--container needs a Docker-booted n8n (manifest.container is null — external/FIELD_N8N_URL mode is host-only)");
-  if (!existsSync(ENV_FILE)) throw new Error(`--container needs ${ENV_FILE} with ANTHROPIC_API_KEY (cp scripts/field-test/.env.example scripts/field-test/.env)`);
+  if (!existsSync(ENV_FILE)) throw new Error(`--container needs ${ENV_FILE} with ANTHROPIC_API_KEY (cp test/field-test/.env.example test/field-test/.env)`);
   if (!manifest.cliTarball && !manifest.decanterSpec) throw new Error("no CLI to bake — manifest.cliTarball and decanterSpec are both null (re-stage)");
 
   console.log("container mode: building fenced images (unfenced build) …");
@@ -409,11 +409,11 @@ async function archiveRun(): Promise<void> {
       if (diff.trim()) writeFileSync(path.join(dest, "workflow-progression.diff"), diff);
     } catch { /* no git / no commits yet — the .git copy and transcripts still carry it */ }
     // a manifest whose paths point at the ARCHIVED copies, so a view re-renders
-    // straight from the archive: `node scripts/field-test/report.mts <dest>/manifest.json`
+    // straight from the archive: `node test/field-test/report.mts <dest>/manifest.json`
     writeFileSync(path.join(dest, "manifest.json"), JSON.stringify({ ...manifest, harnessRoot: path.join(dest, "harness"), workDir: path.join(dest, "work") }, null, 2));
     console.log(`\narchived (raw + report) -> ${dest}`);
     console.log(`  read now:                  open ${path.join(dest, "harness", "report.html")}`);
-    console.log(`  re-render a view later:    node scripts/field-test/report.mts ${path.join(dest, "manifest.json")}`);
+    console.log(`  re-render a view later:    node test/field-test/report.mts ${path.join(dest, "manifest.json")}`);
   } catch (e) { console.warn(`archive failed: ${(e as Error).message.split("\n")[0]}`); }
 }
 

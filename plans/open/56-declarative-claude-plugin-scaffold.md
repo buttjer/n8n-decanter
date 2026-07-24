@@ -54,7 +54,7 @@ must handle:
   leaves the stale `settings.local.json` behind — two overlapping files with the
   **stale one winning**. `init` needs to detect the old tracked file and migrate
   or warn loudly.
-- Also update `scripts/field-test/run.mts` (it merges its allow-extension into
+- Also update `test/field-test/run.mts` (it merges its allow-extension into
   `settings.local.json` — which becomes *more* correct after the split: shared
   policy in `settings.json`, the harness's machine-specific allows in
   `settings.local.json`), `template/CLAUDE.md.example:7`, and `AGENTS.md:493`,
@@ -91,14 +91,14 @@ Doing (A) alone was worth it even if (B) is never picked up.
 - e2e coverage for all four migration branches; docs/CHANGELOG/PLAN.md updated.
 
 **Field-test harness — owned by [Plan 35](35-blind-agent-field-test.md), not
-here.** `scripts/field-test/stage.mts` pre-wrote `workDir/.claude/settings.json`
+here.** `test/field-test/stage.mts` pre-wrote `workDir/.claude/settings.json`
 for its sandbox override, which after this rename makes the template scan
 `adopt` it, so decanter's permissions **and** the DENY rules the field test
 exists to verify would never be scaffolded. Plan 35's
 `feat/plan-35-containerized-field-test` branch fixes it independently and more
 thoroughly (a `mergeLocalSettings` helper; the stage runs `init` itself now, so
 the pre-write workaround is obsolete). This PR deliberately leaves
-`scripts/field-test/` untouched to avoid conflicting with that branch — which
+`test/field-test/` untouched to avoid conflicting with that branch — which
 means **`field-test:stage` on main is broken between this merge and Plan 35's**.
 Dev-only, opt-in, never part of `npm test`.
 

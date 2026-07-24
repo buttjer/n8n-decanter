@@ -21,7 +21,7 @@ happens. A UX/contract field test, not a CI suite.
 > **Post-#107 review (2026-07-23), refreshed 2026-07-23 for the backlog reorg
 > (#122), the watch-proxy removal (#128), and 0.6.0's live-mirror + `backup`
 > wave (#125, released as 0.6.0 in #133) — the design is sound and unbuilt
-> (`scripts/field-test/` does not exist), but the agent surface it tests was
+> (`test/field-test/` does not exist), but the agent surface it tests was
 > rebuilt after this plan was written; the corrections below apply before
 > executing.**
 > 1. **The guard is now stdio `mcp connect`, auto-wired — not a human-started
@@ -184,7 +184,7 @@ guard).
 
 ### Stage (scripted, reusing the smoke recipe)
 
-`scripts/field-test/stage.mts` (dev-only, never part of `npm test`; npm
+`test/field-test/stage.mts` (dev-only, never part of `npm test`; npm
 script `field-test:stage`):
 
 - Boot the pinned n8n image (same tag as `test/smoke-n8n.mts`) with a
@@ -219,7 +219,7 @@ default.
 
 ### Scenarios (all pure-node: Manual/Schedule trigger, Code, Set/Edit Fields, IF/Switch, Merge, NoOp — no network/API/credentialed nodes)
 
-Committed as `scripts/field-test/scenarios/S*.md` — each defines persona,
+Committed as `test/field-test/scenarios/S*.md` — each defines persona,
 goal prompt, scripted beats (condition → in-character follow-up), and a
 success checklist. Round 1 = one run each; later rounds are cheap re-runs.
 
@@ -270,7 +270,7 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
 
 ### Observation & grading
 
-- **Scripted invariants** (`scripts/field-test/verify.mts`, run after every
+- **Scripted invariants** (`test/field-test/verify.mts`, run after every
   scenario — pass/fail, no LLM): remote `jsCode` byte-equals the local file for
   every **plain `.js`** Code node — **but a `.ts`-converted node (S4) is
   compiled JS + a `@ts-n8n sha256:` marker line, never byte-equal to the local
@@ -293,14 +293,14 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
 
 ## Tasks
 
-1. **Stage script** — `scripts/field-test/stage.mts` + `field-test:stage`
+1. **Stage script** — `test/field-test/stage.mts` + `field-test:stage`
    npm script, per Design → Stage. Reuse smoke-suite recipe facts; keep it
    boring and rerunnable; `FIELD_KEEP=1` skips teardown, `FIELD_N8N_URL`
    targets an existing instance.
-2. **Scenario pack** — `scripts/field-test/scenarios/S1–S4.md` (+S5 draft)
+2. **Scenario pack** — `test/field-test/scenarios/S1–S4.md` (+S5 draft)
    with persona/goal/beats/checklist, plus a one-page in-character style
    guide for orchestrator follow-ups (the blinding rules above, verbatim).
-3. **Invariant verifier** — `scripts/field-test/verify.mts`: the scripted
+3. **Invariant verifier** — `test/field-test/verify.mts`: the scripted
    checks above, runnable per scenario against the stage manifest; exit 1 on
    any violation.
 4. **Round 1 execution (agentic, Opus orchestrator):** stage → S1…S4 blind
@@ -322,7 +322,7 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
 
 First blind round ran end-to-end (Sonnet, headless `claude -p`, real n8n 2.30.7
 in Docker). Getting a *valid* run took four harness corrections, each itself a
-finding; the fixes are in `scripts/field-test/`. **S1 + S2 passed**; the full
+finding; the fixes are in `test/field-test/`. **S1 + S2 passed**; the full
 per-turn grading + Task-4 run report are the next pass.
 
 **Per-scenario (round-1b):**
@@ -428,11 +428,11 @@ own machine (neutral env, pinned toolchain), so isolation improves fidelity here
 rather than hurting it. Decision (2026-07-24, after a safety review with the
 maintainer): the nested agents run in a **Docker container, egress-fenced**.
 
-**Isolation contract** (`scripts/field-test/docker/`, the compose file *is* the
+**Isolation contract** (`test/field-test/docker/`, the compose file *is* the
 audit surface):
 - The `agent` container is on an **`internal`-only** docker network — no host
   filesystem, no host loopback, no host env beyond a single `ANTHROPIC_API_KEY`
-  (from a gitignored `scripts/field-test/.env`, via `--env-file`).
+  (from a gitignored `test/field-test/.env`, via `--env-file`).
 - Its **only** egress is a `proxy` sidecar (tinyproxy allowlist) that forwards to
   **`api.anthropic.com` and nothing else** (`FilterDefaultDeny`). So an injected
   or looping agent cannot exfiltrate the key or reach any other host. **Fail-closed:**
@@ -475,7 +475,7 @@ no loss of test quality.
 
 ## Harness status — capabilities (2026-07-23)
 
-**Built (Tasks 1–3 + 6), in `scripts/field-test/`:**
+**Built (Tasks 1–3 + 6), in `test/field-test/`:**
 
 - `stage.mts` (+ `skills-install.mts`) — `field-test:stage` boots + provisions a
   throwaway n8n (or `FIELD_N8N_URL` targets a running one), seeds 4 pure-node
@@ -511,7 +511,7 @@ substitutes all five scenarios. Typecheck + Biome lint clean.
 blocked under the agent command sandbox (and per project convention the sandbox
 is not disabled), and `fs.watch`/FSEvents dies sandboxed — so the blind sessions
 run from a normal terminal: `npm run field-test:stage` → `node
-scripts/field-test/run.mts <manifest>` → grade (Opus, unblinded) + contamination
+test/field-test/run.mts <manifest>` → grade (Opus, unblinded) + contamination
 check → append `## Run report — round 1`. No blind runs were executed in the
 build session, so **no run report is fabricated here.**
 

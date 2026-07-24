@@ -2,7 +2,7 @@
 //
 // Boots + provisions a throwaway n8n (or targets an existing one) and scaffolds
 // the neutral scratch project a blind Sonnet session will run in, then prints a
-// stage manifest for the orchestrator (scripts/field-test/run.mts). Reuses the
+// stage manifest for the orchestrator (test/field-test/run.mts). Reuses the
 // smoke-suite recipe facts (AGENTS.md "Driving a real n8n in Docker"); talks to
 // n8n with plain fetch only.
 //
@@ -12,9 +12,9 @@
 // never cd's into, so the manifest's metadata can't leak into a blind session.
 //
 // Usage:
-//   node scripts/field-test/stage.mts                # boot + provision + scaffold
-//   node scripts/field-test/stage.mts --down <manifest.json>   # teardown
-//   node scripts/field-test/stage.mts --help
+//   node test/field-test/stage.mts                # boot + provision + scaffold
+//   node test/field-test/stage.mts --down <manifest.json>   # teardown
+//   node test/field-test/stage.mts --help
 //
 // Env knobs:
 //   FIELD_N8N_TAG=<image>   override the pinned n8n image (default matches smoke)
@@ -35,7 +35,7 @@ import { promisify } from "node:util";
 import { installSkillsPack, type SkillsInstall } from "./skills-install.mts";
 
 const execFile = promisify(execFileCb);
-/** The n8n-decanter repo this stage lives in — the CLI under test (scripts/field-test/ → ../..). */
+/** The n8n-decanter repo this stage lives in — the CLI under test (test/field-test/ → ../..). */
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const docker = (...args: string[]) => execFile("docker", args, { encoding: "utf8" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -48,7 +48,7 @@ const OWNER = { email: "priya@flows.local", firstName: "Priya", lastName: "Ops",
 
 // ---------- teardown mode ----------
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log("usage: node scripts/field-test/stage.mts [--down <manifest.json>]");
+  console.log("usage: node test/field-test/stage.mts [--down <manifest.json>]");
   process.exit(0);
 }
 if (process.argv.includes("--down")) {
@@ -395,7 +395,7 @@ try {
   console.log("seeded workflows:");
   for (const s of seeded) console.log(`  ${s.availableInMCP ? "✓" : "·"} ${s.name}  [${s.kind}]  ${s.id}`);
   console.log(`\nmanifest    ${manifestPath}`);
-  console.log(`teardown    node scripts/field-test/stage.mts --down ${manifestPath}`);
+  console.log(`teardown    node test/field-test/stage.mts --down ${manifestPath}`);
   // machine-readable last line for the orchestrator
   console.log(`\nMANIFEST=${manifestPath}`);
 } catch (err) {
