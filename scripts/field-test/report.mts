@@ -11,6 +11,7 @@
 //
 // With no scenario ids, every folder under <harnessRoot>/transcripts is included.
 // Secrets (MCP token / API key from the manifest) are redacted everywhere.
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +30,7 @@ const positional = argv.filter((a, i) => !a.startsWith("--") && i !== outFlag + 
 const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("report: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 
-interface Manifest { host: string; mcpToken?: string; apiKey?: string; harnessRoot: string; seeded?: Array<{ name: string; kind: string }>; }
+interface Manifest { host: string; mcpToken?: string; apiKey?: string; harnessRoot: string; workDir?: string; seeded?: Array<{ name: string; kind: string }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const HR = manifest.harnessRoot;
 const TDIR = path.join(HR, "transcripts");
@@ -101,6 +102,25 @@ function toolSummary(name: string, input: Record<string, unknown>): { icon: stri
   return { icon: "•", label: name, body: JSON.stringify(input, null, 2) };
 }
 
+// ---------- workflow progression (the workDir git history: pull/push auto-commit) ----------
+function gitOut(args: string[]): string {
+  if (!manifest.workDir) return "";
+  try { return execFileSync("git", ["-C", manifest.workDir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }); } catch { return ""; }
+}
+function renderProgression(): string {
+  if (!manifest.workDir || !existsSync(path.join(manifest.workDir, ".git"))) return "";
+  const log = gitOut(["log", "--reverse", "--format=%H%x1f%ci%x1f%s", "--", "workflows"]).trim();
+  if (!log) return "";
+  let rows = "";
+  for (const line of log.split("\n")) {
+    const [sha, date, subj] = line.split("\x1f");
+    if (!sha) continue;
+    const diff = gitOut(["show", "--format=", "--stat", "-p", sha, "--", "workflows"]);
+    rows += `<details class="tool"><summary><span class="ticon">◷</span> <span class="tname">${esc(subj ?? sha.slice(0, 8))}</span> <span class="vdet">${esc((date ?? "").slice(0, 16))}</span></summary><pre class="tin">${clean(trunc(diff, 12000))}</pre></details>`;
+  }
+  return `<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p>${rows}</section>`;
+}
+
 // ---------- render ----------
 function renderScenario(id: string): { nav: string; html: string; verdict: string } {
   const dir = path.join(TDIR, id);
@@ -157,6 +177,7 @@ const guardLog = existsSync(path.join(HR, "guard.log")) ? readFileSync(path.join
 const guardHtml = guardLog.trim()
   ? `<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">${clean(trunc(guardLog, 8000))}</pre></section>`
   : "";
+const progressionHtml = renderProgression();
 
 const html = `<title>Field test — agentic report</title>
 <style>
@@ -186,10 +207,11 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 .vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
 code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
 </style>
-<header><h1>n8n-decanter · blind field test</h1>${parts.map((p) => p.nav).join("")}${guardHtml ? `<a href="#guard" class="navlink">guard.log</a>` : ""}</header>
+<header><h1>n8n-decanter · blind field test</h1>${parts.map((p) => p.nav).join("")}${progressionHtml ? `<a href="#progression" class="navlink">progression</a>` : ""}${guardHtml ? `<a href="#guard" class="navlink">guard.log</a>` : ""}</header>
 <main>
 <p class="persona">Host <code>${clean(manifest.host)}</code> · ${wanted.length} scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
 ${parts.map((p) => p.html).join("\n")}
+${progressionHtml}
 ${guardHtml}
 </main>`;
 

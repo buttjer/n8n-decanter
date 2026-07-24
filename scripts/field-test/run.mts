@@ -26,7 +26,7 @@
 //   node scripts/field-test/run.mts <manifest.json> --dry-run    # print turns, spawn nothing
 //   node scripts/field-test/run.mts --help
 import { execFile as execFileCb, spawn } from "node:child_process";
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -36,6 +36,7 @@ const execFile = promisify(execFileCb);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCENARIO_DIR = path.join(HERE, "scenarios");
 const VERIFY = path.join(HERE, "verify.mts");
+const REPORT = path.join(HERE, "report.mts");
 
 // ---------- args ----------
 const argv = process.argv.slice(2);
@@ -314,6 +315,34 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   return { id, verifyExit, turns: turns.length };
 }
 
+// ---------- archive: render the HTML view + STORE EVERYTHING RAW (survives teardown) ----------
+async function archiveRun(): Promise<void> {
+  // 1. render the HTML report (a derived VIEW) into harnessRoot
+  try {
+    const { stdout } = await execFile(process.execPath, [REPORT, manifestPath], { maxBuffer: 64 * 1024 * 1024 });
+    if (stdout.trim()) console.log(stdout.trim());
+  } catch (e) { console.warn(`report generation failed (${(e as Error).message.split("\n")[0]}) — raw artifacts are still archived below`); }
+  // 2. store EVERYTHING raw to a durable, gitignored dir that teardown never
+  //    touches: harnessRoot (stream-json transcripts + verify JSON + guard.log +
+  //    report.html) AND the workDir WITH its .git (the turn-by-turn diffs). The
+  //    RAW is the source of truth — any view (html/md/json) re-renders from it, so
+  //    "what I want to see" can change later without re-running (Plan 35 §archive).
+  const base = process.env.FIELD_ARCHIVE_DIR ?? path.join(process.cwd(), ".field-test-runs");
+  const dest = path.join(base, path.basename(HARNESS));
+  const noNodeModules = { recursive: true as const, filter: (s: string) => !/[/\\]node_modules([/\\]|$)/.test(s) };
+  try {
+    mkdirSync(dest, { recursive: true });
+    cpSync(HARNESS, path.join(dest, "harness"), { recursive: true });
+    if (existsSync(WORKDIR)) cpSync(WORKDIR, path.join(dest, "work"), noNodeModules);
+    // a manifest whose paths point at the ARCHIVED copies, so a view re-renders
+    // straight from the archive: `node scripts/field-test/report.mts <dest>/manifest.json`
+    writeFileSync(path.join(dest, "manifest.json"), JSON.stringify({ ...manifest, harnessRoot: path.join(dest, "harness"), workDir: path.join(dest, "work") }, null, 2));
+    console.log(`\narchived (raw + report) -> ${dest}`);
+    console.log(`  read now:                  open ${path.join(dest, "harness", "report.html")}`);
+    console.log(`  re-render a view later:    node scripts/field-test/report.mts ${path.join(dest, "manifest.json")}`);
+  } catch (e) { console.warn(`archive failed: ${(e as Error).message.split("\n")[0]}`); }
+}
+
 // ---------- main ----------
 if (!existsSync(WORKDIR)) { console.error(`workDir missing: ${WORKDIR} — run stage.mts first`); process.exit(2); }
 
@@ -373,6 +402,7 @@ try {
     if (existsSync(GUARD_LOG)) console.log(`\nguard stderr captured -> ${GUARD_LOG}`);
     console.log(`transcripts -> ${path.join(HARNESS, "transcripts")}`);
     console.log("\nNext: grade transcripts (Opus, unblinded) + contamination check, then append the run report to plans/open/35-blind-agent-field-test.md");
+    if (!dryRun) await archiveRun(); // auto-render + archive BEFORE any teardown
   }
 } finally {
   await containerTeardown();
