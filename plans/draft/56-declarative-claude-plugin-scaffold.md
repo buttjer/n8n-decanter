@@ -40,12 +40,14 @@ puts machine-specific rules, and decanter has taken it.
 → `settings.json.example`, which then makes this plan trivial. Two things it
 must handle:
 
-- **Precedence flip.** `settings.local.json` > `settings.json`, so decanter's
-  `deny` rules (e.g. `Bash(n8n-decanter push --force)`) move from the
-  highest-precedence file to a lower one, and a user's own local file can now
-  override them. Acceptable — those denies are a guardrail, not the security
-  boundary (`mcp connect` is), and a user overriding their own settings is
-  legitimate — but it should be a conscious call.
+- **Precedence — checked, and it is a non-issue for the deny rules.** Ordinary
+  settings do follow `local` > `project` > `user`, but **permission rules merge
+  across scopes rather than override**, and denylist beats allowlist. So moving
+  decanter's `deny` entries (e.g. `Bash(n8n-decanter push --force)`) into
+  `settings.json` does **not** let a user's own `settings.local.json` allow them
+  back. (An earlier revision of this draft claimed the opposite.) Hooks are
+  additive across scopes too. Verify once against the shipped file before
+  relying on it.
 - **Migration.** Existing sync dirs have `settings.local.json` tracked in
   `.decanter-template.json`. A naive rename copies in a new `settings.json` and
   leaves the stale `settings.local.json` behind — two overlapping files with the
@@ -60,3 +62,37 @@ must handle:
 **Then:** add the two keys above to the new `settings.json.example`, and check
 whether Codex has an equivalent declarative hook (unknown — n8n's README only
 documents `codex plugin …`). skills.sh has none.
+
+## Ship it as two PRs, in this order
+
+The two halves have different risk profiles and should not share a squash commit:
+
+- **(A) the rename + migration** — a correctness fix touching a manifest-tracked
+  file in *every existing sync dir*. `Changed`, plausibly `Breaking:`. No new
+  feature; reviewable on its own.
+- **(B) the two plugin keys** — ~6 lines once (A) exists, `Added`.
+
+Doing (A) alone is worth it even if (B) is never picked up.
+
+## Open decisions (settle before executing)
+
+1. **Does `enabledPlugins` ship default-on?** This is the real product question,
+   and it cuts against [Plan 55](../done/55-init-skills-offer.md)'s own
+   reasoning: a committed declaration installs a **third-party** plugin for
+   *everyone who clones the repo*, silently and persistently — arguably more
+   invasive than the init prompt Plan 55 removed, not less. Mitigations: Claude
+   Code still asks on folder trust and never installs unprompted; it is two
+   readable lines in a git-tracked file. Options: default-on / shipped commented
+   out / behind an `init` opt-in. **Not obvious — decide deliberately.**
+2. **Migration semantics.** The template machinery is drift-aware, so the
+   natural rule is: a *pristine* `settings.local.json` (hash == manifest
+   baseline) is removed and replaced by `settings.json`; a **locally modified**
+   one is never deleted — it is left in place with a loud warning that it now
+   shadows the new file. Confirm that is the wanted behavior.
+3. **What else belongs in the shared file?** Once a committed
+   `.claude/settings.json` exists, does the template still ship a
+   `settings.local.json.example` for genuinely per-user allows, or does the
+   local slot stay empty for the user?
+4. **Codex.** No verified declarative equivalent. Shipping Claude-Code-only
+   (Codex/skills.sh keep the printed commands) is fine, but it should be a
+   conscious asymmetry.
