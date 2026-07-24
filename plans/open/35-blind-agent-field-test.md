@@ -341,10 +341,11 @@ per-turn grading + Task-4 run report are the next pass.
   node-rename handled; the `.js→.ts` conversion exposed finding 4 below.
 
 **Findings (ranked, for maintainer triage — Task 5):**
-1. **Discoverability (P1) — OPEN.** No project-level `n8n-decanter` ⇒ a blind
-   agent never finds it and hand-rolls raw n8n MCP. Harness now installs the CLI
-   so the project carries the breadcrumb; the gap itself is the finding.
-   Positioning/onboarding, not a one-line fix — no PR yet.
+1. **Discoverability (P1) — TRIAGED 2026-07-24 → [Plan 57](../draft/57-cli-discoverability-for-agents.md).**
+   No project-level `n8n-decanter` ⇒ a blind agent never finds it and hand-rolls
+   raw n8n MCP. Harness now installs the CLI so the project carries the
+   breadcrumb; the gap itself is the finding. Positioning/onboarding, not a
+   one-line fix — given its own draft plan rather than folded into Plan 30.
 2. **`init` writes `https://` for a local `http://` host (P1, product) — ✅
    FIXED (#142).** Broke the guard (reads `.env` directly → `upstream request
    failed: fetch failed`) and the CLI. Now scheme-less local hosts default to
@@ -699,7 +700,15 @@ end-to-end**.
    eval-awareness scan is clean), so the run is gradeable — but the harness
    should strip the `field-test:*` (and other dev) scripts from the packed
    `package.json` before install. Pre-existing (host mode too), not
-   container-specific.
+   container-specific. **✅ FIXED 2026-07-24** — `stage.mts` rewrites the packed
+   tarball in place (`unblindTarball`), dropping `field-test:*` before anything
+   installs it. The *tarball* is the fix point because both install paths flow
+   through it: host mode's `npm install <tgz>` and container mode's
+   `npm install -g` inside the fenced image. Only `field-test:*` is stripped —
+   `test`, `lint`, `test:smoke` … are what a genuine `npm i n8n-decanter` also
+   shows, and removing them would make the blind environment *less* like a real
+   user's. Verified on a real pack: 4 scripts removed, 11 kept, tarball still
+   installs and the CLI runs.
 3. **Positive — file-first held, guard never blocked.** `guard.log` has **zero**
    blocked `jsCode`-over-MCP writes across all four scenarios: the scaffolded
    `AGENTS.md` steered the agent file-first for all code, even fenced (Plan 50
@@ -750,10 +759,13 @@ the code had never left the repo. That consistency makes it the strongest
 product signal the field test has produced — and it is a **UX/affordance** gap,
 not a bug: every individual command behaves as documented.
 
-**For maintainer triage** (this plan changes no product code — Task 5):
-- Should `check`'s green line say what it did *not* check (e.g. `✓ OK (local
-  only — run status to compare with n8n)`)?
-- Should `status` be what an agent naturally reaches for after editing — or
-  should `check` fold in a cheap sync comparison?
-- The scaffolded `AGENTS.md` steers agents file-first for *authoring*; nothing
-  states that a push is what makes it real.
+**Triaged 2026-07-24 → fixed in Plan 30 Theme A** (docs + a one-line signal, no
+new network call): `check`'s success line now reads `OK (local layout — status
+compares with n8n)`; `check` **warns** when a placeholder has moved off what
+`.decanter.json` records or the recorded file is gone; and
+`template/AGENTS.md.example`'s `.js`→`.ts` recipe — which **ended at `check`**,
+literally instructing the behaviour that failed — now ends at `push`.
+
+The warning deliberately is **not** an error: `pushWorkflow` runs
+`assertCompliant` *before* `reconcileFileMapFromSnapshot`, so erroring would
+refuse the one command that heals the state. Pinned by a test.

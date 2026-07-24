@@ -226,6 +226,48 @@ function mergeLocalSettings(workDir: string, patch: Record<string, unknown>): vo
   writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2) + '\n');
 }
 
+/**
+ * Strip the harness's own npm scripts from a packed CLI tarball — IN PLACE.
+ *
+ * `npm pack` ships the whole `scripts` block, so an installed decanter carries
+ * `"field-test:stage": …` into the blind session's `node_modules`. A round-2
+ * agent read that `package.json` and saw them (it did not infer an evaluation,
+ * so the round stayed gradeable — but the next one might).
+ *
+ * Rewriting the TARBALL rather than an installed copy is deliberate: it is the
+ * single point both install paths flow through — host mode's
+ * `npm install <tgz>` into the workDir, and container mode's `npm install -g`
+ * inside the fenced image, which the harness never touches afterwards.
+ *
+ * Only `field-test:*` is removed. Everything else (`test`, `test:smoke`,
+ * `lint`, …) is what a genuine `npm i n8n-decanter` also shows, and stripping
+ * more would make the blind environment LESS like a real user's — the opposite
+ * of what this harness is for.
+ */
+async function unblindTarball(tgz: string): Promise<string[]> {
+  const work = path.join(path.dirname(tgz), ".unblind");
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+  try {
+    await execFile("tar", ["-xzf", tgz, "-C", work]);
+    const pkgFile = path.join(work, "package", "package.json");
+    const pkg = JSON.parse(readFileSync(pkgFile, "utf8")) as { scripts?: Record<string, string> };
+    const removed = Object.keys(pkg.scripts ?? {}).filter((s) => s.startsWith("field-test:"));
+    if (removed.length === 0) return [];
+    for (const s of removed) delete pkg.scripts![s];
+    writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + "\n");
+    // repack with the same `package/` root npm expects
+    await execFile("tar", ["-czf", tgz, "-C", work, "package"]);
+    return removed;
+  } catch (err) {
+    // never fail a stage over blinding hygiene — say so and carry on
+    console.warn(`could not strip field-test scripts from the packed CLI (${(err as Error).message.split("\n")[0]}) — the blind session may see them`);
+    return [];
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
 // ---------- scaffold the neutral scratch project ----------
 async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null }> {
   const base = os.tmpdir();
@@ -290,8 +332,9 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
       const { stdout } = await execFile("npm", ["pack", "--pack-destination", workDir, "--json"], { cwd: PACKAGE_ROOT });
       const tgz = (JSON.parse(stdout) as Array<{ filename: string }>)[0].filename;
       cliTarball = path.join(workDir, tgz);
+      const stripped = await unblindTarball(cliTarball);
       await execFile("npm", ["install", "--no-audit", "--no-fund", cliTarball], { cwd: workDir });
-      console.log(`packed + locally installed n8n-decanter (${tgz}) — no global link`);
+      console.log(`packed + locally installed n8n-decanter (${tgz}) — no global link${stripped.length ? `; stripped ${stripped.length} blinding script(s): ${stripped.join(", ")}` : ""}`);
     }
     decanterInstalled = true;
   } catch (err) {
