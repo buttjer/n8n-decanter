@@ -102,12 +102,12 @@ function hl(src: string): string {
   const re = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)|(\b\d+(?:\.\d+)?\b)|(\b(?:const|let|var|function|return|if|else|for|of|in|while|do|new|await|async|class|extends|import|export|from|try|catch|finally|throw|typeof|instanceof|null|undefined|true|false|this)\b)/g;
   let out = "";
   let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) {
-    out += esc(s.slice(last, m.index));
+  for (const m of s.matchAll(re)) {
+    const at = m.index ?? 0;
+    out += esc(s.slice(last, at));
     const cls = m[1] ? "tc" : m[2] ? "ts" : m[3] ? "tn" : "tk";
     out += `<span class="${cls}">${esc(m[0])}</span>`;
-    last = m.index + m[0].length;
+    last = at + m[0].length;
   }
   return out + esc(s.slice(last));
 }
