@@ -16,10 +16,8 @@
 //     out of scope; the template DENY rules still apply); the session id is read
 //     from the stream, and turns 2..n use `--resume <id>` (fresh process, re-reads
 //     .claude/ + .mcp.json from cwd each turn)
-//   - AFTER turn 1 (init): write the manifest's allowExtension into the
-//     harness's own .claude/settings.local.json — init's .claude/settings.json
-//     is project policy and stays pristine; permission lists merge and its deny
-//     rules still bind — and
+//   - AFTER turn 1 (init): merge the manifest's allowExtension into the
+//     init-scaffolded .claude/settings.local.json (deny rules preserved) and
 //     rewrite .mcp.json's n8n-instance command to capture the guard's stderr:
 //     `sh -c 'n8n-decanter mcp connect 2>><harnessRoot>/guard.log'`
 //
@@ -83,21 +81,17 @@ function fillSecrets(text: string): string {
 
 // ---------- post-init scaffolding tweaks (guard-log capture + allow extension) ----------
 function applyPostInit(): void {
-  // 1. write allowExtension into the harness's OWN settings.local.json (Plan 56:
-  //    init's scaffold is project policy in settings.json and stays pristine, so
-  //    the field test now exercises the real template). Permission lists merge
-  //    across scopes and a deny beats an allow, so the template's DENY rules
-  //    (push --force, .env, .decanter.json) still bind.
-  const projectSettings = path.join(WORKDIR, ".claude", "settings.json");
-  if (!existsSync(projectSettings)) {
-    console.warn(`  WARN no settings.json after init — did init scaffold the template? (${projectSettings})`);
-  }
+  // 1. merge allowExtension into the init-scaffolded settings.local.json (keep deny)
   const settingsPath = path.join(WORKDIR, ".claude", "settings.local.json");
-  const local = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, "utf8")) : {};
-  local.permissions ??= {};
-  local.permissions.allow = Array.from(new Set([...(local.permissions.allow ?? []), ...manifest.allowExtension]));
-  writeFileSync(settingsPath, JSON.stringify(local, null, 2) + "\n");
-  console.log(`  wrote allowExtension to ${settingsPath} (template policy in settings.json left pristine)`);
+  if (existsSync(settingsPath)) {
+    const s = JSON.parse(readFileSync(settingsPath, "utf8"));
+    s.permissions ??= {};
+    s.permissions.allow = Array.from(new Set([...(s.permissions.allow ?? []), ...manifest.allowExtension]));
+    writeFileSync(settingsPath, JSON.stringify(s, null, 2) + "\n");
+    console.log(`  merged allowExtension into ${settingsPath}`);
+  } else {
+    console.warn(`  WARN no settings.local.json after init — did init scaffold the template? (${settingsPath})`);
+  }
   // 2. rewrite .mcp.json's n8n-instance command to capture the guard's stderr
   const mcpPath = path.join(WORKDIR, ".mcp.json");
   if (existsSync(mcpPath)) {
@@ -143,7 +137,7 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
   const args = ["-p", msg, "--model", "sonnet", "--output-format", "stream-json", "--verbose"];
   if (resumeId) args.push("--resume", resumeId);
   // Broad "consenting user" grant on EVERY turn (permission-UX is out of scope,
-  // Plan 35). The settings.json DENY rules still win (push --force,
+  // Plan 35). The settings.local.json DENY rules still win (push --force,
   // .decanter.json, .env) once init scaffolds them, and the jsCode-over-MCP block
   // is enforced by the mcp connect guard itself, not by permissions.
   args.push("--allowedTools", "Bash,Read,Edit,Write,Glob,Grep,TodoWrite,mcp__n8n-instance,mcp__n8n-docs");

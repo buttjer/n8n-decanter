@@ -224,14 +224,10 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   // The blind session runs UNSANDBOXED (Plan 35 §Cast — nested claude needs to
   // reach the local n8n; the default Claude Code Bash sandbox allowlists only
   // npm/GitHub egress and would refuse 127.0.0.1:<n8n port>, forcing the agent
-  // offline). Disable the nested session's sandbox via settings.local.json —
-  // NOT settings.json, which is where init scaffolds the template's project
-  // policy since Plan 56: a pre-existing settings.json would be `adopt`ed by the
-  // template scan and decanter's permissions + hooks would never land. The local
-  // slot is the right one for a harness override anyway, and run.mts merges its
-  // allow-extension into this same file.
+  // offline). Disable the nested session's sandbox via a workDir settings.json
+  // (separate from the settings.local.json init scaffolds + run.mts extends).
   mkdirSync(path.join(workDir, ".claude"), { recursive: true });
-  writeFileSync(path.join(workDir, ".claude", "settings.local.json"), JSON.stringify({ sandbox: { enabled: false } }, null, 2) + "\n");
+  writeFileSync(path.join(workDir, ".claude", "settings.json"), JSON.stringify({ sandbox: { enabled: false } }, null, 2) + "\n");
 
   // a git repo from the start (a real user "keeps flows in a git folder"); neutral author
   await execFile("git", ["-C", workDir, "init", "-q"]);

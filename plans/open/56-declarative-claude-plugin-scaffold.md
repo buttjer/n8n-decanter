@@ -88,12 +88,19 @@ Doing (A) alone was worth it even if (B) is never picked up.
   name; ours + edited → kept and the new name **skipped** this run, with the old
   key carried over in the manifest so the next re-init still knows it is ours;
   both present → reported. `--force` removes the old file regardless.
-- Field-test harness: `stage.mts` now writes its sandbox override to
-  `settings.local.json` — it used to pre-write `settings.json`, which after the
-  rename would have made the scan `adopt` it and **never scaffold decanter's
-  permissions or hooks**. `run.mts` likewise writes its allow-extension to the
-  local slot, so the field test now exercises a pristine template.
 - e2e coverage for all four migration branches; docs/CHANGELOG/PLAN.md updated.
+
+**Field-test harness — owned by [Plan 35](35-blind-agent-field-test.md), not
+here.** `scripts/field-test/stage.mts` pre-wrote `workDir/.claude/settings.json`
+for its sandbox override, which after this rename makes the template scan
+`adopt` it, so decanter's permissions **and** the DENY rules the field test
+exists to verify would never be scaffolded. Plan 35's
+`feat/plan-35-containerized-field-test` branch fixes it independently and more
+thoroughly (a `mergeLocalSettings` helper; the stage runs `init` itself now, so
+the pre-write workaround is obsolete). This PR deliberately leaves
+`scripts/field-test/` untouched to avoid conflicting with that branch — which
+means **`field-test:stage` on main is broken between this merge and Plan 35's**.
+Dev-only, opt-in, never part of `npm test`.
 
 **Confirmed while building it:** permission lists merge across scopes and `deny`
 beats `allow`, so demoting decanter's denies from `local` to `project` does not
