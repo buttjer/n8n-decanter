@@ -2367,14 +2367,12 @@ await step("preflight: one scored, local-code gate that never writes and never r
   assert.ok(Array.isArray(report.coverage.ran));
   assert.ok(report.checks.every((c: any) => typeof c.durationMs === "number"));
 
-  // --quick (Plan 58): static only — no MCP at all, so no connect check
-  r = await cli("preflight", "wfT1", "--quick", "--json");
-  assert.equal(r.code, 0, r.out);
-  const quick = JSON.parse(r.out.slice(r.out.indexOf("{")));
-  assert.equal(quick.profile, "quick");
-  assert.equal(quick.checks.find((c: any) => c.id === "layout").status, "pass");
-  assert.ok(quick.coverage.skipped.some((s: any) => s.id === "connect"), "the sync tier is skipped under --quick");
-  assert.ok(quick.coverage.skipped.some((s: any) => s.id === "simulate"), "and so is the runtime tier");
+  // --quick is REMOVED (Plan 60, on Plan 59's advice): it rejects with the
+  // migration, never silently falls through to a different profile
+  r = await cli("preflight", "wfT1", "--quick");
+  assert.notEqual(r.code, 0, "--quick must be rejected, not remapped");
+  assert.match(r.out, /--quick was removed/);
+  assert.match(r.out, /preflight --offline/, "the rejection names the migration");
 
   // --require turns a skipped runtime check into a hard fail (the CI teeth)
   r = await cli("preflight", "wfT1", "--require=simulate");
