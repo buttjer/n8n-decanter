@@ -91,6 +91,24 @@ node test/field-test/stage.mts --down <manifest>                 # teardown
 
 `run.mts <manifest> S1 --dry-run` prints the filled turns and spawns nothing.
 
+**Verify scope (`verifyWorkflows`).** A scenario declares which workflows it owns;
+`run.mts` resolves that to ids and passes them to `verify.mts`. `"all"` verifies
+every tracked folder; an **array** selects by manifest `kind`, plus the
+pseudo-kind **`"created"`** for a workflow the *agent* built (on the instance,
+absent from `seeded` — S2 makes one, so neither S2 nor S4 can name it up front).
+
+> This field was declared in every spine and **never read** until 2026-07-26 —
+> verify always checked everything. That is why S4 reported S3's drift as its own
+> failure. Scope a scenario to what it owns and the summary means what it says.
+
+**Deliberate drift (`preHook: "remote-drift"` + `--expect-drift`).** S3 edits a
+node over raw MCP *on purpose* and the agent is supposed to refuse to push over
+it — so the drift **persists by design**, and byte-equality scored it as two
+violations. `run.mts` now tells the verifier which workflow that is, and those
+two checks pass either way, recording which happened. Byte-equality genuinely
+cannot separate "correctly refused", "pulled and resolved", and "blindly
+`--force`d" — that judgement is the grader's, from the transcript.
+
 **Scenario prerequisites.** Some scenarios act on state an earlier one built —
 **S4 requires S2** (it opens with "let's tidy *the orders workflow*", which is
 the workflow S2 creates). A full `S1 S2 S3 S4` round satisfies that implicitly;

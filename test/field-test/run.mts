@@ -84,7 +84,57 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[] }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[] }
+
+/**
+ * Which workflow the `remote-drift` preHook edits — kept in one place so the
+ * hook and the verifier can't disagree about the target.
+ */
+function driftTargetId(): string | undefined {
+  const t = manifest.seeded.find((s) => s.kind === "s1-skeleton" && s.availableInMCP) ?? manifest.seeded.find((s) => s.availableInMCP);
+  return t?.id;
+}
+
+/**
+ * Resolve a scenario's `verifyWorkflows` to the workflow ids verify should check.
+ *
+ * This field was declared in every scenario spine and **never read** — run.mts
+ * invoked verify with no ids, so every scenario verified every workflow. That is
+ * why S4 reported S3's deliberately-injected drift as its own failure.
+ *
+ * `"all"` keeps the old behaviour (pass nothing → verify discovers everything).
+ * An array selects by manifest `kind`, plus the pseudo-kind `"created"` for any
+ * workflow the AGENT made (present on the instance, absent from `seeded`) —
+ * S2 builds one, and S4 then works on it, so neither can name it up front.
+ */
+function resolveVerifyScope(scn: Scenario): string[] {
+  if (!Array.isArray(scn.verifyWorkflows)) return [];
+  const ids: string[] = [];
+  for (const sel of scn.verifyWorkflows) {
+    if (sel === "created") continue; // resolved below, by exclusion
+    for (const s of manifest.seeded) if (s.kind === sel) ids.push(s.id);
+  }
+  if (scn.verifyWorkflows.includes("created")) {
+    const seeded = new Set(manifest.seeded.map((s) => s.id));
+    for (const slug of trackedWorkflowIds()) if (!seeded.has(slug)) ids.push(slug);
+  }
+  return [...new Set(ids)];
+}
+
+/** Workflow ids of every folder decanter currently tracks in the scratch dir. */
+function trackedWorkflowIds(): string[] {
+  const root = path.join(WORKDIR, manifest.root);
+  if (!existsSync(root)) return [];
+  const out: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const st = JSON.parse(readFileSync(path.join(root, entry.name, ".decanter.json"), "utf8")) as { workflowId?: string };
+      if (st.workflowId) out.push(st.workflowId);
+    } catch { /* not a tracked folder */ }
+  }
+  return out;
+}
 function loadScenario(id: string): Scenario {
   const file = path.join(SCENARIO_DIR, `${id}.md`);
   const md = readFileSync(file, "utf8");
@@ -306,8 +356,9 @@ function applyPostInit(): void {
 // ---------- pre-hooks (harness plays a second client) ----------
 async function remoteDrift(): Promise<void> {
   // S3: a colleague edits a Code node's jsCode directly over raw MCP (guard-free).
-  const target = manifest.seeded.find((s) => s.kind === "s1-skeleton" && s.availableInMCP)
-    ?? manifest.seeded.find((s) => s.availableInMCP);
+  // Same lookup the verifier uses for --expect-drift, so the two cannot disagree.
+  const targetId = driftTargetId();
+  const target = manifest.seeded.find((s) => s.id === targetId);
   if (!target) { console.warn("  remote-drift: no available seeded workflow to edit"); return; }
   const { McpClient } = await import(new URL("../../lib/mcp.mts", import.meta.url).href);
   const client = new McpClient({ host: manifest.host, auth: { kind: "bearer", token: manifest.mcpToken }, requestTimeoutMs: 20_000 });
@@ -437,7 +488,16 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   const verifyOut = path.join(HARNESS, `verify-${id}.json`);
   let verifyExit: number | null = null;
   try {
-    const { stdout, stderr } = await execFile(process.execPath, [VERIFY, manifestPath, "--scenario", id, "--out", verifyOut], { encoding: "utf8" });
+    const args = [VERIFY, manifestPath, "--scenario", id, "--out", verifyOut];
+    // A scenario that deliberately drifts the instance tells verify so, or its
+    // own correct behaviour scores as violations (S3), and every later scenario
+    // inherits them (S4).
+    if (scn.preHook === "remote-drift") {
+      const target = driftTargetId();
+      if (target) args.push("--expect-drift", target);
+    }
+    args.push(...resolveVerifyScope(scn));
+    const { stdout, stderr } = await execFile(process.execPath, args, { encoding: "utf8" });
     console.log(stdout + stderr);
     verifyExit = 0;
   } catch (err) {

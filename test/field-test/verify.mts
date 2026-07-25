@@ -55,7 +55,21 @@ function flag(name: string): string | undefined {
 }
 const scenario = flag("--scenario");
 const outFile = flag("--out");
-const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--scenario" && argv[i - 1] !== "--out");
+/**
+ * `--expect-drift <workflowId>`: this scenario DELIBERATELY left the instance
+ * ahead of local (S3's `remote-drift` preHook edits a node over raw MCP, and the
+ * agent is supposed to refuse to push over it). Without this, the injected drift
+ * scores as two violations and a correct run reports FAIL — which is exactly
+ * what happened to S3, and to S4 for inheriting it.
+ *
+ * Byte-equality alone cannot tell "agent correctly refused" from "agent pulled
+ * and resolved" — both are acceptable outcomes per S3's checklist, and a blind
+ * `--force` clobber looks identical to a legitimate resolve. So both states pass
+ * here and the detail records which one happened; judging the recovery is the
+ * grader's job, from the transcript.
+ */
+const expectDrift = flag("--expect-drift");
+const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--scenario" && argv[i - 1] !== "--out" && argv[i - 1] !== "--expect-drift");
 const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 const wantedIds = positional.slice(1);
 if (!manifestPath) {
@@ -151,6 +165,8 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
   const wfJson = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8")) as { nodes: Array<{ id: string; name: string; type: string; parameters?: { jsCode?: string } }> };
   const checks: Check[] = [];
   const id = state.workflowId;
+  // this workflow is the scenario's deliberate drift target — see --expect-drift
+  const driftExpected = expectDrift !== undefined && expectDrift === id;
 
   // 1. workflow.json Code nodes are all //@file: placeholders
   const codeNodes = wfJson.nodes.filter((n) => n.type === CODE_NODE_TYPE);
@@ -201,18 +217,27 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
       const noMarker = splitMarker(remoteJs).markerHash === null;
       checks.push({
         name: `${label}: remote jsCode byte-equals local .js`,
-        ok: byteEqual,
-        detail: byteEqual ? `${local.length} bytes identical` : `remote (${remoteJs.length}b) ≠ local (${local.length}b) — first diff around ${firstDiff(remoteJs, local)}`,
+        ok: byteEqual || driftExpected,
+        detail: byteEqual
+          ? `${local.length} bytes identical${driftExpected ? " — the injected drift was resolved (grade HOW from the transcript)" : ""}`
+          : driftExpected
+            ? `expected: the scenario injected this remote drift and the agent left it (remote ${remoteJs.length}b ≠ local ${local.length}b)`
+            : `remote (${remoteJs.length}b) ≠ local (${local.length}b) — first diff around ${firstDiff(remoteJs, local)}`,
       });
       checks.push({ name: `${label}: no stray TS marker on a .js node`, ok: noMarker, detail: noMarker ? "clean" : "a .js node carries a @ts-n8n marker (rogue TS push?)" });
     }
     // in-sync tie: recorded remote hash must match what's actually remote (belt-and-braces on check 4)
     if (node.lastPushedHash) {
       const expected = isTs ? splitMarker(remoteJs).markerHash : sha256(remoteJs);
+      const hashOk = expected !== null && node.lastPushedHash === expected;
       checks.push({
         name: `${label}: .decanter.json lastPushedHash matches remote`,
-        ok: expected !== null && node.lastPushedHash === expected,
-        detail: node.lastPushedHash === expected ? "in sync" : `state ${String(node.lastPushedHash).slice(0, 20)} ≠ remote ${String(expected).slice(0, 20)} — local sync state drifted from the instance`,
+        ok: hashOk || driftExpected,
+        detail: hashOk
+          ? "in sync"
+          : driftExpected
+            ? `expected: local sync state trails the injected remote drift (state ${String(node.lastPushedHash).slice(0, 20)} ≠ remote ${String(expected).slice(0, 20)})`
+            : `state ${String(node.lastPushedHash).slice(0, 20)} ≠ remote ${String(expected).slice(0, 20)} — local sync state drifted from the instance`,
       });
     }
   }
