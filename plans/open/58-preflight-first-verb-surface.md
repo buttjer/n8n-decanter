@@ -104,9 +104,11 @@ session and split off — see [Deferred](#deferred) below.
 
 ## Deferred → now [Plan 59](59-declutter-verify-verbs.md)
 
-Collapsing **`check`** and **`status`** into `preflight` (+ a new `diff` verb)
-was part of the original ask and is deliberately not in this change. It has its
-own plan now — [Plan 59](59-declutter-verify-verbs.md). The reasons it's
+Collapsing **`check`**, **`status`**, and **`simulate`** into `preflight` (+ a
+new `diff` verb, + dropping the profile system for plain flags) was part of the
+original ask and is deliberately not in this change. It has its own plan now —
+[Plan 59](59-declutter-verify-verbs.md), which **supersedes this plan's
+`--quick` redefinition** (Plan 59 removes profiles entirely). The reasons it's
 separate:
 
 - `check` is invoked by the scaffolded PostToolUse hook
