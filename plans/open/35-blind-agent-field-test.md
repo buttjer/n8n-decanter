@@ -67,9 +67,15 @@ happens. A UX/contract field test, not a CI suite.
 >    #117).** It joins the picker menu and is billed as *"the single gate an
 >    agent runs before push."* Make it a first-class surface under test: the
 >    rubric should record **whether blind agents discover and use `preflight`**
->    (vs. running `check`/`test`/`simulate` piecemeal or skipping verification),
->    and it's a natural pre-`push`/`publish` step in S1/S2's checklists. It is
->    read-only, so it never trips the drift guard.
+>    (vs. running `check`/`simulate` piecemeal or skipping verification),
+>    and it's a natural pre-`push` step in S1/S2's checklists. It is
+>    read-only, so it never trips the drift guard. *(Meaning shifted 2026-07-25,
+>    Plan 60/#162: `preflight` now grades **local code only** — the instance
+>    `test` stage moved out of it to **after** the push, so `test` is no longer
+>    a piecemeal alternative preflight subsumes but a distinct post-push step.
+>    Rounds up to `ftrun-95299` ran the old preflight; grade "preflight
+>    adoption" against whichever CLI the round's manifest packed — the cut-over
+>    note in `scenarios/S1.md` records the same.)*
 > 7. **Post-review drift reconciled (2026-07-23, since @710d3f1).** The backlog
 >    reorg (#122) retired `plans/README.md`/`BACKLOG.md` — there is **no index
 >    file to update** (the `ls plans/*/` dir listing is the index; conventions
@@ -286,10 +292,15 @@ success checklist. Round 1 = one run each; later rounds are cheap re-runs.
   (working-as-intended vs confusing); friction log (failed commands,
   retries, misleading errors, doc gaps) each tied to the exact CLI/docs
   surface; turns/time to done.
-- **Artifacts:** transcripts (`--output-format stream-json`), the **captured
-  guard stderr** (stage-scaffold the `.mcp.json` command to redirect it to a
-  file — there is no proxy log), sync-dir git history, instance end-state —
-  kept in the scratch dir, not committed. Only the report lands in-repo.
+- **Artifacts** *(superseded 2026-07-24 by the archive redesign — see "Run
+  archives" below; #153/#157/#159)*: transcripts (`--output-format
+  stream-json`), the **captured guard stderr**, per-turn prompts, verify
+  verdicts, a credential-scrubbed manifest, and the sync-dir git history (as a
+  bare clone) are **committed**, compressed, to
+  `test/field-test/runs/<iso>-<runId>/` as `raw.tgz` + `report.html`. The
+  original design kept them in the scratch dir uncommitted — a $6 round died
+  with its teardown, which is what forced the change. Only the instance
+  end-state stays uncommitted (reconstructable from the history).
 
 ## Tasks
 
@@ -593,12 +604,15 @@ The failing agent said so itself, in turn 2:
 
 It was never confused about state. It knew exactly what it had not done, said so,
 and **waited for authorisation** — because
-[`template/AGENTS.md.example`](../../template/AGENTS.md.example) tells it to, in
-bold, twice: *"`push` writes the DRAFT of the live instance — **only when the
-user asks**"*, and *"Otherwise finish edits, verify with `check` + `run`, and
-report that the change is ready to push."* Finish edits → verify with `check` +
-`node run` → report ready to push is, step for step, what it did. **It followed
-the documented contract and `verify.mts` scored it a violation.**
+[`template/AGENTS.md.example`](../../template/AGENTS.md.example) *told* it to, in
+bold, twice — the contract **as it stood at the time of those rounds**: *"`push`
+writes the DRAFT of the live instance — **only when the user asks**"*, and
+*"Otherwise finish edits, verify with `check` + `run`, and report that the change
+is ready to push."* Finish edits → verify with `check` + `node run` → report
+ready to push is, step for step, what it did. **It followed the documented
+contract and `verify.mts` scored it a violation.** *(#163 has since rewritten
+both passages — push is now part of finishing the work; the quotes are kept
+verbatim here because they explain those rounds.)*
 
 **So S2 was mis-specified, not the product.** Its prompt said *"Build the
 structure in n8n and write the Code steps here in the repo"* — work to do, never
@@ -621,12 +635,16 @@ failing ones obeyed it. That is the whole variance.
   any scenario whose invariants include remote state must state the goal state in
   the prompt, or it is testing obedience to the contract rather than the tool.
 
-**The real product question this leaves open** (maintainer call, Task 5): *"only
-when the user asks"* is a deliberate safety stance and probably right — but it
-means an agent handed a build task will routinely finish, leave the work local,
-and merely announce it. Should the contract distinguish "the user described a
-goal that includes it running" from "the user asked for an edit"? That is the
-finding worth acting on, and it is a wording decision, not a code one.
+**~~The real product question this leaves open~~ — DECIDED (maintainer,
+2026-07-24 → PR #163).** The question was whether the contract should
+distinguish "the user described a goal that includes it running" from "the user
+asked for an edit". The maintainer's call went further and simpler: **`push` is
+part of finishing the work — only `publish` (changing what is live) needs the
+ask.** A push lands on the draft and never changes what runs, so gating it
+protected nobody while leaving build tasks unfinished. The scaffolded contract
+and `/docs/agents` surfaces were rewritten accordingly (#163), and #162
+completed the story with the documented order `preflight → push → test →
+publish`.
 
 ## Harness status — capabilities (2026-07-23)
 
@@ -698,8 +716,15 @@ the missing hooks in mind.
 - The captured-guard-stderr evidence question is answered explicitly (did the
   skills' routing nudge bite, yes/no + examples) and cross-referenced from the
   [Plan 50](../draft/50-code-node-authoring-skill.md) authoring-skill entry.
-- Blind sessions produced no changes to this repo, and no scratch artifacts
-  were committed.
+- Blind sessions produced no changes to this repo. *(Amended 2026-07-25: the
+  original criterion also said "no scratch artifacts were committed", which the
+  archive redesign deliberately reversed — #153/#157/#159 **commit** each
+  round's transcripts, verify verdicts, guard log, per-turn prompts and workflow
+  history, credential-scrubbed and compressed, to `test/field-test/runs/`. The
+  surviving invariant is narrower and the one that matters: **nothing a blind
+  session writes lands in this repo uncurated** — archives are packed by the
+  harness, secret-scrubbed, and committed by the operator, never by the blind
+  agent.)*
 
 ## Non-goals
 
