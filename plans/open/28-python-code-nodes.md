@@ -270,7 +270,12 @@ carrying a **Python** Code node (`type: "n8n-nodes-base.code"`,
    (no watch code change — state-mapped resolution).
 8. `test`/`simulate` on a workflow with a Python Code node → the node executes
    under Pyodide on the real engine; the `.py` local body materializes into the
-   run correctly.
+   run correctly. **Note the two paths differ post-Plan-60/#162:** `simulate`
+   runs the **local** body directly (local engine), while `test` executes the
+   **draft tip** on the instance — so the local `.py` reaches a `test` run only
+   after a `push` (or via `test`'s TTY prompt, which offers to push first).
+   Acceptance should assert each path on its own terms rather than assuming the
+   local body reaches both.
 
 Then `npm test` + `npm run typecheck` green; optionally `npm run test:smoke`.
 

@@ -130,7 +130,10 @@ that dead-end without Docker" list.
    story are user-facing. **The "needs Docker" claim is spread across many
    surfaces to update when npx lands:** `docs/cli/simulate.md`,
    `docs/cli/overview.md` (offline table + "simulate needs Docker but never the
-   n8n instance"), `docs/cli/test.md` (taxonomy table), `README.md` (feature
+   n8n instance"), `docs/cli/test.md` (taxonomy table),
+   **`docs/cli/preflight.md`** (added 2026-07-25 — since Plan 60/#162 made
+   `simulate` preflight's *only* runtime stage, this page now carries the most
+   prominent Docker claims of any doc), `README.md` (feature
    bullet + compare cell), `template/AGENTS.md.example` (runtime-checks section
    **and** the scenario-loop "fast, no Docker" contrasts), and
    `docs/cli/scenario.md` (whose "`scenario check` is offline, no Docker
