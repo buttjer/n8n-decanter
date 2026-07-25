@@ -24,6 +24,10 @@ n8n-decanter check
 # both green -> push: the draft is where the work lands, and code that only
 # exists in this folder is not done
 n8n-decanter push order-sync
+# now the draft holds your code -> test it on the instance. This step leaves
+# the offline loop: `test` runs the DRAFT on n8n, so it only means anything
+# once you have pushed (before a push it would run the old code).
+n8n-decanter test order-sync
 # going LIVE (`publish` / `push --publish`) stays the user's call
 ```
 
