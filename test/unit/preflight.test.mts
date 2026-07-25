@@ -59,7 +59,7 @@ describe("preflight coverage + require (pure)", () => {
 });
 
 describe("preflight profiles (pure)", () => {
-  // Plan 58: no `test` tier — and no `--quick`: with `test` gone it was
+  // Plan 60: no `test` tier — and no `--quick`: with `test` gone it was
   // identical to the default profile, so it was removed rather than redefined
   // (static-only is check's job; Plan 59 retires profiles entirely).
   it("maps each profile to its active tiers", () => {
@@ -171,7 +171,7 @@ describe("runPreflight (stubbed)", () => {
     assert.ok(!calls.some((c) => /update_workflow|publish|restore/.test(c)), "preflight issued no writes: " + calls.join(","));
   });
 
-  // Plan 58's core contract: preflight never EXECUTES the workflow on the
+  // Plan 60's core contract: preflight never EXECUTES the workflow on the
   // instance. Not a write — a run. `test_workflow` grades the draft, which
   // before a push is not the code being shipped.
   it("never runs the workflow on the instance, in any profile", async () => {
@@ -251,7 +251,7 @@ describe("runPreflight (stubbed)", () => {
     const dir = seed(tmp, "return [{json:{x:999}}];\n"); // local ahead of the (unpublished) draft
     const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
     // The sharpest case: `test` on an unpublished workflow pushes WITHOUT a
-    // prompt. Plan 58 removed the seam that used to hold preflight back — the
+    // prompt. Plan 60 removed the seam that used to hold preflight back — the
     // guarantee now comes from preflight never invoking runTest at all.
     const origIn = process.stdin.isTTY;
     const origOut = process.stdout.isTTY;

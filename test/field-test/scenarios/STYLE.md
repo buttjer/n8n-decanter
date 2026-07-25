@@ -49,17 +49,28 @@ the leak fixed, not graded**.
 
 ## State the GOAL-STATE, or you are testing the wrong thing (hard-won)
 
-The scaffolded `template/AGENTS.md.example` tells agents, in bold and twice,
-that `push` touches the live instance **"only when the user asks"**, and that
-otherwise they should *"finish edits, verify with `check` + `run`, and report
-that the change is ready to push"*. A compliant agent therefore stops at the
-instance boundary and says so — which is correct behaviour, not a failure.
+**The history (pre-#163).** The scaffolded `template/AGENTS.md.example` used to
+tell agents, in bold and twice, that `push` touches the live instance *"only
+when the user asks"*, and that otherwise they should *"finish edits, verify with
+`check` + `run`, and report that the change is ready to push"*. A compliant
+agent therefore stopped at the instance boundary and said so — correct
+behaviour, not a failure. **S2 lost ~2 of 5 rounds to exactly this**: its agent
+wrote *"Still local-only (not pushed to the draft) — let me know when you'd like
+me to push"*, having followed the contract to the letter, and `verify.mts`
+(which checks remote == local) scored that obedience as a violation.
 
-So **a prompt that only describes work to do never authorises going live**, and
-`verify.mts` (which checks remote == local) will score obedience as a violation.
-S2 lost ~2 of 5 rounds to exactly this: its agent wrote *"Still local-only (not
-pushed to the draft) — let me know when you'd like me to push"*, having followed
-the contract to the letter.
+**What changed (#163, 2026-07-24).** That finding is what drove the contract
+rewrite: a push lands on the **draft** and never changes what runs, so `push` is
+now part of finishing the work, and *"only when the user asks"* covers
+`publish`/`unpublish` and archiving existing workflows instead. The current
+contract reads *"The loop: `edit → preflight → push → test → publish` — going
+live (`publish`) only when the user asks."*
+
+**The rule below survives the rewrite, for a narrower reason.** An agent is no
+longer *forbidden* from pushing, but a prompt that only describes work to do
+still leaves "is this supposed to end up in n8n?" to inference — and `verify.mts`
+scores remote state, not intent. State the goal and the scenario measures the
+tool; leave it implicit and the scenario measures how a given session guesses.
 
 **Every scenario whose invariants include remote state must say so in the
 prompt, at goal level.** S1 does: *"That step is still empty over in n8n, so make

@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   push. The old contract framed `test` as a pre-push runtime check and ended its
   loop at `preflight → push`; both are now reconciled to the new order. Affects
   `template/AGENTS.md.example` and the `/docs/agents` surfaces. *(Same surface
-  the Plan 58 verb reorder changed — kept in lockstep so the blind field test
+  the Plan 60 verb reorder changed — kept in lockstep so the blind field test
   grades agents against a contract that matches the tool.)*
 
 - **Breaking: `preflight` no longer runs the instance-side `test` stage.** It

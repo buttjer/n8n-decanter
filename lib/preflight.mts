@@ -7,7 +7,7 @@
 // returned facts. Nothing here mutates: no push, no publish, no restore, no
 // draft write — `runSimulation` runs headless with `--network-none` forced on.
 //
-// Plan 58 — preflight does NOT run the instance-side `test` stage. Every stage
+// Plan 60 — preflight does NOT run the instance-side `test` stage. Every stage
 // that produces a *verdict* now reads the same artifact: the LOCAL code. The
 // instance is read for sync facts only. `test_workflow` grades the n8n draft,
 // which before a push is not the code being shipped — folding that into the
@@ -34,7 +34,7 @@ export type CheckId =
 /**
  * Check ids retired from the ladder, kept so `--require=<id>` can reject them
  * with the reason and the replacement instead of a bare "unknown check".
- * `test` left in Plan 58 — it is now a post-push verb, not a preflight stage.
+ * `test` left in Plan 60 — it is now a post-push verb, not a preflight stage.
  */
 export const RETIRED_CHECK_IDS: Record<string, string> = {
   test: 'the instance run is no longer a preflight stage — run "n8n-decanter test" after pushing (preflight → push → test → publish)',
@@ -300,7 +300,7 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
           }
           subject.parity = "local-ahead";
           const missing = off.some((n) => n.state === "local-missing");
-          // Plan 58: every preflight verdict now covers LOCAL code, so this is
+          // Plan 60: every preflight verdict now covers LOCAL code, so this is
           // no longer a caveat about the runtime tier grading the wrong thing —
           // it is the plain next step in the flow: push, then test.
           return {
@@ -358,7 +358,7 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
 
   // ---- RUNTIME (executes locally; minutes) ----
   // `simulate` is the only runtime stage — it replays LOCAL code on a local
-  // engine. The instance-side `test` run left in Plan 58 (it graded the draft,
+  // engine. The instance-side `test` run left in Plan 60 (it graded the draft,
   // not local); it is now its own verb, run after `push`.
   await runtimeCheck(ctx, "simulate", spec.simulate, src, run, () => runSimulateStage(ctx, src));
 
@@ -455,7 +455,7 @@ function staleFinding(label: string, stale: Staleness, ctx: PreflightContext, ru
   return { status: "pass", message: `${label}${stale === "fresh" ? " (fresh)" : ""} available to pin from` };
 }
 
-/** Skip/gating logic for the runtime tier (`simulate` — the only stage since Plan 58). */
+/** Skip/gating logic for the runtime tier (`simulate` — the only stage since Plan 60). */
 async function runtimeCheck(
   ctx: PreflightContext,
   id: "simulate",

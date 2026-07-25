@@ -190,7 +190,7 @@ export async function runTest(
   { ref, source, trigger }: { ref: string; source: SimSource; trigger?: string },
   log: Log,
 ): Promise<TestReport> {
-  // Plan 58 removed `neverMutate`: preflight was its only caller, and preflight
+  // Plan 60 removed `neverMutate`: preflight was its only caller, and preflight
   // no longer runs `test` at all. `test` is now unambiguously a verb you run
   // yourself, after `push` — a TTY gets the choice, a pipe/CI never mutates.
   const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;

@@ -89,6 +89,9 @@ happens. A UX/contract field test, not a CI suite.
 >    `settings.local.json.example` pre-approves the read verbs but **not
 >    `preflight`** — the harness allow-list extension must add it (read-only) so
 >    headless runs don't stall on the very gate point 6 wants graded.
+>    *(Superseded 2026-07-25: `preflight` has been pre-approved in the template
+>    since #138, and the file is `settings.json.example` since #149 — the
+>    harness extension is redundant here, not a requirement.)*
 > 8. **[Plan 51](../done/51-live-mirror-and-backups.md) (#125) shipped in 0.6.0
 >    and changes the very guard surface under test — reconcile before executing.**
 >    *(A) On-by-default live `workflow.json` mirror (Part A):* after the guard
@@ -179,9 +182,13 @@ guard).
   `simulate` + `mcp__n8n-docs`) **plus** a small allow-list extension so
   headless runs don't stall: the mutating verbs a consenting user would approve
   interactively (`init`/`push`/`publish`/`test`/`watch`, + git/npm as needed),
-  **and `preflight`** — read-only, but **not yet in the template allow-list**
-  (Plan 36 shipped the verb without templating it), so the gate point 6 wants
-  graded would otherwise prompt. The template **deny rules stay active** (the
+  and `preflight`. *(Corrected 2026-07-25: this used to say `preflight` was
+  "not yet in the template allow-list" — it has been pre-approved there since
+  #138, so the harness's extension is merely redundant, not required. The file
+  is also `template/.claude/settings.json.example` now, project scope since
+  #149/Plan 56 — and the harness deliberately never writes the template file;
+  it merges its overrides into the scratch dir's local layer.)* The template
+  **deny rules stay active** (the
   four `push --force` variants, `.decanter.json` edits, `.env` read/edit): those
   guards are part of what's under test. *(`create`/`archive` are no longer
   verbs — #107.)* Permission-prompt UX itself is out of scope.
