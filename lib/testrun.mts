@@ -187,14 +187,13 @@ export async function runTest(
   config: DecanterConfig,
   dir: string,
   id: string,
-  { ref, source, trigger, neverMutate = false }: { ref: string; source: SimSource; trigger?: string; neverMutate?: boolean },
+  { ref, source, trigger }: { ref: string; source: SimSource; trigger?: string },
   log: Log,
 ): Promise<TestReport> {
-  // `neverMutate` (preflight's read-only gate) forces the non-interactive path:
-  // the draft tip is tested as-is, local code is never pushed first, and no
-  // keep/restore prompt can fire. Without it, an interactive TTY where local
-  // differs from the draft would offer to push local — a mutation a gate forbids.
-  const interactive = !neverMutate && process.stdin.isTTY === true && process.stdout.isTTY === true;
+  // Plan 58 removed `neverMutate`: preflight was its only caller, and preflight
+  // no longer runs `test` at all. `test` is now unambiguously a verb you run
+  // yourself, after `push` — a TTY gets the choice, a pipe/CI never mutates.
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const { exec, runData } = readCapture(dir, ref, source);
   // Provenance (Plan 37): a scenario with any authored/scaffolded node proves
   // executability only — the diff below asserts capture-provenance nodes

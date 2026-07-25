@@ -24,6 +24,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `init`) and the `/docs/agents` surfaces. *(Surfaced by the Plan 35 blind field
   test, where the "failing" agent was following the old contract exactly.)*
 
+- **The scaffolded agent contract now follows the `preflight → push → test →
+  publish` flow.** `preflight` is local-only (it no longer runs on the instance),
+  so `test` — which runs the workflow's **draft** — is only meaningful *after* a
+  push. The old contract framed `test` as a pre-push runtime check and ended its
+  loop at `preflight → push`; both are now reconciled to the new order. Affects
+  `template/AGENTS.md.example` and the `/docs/agents` surfaces. *(Same surface
+  the Plan 58 verb reorder changed — kept in lockstep so the blind field test
+  grades agents against a contract that matches the tool.)*
+
+- **Breaking: `preflight` no longer runs the instance-side `test` stage.** It
+  ran `test_workflow` against n8n's **draft**, while every other stage graded
+  your **local files** — so whenever a push was pending, one score described
+  two different versions of the workflow, flagged only by a `-10` parity warn.
+  A report could read *caution, 90/100* while its runtime evidence was about
+  code you weren't shipping. `preflight` now grades local code only; the
+  instance is read for sync facts and never executed.
+
+  The documented flow is **`preflight` → `push` → `test` → `publish`**: verify
+  local code, make it the draft, run what you actually pushed, then go live.
+  Nothing was removed from the toolbox — the instance run moved to where it
+  means something.
+
+  **Migration:** a CI job that gates on a plain `preflight` (any profile) no
+  longer gets an instance run inside that gate — the draft is never executed by
+  preflight. To keep instance-run coverage, add `n8n-decanter test` as its own
+  step **after** your push step (`--require=test` users get a hard error with
+  this guidance; default-profile users get this note).
+
+- **Breaking: `preflight --require=test` is rejected**, with a message pointing
+  at the new flow rather than a bare "unknown check". The `test` id is gone
+  from `--require`, from `--json` `checks[]`, and from `coverage`.
+
+- **`preflight` auto-fetches a capture only under `--full`** — the one profile
+  that both runs a runtime stage and contacts the instance. The default profile
+  has no runtime stage, so it no longer fetches, and a missing or stale capture
+  is reported as `info` rather than `warn` — nothing there consumes one
+  (`--offline` never reaches the instance to fetch).
+
+- The `parity` warn is reworded. It was a caveat about the runtime tier
+  grading the wrong artifact; that's no longer possible, so it is now the plain
+  next step: *"local code differs from the draft in N node(s) — push to make it
+  the draft, then test"*.
+
+- **`simulate` is the sole runtime stage** (under `--full`, or `--offline` for
+  the no-instance variant) and needs Docker. For runtime evidence without
+  Docker, push and then run `test`.
+
+### Removed
+
+- **Breaking: the `preflight --quick` profile.** With the `test` stage gone it
+  was byte-identical to the default profile, and rather than redefine it into a
+  meaning users would have to learn and then unlearn (the profile vocabulary is
+  on its way out — Plan 59 replaces profiles with flags), it is gone: passing
+  `--quick` errors with the migration. Static-only checking is `check`'s job;
+  a no-instance gate is `preflight --offline` (which still replays via
+  `simulate`). `--full` and `--offline` are unchanged.
+- **Breaking: `preflight --trigger <node>`.** It existed only to feed the
+  removed instance `test` stage; since that stage's removal it parsed and did
+  nothing. `test --trigger <node>` (the post-push instance run) keeps the flag
+  — that is where trigger selection acts.
+
+## [0.7.0] - 2026-07-24
+
 ### Added
 
 - **`check` now warns when local work has not been registered with n8n** — a

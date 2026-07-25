@@ -40,8 +40,10 @@ clean git diffs.
   per-node drift guard gate every push; `check` (offline), `simulate`
   (offline engine replay, Docker), and `test` (instance-side) each diff every
   node against a real captured execution and exit 1 on divergence — and
-  `preflight` runs the whole ladder as one **scored, read-only, CI-gateable
-  verdict** (never mutates), the single gate an agent runs before `push`.
+  `preflight` scores your local code into one **read-only, CI-gateable
+  verdict** (never writes, never runs on your instance). The flow is
+  **`preflight` → `push` → `test` → `publish`**: verify local, make it the
+  draft, run what you pushed, go live.
 - **Committed, schema-scaffolded scenarios** — `scenario create` turns a
   captured execution and/or the workflow's own output schemas
   (`--scaffold`, no LLM API) into a reviewable, git-tracked pin-data set that
@@ -130,7 +132,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `data-tables [table…]` | Fetch data-table schema + rows (read-only) |
 | `test <workflow>` | Pinned run **on the instance** (draft); diffs vs a capture |
 | `simulate <workflow>` | Offline engine replay (Docker); diffs vs a capture |
-| `preflight [workflow…]` | The whole verification ladder as one scored, read-only gate (exits 1 on *not ready*) |
+| `preflight [workflow…]` | Verifies your local code as one scored, read-only gate — run before `push` (exits 1 on *not ready*) |
 | `scenario create` / `scenario check` | Build / validate a committed scenario (captured and/or schema-scaffolded) |
 | `backup create` / `restore` / `list` | Git-native disaster recovery — capture / redeploy / list versioned full-export backups |
 | `list [--remote]` | Pulled workflows (`--remote` adds unpulled ones) |
@@ -170,7 +172,7 @@ whole-workflow authoring toolkit.
 | **Shared types & helpers in Code nodes** | ❌ self-host `NODE_FUNCTION_ALLOW_*` only; no libraries | ❌ not part of its model | ✅ `shared/*.ts` + npm bundled into self-contained nodes (Cloud-safe) |
 | **Code as individual files** | ❌ no source files (JSON blob) | 🟡 one `.workflow.ts` per workflow | ✅ folder per workflow; each Code node its own `.js`/`.ts` |
 | **Code-level git versioning** | 🟡 in-app history (DB snapshots, tiered retention); Git source control is Enterprise-only | ✅ GitOps sync of workflow source | ✅ real git — diffs, PRs, blame per Code node; auto-commit each sync (+ read-only structure snapshot) |
-| **Preflights** (`check` / `simulate` / `test` / `preflight`) | 🟡 re-run past executions / pin data, but online in-editor | 🟡 inspect executions against a live env | ✅ offline `check` + `simulate`, instance-side `test`; each diffs every node vs a real capture, exits 1 on divergence — and `preflight` scores the whole ladder into one read-only, CI-gateable verdict |
+| **Preflights** (`check` / `simulate` / `preflight`, then `test`) | 🟡 re-run past executions / pin data, but online in-editor | 🟡 inspect executions against a live env | ✅ `preflight` scores your **local** code (layout, types, instance reads, optional offline `simulate` replay) into one read-only, CI-gateable verdict *before* the push — then instance-side `test` runs the pushed draft; each runtime check diffs every node vs a real capture, exits 1 on divergence |
 | **Draft-first code sync** | ✅ editor *Save* vs *Publish* (manual, in-browser) | 🟡 API sync republishes on push (no draft-only) | ✅ pushes land on the **draft**; `publish` is the deliberate go-live (over MCP) |
 | **Live editing** | ✅ the canvas (baseline) | 🟡 explicit pull/push, no auto-watch | ✅ `watch`: push on save; the open editor tab reflects each push live (n8n-native) |
 | **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs incl. a pre-wired `mcp connect` guard holding the credentials; offline `check`/`node run` loop |

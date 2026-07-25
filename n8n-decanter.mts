@@ -14,7 +14,7 @@ import { runStdioGuard } from "./lib/mcpconnect.mts";
 import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { createMirror } from "./lib/mirror.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
-import { ALL_CHECK_IDS, type CheckId, exitCodeOf, formatCheckLine, type Palette, type Profile, renderPreflightSummary, runPreflight } from "./lib/preflight.mts";
+import { ALL_CHECK_IDS, type CheckId, exitCodeOf, formatCheckLine, type Palette, type Profile, renderPreflightSummary, RETIRED_CHECK_IDS, runPreflight } from "./lib/preflight.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { printTestReport, runTest } from "./lib/testrun.mts";
@@ -76,8 +76,8 @@ ${b("Inspect & test")}
   ${d("                                            pinned run on the INSTANCE (draft; recommended); exits 1 on divergence")}
   ${b("simulate")} <workflow> [--execution <execution-id> | --scenario <slug>] [--network-none] [--json]
   ${d("                                            replay through a LOCAL n8n engine (Docker, offline); exits 1 on divergence")}
-  ${b("preflight")} [workflow…] [--quick|--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]
-  ${d("                                            the whole verification ladder as one scored, read-only gate (never mutates)")}
+  ${b("preflight")} [workflow…] [--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]
+  ${d("                                            grades LOCAL code as one scored, read-only gate — push, then test, then publish")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
 
 ${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-scaffolded)")}
@@ -319,7 +319,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--quick", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--host=", "--token=", "--api-key=", "--help", "--version");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--host=", "--token=", "--api-key=", "--help", "--version");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -829,15 +829,24 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         throw new Error('no workflow ids: pass them as arguments or list them in decanter.config.json "workflows"');
       }
       // Profiles are deterministic and distinct — no magic escalation (Plan 36).
-      if ([quickFlag, fullFlag, offlineFlag].filter(Boolean).length > 1) {
-        throw new Error("--quick, --full and --offline are distinct profiles — pass at most one");
+      // `--quick` shipped in 0.6.0 and was removed here rather than redefined
+      // (Plan 59 retires the profile vocabulary entirely) — reject with the
+      // migration, never silently fall through to a different profile.
+      if (quickFlag) {
+        throw new Error("--quick was removed — static-only checking is `n8n-decanter check`; a no-instance gate is `preflight --offline` (runs the local-engine replay too)");
       }
-      const profile: Profile = offlineFlag ? "offline" : fullFlag ? "full" : quickFlag ? "quick" : "default";
+      if (fullFlag && offlineFlag) {
+        throw new Error("--full and --offline are distinct profiles — pass at most one");
+      }
+      const profile: Profile = offlineFlag ? "offline" : fullFlag ? "full" : "default";
       const failOn = valueFlags.get("fail-on");
       if (failOn !== undefined && failOn !== "warn") throw new Error('--fail-on only accepts "warn" (e.g. --fail-on=warn)');
       const failOnWarn = failOn === "warn";
       const requireIds: CheckId[] = [];
       for (const r of (valueFlags.get("require") ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
+        // a retired id gets its reason + replacement, not a bare "unknown check" —
+        // `--require=test` shipped in 0.6.0 and may sit in a user's CI config
+        if (RETIRED_CHECK_IDS[r] !== undefined) throw new Error(`--require: "${r}" is no longer a preflight check — ${RETIRED_CHECK_IDS[r]}`);
         if (!ALL_CHECK_IDS.includes(r as CheckId)) throw new Error(`--require: unknown check "${r}" — valid ids: ${ALL_CHECK_IDS.join(", ")}`);
         requireIds.push(r as CheckId);
       }
@@ -848,9 +857,6 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       const simVersion = valueFlags.get("n8n-version") ?? config.n8nVersion ?? DEFAULT_N8N_VERSION;
       const hasApiKey = config.apiKey !== "";
       const palette: Palette = { green: style.green, yellow: style.yellow, red: style.red, dim: style.dim, bold: style.bold };
-      // test_workflow is synchronous with a 5-min server cap — its client's timeout must outlive it
-      let testMcpClient: McpClient | undefined;
-      const testMcp = (): McpClient => (testMcpClient ??= createMcpClient({ ...config, requestTimeoutMs: Math.max(config.requestTimeoutMs, 320_000) }, log));
       // read-only REST client (auto-fetch + history fallback) — only invoked when hasApiKey, so it never needs requireApiKey
       const restApi = (): N8nApi => new N8nApi({ host: config.host, apiKey: config.apiKey, requestTimeoutMs: config.requestTimeoutMs });
 
@@ -876,9 +882,9 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         }
         const report = await runPreflight({
           config, dir, id, name, profile,
-          scenarioSlug, executionId: valueFlags.get("execution"), trigger: valueFlags.get("trigger"),
+          scenarioSlug, executionId: valueFlags.get("execution"),
           noFetch: noFetchFlag, failFast: failFastFlag, requireIds, simVersion, hasApiKey,
-          mcp, testMcp, api: restApi, dockerAvailable,
+          mcp, api: restApi, dockerAvailable,
           onCheck: jsonFlag ? undefined : (f) => log.info(formatCheckLine(f, palette)),
         });
         reports.push(report);

@@ -32,8 +32,9 @@ This document is the contract for creating and editing these files.
   CLI blocks it at `push`.
 - **`push` writes the DRAFT and is part of finishing the work — code that only
   exists in this folder is not done. `publish` (or `push --publish`) changes
-  what is actually running and needs the user's say-so.** Edit, verify offline
-  with `n8n-decanter check` and `n8n-decanter node run`, then push.
+  what is actually running and needs the user's say-so.** The loop:
+  **edit → `preflight` (grades local) → `push` → `test` (runs the draft — now
+  your code) → `publish` only when asked.**
 
 The rest of this document is the full contract behind those points.
 
@@ -411,30 +412,40 @@ Rules:
 - These fetches use the n8n **public API key** (`N8N_API_KEY`) — the one
   surface MCP doesn't cover. Without a key configured the verb says so.
 
-## Runtime checks: `test` (instance) and `simulate` (offline)
+## The ship flow: `preflight → push → test → publish`
 
-Two pinned-run checks share the capture/scenario sources; **recommend `test`
-first** — it runs on the instance's exact engine (community nodes included)
-with no Docker. Reach for `simulate` when the run must be offline: pre-push
-verification of uncommitted local code, CI without an instance,
-`--network-none` isolation, engine-version rehearsal. Both diff node output
-against the capture and exit 1 on divergence.
+`preflight` verifies your **local** code and never runs the workflow on the
+instance, so it is the gate to run **before `push`**. `test` runs the
+workflow's **draft** on the instance — which holds your code only *after* you
+have pushed it — so it is a **post-push** check: before a push it would
+exercise the old draft, not your edits. `simulate` is an offline engine replay
+of local code (Docker), usable before a push or in CI without an instance. The
+two pinned-run checks (`test`, `simulate`) share the capture/scenario sources,
+diff node output against the capture, and exit 1 on divergence.
 
-- `n8n-decanter test <workflow>` — pinned run **on the instance** (MCP;
-  draft only, the live version is never touched). Non-interactive runs never
-  mutate: they test the draft as-is and say so when your local edits aren't
-  pushed yet — `push` first to test local code.
-- `n8n-decanter simulate <workflow>` — the same idea through a **local**
-  n8n engine (Docker), fully offline.
-- `n8n-decanter preflight <workflow> [--json]` — **the one gate to run before
-  `push`/`publish`.** It runs the whole ladder — static (`check`) + instance
-  reads (`status`, execution `history`) + a pinned `test` run (`--full` adds
-  `simulate`) — **read-only** and scores it into one verdict (`ready` /
-  `caution` / `not ready`, exit 0/1). Read `--json` for stable check ids +
-  per-check remediation; `--require=test` fails the gate unless a runtime check
+- `n8n-decanter preflight <workflow> [--json]` — **the gate to run before
+  `push`.** It runs the read-only ladder — static (layout + typecheck) +
+  instance reads (drift/parity vs the draft, execution `history`); `--full`
+  adds a local `simulate` run — and **never executes the workflow on the
+  instance**. It scores everything into one verdict (`ready` / `caution` /
+  `not ready`, exit 0/1). Read `--json` for stable check ids + per-check
+  remediation; `--require=simulate` fails the gate unless the runtime check
   actually ran (the teeth for "must have coverage"). It **never mutates** (no
-  push/publish/restore), so run it freely. The loop:
-  **`… edit → check → preflight → push`**.
+  push/publish/restore), so run it freely.
+- `n8n-decanter push <workflow>` — make your local code the workflow's draft
+  (see the push rule above; a push lands on the draft and never goes live).
+- `n8n-decanter test <workflow>` — pinned run **on the instance** (MCP; draft
+  only, the live version is never touched), so it belongs **after `push`**. It
+  is the strongest runtime check — the instance's exact engine, community nodes
+  included, no Docker. Non-interactive runs never mutate and say so when your
+  local edits aren't pushed yet.
+- `n8n-decanter simulate <workflow>` — the same pinned-run idea through a
+  **local** n8n engine (Docker), fully offline: verify local code before a
+  push, or run in CI without an instance (`--network-none` isolation,
+  engine-version rehearsal).
+
+The loop: **`edit → preflight → push → test → publish`** — going live
+(`publish`) only when the user asks.
 
 ## Scenarios (`scenarios/` — committed pin-data sets)
 
@@ -563,8 +574,9 @@ Rules:
   is running.** So when the user's request only makes sense with the code in
   n8n ("build me an hourly job…", "fix the normalise step"), pushing is how you
   finish it: leaving the code in this folder means the workflow still runs the
-  old version, or nothing at all. Verify offline first (`check` + `node run`),
-  then push, then say what you pushed. Two cases still call for a word first:
+  old version, or nothing at all. Verify locally first (`preflight`, or
+  `check` + `node run` piecemeal), then push, then `test` the draft, then say
+  what you pushed and what the test showed. Two cases still call for a word first:
   the workflow is **published/active** (a stale draft can be published by
   someone else), or a **teammate is editing it** (n8n holds a single-writer
   lock and the push will fail with a lock error anyway).

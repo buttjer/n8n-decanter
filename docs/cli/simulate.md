@@ -25,10 +25,11 @@ edited Code nodes.
 Needs a captured execution ([executions](/docs/cli/executions/)) and a running
 **Docker** daemon (the engine backend).
 
-**Reach for [test](/docs/cli/test/) first** — the instance-side sibling: same
-pin-and-diff idea, but on your instance's exact engine (community nodes
-included) with no Docker. `simulate` is the differentiated offline half, and
-stays the right tool when you need what an instance run can't give you:
+**[test](/docs/cli/test/) is the instance-side sibling** — same pin-and-diff
+idea, but on your instance's exact engine (community nodes included) with no
+Docker — and it belongs *after* a push: it runs the draft, which is only your
+code once you've pushed it. `simulate` is the offline half and the right tool
+*before* the push, when you need what an instance run can't give you:
 **pre-push verification of uncommitted local code** (`test` can only run
 what's on the draft), **CI without an instance** or credentials or the
 per-workflow MCP opt-in, **`--network-none` isolation**, and
@@ -163,5 +164,6 @@ n8n-decanter simulate <workflow> --scenario <slug>                  # replay the
 
 `simulate` is the local-engine rung of the ladder
 [`preflight`](/docs/cli/preflight/) runs (as its `--full`/`--offline` runtime
-check) — reach for `preflight` to score it alongside `check` and `test` in one
-gate.
+check) — reach for `preflight` to score it alongside `check` and the instance
+reads in one pre-push gate. [`test`](/docs/cli/test/) is not part of that gate:
+it runs the draft on the instance, *after* your push.
