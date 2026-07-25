@@ -20,7 +20,7 @@
 - **`status --diff` → a `diff` verb.** Named `diff`, not `drift` (it shows
   local-ahead edits too, not only remote drift; and `drift` is already a
   preflight check id). The `git status` / `git diff` split.
-- **`test` unchanged** (Plan 58): the post-push instance run.
+- **`test` unchanged** (Plan 60): the post-push instance run.
 
 ## The surface after
 
@@ -191,9 +191,10 @@ the name is ever revisited, revisit it once, here.
   only if Prereq 1 fails for `check`.)
 
 ## Notes
-- **Second (larger) breaking wave in the same area as Plan 58.** Land 58 first
-  (it's the safety fix); this builds on it and then removes the profile scaffold
-  58 touched. Sequence into separate releases so users migrate once per step —
-  (the transient --quick note never shipped — #162 removed the flag outright).
+- **Second (larger) breaking wave in the same area as [Plan 60](../done/60-preflight-first-verb-surface.md).**
+  Plan 60 **has landed** (#162, merged 2026-07-25); this builds on it and removes
+  the profile scaffold it left behind. Sequence into a **separate release** from
+  60 so users migrate once per step. *(`--quick` never shipped a transient
+  redefinition — #162 removed the flag outright, on this plan's own advice.)*
 - Net: three verbs out, one in (`diff`); the profile vocabulary gone; the
   confusing gate-overlap at zero.

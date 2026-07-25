@@ -56,10 +56,16 @@ session and split off — see [Deferred to Plan 59](#deferred-to-plan-59) below.
    ([`lib/testrun.mts`](../../lib/testrun.mts)) — `preflight` was its only caller.
    The read-only guarantee now comes from preflight never invoking `runTest` at
    all, which is a stronger and more legible contract than a flag.
-3. **Redefine `--quick`.** With `test` gone it was byte-identical to the default
-   profile. It becomes **static-only** — the fastest gate, no network, no
-   Docker — which is what the name always implied. Guard it with a unit test
-   asserting no two profiles are identical.
+3. ~~**Redefine `--quick`.**~~ **SHIPPED AS REMOVAL instead (maintainer call
+   during execution).** The task as written planned to redefine `--quick` to
+   static-only, since with `test` gone it was byte-identical to the default
+   profile. The maintainer chose to **remove the flag outright** rather than
+   give users a fourth meaning to learn and then unlearn — [Plan 59](../open/59-declutter-verify-verbs.md)
+   retires the profile vocabulary entirely, so a transient redefinition would
+   have been churn for nothing. `--quick` now **rejects** with a migration hint
+   (static-only is `check`; a no-instance gate is `preflight --offline`), pinned
+   by a unit test and an e2e step. Three profiles remain: default, `--full`,
+   `--offline`.
 4. **Reject `--require=test`** with the reason and the replacement, not a bare
    "unknown check" — it shipped in 0.6.0 and may sit in a user's CI config
    (`RETIRED_CHECK_IDS`).
@@ -78,7 +84,8 @@ session and split off — see [Deferred to Plan 59](#deferred-to-plan-59) below.
 ## Acceptance / verification
 
 - `preflight` makes **no** `test_workflow` / `execute_workflow` / `get_execution`
-  call in **any** profile (unit-tested across all four).
+  call in **any** profile (unit-tested across all three — `--quick` was removed
+  rather than redefined, see Task 3).
 - On a TTY, against an **unpublished** workflow with local ahead of the draft —
   the case where the `test` verb pushes without even prompting — `preflight`
   issues no write and no run.
@@ -98,9 +105,10 @@ session and split off — see [Deferred to Plan 59](#deferred-to-plan-59) below.
 - **Auto-fetch now gates on `simulate`.** The default profile no longer fetches
   a capture (nothing consumes it) and reports a missing one as `info`, not
   `warn`.
-- `--quick`'s redefinition is technically breaking for anyone who relied on it
-  running the sync tier. The alternative — leaving two flags with identical
-  behaviour — is worse.
+- `--quick`'s **removal** is breaking for anyone who passed it (it now exits
+  non-zero with a migration hint). The alternatives were worse: leaving two
+  flags with identical behaviour, or redefining it into a fourth meaning that
+  Plan 59 would retire days later.
 
 ## Deferred to Plan 59
 

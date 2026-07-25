@@ -1,4 +1,4 @@
-# Plan 58 — the stdio guard should actually be the only route an agent has
+# Plan 58 — the stdio guard should not silently fail to be the route the user configured
 
 **Status:** Draft
 **Priority:** P1 for task 1 (silent-fail is a clear bug); P2 for task 2.

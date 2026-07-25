@@ -764,7 +764,7 @@ verb uses a dedicated client with a ≥320 s timeout):
 - `simulate` stays the offline sibling (decided 2026-07-22): pre-push
   verification of uncommitted code, CI without an instance, isolation,
   version rehearsal. *(Docs originally recommended `test` first everywhere;
-  Plan 58/#162 reversed that — `test` runs the draft, so it belongs AFTER the
+  Plan 60/#162 reversed that — `test` runs the draft, so it belongs AFTER the
   push, and `simulate` is the pre-push runtime check.)*
 
 ## Preflight — the scored verification gate (`preflight`, plans/36)
@@ -775,7 +775,7 @@ It adds **zero execution paths** — it reuses `check`/`status`/`simulate`/
 it does mutates (no push/publish/restore/draft write) **and nothing it does
 runs the workflow on the instance**.
 
-**Plan 58 — the ordering fix.** `preflight` originally ran `test` as its
+**Plan 60 — the ordering fix.** `preflight` originally ran `test` as its
 instance-side runtime stage. `test_workflow` executes n8n's **draft**, while
 every other stage grades **local files**, so whenever a push was pending one
 score described two different artifacts — flagged only by the `parity` warn's
@@ -801,12 +801,17 @@ never calls `runTest`) rather than a mode.
   byte-identical), `lifecycle` (`publicationState`/`publishedVersionLagsDraft`),
   `history` (production-run health), `capture` (a pin source exists + matches
   the draft); runtime `simulate` (`runSimulation` headless, `networkNone`
-  forced) — the **only** runtime stage since Plan 58, and it replays *local*
+  forced) — the **only** runtime stage since Plan 60, and it replays *local*
   code on a *local* engine.
-- **Profiles** (deterministic, no auto-escalation): `--quick` = static only
-  (Plan 58 — it was identical to the default once `test` left), default =
-  +sync, `--full` = +`simulate`, `--offline` = static+`simulate` (no instance —
-  joins the dispatcher's `offline` set so `loadConfig` skips `requireHost`). A
+- **Profiles** (deterministic, no auto-escalation): default = static + sync,
+  `--full` = +`simulate`, `--offline` = static+`simulate` (no instance —
+  joins the dispatcher's `offline` set so `loadConfig` skips `requireHost`).
+  **`--quick` is REMOVED** (Plan 60): once the instance `test` stage left
+  preflight it was byte-identical to the default profile, and rather than
+  redefine it into a fourth meaning users would have to learn and then unlearn
+  (Plan 59 retires the profile vocabulary entirely), the flag now **rejects**
+  with a migration hint — static-only is `check`, a no-instance gate is
+  `preflight --offline`. A
   check outside the active profile is a `skip` with an unlock. `--require=test`
   is rejected via `RETIRED_CHECK_IDS` with the flow as its remediation.
 - **Scoring/verdict/coverage are pure functions** (unit-tested without IO):
@@ -820,7 +825,7 @@ never calls `runTest`) rather than a mode.
 - **Executions in the gate:** before the runtime tier, a `capture`-source run
   with no explicit `--execution` auto-fetches the newest capture when
   `N8N_API_KEY` is set and the local one is missing/stale (`--no-fetch` opts
-  out; read-only, gitignored). Since Plan 58 this only fires when a runtime
+  out; read-only, gitignored). Since Plan 60 this only fires when a runtime
   stage is active (`--full`/`--offline`) — the default profile has none, so a
   missing capture there is `info`, not `warn`. `history` reads recent production runs via a new
   MCP `searchExecutions` wrapper (`search_executions` — shape source-verified
@@ -831,7 +836,7 @@ never calls `runTest`) rather than a mode.
 - **Seams added (all behavior-preserving):** `runTypecheckResult` (fact core
   under `runTypecheck`), `computeSyncFacts` (fact core under `statusWorkflow`),
   `api.listExecutions({includeData})`, `mcp.searchExecutions`. *(The
-  `runTest({neverMutate})` seam went with the test stage — Plan 58/#162.)*
+  `runTest({neverMutate})` seam went with the test stage — Plan 60/#162.)*
   Multi-ref like `pull`/`push`/`status` (no-ref TTY → picker; piped → config
   workflows; aggregate exit).
 
