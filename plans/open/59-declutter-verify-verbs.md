@@ -3,7 +3,7 @@
 **Status:** Not started
 **Priority:** P2
 **Class:** Distinctive feature — the verb surface *is* the product's ergonomics; a tool an agent (or human) can't navigate loses to raw n8n MCP.
-**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 58](58-preflight-first-verb-surface.md) thread. Graduates and widens Plan 58's [Deferred](58-preflight-first-verb-surface.md#deferred-now-plan-59) section. Relates to [Plan 57](../draft/57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
+**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](../done/60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](../done/60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](../draft/57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
 **Snapshot:** 2026-07-25T00:00Z @ 9f3a78a
 **Theme:** The verify cluster is five verbs that all feel like "check my thing." Bury `check`, `status`, and `simulate` into `preflight`; promote the one unique capability (`status --diff`) to a `diff` verb; replace the profile vocabulary with two plain flags.
 
@@ -15,7 +15,7 @@
   a verb and not a profile. Name **kept as `simulate`** (candidates sandbox /
   playground / rehearse / container were weighed and declined — see
   [Naming note](#naming-note)).
-- **No profiles.** Drop `--quick` / `--full` / `--default` and the `Profile`
+- **No profiles.** Drop `--full` / `--default` and the `Profile` (`--quick` is **already gone** — removed in PR #162 with the test stage, so there is no transient redefinition for users to unlearn)
   enum. Depth is controlled by two orthogonal flags (below).
 - **`status --diff` → a `diff` verb.** Named `diff`, not `drift` (it shows
   local-ahead edits too, not only remote drift; and `drift` is already a
@@ -58,16 +58,11 @@ They compose, and every old profile is reconstructable:
 | old profile | new |
 | --- | --- |
 | default (static+sync) | `preflight` |
-| `--quick` (static only, per Plan 58) | `preflight --offline` |
+| `--quick` (removed in #162) | `check` (static-only) or `preflight --offline` |
 | `--full` (+ engine) | `preflight --simulate` |
 | `--offline` (static + engine, no instance) | `preflight --offline --simulate` |
 
-**Supersedes Plan 58's profile model.** Plan 58 (shipped separately) redefined
-`--quick` as static-only to resolve a two-identical-profiles problem; this plan
-removes `--quick` and the whole `Profile`/`PROFILES`/`profileSpec` machinery. If
-58 and 59 land in close releases, **soften or drop 58's "`--quick` is now
-static-only" changelog line at release time** — it's a transient state a user
-shouldn't have to learn and then unlearn.
+**Supersedes Plan 60's profile model.** Plan 60 (#162) already removed `--quick` outright (this plan's own advice, applied early — no transient redefinition shipped); what remains here is removing `--full`/`--default` and the `Profile`/`PROFILES`/`profileSpec` machinery in favour of the two flags.
 
 ## Prerequisites — do first, they gate the removals
 
@@ -88,7 +83,7 @@ shouldn't have to learn and then unlearn.
 
 ### 1. Reshape `preflight` flags ([`lib/preflight.mts`](../../lib/preflight.mts), [`n8n-decanter.mts`](../../n8n-decanter.mts))
 - Delete the `Profile` type, `PROFILES`, `profileSpec`, and the
-  `--quick`/`--full`/`--default` parsing. Replace `ctx.profile` with two
+  `--full`/`--default` parsing (`--quick` parsing survives only as the rejection-with-migration shipped in #162 — remove that too once the flag model lands). Replace `ctx.profile` with two
   booleans: `simulate` (`--simulate`) and `offline` (`--offline`, subtractive).
 - Sync tier runs unless `offline`; the `simulate` stage runs iff `simulate`.
 - **`--json` contract:** replace `report.profile` with the resolved flags (e.g.
@@ -141,7 +136,11 @@ shouldn't have to learn and then unlearn.
   [`preflight.md`](../../docs/cli/preflight.md) (the two-flag model, the
   `--simulate` stage, `--offline`); update
   [`overview.md`](../../docs/cli/overview.md) (command list, offline/online
-  table, the picker action list that names `status`/`check`).
+  table, the picker action list that names `status`/`check`) — **and every
+  other page that names a removed verb**: sweep `docs/getting-started/`,
+  `docs/faq/`, `docs/concepts/` (e.g. quickstart, troubleshooting, push-gates)
+  and the remaining `docs/cli/*` cross-references; `check:docs` only verifies
+  verb↔page structure, not prose mentions, so grep is the tool.
 - **`CHANGELOG.md`** — `[Unreleased]`, **Breaking:** for the three verb removals,
   the `diff` addition, the profile→flags change, the `diff` exit-code change, and
   the `--json` `profile`→flags change.
@@ -180,7 +179,12 @@ npx backend; **rehearse/replay** were viable verbs but not worth the churn. If
 the name is ever revisited, revisit it once, here.
 
 ## Non-goals
-- Touching `list`/`executions`/`data-tables`/`scenario`/`backup`/`node`/`mcp`.
+- Touching `list`/`executions`/`data-tables`/`scenario`/`backup`/`node`/`mcp`
+  *as verbs*. One caveat inside that boundary: `scenario create --scaffold`'s
+  guidance string (`lib/simulate.mts`) tells the user to run the `simulate`
+  verb to exercise a scaffold — when the verb folds into
+  `preflight --simulate`, that string moves with it (Task 5's grep will catch
+  it; named here so the non-goal isn't read as "don't touch that file").
 - Any auto-escalation (run the engine only "when it would help") — the additive
   `--simulate` flag is explicit on purpose.
 - Aliasing removed verbs as hidden shims; they're removed with hints. (Revisit
@@ -190,6 +194,6 @@ the name is ever revisited, revisit it once, here.
 - **Second (larger) breaking wave in the same area as Plan 58.** Land 58 first
   (it's the safety fix); this builds on it and then removes the profile scaffold
   58 touched. Sequence into separate releases so users migrate once per step —
-  and collapse 58's transient `--quick` note per the [supersession point](#depth-two-flags-replace-four-profiles).
+  (the transient --quick note never shipped — #162 removed the flag outright).
 - Net: three verbs out, one in (`diff`); the profile vocabulary gone; the
   confusing gate-overlap at zero.

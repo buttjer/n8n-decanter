@@ -2399,8 +2399,27 @@ await step("preflight: one scored, local-code gate that never writes and never r
   assert.equal(testExecCount, execsBefore, "no instance run of a draft that isn't the local code");
   r = await cli("preflight", "wfT1", "--fail-on=warn");
   assert.equal(r.code, 1, "--fail-on=warn promotes caution to exit 1");
-  writeFileSync(computeFile, original);
   assert.equal(updateCount, updatesBefore, "the whole preflight run mutated nothing");
+
+  // …then COMPLETE the flow the hint names — preflight → push → test — instead
+  // of abandoning the edit. This is the PR's central ordering, end-to-end: the
+  // push clears parity, and only THEN does an instance run happen (and it's the
+  // test verb that runs it, never preflight).
+  r = await cli("push", "wfT1");
+  assert.equal(r.code, 0, "push makes the local edit the draft");
+  r = await cli("preflight", "wfT1");
+  assert.equal(r.code, 0, "after the push the gate is clean");
+  assert.doesNotMatch(r.out, /push to make it the draft/, "parity warn gone once local IS the draft");
+  const execsBeforePostPushTest = testExecCount;
+  r = await cli("test", "wfT1");
+  assert.equal(testExecCount, execsBeforePostPushTest + 1, "the instance run happens AFTER the push, via the test verb");
+  // (divergence-vs-capture verdicts are the dedicated test-verb step's business;
+  // this step pins the ORDER: preflight never ran it, push-then-test did)
+
+  // leave the sequential scenario as we found it: original code back on the draft
+  writeFileSync(computeFile, original);
+  r = await cli("push", "wfT1");
+  assert.equal(r.code, 0, "restore push returns the draft to the original");
 });
 
 await step("archive over raw MCP: server semantics (unpublish + archived-first gate); decanter's pull refuses, folder kept", async () => {

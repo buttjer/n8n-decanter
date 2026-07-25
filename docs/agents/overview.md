@@ -56,6 +56,7 @@ that boundary safe by construction.
 | Archiving (MCP `archive_workflow`) | **Outward-facing** — the workflow leaves the active list; a published one goes offline. Reversible only in the n8n UI. Never without an explicit instruction to archive *that* workflow. |
 | `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. |
 
-The default loop for an agent: edit → verify offline → **push** → say what
-landed. Stop before `publish` unless the user asked for it. See
+The default loop for an agent: edit → verify locally (`preflight`) → **push**
+→ **`test`** (the draft now holds your code) → say what landed and what the
+test showed. Stop before `publish` unless the user asked for it. See
 [The offline feedback loop](/docs/agents/offline-loop/).

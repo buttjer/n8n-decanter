@@ -32,8 +32,9 @@ This document is the contract for creating and editing these files.
   CLI blocks it at `push`.
 - **`push` writes the DRAFT and is part of finishing the work — code that only
   exists in this folder is not done. `publish` (or `push --publish`) changes
-  what is actually running and needs the user's say-so.** Edit, verify offline
-  with `n8n-decanter check` and `n8n-decanter node run`, then push.
+  what is actually running and needs the user's say-so.** The loop:
+  **edit → `preflight` (grades local) → `push` → `test` (runs the draft — now
+  your code) → `publish` only when asked.**
 
 The rest of this document is the full contract behind those points.
 
@@ -573,8 +574,9 @@ Rules:
   is running.** So when the user's request only makes sense with the code in
   n8n ("build me an hourly job…", "fix the normalise step"), pushing is how you
   finish it: leaving the code in this folder means the workflow still runs the
-  old version, or nothing at all. Verify offline first (`check` + `node run`),
-  then push, then say what you pushed. Two cases still call for a word first:
+  old version, or nothing at all. Verify locally first (`preflight`, or
+  `check` + `node run` piecemeal), then push, then `test` the draft, then say
+  what you pushed and what the test showed. Two cases still call for a word first:
   the workflow is **published/active** (a stale draft can be published by
   someone else), or a **teammate is editing it** (n8n holds a single-writer
   lock and the push will fail with a lock error anyway).

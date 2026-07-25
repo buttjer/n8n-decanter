@@ -46,28 +46,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Nothing was removed from the toolbox — the instance run moved to where it
   means something.
 
-- **Breaking: `--quick` is now static-only** (layout + types; no network, no
-  Docker). With the `test` stage gone it was byte-identical to the default
-  profile, so it took over the fastest-gate role its name always implied.
-  `--offline` is unchanged (no network, but still replays via `simulate`).
+  **Migration:** a CI job that gates on a plain `preflight` (any profile) no
+  longer gets an instance run inside that gate — the draft is never executed by
+  preflight. To keep instance-run coverage, add `n8n-decanter test` as its own
+  step **after** your push step (`--require=test` users get a hard error with
+  this guidance; default-profile users get this note).
 
 - **Breaking: `preflight --require=test` is rejected**, with a message pointing
   at the new flow rather than a bare "unknown check". The `test` id is gone
   from `--require`, from `--json` `checks[]`, and from `coverage`.
 
-- **`preflight` auto-fetches a capture only when a runtime stage is active**
-  (`--full` / `--offline`). The default profile has no runtime stage, so it no
-  longer fetches, and a missing capture is reported as `info` rather than
-  `warn` — nothing there consumes one.
+- **`preflight` auto-fetches a capture only under `--full`** — the one profile
+  that both runs a runtime stage and contacts the instance. The default profile
+  has no runtime stage, so it no longer fetches, and a missing or stale capture
+  is reported as `info` rather than `warn` — nothing there consumes one
+  (`--offline` never reaches the instance to fetch).
 
 - The `parity` warn is reworded. It was a caveat about the runtime tier
   grading the wrong artifact; that's no longer possible, so it is now the plain
   next step: *"local code differs from the draft in N node(s) — push to make it
   the draft, then test"*.
 
-- **`--full` is now the only profile with a runtime check.** `simulate` is the
-  sole runtime stage and needs Docker. For runtime evidence without Docker,
-  push and then run `test`.
+- **`simulate` is the sole runtime stage** (under `--full`, or `--offline` for
+  the no-instance variant) and needs Docker. For runtime evidence without
+  Docker, push and then run `test`.
+
+### Removed
+
+- **Breaking: the `preflight --quick` profile.** With the `test` stage gone it
+  was byte-identical to the default profile, and rather than redefine it into a
+  meaning users would have to learn and then unlearn (the profile vocabulary is
+  on its way out — Plan 59 replaces profiles with flags), it is gone: passing
+  `--quick` errors with the migration. Static-only checking is `check`'s job;
+  a no-instance gate is `preflight --offline` (which still replays via
+  `simulate`). `--full` and `--offline` are unchanged.
+- **Breaking: `preflight --trigger <node>`.** It existed only to feed the
+  removed instance `test` stage; since that stage's removal it parsed and did
+  nothing. `test --trigger <node>` (the post-push instance run) keeps the flag
+  — that is where trigger selection acts.
 
 ## [0.7.0] - 2026-07-24
 

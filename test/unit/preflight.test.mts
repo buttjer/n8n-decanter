@@ -3,7 +3,7 @@
 // orchestrator itself driven against a stubbed McpClient + a seeded capture —
 // asserting the ladder runs, scores, and NEVER mutates.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -59,17 +59,17 @@ describe("preflight coverage + require (pure)", () => {
 });
 
 describe("preflight profiles (pure)", () => {
-  // Plan 58: no `test` tier. `--quick` took over the fastest-gate role (static
-  // only) — before, with `test` removed, it was identical to the default.
+  // Plan 58: no `test` tier — and no `--quick`: with `test` gone it was
+  // identical to the default profile, so it was removed rather than redefined
+  // (static-only is check's job; Plan 59 retires profiles entirely).
   it("maps each profile to its active tiers", () => {
-    assert.deepEqual(profileSpec("quick"), { sync: false, simulate: false });
     assert.deepEqual(profileSpec("default"), { sync: true, simulate: false });
     assert.deepEqual(profileSpec("full"), { sync: true, simulate: true });
     assert.deepEqual(profileSpec("offline"), { sync: false, simulate: true });
   });
   it("no two profiles are identical", () => {
     const seen = new Map<string, string>();
-    for (const p of ["quick", "default", "full", "offline"] as const) {
+    for (const p of ["default", "full", "offline"] as const) {
       const key = JSON.stringify(profileSpec(p));
       assert.equal(seen.get(key), undefined, `${p} is identical to ${seen.get(key)} — a profile flag with no effect`);
       seen.set(key, p);
@@ -175,7 +175,7 @@ describe("runPreflight (stubbed)", () => {
   // instance. Not a write — a run. `test_workflow` grades the draft, which
   // before a push is not the code being shipped.
   it("never runs the workflow on the instance, in any profile", async () => {
-    for (const profile of ["quick", "default", "full", "offline"] as const) {
+    for (const profile of ["default", "full", "offline"] as const) {
       tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
       const dir = seed(tmp);
       const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
@@ -220,17 +220,6 @@ describe("runPreflight (stubbed)", () => {
     for (const id of ["connect", "access", "parity", "drift", "history"] as const) assert.equal(byId.get(id)?.status, "skip", `${id} skipped offline`);
     assert.equal(byId.get("simulate")?.status, "skip", "simulate skipped without Docker");
     assert.equal(calls.length, 0, "offline made no MCP calls");
-  });
-
-  it("quick profile is static-only: no MCP, no runtime", async () => {
-    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
-    const dir = seed(tmp);
-    const { mcp, calls } = stub(wf(), {});
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "quick" }));
-    const byId = new Map(report.checks.map((c) => [c.id, c]));
-    assert.equal(byId.get("layout")?.status, "pass");
-    assert.equal(byId.get("simulate")?.status, "skip", "no runtime in --quick");
-    assert.equal(calls.length, 0, "quick made no MCP calls");
   });
 
   it("--require promotes a skipped required check to a fail", async () => {
@@ -351,6 +340,24 @@ describe("runPreflight (stubbed)", () => {
     const report = await runPreflight(baseCtx(dir, tmp, mcp, { hasApiKey: true, noFetch: false, api }));
     assert.equal(fetched, false, "no runtime stage in the default profile → no fetch");
     assert.equal(report.checks.find((c) => c.id === "capture")?.status, "info", "a missing capture is informational, not a warning");
+  });
+
+  it("a stale capture is info when nothing consumes it, warn when the runtime tier does", async () => {
+    // Same rule as the missing-capture case: only a profile that actually RUNS a
+    // runtime stage should lose points over a stale pin.
+    for (const [profile, expected] of [["default", "info"], ["full", "warn"]] as const) {
+      tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+      const dir = seed(tmp);
+      const capFile = path.join(dir, "executions", "301.json");
+      const cap = JSON.parse(readFileSync(capFile, "utf8"));
+      cap.workflowVersionId = "v-predates-draft"; // wf() draft is v1 → stale
+      writeFileSync(capFile, JSON.stringify(cap));
+      const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
+      const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile }));
+      const capture = report.checks.find((c) => c.id === "capture");
+      assert.equal(capture?.status, expected, `${profile}: a stale capture should be ${expected}`);
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it("a missing --execution id warns on capture and skips the runtime tier (no throw)", async () => {

@@ -1,19 +1,19 @@
 ---
 title: preflight
-description: The whole verification ladder as one scored, read-only, CI-gateable gate — nothing it does can touch the published version or the outside world.
+description: Grades your LOCAL code as one scored, read-only, CI-gateable gate — the step before push; nothing it does can touch the published version or the outside world.
 order: 9
 ---
 
 ```sh
-n8n-decanter preflight [workflow…] [--quick|--full|--offline] [--json]
+n8n-decanter preflight [workflow…] [--full|--offline] [--json]
                        [--fail-on=warn] [--fail-fast] [--require=<ids>]
-                       [--execution <id> | --scenario <slug>] [--trigger <node>]
+                       [--execution <id> | --scenario <slug>]
                        [--no-fetch] [--n8n-version <ver>]
 ```
 
-The `--execution` / `--scenario` / `--trigger` / `--n8n-version` flags pass
-through to the runtime tier exactly as in [simulate](/docs/cli/simulate/)
-(`--n8n-version` only affects the `simulate` engine, under `--full`/`--offline`).
+The `--execution` / `--scenario` / `--n8n-version` flags pass through to the
+runtime tier exactly as in [simulate](/docs/cli/simulate/) (`--n8n-version`
+only affects the `simulate` engine, under `--full`/`--offline`).
 
 **`preflight` verifies your local code** — local static → instance read-only →
 local-engine replay — ordered fast→slow, and condenses them into a scored
@@ -82,15 +82,18 @@ card.
 
 | Invocation | Tiers | For |
 | --- | --- | --- |
-| `preflight --quick` | static only | the every-edit loop, pre-commit — no network, no Docker |
 | `preflight` (default) | static + sync | the pre-push gate |
-| `preflight --full` | default + `simulate` | maximum coverage — the only profile with a runtime check |
+| `preflight --full` | default + `simulate` | maximum coverage before a push |
 | `preflight --offline` | static + `simulate` | air-gapped CI — no instance contact at all |
 
-**`--full` is the only profile that runs anything.** With the instance `test`
-stage gone, `simulate` is the sole runtime check, and it needs Docker. If you
-want runtime evidence before pushing, use `--full`; if you want it *after*
-pushing, that's [`test`](/docs/cli/test/), which needs no Docker at all.
+(`--quick` was removed in the same release that took the instance `test` stage
+out of preflight — with that stage gone it was byte-identical to the default
+profile. Static-only checking is [`check`](/docs/cli/check/)'s job.)
+
+**`simulate` is the sole runtime check** (under `--full` or `--offline`), and it
+needs Docker. If you want runtime evidence before pushing, use `--full`; if you
+want it *after* pushing, that's [`test`](/docs/cli/test/), which needs no
+Docker at all.
 
 An auto-escalation variant (run `simulate` only when it would add signal) was
 **rejected**: surprise Docker boots and nondeterministic wall time are worse
@@ -105,11 +108,13 @@ looks.
 - **Pins and diffs.** The runtime tier pins from and diffs against a capture
   (`--execution <id>`, default newest) or a committed
   [scenario](/docs/cli/scenario/) (`--scenario <slug>`).
-- **Auto-fetch.** Before the runtime tier, `preflight` fetches the newest
-  capture when `N8N_API_KEY` is set and the local capture is missing or stale —
-  so a bare `preflight` verifies against *fresh* reality. It's a read
-  (captures land in the gitignored `executions/` dir); `--no-fetch` disables it,
-  and without a key it's skipped with guidance.
+- **Auto-fetch.** Under `--full` — the one profile that both runs a runtime
+  stage *and* contacts the instance — `preflight` fetches the newest capture
+  when `N8N_API_KEY` is set and the local capture is missing or stale, so the
+  replay pins against *fresh* reality. It's a read (captures land in the
+  gitignored `executions/` dir); `--no-fetch` disables it, and without a key
+  it's skipped with guidance. The default profile runs no runtime stage, so it
+  never fetches; `--offline` never contacts the instance at all.
 - **History as a health signal.** The `history` check reads recent production
   executions (over MCP `search_executions`, or the REST executions API when
   `N8N_API_KEY` is set) and reports the error rate — a live workflow that's been
@@ -156,7 +161,8 @@ score 90/100 · verdict: caution · 10/11 checks ran
 `parity`), `checks[]` (`id`, `tier`, `status`, `message`, `remediation`,
 `durationMs`), `score`, `verdict`, and `coverage` (`ran`, `skipped[] {id,
 reason, unlock}`). The stable ids + remediation strings are the agent contract —
-teach an agent `preflight --json` as its one gate before `push`/`publish`.
+teach an agent `preflight --json` as its gate before `push` (the gate before
+`publish` is [`test`](/docs/cli/test/), run after the push).
 
 ## Safety contract
 
@@ -172,8 +178,9 @@ instance interactions are **reads**.
 - The `simulate` stage runs headless in a throwaway container with
   **`--network-none` always on** and credentials stripped.
 - The sync tier and auto-fetch are reads only; captures land in the
-  self-gitignored `executions/` dir. Auto-fetch only runs when a runtime stage
-  is active (`--full` / `--offline`) — nothing else consumes a capture.
+  self-gitignored `executions/` dir. Auto-fetch only runs under `--full` — the
+  profile that both runs a runtime stage and contacts the instance; nothing
+  else consumes a capture (`--offline` never reaches the instance to fetch).
 
 ## Preflights — which one when?
 

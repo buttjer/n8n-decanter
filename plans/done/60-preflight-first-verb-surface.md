@@ -1,6 +1,6 @@
-# Plan 58 — Preflight-first verb surface: `preflight → push → test → publish`
+# Plan 60 — Preflight-first verb surface: `preflight → push → test → publish`
 
-**Status:** In progress
+**Status:** Done — shipped in PR #162 (code, docs on every surface, agent contract, tests). Renumbered 58 → 60: [plans/draft/58-guard-route-robustness.md](../draft/58-guard-route-robustness.md) landed first (#164) and owns the number; 59 was already taken by the declutter plan this one spawned.
 **Priority:** P1
 **Source:** Maintainer session 2026-07-24 (the "does preflight change the draft?" thread). Relates to [`../done/36-preflight-verb.md`](../done/36-preflight-verb.md) (which introduced `preflight` with `test` as a stage) and [`../draft/57-cli-discoverability-for-agents.md`](../draft/57-cli-discoverability-for-agents.md).
 **Snapshot:** 2026-07-24T14:38Z @ 9f3a78a
@@ -43,7 +43,7 @@ run, after `push`.
 
 **In:** remove the `test` stage from `preflight`; document the flow.
 **Out:** deleting the `check` / `status` verbs. That was considered in the same
-session and split off — see [Deferred](#deferred) below.
+session and split off — see [Deferred to Plan 59](#deferred-to-plan-59) below.
 
 ## Tasks
 
@@ -61,7 +61,7 @@ session and split off — see [Deferred](#deferred) below.
    Docker — which is what the name always implied. Guard it with a unit test
    asserting no two profiles are identical.
 4. **Reject `--require=test`** with the reason and the replacement, not a bare
-   "unknown check" — it shipped in 0.7.0 and may sit in a user's CI config
+   "unknown check" — it shipped in 0.6.0 and may sit in a user's CI config
    (`RETIRED_CHECK_IDS`).
 5. **Reword the `parity` warn.** It was a caveat about the runtime tier grading
    the draft; that can't happen now. It becomes the next step in the flow:
@@ -102,12 +102,14 @@ session and split off — see [Deferred](#deferred) below.
   running the sync tier. The alternative — leaving two flags with identical
   behaviour — is worse.
 
-## Deferred → now [Plan 59](59-declutter-verify-verbs.md)
+## Deferred to Plan 59
+
+Now [Plan 59](../open/59-declutter-verify-verbs.md).
 
 Collapsing **`check`**, **`status`**, and **`simulate`** into `preflight` (+ a
 new `diff` verb, + dropping the profile system for plain flags) was part of the
 original ask and is deliberately not in this change. It has its own plan now —
-[Plan 59](59-declutter-verify-verbs.md), which **supersedes this plan's
+[Plan 59](../open/59-declutter-verify-verbs.md), which **supersedes this plan's
 `--quick` redefinition** (Plan 59 removes profiles entirely). The reasons it's
 separate:
 

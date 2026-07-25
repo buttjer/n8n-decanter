@@ -33,7 +33,7 @@ n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=c
 n8n-decanter data-tables [table…] clean
 n8n-decanter test <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
 n8n-decanter simulate <workflow> [--execution <execution-id> | --scenario <slug>] [--network-none] [--json]
-n8n-decanter preflight [workflow…] [--quick|--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]   # the whole ladder, scored (read-only)
+n8n-decanter preflight [workflow…] [--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]   # grades LOCAL code, scored (read-only) — then push, then test
 n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold]   # committed, gap-fillable pin-data set (offline; --scaffold needs MCP)
 n8n-decanter scenario check <workflow> ["<slug>"]                                    # structurally validate a scenario (offline)
 
@@ -115,7 +115,7 @@ errors with *unknown verb*. Flags may still appear in any position.
 | `check`, `node run`, `list`, `simulate`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
 | `status`, `list --remote`, `executions`, `data-tables`, `backup create`/`restore` | Read the remote (`backup restore` also writes a **new** workflow, never touching the source) |
 | `backup list` | Fully offline — reads the local `backups/` store |
-| `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
+| `test` | Runs the workflow's **draft** on the instance with pinned data — run it **after a push** so the draft holds your code. On a terminal, when local differs: a **published** workflow gets a local-vs-draft prompt; an **unpublished** one is pushed without asking (a draft nobody runs). Non-interactive runs never write |
 | `preflight` | Verifies your **local** code as one scored gate — static + instance reads + an optional local-engine `simulate` run; **never writes and never runs on the instance**, in every profile. Run it *before* `push`; `test` comes after |
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |
 | `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes; a forwarded structure edit also triggers a background `workflow.json` refresh (`liveMirror`, on by default) |

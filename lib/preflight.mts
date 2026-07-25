@@ -43,7 +43,7 @@ export const RETIRED_CHECK_IDS: Record<string, string> = {
 export type Tier = "static" | "sync" | "runtime";
 export type CheckStatus = "pass" | "warn" | "fail" | "skip" | "info";
 export type Verdict = "ready" | "caution" | "not ready";
-export type Profile = "quick" | "default" | "full" | "offline";
+export type Profile = "default" | "full" | "offline";
 
 export const ALL_CHECK_IDS: readonly CheckId[] = [
   "layout", "types", "connect", "access", "parity", "drift", "snapshot", "lifecycle", "history", "capture", "simulate",
@@ -146,13 +146,14 @@ interface ProfileSpec {
 }
 
 /**
- * Plan 58 redefined `--quick`. With the instance `test` stage gone it was
- * byte-identical to the default profile (both: sync on, simulate off), so it
- * takes over the role it always implied — the **fastest** gate: static only,
- * no network, no Docker. `--offline` remains "no network, but do replay".
+ * `--quick` is GONE (removed with the test stage, same release). With the
+ * instance `test` stage out of preflight it was byte-identical to the default
+ * profile, and rather than redefine it into a fourth meaning users would have
+ * to learn and then unlearn (Plan 59 replaces profiles with flags), it was
+ * dropped: static-only remains `check`'s job, `--offline` remains "no
+ * network, but do replay".
  */
 const PROFILES: Record<Profile, ProfileSpec> = {
-  quick: { sync: false, simulate: false },
   default: { sync: true, simulate: false },
   full: { sync: true, simulate: true },
   offline: { sync: false, simulate: true },
@@ -176,7 +177,6 @@ export interface PreflightContext {
   scenarioSlug?: string;
   /** Explicit `--execution <id>`; without it a capture defaults to the newest. */
   executionId?: string;
-  trigger?: string;
   noFetch: boolean;
   failFast: boolean;
   /** `--require=<ids>`: a skip of any of these check ids is promoted to a fail. */
@@ -392,7 +392,7 @@ async function resolveSource(ctx: PreflightContext, remote: Workflow | undefined
       return { source: "scenario", finding: { status: runtimeActive ? "warn" : "info", message: `scenario "${ctx.scenarioSlug}" not found`, remediation: `n8n-decanter scenario create ${ctx.name} "${ctx.scenarioSlug}"` } };
     }
     const stale = captureStaleness(ctx.dir, ctx.scenarioSlug, "scenario", remote);
-    return { source: "scenario", ref: ctx.scenarioSlug, finding: staleFinding(`scenario "${ctx.scenarioSlug}"`, stale, ctx) };
+    return { source: "scenario", ref: ctx.scenarioSlug, finding: staleFinding(`scenario "${ctx.scenarioSlug}"`, stale, ctx, runtimeActive) };
   }
 
   // capture source
@@ -422,7 +422,7 @@ async function resolveSource(ctx: PreflightContext, remote: Workflow | undefined
     const unlock = `n8n-decanter executions ${ctx.name} --limit=1  (or drop --execution to use the newest)`;
     return { source: "capture", finding: { status: runtimeActive ? "warn" : "info", message, remediation: unlock, reason: message, unlock } };
   }
-  const fresh = staleFinding(`capture #${ref}${autoFetched ? " (auto-fetched)" : ""}`, stale, ctx);
+  const fresh = staleFinding(`capture #${ref}${autoFetched ? " (auto-fetched)" : ""}`, stale, ctx, runtimeActive);
   return { source: "capture", ref, finding: fresh };
 }
 
@@ -444,8 +444,14 @@ function captureStaleness(dir: string, ref: string, source: SimSource, remote: W
   }
 }
 
-function staleFinding(label: string, stale: Staleness, ctx: PreflightContext): Omit<CheckFinding, "id" | "tier" | "durationMs"> {
-  if (stale === "stale") return { status: "warn", message: `${label} predates the current draft — refetch so runtime checks pin against fresh reality`, remediation: `n8n-decanter executions ${ctx.name}` };
+function staleFinding(label: string, stale: Staleness, ctx: PreflightContext, runtimeActive: boolean): Omit<CheckFinding, "id" | "tier" | "durationMs"> {
+  if (stale === "stale") {
+    // Only a profile that actually RUNS a runtime stage should lose points over
+    // a stale pin — mirroring the missing-capture branches above, which are
+    // info when nothing would consume the capture anyway.
+    if (!runtimeActive) return { status: "info", message: `${label} predates the current draft (nothing in this profile consumes it)`, remediation: `n8n-decanter executions ${ctx.name}` };
+    return { status: "warn", message: `${label} predates the current draft — refetch so runtime checks pin against fresh reality`, remediation: `n8n-decanter executions ${ctx.name}` };
+  }
   return { status: "pass", message: `${label}${stale === "fresh" ? " (fresh)" : ""} available to pin from` };
 }
 

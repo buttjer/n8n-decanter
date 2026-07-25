@@ -763,7 +763,9 @@ verb uses a dedicated client with a ≥320 s timeout):
   so multi-ref was dropped for `simulate` parity).
 - `simulate` stays the offline sibling (decided 2026-07-22): pre-push
   verification of uncommitted code, CI without an instance, isolation,
-  version rehearsal — docs recommend `test` first everywhere.
+  version rehearsal. *(Docs originally recommended `test` first everywhere;
+  Plan 58/#162 reversed that — `test` runs the draft, so it belongs AFTER the
+  push, and `simulate` is the pre-push runtime check.)*
 
 ## Preflight — the scored verification gate (`preflight`, plans/36)
 
@@ -828,9 +830,10 @@ never calls `runTest`) rather than a mode.
   run data); a live workflow that's been failing is a `warn`, never a `fail`.
 - **Seams added (all behavior-preserving):** `runTypecheckResult` (fact core
   under `runTypecheck`), `computeSyncFacts` (fact core under `statusWorkflow`),
-  `runTest({neverMutate})`, `api.listExecutions({includeData})`,
-  `mcp.searchExecutions`. Multi-ref like `pull`/`push`/`status` (no-ref TTY →
-  picker; piped → config workflows; aggregate exit).
+  `api.listExecutions({includeData})`, `mcp.searchExecutions`. *(The
+  `runTest({neverMutate})` seam went with the test stage — Plan 58/#162.)*
+  Multi-ref like `pull`/`push`/`status` (no-ref TTY → picker; piped → config
+  workflows; aggregate exit).
 
 ## Init flow (`n8n-decanter init [dir]`)
 
