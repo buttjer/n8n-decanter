@@ -29,9 +29,12 @@ agent's PATH, i.e. a **global** install. With a **local** devDependency a bare
 agent has no `n8n-instance` server, and — if it has any other n8n route — it uses
 that one, unguarded. No error a user would notice.
 
-Our own field-test harness proves the fragility: [`stage.mts:311`](../../test/field-test/stage.mts#L311)
+Our own field-test harness proves the fragility: [`run.mts`](../../test/field-test/run.mts)
 has to **manually prepend `node_modules/.bin` to the blind session's PATH** so
-the bare command resolves. A real user's agent gets no such help (Claude Code
+the bare command resolves (host mode; container mode symlinks the baked bin into
+`/work/node_modules/.bin` for the same reason). *(Corrected 2026-07-25: the
+prepend lives in `run.mts`, not `stage.mts:311` — that line is only a comment
+pointing at it.)* A real user's agent gets no such help (Claude Code
 spawns MCP servers with the ambient PATH).
 
 ### Gap 2 — the route-check is blind to user-level MCP config

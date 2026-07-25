@@ -10,9 +10,13 @@ A small **original** skill (1–2 files, no n8n-io/skills fork —
 [Plan 30](../open/30-agent-llm-working-ergonomics.md)'s "override, not fork"
 stands) teaching agents the decanter authoring loop: *Code nodes are authored as
 files under `code/` and synced via decanter push* — a Code node born over MCP
-`addNode` through the guard lands as an empty file → edit → `node run` → `check`
-→ `simulate`/`test` → `push`, plus the TS import/bundling and `@ts-n8n` marker
-rules. Distribution with **skills.sh in mind** (`npx skills add`, 20+ agents)
+`addNode` through the guard lands as an empty file → edit → `node run` →
+`preflight` (local gate; `--full` adds `simulate`) → `push` → `test`, plus the
+TS import/bundling and `@ts-n8n` marker rules. *(Loop corrected 2026-07-25 for
+Plan 60/#162 + #163: `test` runs the **draft** on the instance, so it belongs
+**after** the push — a skill teaching test-before-push would teach a run against
+code the user isn't shipping. `push` itself is part of finishing the work, not a
+step to ask permission for.)* Distribution with **skills.sh in mind** (`npx skills add`, 20+ agents)
 plus the plugin marketplaces (Claude Code, Codex) that also carry hook wiring.
 
 Rationale: (1) routing-layer competition — the n8n meta-skill routes
