@@ -1,8 +1,9 @@
 # Plan 58 — the stdio guard should not silently fail to be the route the user configured
 
-**Status:** In progress (Tasks 1 + 3 done; Task 2 open)
+**Status:** In progress (Tasks 1 + 3 done; Tasks 2 + 4 open)
 **Priority:** P1 for tasks 1 + 3 (both done — the silent-fail and the missing
-spawn coverage that let it through); P2 for task 2.
+spawn coverage that let it through) and task 4 (same gap on the Bash surface);
+P2 for task 2.
 **Source:** 2026-07-24 discussion off [Plan 57](../draft/57-cli-discoverability-for-agents.md).
 Two concrete gaps found by inspecting the guard's discovery + startup path;
 Plan 57 is the *discoverability* half (agent finds the CLI), this is the
@@ -79,10 +80,8 @@ all**. That is exactly the "second door" case the hook exists to catch.
    `command` is, instead of keying on `command === "n8n-decanter"`). Verified by
    the full smoke suite against real n8n.
 
-   *Follow-up (not this task): the same local-install PATH gap affects the
-   agent's allowlisted Bash `n8n-decanter …` calls, which also assume a global
-   install. That is a separate surface (settings allowlist + how a local-install
-   project is meant to invoke the CLI in a shell), noted here so it isn't lost.*
+   *Follow-up: the same local-install PATH gap affects the agent's allowlisted
+   Bash `n8n-decanter …` calls — now Task 4 below.*
 
 2. **(P2) Teach the route-check to see user-level MCP config.** Extend the hook's
    `CONFIG_FILES` to also read the known user-scoped locations (`~/.claude.json`,
@@ -144,6 +143,36 @@ all**. That is exactly the "second door" case the hook exists to catch.
    prepend (npx resolves it), the prepend stays for the agent's *Bash* surface
    but is now named as a global-install simulation, `FIELD_NO_PATH_HELP=1` drops
    it, and every run prints its `PATH policy`.
+
+4. **(P1) The agent's *Bash* surface has the same gap — fix the invocation form,
+   NOT the install shape.** Task 1 fixed the guard's spawn; the scaffolded
+   allowlist ([`template/.claude/settings.json.example`](../../template/.claude/settings.json.example))
+   and the agent contract still name the CLI as a **bare** `n8n-decanter <verb>`,
+   which is the one form a local install does not provide.
+
+   **Measured** (real `npm pack` + `npm i -D`, PATH with no global decanter):
+
+   | invocation | result |
+   | --- | --- |
+   | bare `n8n-decanter check` | **fails — ENOENT** |
+   | `npx n8n-decanter check` | works |
+   | `npm run check` | works (npm puts `node_modules/.bin` on PATH) |
+   | `./node_modules/.bin/n8n-decanter check` | works |
+
+   So a devDependency install is **not** broken — 3 of 4 forms work; only the
+   bare one fails. **"Install globally" is explicitly NOT the fix**: a per-sync-dir
+   devDependency is a documented, supported install
+   ([installation.md](../../docs/getting-started/installation.md)), and requiring
+   a global one would regress our own docs and force machine-global state on
+   users who deliberately avoid it.
+
+   The fix mirrors Task 1: **`npx n8n-decanter <verb>` is the universal form** —
+   it resolves a local *and* a global install (verified: global resolves in
+   ~0.5 s with `--no-install`, no download). Work to do: allow **both** forms in
+   the scaffolded allowlist (bare stays valid and is nicer under a global
+   install), and make the agent contract's examples resolve under either. Check
+   how the permission matcher treats the `npx` prefix before choosing wording —
+   a prefix that doesn't match its rule would gate every call behind a prompt.
 
 ## Non-goals
 

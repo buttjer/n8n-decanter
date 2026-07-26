@@ -788,9 +788,11 @@ rather than invisible:
   That is what stops this from silently qualifying results again.
 
 Remaining: run a round with `FIELD_NO_PATH_HELP=1` to measure the unassisted
-Bash surface, and decide whether the local-install Bash gap is a product issue
-(the follow-up noted in [Plan 58](58-guard-route-robustness.md) Task 1) or an
-acceptable "install decanter globally" instruction.
+Bash surface. **The fix direction is already settled — see
+[Plan 58](58-guard-route-robustness.md) Task 4: it is an invocation-form fix, NOT
+"install decanter globally".** (An earlier draft of this note floated global-only
+as an option; that was wrong and is retracted — a devDependency install is a
+documented, supported path, and it works.)
 
 ## Notes
 
