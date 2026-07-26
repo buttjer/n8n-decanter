@@ -1,7 +1,8 @@
 # Plan 58 — the stdio guard should not silently fail to be the route the user configured
 
-**Status:** In progress (Task 1 done; Task 2 open)
-**Priority:** P1 for task 1 (silent-fail is a clear bug); P2 for task 2.
+**Status:** In progress (Task 1 done; Tasks 2–3 open)
+**Priority:** P1 for tasks 1 + 3 (silent-fail is a clear bug, and nothing
+currently tests that the scaffolded command starts at all); P2 for task 2.
 **Source:** 2026-07-24 discussion off [Plan 57](../draft/57-cli-discoverability-for-agents.md).
 Two concrete gaps found by inspecting the guard's discovery + startup path;
 Plan 57 is the *discoverability* half (agent finds the CLI), this is the
@@ -90,6 +91,35 @@ all**. That is exactly the "second door" case the hook exists to catch.
    SessionStart **warning, not a gate** (exit 0). Because it's harness-agnostic
    material, the substance goes in the tool-agnostic guidance and the per-agent
    hook stays a thin runner (root `AGENTS.md` "Agent tooling").
+
+3. **(P1) Prove the scaffolded command actually starts a guard — under BOTH
+   install shapes.** Task 1's bug survived because **nothing tests process
+   spawning**, only guard *behavior*:
+   - [`test/guardproxy.mts`](../../test/guardproxy.mts) imports `runStdioGuard`
+     **in-process** on PassThrough pipes — the scaffolded `command`/`args` are
+     never executed.
+   - No test asserts the content of the `.mcp.json` `init` writes (the only
+     occurrence is a fixture *string* in the docs-surface unit test).
+   - The field test stages **both** shapes — host mode installs **locally**
+     (`npm install <tgz>` into the workDir), container mode installs
+     **globally** (`npm install -g`) — but **masks both**: `run.mts` prepends
+     the workDir's `node_modules/.bin` to the blind session's PATH
+     ([run.mts:396](../../test/field-test/run.mts#L396)) and the container
+     symlinks the global bin into `/work/node_modules/.bin`
+     ([run.mts:81](../../test/field-test/run.mts#L81)). **The one thing a real
+     user's agent never gets is exactly the thing the harness supplies**, which
+     is why every round measured a world where the guard always started.
+
+   The fix: a test that **reads `.mcp.json` after `init` and spawns exactly that
+   `command` + `args` as a child process with a CLEAN PATH** (no
+   `node_modules/.bin` injection), writes an `initialize` on stdin, and asserts a
+   JSON-RPC reply on stdout — run once against a **local** install and once
+   against a **global** one. That is the direct regression test for Task 1 and
+   the only check that would have caught it.
+
+   Separately, the field-test PATH crutch should be dropped or made a deliberate,
+   documented toggle so the harness stops hiding what real agents hit (recorded
+   as a finding on [Plan 35](../open/35-blind-agent-field-test.md)).
 
 ## Non-goals
 
