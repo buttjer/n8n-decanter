@@ -1,16 +1,40 @@
 # Plan 57 — a coding agent should find decanter before it hand-rolls raw n8n MCP
 
-**Status:** Draft
-**Priority:** P1 (the blind field test's oldest unfixed finding)
+**Status:** Draft — **premise under review**: the first deliberate measurement
+(2026-07-26) contradicted it; see the banner below.
+**Priority:** P1 for the *measurement* (direction 4); the fix directions (1–3)
+are **on hold** until the gap is shown to still exist.
 **Class:** Distinctive feature — the whole point of decanter is that Code-node
 source lives in git; an agent that never finds the CLI gets none of it.
 **Source:** [Plan 35](../open/35-blind-agent-field-test.md) blind field test,
 round-1 finding 1 — carried unfixed through round 2 and the 2026-07-24 triage,
 where the maintainer chose to give it its own plan.
-**Snapshot:** 2026-07-24T11:45Z @ f0692e1
+**Snapshot:** 2026-07-26T19:27Z @ b239e00
 **Model:** Opus for the positioning/wording decisions (this is mostly a
 judgement problem, not a coding one); Sonnet for whatever mechanical surface
 work follows.
+
+## ⚠️ First measurement contradicts the premise (2026-07-26) — read before executing
+
+The finding below is round 1's, from **before** the current scaffold existed. The
+first deliberate re-measurement ([S6](../../test/field-test/scenarios/S6.md),
+`ftrun-87406`, full report in [Plan 35](../open/35-blind-agent-field-test.md))
+came back **FOUND-AND-USED**, not BYPASSED:
+
+- dropped into a fresh clone with no runnable CLI, the agent ran `cat
+  package.json` → `npx n8n-decanter list --remote` → `pull`, edited the file, and
+  pushed;
+- it **read `AGENTS.md`**; `verify` passed with 0 violations; **`guard.log` was
+  empty** — it never used the raw MCP route at all.
+
+So the premise "an agent never discovers the tool" **did not reproduce** against
+today's scaffold. Two unseparated explanations: the world genuinely changed
+(round 1 predates `AGENTS.md` + `.mcp.json` + a `package.json` naming decanter —
+and the agent read that file *first*), or **n = 1**.
+
+**Consequence for this plan:** its P1 framing is now in question, but not
+refuted. Do not execute directions 1–3 as if the gap were proven. **Next step is
+evidence, not fixes** — see direction 4.
 
 ## The finding
 
@@ -85,9 +109,30 @@ measured a world where the breadcrumb already exists.
 
    Guarded so it cannot silently measure nothing: `run.mts` refuses S6 against a
    manifest without `noCli`, and refuses `--container` (that image installs the
-   CLI globally). **Next step is the run itself** — host mode, unsandboxed,
-   maintainer-driven; it spends real tokens, so it is not something to fire
-   automatically.
+   CLI globally).
+
+   **RUN ONCE, 2026-07-26 — FOUND-AND-USED (see the banner at the top).** The
+   remaining work on this direction is to find out whether that answer holds:
+
+   a. **Repeat S6** (≥2 more rounds). n=1 cannot distinguish "the scaffold works"
+      from "this run got lucky". Cheap, and it settles the headline.
+   b. **Add the harsher variant — the real control.** S6 stages a project *full*
+      of decanter evidence (`AGENTS.md`, `.mcp.json`, `package.json`), and the
+      agent read `package.json` **first**. That measures "does it follow a
+      breadcrumb", not "does it discover the tool". The control is a project with
+      **an n8n MCP connection and no decanter evidence at all** — which is the
+      case the original finding actually describes, and the one where the answer
+      is plausibly still BYPASSED. Stage flag alongside `FIELD_NO_CLI`, e.g.
+      `FIELD_NO_DECANTER=1` (skip init + scaffold, wire raw n8n MCP for the
+      agent).
+   c. **Fix S6's fixture mismatch first** — it reuses the empty `s1-skeleton`
+      node while its prompt says "on top of whatever it already does", which cost
+      a turn (Plan 35 run report).
+
+   **Only after (a)+(b)** should directions 1–3 be scoped: if the breadcrumb case
+   holds up and only the no-evidence case fails, the fix is narrower (and closer
+   to [Plan 50](50-code-node-authoring-skill.md)'s skill route) than this plan
+   currently assumes.
 
 ## Non-goals
 

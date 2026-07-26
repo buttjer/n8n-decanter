@@ -802,6 +802,60 @@ Bash surface. **The fix direction is already settled — see
 as an option; that was wrong and is retracted — a devDependency install is a
 documented, supported path, and it works.)
 
+## Run report — S6 discoverability, first round (2026-07-26, `ftrun-87406`)
+
+**Result: FOUND-AND-USED. The round-1 premise did NOT reproduce.** One round,
+host mode, unsandboxed, Sonnet, 2 turns; archive committed at
+`test/field-test/runs/2026-07-26T19-21-54Z-ftrun-87406/`.
+
+The agent's actual route, from `turn-1.jsonl`:
+
+```
+ls -la
+find workflows -maxdepth 3
+cat package.json                  ← read the breadcrumb
+npx n8n-decanter list --remote    ← reached for the CLI, unprompted
+npx n8n-decanter pull <id>
+```
+
+…then edited the file and pushed. `verify-S6.json`: **0 violations** — remote
+`jsCode` byte-equals the local `.js`, `lastPushedHash` matches, and decanter
+auto-committed (`decanter: pulled "Contact normalizer"`).
+
+Three corroborating details:
+
+- **It read `AGENTS.md`** (twice, turn 1) — the evidence was found *and* used.
+- **`guard.log` is empty** — it never used the n8n MCP route at all, guarded or
+  not. There was no bypass to catch.
+- **`node_modules` was never restored** — it never ran `npm install`. `npx`
+  fetched the published CLI from the registry on demand, which is a legitimate
+  recovery path the stage deliberately leaves open.
+
+**Condition validity confirmed in-run:** the runner logged
+`[noCli] shadowed /Users/malte/.nvm/…/bin` — the maintainer machine *does* carry
+a global `npm link` install, so without that shadowing this round would have
+measured an agent that could run the CLI all along.
+
+### Why this contradicts round 1 — two candidates, not yet separated
+
+1. **The world changed.** Round 1's project had far less evidence; today's
+   scaffold ships `AGENTS.md`, `.mcp.json`, and a `package.json` naming
+   `n8n-decanter` — and the agent demonstrably read the last one first.
+2. **n = 1.** One round, one model, one prompt phrasing.
+
+**Do not rewrite [Plan 57](../draft/57-cli-discoverability-for-agents.md) on this
+alone.** What it does establish: with the *current* scaffold committed, a
+fresh-clone agent finds and uses the CLI rather than hand-rolling MCP.
+
+### Scenario bug found by the run (fix before the next S6)
+
+S6 reuses the `s1-skeleton` workflow, whose Code node is **empty**, but its
+turn-1 prompt says *"on top of whatever it already does"*. The agent correctly
+flagged the mismatch and spent turn 1 clarifying instead of working. It did not
+invalidate the measurement (the *route* is what S6 scores, and the route was
+taken before the mismatch surfaced), but it wasted a turn. Either seed a
+non-empty node for S6 or reword the prompt.
+
 ## Notes
 
 - **CHANGELOG:** none (internal dev tooling + plan). **PLAN.md:** no design
