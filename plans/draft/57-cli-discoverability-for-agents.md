@@ -26,35 +26,35 @@ came back **FOUND-AND-USED**, not BYPASSED:
 - dropped into a fresh clone with no runnable CLI, the agent ran `cat
   package.json` → `npx n8n-decanter list --remote` → `pull`, edited the file, and
   pushed;
-- it **read `AGENTS.md`**; `verify` passed with 0 violations; **`guard.log` was
-  empty** — it never used the raw MCP route at all.
+- `verify` passed with 0 violations, and nothing was ever blocked by the guard.
 
-**Repeated 3× more (2026-07-26): 4 of 4 FOUND-AND-USED.** Every round —
-`ftrun-87406`, `-91113`, `-93211`, `-95680`, each on a fresh stage — passed
-`verify` with 0 violations and an **empty `guard.log`**: not one ever used the
-n8n MCP route. The n=1 objection is settled.
+**Repeated 4× in total (2026-07-26): 4 of 4 FOUND-AND-USED** — `ftrun-87406`,
+`-91113`, `-93211`, `-95680`, each on a fresh stage, every one `verify`-clean.
+The n=1 objection is settled.
 
-**The premise does not hold against today's scaffold.** The breadcrumbs the
-agent *explicitly consulted* were machine-readable:
+**The premise does not hold against today's scaffold.** Two things get the agent
+there, and both are working as designed:
 
-- `package.json` declaring `n8n-decanter` (round 1);
-- `.mcp.json` — round 2 read it and copied its **exact `npx --no-install` form**;
-- and in rounds 3–4 the agent's own reflex: `which n8n-decanter || npx …`.
+1. **The `AGENTS.md` contract is in context from the first token.** The
+   scaffolded `CLAUDE.md` opens with `@AGENTS.md` and Claude Code auto-loads it.
+   Confirmed directly by the agent in `ftrun-98438` turn 3, answering with **no
+   tools**: *"It was already available — I didn't have to go find it. It was
+   loaded automatically at the start of the session via `CLAUDE.md`'s
+   `@AGENTS.md` import"* — followed by a correct from-memory statement of the
+   ship flow. **An agent working in a scaffolded sync dir always has the
+   contract; absence of a `Read` of `AGENTS.md` in a transcript means nothing.**
+2. **The machine-readable breadcrumbs tell it how to invoke the CLI** —
+   `package.json` (round 1), `.mcp.json` and its exact `npx --no-install` form
+   (round 2), and the agent's own `which n8n-decanter || npx …` reflex
+   (rounds 3–4).
 
-**Caveat that matters (corrected 2026-07-26):** no round explicitly *opened*
-`AGENTS.md`, but the scaffolded `CLAUDE.md` starts with `@AGENTS.md` and Claude
-Code auto-loads it — so **the contract was in the system prompt throughout**,
-and the transcripts do not record system prompts. Its contribution is real but
-**unmeasured**. An earlier note here claimed the prose was not the mechanism;
-that was unsupported and is retracted.
-
-**Consequence for this plan:** directions 1–3 are on hold — the gap they exist
-to close does not reproduce. Direction 3 (positioning/docs) is **not** disproven,
-just untested. **The no-decanter-evidence variant is OUT OF SCOPE** (maintainer
-call, 2026-07-26): decanter's concern is projects that use decanter, not
-greenfield discovery. With that dropped and the premise not reproducing, this
-plan has no remaining in-scope work — **it is a close-out candidate**; see
-"Status".
+**Consequence for this plan:** directions 1–3 are on hold — the gap they exist to
+close does not reproduce, and direction 1 ("make the sync dir self-announcing")
+is in effect already satisfied by the `@AGENTS.md` auto-load. **The
+no-decanter-evidence variant is OUT OF SCOPE** (maintainer call, 2026-07-26):
+decanter's concern is projects that use decanter, not greenfield discovery. With
+that dropped and the premise not reproducing, this plan has no remaining in-scope
+work — **it is a close-out candidate**; see "Status".
 
 ## The finding
 

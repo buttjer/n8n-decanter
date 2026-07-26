@@ -796,11 +796,11 @@ empties the npm prefix, so a maintainer's global install cannot satisfy the
 round; `run.mts` refuses S6 against a normal stage or in `--container` mode.
 
 Remaining: run a round with `FIELD_NO_PATH_HELP=1` to measure the unassisted
-Bash surface. **The fix direction is already settled — see
-[Plan 58](58-guard-route-robustness.md) Task 4: it is an invocation-form fix, NOT
-"install decanter globally".** (An earlier draft of this note floated global-only
-as an option; that was wrong and is retracted — a devDependency install is a
-documented, supported path, and it works.)
+Bash surface. **The fix is an invocation-form change, not an install-shape one**
+— see [Plan 58](58-guard-route-robustness.md) Task 4. A per-sync-dir
+devDependency is a documented, supported install and works correctly when
+invoked as `npx n8n-decanter <verb>`; requiring a global install is explicitly
+not the answer.
 
 ## Run report — S6 discoverability, first round (2026-07-26, `ftrun-87406`)
 
@@ -840,9 +840,17 @@ measured an agent that could run the CLI all along.
 
 `ftrun-91113`, `ftrun-93211`, `ftrun-95680`, each on its own fresh stage, same
 scenario text. **Every round: `verify` `passed: true`, 0 violations, and an
-EMPTY `guard.log`** — not one of the four ever used the n8n MCP route, guarded or
-raw. The n=1 objection is settled: with today's scaffold committed, the
-fresh-clone agent finds and uses the CLI.
+empty `guard.log`.** The n=1 objection is settled: with today's scaffold
+committed, the fresh-clone agent finds and uses the CLI.
+
+**Read `guard.log` correctly:** the guard logs only what it **blocks**, and
+forwards everything else silently. An empty `guard.log` therefore means *"no
+`jsCode` write was ever attempted"* — **not** "the MCP route went unused". In
+fact 3 of 5 rounds did use the **guarded** route for reads
+(`mcp__n8n-instance__get_workflow_details` / `get_workflow_history`, reached via
+`ToolSearch`); the other two never needed it, because `pull` had already brought
+the workflow down as files. Either way the division of labour held: **reads and
+metadata over MCP, code over files + `push`.**
 
 **How each one got there differs, and that is the useful part** — three distinct
 breadcrumbs worked:
@@ -863,20 +871,26 @@ Two observations worth keeping:
 - **Round 2 learned the invocation from `.mcp.json`** — it read the guard entry
   and copied its `npx --no-install` form verbatim. The scaffolded MCP config is
   doing double duty as invocation documentation.
-- **No round *explicitly opened* `AGENTS.md`** — 0 `Read` calls and 0 `cat`s
-  across all four; its only textual appearances are an `ls -la` listing and a
-  hash in `.decanter-template.json`.
-  **This does NOT mean the contract went unused — correction 2026-07-26.** The
-  scaffolded `CLAUDE.md` begins with `@AGENTS.md`, and Claude Code auto-loads
-  `CLAUDE.md` and resolves that import, so **the full contract was in the
-  system prompt of every round**. The transcripts record only
-  `assistant`/`user`/`system:init` messages — never the system prompt — so this
-  analysis structurally *cannot* see whether the prose influenced the agent.
-  An earlier version of this report concluded "the contract prose is not what
-  produced these results"; that claim was unsupported and is retracted. What the
-  evidence does show is that the **explicitly-consulted** breadcrumbs were
-  `package.json` and `.mcp.json`; the contract's contribution is real but
-  unmeasured, and separating the two would need a round with the import removed.
+- **The scaffolded `AGENTS.md` contract is in the agent's context from the first
+  token of every session.** The scaffolded `CLAUDE.md` begins with `@AGENTS.md`
+  and Claude Code auto-loads `CLAUDE.md` and resolves that import. The agent
+  confirmed it directly in `ftrun-98438` turn 3, using **no tools**, when asked
+  how it got oriented:
+
+  > "It was already available — I didn't have to go find it. It was loaded
+  > automatically at the start of the session via `CLAUDE.md`'s `@AGENTS.md`
+  > import, before I did any exploring of the repo myself."
+
+  …and then stated the contract's ship flow correctly from memory
+  (`edit → preflight → push → test → publish`, with `preflight` local-only,
+  `push` to the draft, `test` on the draft, `publish` deliberate) — a
+  decanter-specific fact it could not have inferred from general n8n knowledge.
+
+  **Consequence for reading any transcript:** the absence of a `Read`/`cat` of
+  `AGENTS.md` means nothing. The contract is background context, and transcripts
+  record only `assistant`/`user`/`system:init` messages — never the system
+  prompt. The files the agent *actively* consulted to work out how to invoke the
+  CLI were `package.json` and `.mcp.json`.
 
 ### Why this contradicts round 1 — two candidates, not yet separated
 
