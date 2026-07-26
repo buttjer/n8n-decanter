@@ -787,6 +787,14 @@ rather than invisible:
   round's own record states whether the agent got a resolvable bare command.
   That is what stops this from silently qualifying results again.
 
+**Follow-on 2026-07-26:** the same "what does the harness quietly supply?"
+question produced `FIELD_NO_CLI=1` + scenario
+[`S6`](../../test/field-test/scenarios/S6.md) — the deliberate version of round
+1's accidental no-CLI condition ([Plan 57](../draft/57-cli-discoverability-for-agents.md)
+direction 4). It shadows any ambient `n8n-decanter` off the session PATH and
+empties the npm prefix, so a maintainer's global install cannot satisfy the
+round; `run.mts` refuses S6 against a normal stage or in `--container` mode.
+
 Remaining: run a round with `FIELD_NO_PATH_HELP=1` to measure the unassisted
 Bash surface. **The fix direction is already settled — see
 [Plan 58](58-guard-route-robustness.md) Task 4: it is an invocation-form fix, NOT

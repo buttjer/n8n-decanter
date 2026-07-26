@@ -56,6 +56,39 @@ measured a world where the breadcrumb already exists.
    whether the agent finds it. Round 1 was that experiment by accident; make it
    deliberate and repeatable so any fix here has a before/after.
 
+   **BUILT 2026-07-26 — the instrument exists; the round has not been run.**
+   `FIELD_NO_CLI=1` stages the **fresh-clone** condition and scenario
+   [`S6`](../../test/field-test/scenarios/S6.md) drives it. The project carries
+   the full committed evidence a teammate would push (AGENTS.md, .mcp.json,
+   decanter.config.json, `workflows/` with code files, a package.json declaring
+   `n8n-decanter`, git history) — only `node_modules` is missing, so the CLI is
+   not runnable. What it scores: **FOUND-AND-USED** (got it running and shipped
+   via files + push) / **BYPASSED** (edited `jsCode` over raw MCP — round 1's
+   result, the baseline hypothesis) / **STALLED**.
+
+   Getting the condition *valid* took more than removing the install — each of
+   these was found by checking, and each would have silently invalidated the
+   round:
+   - `npm install <tgz>` had rewritten package.json to a `file:` spec pointing
+     at the stage's tarball → the agent's `npm install` would fail for the wrong
+     reason. Now restored to a version range, so a registry install is the
+     genuine recovery path.
+   - the tarball was being committed before deletion → a harness artifact baked
+     into the very git history the persona is meant to read.
+   - **a maintainer machine usually has a global `npm link` install**, inherited
+     via PATH, which would have let the agent run the CLI all along. The run now
+     *shadows* offending PATH dirs (symlinking everything except `n8n-decanter`,
+     so node/npm/npx/git survive) **and** points `npm_config_prefix` at an empty
+     prefix — because `npx` re-resolves its own node bin dir and found the global
+     even after shadowing. All three routes (bare, `npx`, `npx --no-install`)
+     verified failing, with `npm install` still resolving `n8n-decanter 0.7.0`.
+
+   Guarded so it cannot silently measure nothing: `run.mts` refuses S6 against a
+   manifest without `noCli`, and refuses `--container` (that image installs the
+   CLI globally). **Next step is the run itself** — host mode, unsandboxed,
+   maintainer-driven; it spends real tokens, so it is not something to fire
+   automatically.
+
 ## Non-goals
 
 - Auto-installing anything, or any behaviour that runs without the user asking.

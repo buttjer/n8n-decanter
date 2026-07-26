@@ -269,7 +269,7 @@ async function unblindTarball(tgz: string): Promise<string[]> {
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null }> {
+async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean }> {
   const base = os.tmpdir();
   const workDir = path.join(base, `flows-ops-${PID}`);
   const harnessRoot = path.join(base, `ftrun-${PID}`);
@@ -376,7 +376,68 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
 
   // install the official n8n skills pack the way a real user would
   const skills = await installSkillsPack(workDir);
-  return { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec: spec ?? null };
+
+  // FIELD_NO_CLI=1 — the FRESH-CLONE condition (Plan 57 direction 4).
+  //
+  // Everything above ran, so the project carries the full committed evidence a
+  // teammate would have pushed: AGENTS.md, .mcp.json, decanter.config.json,
+  // workflows/, package.json declaring n8n-decanter. Then the *installed* copy
+  // is removed — exactly what `git clone` gives you before `npm install`.
+  //
+  // This is the deliberate, repeatable version of round 1's accidental
+  // no-CLI condition. What it measures: does the agent READ the project's own
+  // evidence and get the CLI running (npm install / npx), or does it bypass to
+  // raw n8n MCP and edit jsCode inline? Nothing here blocks either path.
+  //
+  // Deliberately NOT staged: a project with no decanter evidence at all. That
+  // is a different question (can an agent discover a tool it has never heard
+  // of — near-certainly no, and arguable without spending a round), and it is
+  // not what "without the CLI pre-installed" meant.
+  let noCli = false;
+  if (process.env.FIELD_NO_CLI === "1") {
+    if (!inited) {
+      console.warn("FIELD_NO_CLI=1 but init did not run — the project has no decanter evidence to find; staging it anyway");
+    }
+    // `npm install <tgz>` rewrote package.json to a `file:` spec pointing at the
+    // stage's tarball. Left as-is, the agent's `npm install` would either
+    // succeed for the WRONG reason (an offline tarball no clone would carry, and
+    // a harness tell) or fail for the wrong reason once the tarball is gone.
+    // A real repo pins a version range, so restore one: the recovery path
+    // becomes the genuine "install it from the registry" the persona would take.
+    // NOTE: that installs the PUBLISHED CLI, not this working copy — fine here,
+    // because the scenario measures the agent's ROUTE, not our unreleased code.
+    try {
+      const pkgPath = path.join(workDir, "package.json");
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+      const ourVersion = (JSON.parse(readFileSync(path.join(PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
+      const range = spec ?? `^${ourVersion}`;
+      if (pkg.dependencies?.["n8n-decanter"]) pkg.dependencies["n8n-decanter"] = range;
+      if (pkg.devDependencies?.["n8n-decanter"]) pkg.devDependencies["n8n-decanter"] = range;
+      writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+      console.log(`package.json now declares n8n-decanter ${range} (registry install is the agent's recovery path)`);
+    } catch (err) {
+      console.warn(`could not restore a version range in package.json (${(err as Error).message.split("\n")[0]})`);
+    }
+    // Drop the tarball BEFORE committing — committing it would bake a harness
+    // artifact into the very git history the persona is meant to read.
+    if (cliTarball) rmSync(cliTarball, { force: true });
+    rmSync(path.join(workDir, "package-lock.json"), { force: true }); // would re-pin the file: spec
+    // A clone's evidence lives in git history, and `git log` showing a
+    // teammate's commit is part of what the agent can read. (Only this mode
+    // commits — the other scenarios' dirty-tree start is deliberate.)
+    try {
+      await execFile("git", ["-C", workDir, "add", "-A"]);
+      await execFile("git", ["-C", workDir, "commit", "-qm", "workflows synced from n8n"]);
+      console.log("committed the scaffolded project (fresh-clone story: the evidence is in git)");
+    } catch (err) {
+      console.warn(`could not commit the scaffolding (${(err as Error).message.split("\n")[0]})`);
+    }
+    rmSync(path.join(workDir, "node_modules"), { recursive: true, force: true });
+    noCli = true;
+    console.log("FIELD_NO_CLI=1 — removed node_modules (fresh-clone state): the project's decanter evidence is committed, the CLI is NOT runnable");
+  }
+
+  return { workDir, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -402,7 +463,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec } = await scaffold();
+  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -416,6 +477,10 @@ try {
     root: "workflows",
     skills,
     decanterInstalled,
+    // FIELD_NO_CLI=1: the project's decanter evidence is committed but the CLI
+    // is NOT installed (fresh-clone state) — the Plan 57 discoverability
+    // condition. Recorded so a round's archive states which world it measured.
+    noCli,
     // the stage pre-ran init, so scenarios start from a configured project
     inited,
     // Container mode (run.mts --container) bakes one of these into the fenced
