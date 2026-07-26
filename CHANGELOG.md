@@ -100,6 +100,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing. `test --trigger <node>` (the post-push instance run) keeps the flag
   — that is where trigger selection acts.
 
+### Fixed
+
+- **The scaffolded MCP guard now starts under a *local* install, not only a
+  global one.** `init`'s `.mcp.json` / `opencode.json` spawned the guard as a
+  bare `n8n-decanter mcp connect`, which only resolves when the CLI is on the
+  agent's `PATH` — i.e. a **global** install. With decanter installed as a
+  **local** project dependency the command silently failed to start, so the
+  agent got no guarded route and fell back to whatever other n8n MCP it had,
+  unguarded. The scaffolded command is now `npx --no-install n8n-decanter mcp
+  connect`, which resolves the local `node_modules` bin **and** a global
+  install; `--no-install` never downloads from npm, so a genuinely missing
+  install fails loudly instead of silently. (Plan 58.)
+
 ## [0.7.0] - 2026-07-24
 
 ### Added

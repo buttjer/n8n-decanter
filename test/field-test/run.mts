@@ -332,8 +332,10 @@ function applyPostInit(): void {
   if (existsSync(mcpPath)) {
     const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
     const srv = mcp.mcpServers?.["n8n-instance"];
-    if (srv && srv.command === "n8n-decanter") {
-      const inner = ["n8n-decanter", ...(srv.args ?? [])].join(" ");
+    // command is `npx --no-install n8n-decanter …` (Plan 58) or a bare
+    // `n8n-decanter …` — rebuild the full argv either way, don't key on it.
+    if (srv && typeof srv.command === "string") {
+      const inner = [srv.command, ...(srv.args ?? [])].join(" ");
       // container mode redirects to the harnessRoot's bind-mount inside the agent
       // (/harness) so the guard stderr still lands in HARNESS on the host.
       const guardTarget = containerMode ? "/harness/guard.log" : GUARD_LOG;

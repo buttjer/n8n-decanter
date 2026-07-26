@@ -1,6 +1,6 @@
 # Plan 60 — Preflight-first verb surface: `preflight → push → test → publish`
 
-**Status:** Done — shipped in PR #162 (code, docs on every surface, agent contract, tests). Renumbered 58 → 60: [plans/draft/58-guard-route-robustness.md](../draft/58-guard-route-robustness.md) landed first (#164) and owns the number; 59 was already taken by the declutter plan this one spawned.
+**Status:** Done — shipped in PR #162 (code, docs on every surface, agent contract, tests). Renumbered 58 → 60: [plans/open/58-guard-route-robustness.md](../open/58-guard-route-robustness.md) landed first (#164) and owns the number; 59 was already taken by the declutter plan this one spawned.
 **Priority:** P1
 **Source:** Maintainer session 2026-07-24 (the "does preflight change the draft?" thread). Relates to [`../done/36-preflight-verb.md`](../done/36-preflight-verb.md) (which introduced `preflight` with `test` as a stage) and [`../draft/57-cli-discoverability-for-agents.md`](../draft/57-cli-discoverability-for-agents.md).
 **Snapshot:** 2026-07-24T14:38Z @ 9f3a78a
