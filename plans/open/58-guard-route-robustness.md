@@ -1,8 +1,8 @@
 # Plan 58 — the stdio guard should not silently fail to be the route the user configured
 
-**Status:** In progress (Tasks 1 + 3 done; Tasks 2 + 4 open)
-**Priority:** P1 for tasks 1 + 3 (both done — the silent-fail and the missing
-spawn coverage that let it through) and task 4 (same gap on the Bash surface);
+**Status:** In progress (Tasks 1, 3, 4 done; Task 2 open)
+**Priority:** P1 for tasks 1, 3, 4 (all done — the silent-fail, the missing
+spawn coverage that let it through, and the same gap on the Bash surface);
 P2 for task 2.
 **Source:** 2026-07-24 discussion off [Plan 57](../draft/57-cli-discoverability-for-agents.md).
 Two concrete gaps found by inspecting the guard's discovery + startup path;
@@ -168,11 +168,29 @@ all**. That is exactly the "second door" case the hook exists to catch.
 
    The fix mirrors Task 1: **`npx n8n-decanter <verb>` is the universal form** —
    it resolves a local *and* a global install (verified: global resolves in
-   ~0.5 s with `--no-install`, no download). Work to do: allow **both** forms in
-   the scaffolded allowlist (bare stays valid and is nicer under a global
-   install), and make the agent contract's examples resolve under either. Check
-   how the permission matcher treats the `npx` prefix before choosing wording —
-   a prefix that doesn't match its rule would gate every call behind a prompt.
+   ~0.5 s with `--no-install`, no download).
+
+   **DONE**, and the matcher check found more than an ergonomics bug. The
+   permission matcher **keys on the command prefix** (root `AGENTS.md`,
+   "Invoke commands so a human can approve *and* read them"), so
+   `npx n8n-decanter …` matched **neither** the allow rules **nor the
+   `push --force` deny rule** — i.e. **the force-push guard rail was
+   sidesteppable just by invoking through `npx`**. Adding the `npx` forms to the
+   *allow* list without the *deny* list would have widened that hole, so both
+   were updated together:
+   - `template/.claude/settings.json.example` — `npx` variants of every allowed
+     verb, **and** of the `push --force` denial (including a
+     `npx --no-install …` variant, since a flag between `npx` and the command
+     also defeats prefix matching);
+   - `template/opencode.json.example` — `npx` variants of the `push --force`
+     denials (its bash *allow* is `*`, so only deny needed widening);
+   - `template/AGENTS.md.example` — tells agents to add the `npx` prefix when
+     the bare command is not found, and why;
+   - [`installation.md`](../../docs/getting-started/installation.md) — the
+     local-install section now states the working invocation forms.
+
+   `-f` is **not** a force alias (the CLI reads only `--force`), so opencode's
+   `push -f*` denials are defensive, not load-bearing.
 
 ## Non-goals
 
