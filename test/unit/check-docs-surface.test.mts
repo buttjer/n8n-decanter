@@ -230,7 +230,7 @@ describe("check 5 — verb-last command scan", () => {
   });
 
   it("ignores JSON/config string values", () => {
-    const json = '{ "command": "n8n-decanter", "args": ["mcp", "connect"] }';
+    const json = '{ "command": "npx", "args": ["--no-install", "n8n-decanter", "mcp", "connect"] }';
     assert.deepEqual(run("template/.mcp.json", json), []);
   });
 

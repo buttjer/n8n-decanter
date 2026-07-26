@@ -579,8 +579,13 @@ transports:
 - **`mcp connect` (`lib/mcpconnect.mts`) is the default route** — a stdio MCP
   server the agent spawns itself, which is what lets `init` scaffold a
   static, secret-free `.mcp.json`/`opencode.json` entry
-  (`{"command":"n8n-decanter","args":["mcp","connect"]}`): the instance MCP
-  is wired the moment init runs. One JSON-RPC message per line; stdout is
+  (`{"command":"npx","args":["--no-install","n8n-decanter","mcp","connect"]}`):
+  the instance MCP is wired the moment init runs. The `npx --no-install` prefix
+  (Plan 58) resolves the command whether decanter is installed globally or as a
+  local project dependency — a bare `n8n-decanter` only resolves on the agent's
+  `PATH` (a global install) and would otherwise **silently fail to start**,
+  dropping the agent onto whatever other n8n route it has, unguarded;
+  `--no-install` never downloads, so a missing install fails loudly. One JSON-RPC message per line; stdout is
   protocol-only (stderr logging; the dispatcher builds a stderr `Log` and a
   stderr-logging `McpClient`); strictly ordered processing (session-id
   capture race-free); SSE responses decoded back to per-line JSON; n8n's

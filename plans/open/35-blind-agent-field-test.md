@@ -745,6 +745,30 @@ the missing hooks in mind.
 - **No forking/patching of n8n-io/skills** for the test — the pack installs
   whole, as shipped ("override, not fork" stands).
 
+## Finding — the harness's PATH crutch hides a real failure mode (2026-07-26)
+
+Surfaced while fixing [Plan 58](58-guard-route-robustness.md) Task 1. The
+harness stages **both** install shapes — host mode installs decanter
+**locally** (`npm install <tgz>` into the workDir), container mode installs it
+**globally** (`npm install -g`) — but then **masks the difference in both**:
+
+- host mode prepends the workDir's `node_modules/.bin` to the blind session's
+  PATH ([`run.mts`](../../test/field-test/run.mts#L396)), and
+- container mode symlinks the global bin into `/work/node_modules/.bin`
+  ([`run.mts`](../../test/field-test/run.mts#L81)),
+
+so a bare `n8n-decanter` always resolves for the blind agent. **A real user's
+agent gets neither.** That crutch is exactly why the guard's local-install
+silent-fail (Plan 58 Task 1) went unseen through every round: the harness
+supplied the one thing that made the bug invisible.
+
+**Action:** drop the PATH prepend, or make it a deliberate, documented toggle
+(e.g. an explicit "simulate a global install" flag) so the default run measures
+what real agents hit. Until then, treat "the agent reached the CLI" results as
+*conditional on a crutch the field doesn't have*. The paired regression test
+(spawn the scaffolded command with a clean PATH, both install shapes) is
+[Plan 58](58-guard-route-robustness.md) Task 3.
+
 ## Notes
 
 - **CHANGELOG:** none (internal dev tooling + plan). **PLAN.md:** no design

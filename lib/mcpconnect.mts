@@ -1,7 +1,9 @@
 // The stdio MCP guard (`mcp connect`): the same Code-node boundary as the
 // HTTP guard-proxy (`mcp serve`), but as a stdio MCP server an agent spawns
 // itself — which is what lets `init` scaffold a static, secret-free
-// `.mcp.json` entry ({"command":"n8n-decanter","args":["mcp","connect"]}).
+// `.mcp.json` entry ({"command":"npx","args":["--no-install","n8n-decanter","mcp","connect"]};
+// the `npx --no-install` prefix resolves the command under a local install
+// too, where a bare `n8n-decanter` is off the agent's PATH — Plan 58).
 // Decanter reads its own credentials (.env / .decanter-auth.json) in this
 // process; the agent only ever sees JSON-RPC over the process pipes, so no
 // session secret exists at all.

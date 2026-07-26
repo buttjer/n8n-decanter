@@ -15,12 +15,17 @@ instance's MCP server. You never run it by hand: the scaffolded `.mcp.json`
 ```json
 {
   "mcpServers": {
-    "n8n-instance": { "command": "n8n-decanter", "args": ["mcp", "connect"] }
+    "n8n-instance": { "command": "npx", "args": ["--no-install", "n8n-decanter", "mcp", "connect"] }
   }
 }
 ```
 
-and the agent spawns it per session. It speaks MCP over stdio to the agent and
+and the agent spawns it per session. (It runs through `npx --no-install` so the
+command resolves whether decanter is installed **globally** or as a **local**
+project dependency — a bare `n8n-decanter` would only resolve on the agent's
+`PATH`, i.e. a global install, and fail silently otherwise. `--no-install` keeps
+it strictly local: it never downloads from npm, so a missing install fails
+loudly instead.) It speaks MCP over stdio to the agent and
 forwards each call to your instance's `/mcp-server/http` with **decanter's own
 credentials** (from `.env` / `.decanter-auth.json`) — the agent never holds an
 n8n credential, and because stdio pipes are private to the two processes,
