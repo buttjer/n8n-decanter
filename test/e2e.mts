@@ -1101,7 +1101,7 @@ await step("guard: pre-Plan-32 .remote.js leftovers warn but don't block", async
 await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", async () => {
   writeFileSync(path.join(TMP, "n8n-globals.d.ts"), readFileSync(path.join(PROJECT, "n8n-globals.d.ts"), "utf8"));
   writeFileSync(path.join(TMP, "tsconfig.json"), JSON.stringify({
-    compilerOptions: { target: "ES2022", module: "CommonJS", moduleResolution: "Node", lib: ["ES2022"], allowJs: true, checkJs: true, noEmit: true, strict: true, skipLibCheck: true },
+    compilerOptions: { target: "ES2022", module: "preserve", moduleResolution: "bundler", lib: ["ES2022"], allowJs: true, checkJs: true, noEmit: true, strict: true, skipLibCheck: true },
     include: ["n8n-globals.d.ts", "workflows/**/*.ts", "workflows/**/*.js"],
     exclude: ["**/*.remote.js"],
   }, null, 2));

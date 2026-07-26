@@ -481,9 +481,13 @@ mock server.
   - `.decanter-auth.json` (sync-dir root) — MCP OAuth credentials minted by
     init; refresh tokens are single-use (rotated + persisted on every use).
   - `.js` node files are lossless (byte-identical round-trip). `.ts` files
-    are one-way: push compiles via esbuild (`bundle: false`) and appends a
-    `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker presence
-    is what identifies a TS-managed node on pull.
+    are one-way: push compiles via esbuild (`bundle: true` — shared `shared/*`
+    helpers and opted-in npm deps are inlined into each importing node) and
+    appends a `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker
+    presence is what identifies a TS-managed node on pull. Because a bundler
+    really does resolve those specifiers, the node-file tsconfig uses
+    `moduleResolution: "bundler"`; `node16`/`nodenext` would reject the
+    extensionless relative imports the template documents (TS2835).
 - Push runs two independent gates, in order:
   1. Compliance guard (`lib/validate.mts`, shared with `check` and watch):
      layout violations are hard errors that `--force` does NOT bypass.

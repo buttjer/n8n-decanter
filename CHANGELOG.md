@@ -71,6 +71,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the no-instance variant) and needs Docker. For runtime evidence without
   Docker, push and then run `test`.
 
+- **Node-file type checking moved off TypeScript's legacy `node10` module
+  resolution** to `moduleResolution: "bundler"` (with `module: "preserve"`), in
+  the scaffolded `tsconfig.json`. This matches what push actually does — `.ts`
+  nodes are compiled with esbuild in bundling mode — and keeps the documented
+  extensionless import style working (`import { total } from
+  "../../shared/money"`). It also unblocks TypeScript 6, which turns `node10`
+  into a hard error (`TS5107`), and TypeScript 7, which removes it outright.
+  `node16`/`nodenext` were **not** chosen: they reject extensionless relative
+  imports (`TS2835`) and would force every node file to be rewritten with `.js`
+  extensions. No change to which Node.js versions are supported. *Existing sync
+  dirs keep their current `tsconfig.json`* — re-run `n8n-decanter init` to be
+  offered the refresh; if you have hand-edited yours (or created it before
+  template baselines existed), init reports it and leaves it alone, so apply
+  the two-line change yourself when you move to TypeScript 6+.
+
 ### Removed
 
 - **Breaking: the `preflight --quick` profile.** With the `test` stage gone it

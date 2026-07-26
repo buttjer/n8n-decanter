@@ -33,4 +33,8 @@ try {
 if (current === DESIRED) process.exit(0);
 
 git(['config', 'core.hooksPath', DESIRED]);
-console.log(`[setup-hooks] core.hooksPath -> ${DESIRED} (main-commit guard active)`);
+// stderr, not stdout: `prepare` also runs under `npm pack`, and npm forwards a
+// lifecycle script's stdout into its own — which corrupts `npm pack --json`.
+// test/field-test/stage.mts parses exactly that JSON to find the tarball, so a
+// stdout log here made every field-test round start with no CLI installed.
+console.error(`[setup-hooks] core.hooksPath -> ${DESIRED} (main-commit guard active)`);
