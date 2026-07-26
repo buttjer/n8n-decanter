@@ -1058,17 +1058,25 @@ try {
       assert.ok("startedAt" in row && "stoppedAt" in row, "rows carry startedAt/stoppedAt timing");
     }
 
-    // the verb itself: default profile (static + sync + test) against the real
+    // the verb itself: default profile (static + sync) against the real
     // instance, as JSON. Read-only — the draft version must not move.
+    // Plan 60 (#162) removed the instance `test` stage from preflight: it graded
+    // the DRAFT while every other stage graded local files, so one score
+    // described two different versions. The order is now
+    // preflight -> push -> test -> publish.
     const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
     const r = await cli("preflight", wfId, "--json");
     assert.equal(r.code, 0, r.out);
     const report = JSON.parse(r.out.slice(r.out.indexOf("{")));
     assert.equal(report.profile, "default");
     assert.ok(["ready", "caution"].includes(report.verdict), "a healthy in-sync workflow is ready/caution: " + report.verdict);
-    for (const id of ["connect", "access", "parity", "test"]) {
+    for (const id of ["connect", "access", "parity"]) {
       assert.ok(report.checks.find((c: any) => c.id === id && c.status === "pass"), `${id} passed: ` + JSON.stringify(report.checks.find((c: any) => c.id === id)));
     }
+    // and the stage is GONE, not merely skipped — against a real instance this
+    // is the assertion that would catch it creeping back in
+    assert.ok(!report.checks.some((c: any) => c.id === "test"), "the instance test stage is not a preflight check");
+    assert.ok(!report.coverage.ran.includes("test") && !report.coverage.skipped.some((s: any) => s.id === "test"), "and is absent from coverage");
     assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "preflight mutated nothing");
   });
 
