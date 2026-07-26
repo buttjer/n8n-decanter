@@ -623,12 +623,19 @@ the same traps:
   API-inaccessible draft-first capability.
 - **More verified write/read semantics (2.30.7):** `updateNodeParameters`
   **merges** into existing params (a `{jsCode}`-only write preserves `mode`/
-  `language`); **node ids survive `renameNode`**; reads are **draft-only** —
-  `get_workflow_version` returns metadata without node params, so published
-  content can't be read back over MCP (`restore_workflow_version` is the only
-  path to it). Data-table tools are **add-only** (create/rename/add rows+columns;
-  `search_data_tables` returns schema, never row values); `create_data_table`
-  requires a `projectId` (get it from `search_projects`).
+  `language`); **node ids survive `renameNode`**. Reads are **NOT draft-only**
+  (corrected 2026-07-25, reproduced against real n8n — see the smoke suite's
+  "MCP read semantics" step): one `get_workflow_details` returns the draft tip
+  (`nodes`) **and** the published version (`activeVersion.nodes`) plus
+  `activeVersionId`, and `get_workflow_version(versionId)` returns **full node
+  params (`jsCode` byte-exact) for ANY version — draft, active, or a superseded
+  one**. `get_workflow_history` is the *index* (version list — **metadata only,
+  no node params**); it was the tool the old "returns metadata without node
+  params" claim conflated with `get_workflow_version`. (All these reads are
+  still credential-sanitized per the fidelity note above — node credential refs
+  stripped, params intact.) Data-table tools are **add-only** (create/rename/add
+  rows+columns; `search_data_tables` returns schema, never row values);
+  `create_data_table` requires a `projectId` (get it from `search_projects`).
 - **The docs-site tool reference is NOT exhaustive** (it lists ~33 of the 41+
   tools on 2.30.7) — n8n-io/skills' SKILL.md and a live `tools/list` are better
   inventories. Undocumented-but-real (re-verified 2026-07-22, from the n8n

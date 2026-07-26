@@ -130,11 +130,13 @@ n8n-decanter/
   reads the **draft tip**, shows no write/read race, and **`GET → POST`
   round-trips losslessly** (node ids, credential refs, pinData, webhookId all
   preserved). Hence `backup` sources from REST and redeploys via REST
-  (`lib/backup.mts`, `lib/api.mts` `getWorkflow`/`createWorkflow`). Since both
-  MCP and REST expose only the current tip and can't export a *past* version's
-  content, **git is the only place a redeployable version history can live** —
-  a committed, redeployable backup makes git a real second versioning + DR
-  layer outside n8n. `restore` creates a **new** workflow (new workflow id,
+  (`lib/backup.mts`, `lib/api.mts` `getWorkflow`/`createWorkflow`). REST exposes
+  only the current tip; MCP `get_workflow_version(versionId)` *can* read a *past*
+  version's code (verified 2026-07-25), but only **lossily** — credential refs +
+  `settings` stripped, as above — so neither backend can export a *lossless,
+  redeployable* past version. **git is the only place a redeployable version
+  history can live** — a committed, redeployable backup makes git a real second
+  versioning + DR layer outside n8n. `restore` creates a **new** workflow (new workflow id,
   node ids preserved), landing unpublished — it never reconciles an existing
   one; structure ownership stays with n8n. Consequence: the API-only surface
   is `executions` + `data-tables` + `backup`.
@@ -401,9 +403,10 @@ prints stack traces.
 For each configured workflow:
 
 1. MCP `get_workflow_details` — the tip (draft if one exists, else the
-   published content; a *superseded* published version is unreadable over
-   MCP, so pull syncs the tip by design). Unavailable → the server's
-   guidance text + the CLI's enable hint.
+   published content). Pull mirrors the **tip** by design; a superseded
+   published version *is* readable over MCP (`get_workflow_version(versionId)`,
+   verified 2026-07-25), but decanter syncs the tip, not history. Unavailable →
+   the server's guidance text + the CLI's enable hint.
 2. Locate the local folder by id (scan `.decanter.json`s under root). An
    existing folder is kept as-is (sticky, Plan 27); a new one gets the
    kebab slug (`<slug>-<id8>` + warn on collision). Cache the display name.
