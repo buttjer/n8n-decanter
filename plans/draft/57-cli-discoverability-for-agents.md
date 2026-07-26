@@ -1,9 +1,11 @@
 # Plan 57 — a coding agent should find decanter before it hand-rolls raw n8n MCP
 
-**Status:** Draft — **premise under review**: the first deliberate measurement
-(2026-07-26) contradicted it; see the banner below.
-**Priority:** P1 for the *measurement* (direction 4); the fix directions (1–3)
-are **on hold** until the gap is shown to still exist.
+**Status:** Draft — **close-out candidate.** The premise was measured 4× on
+2026-07-26 and did not reproduce (4/4 FOUND-AND-USED); the one remaining variant
+was ruled **out of scope** by the maintainer. No in-scope work is left — needs a
+maintainer decision to move to `done/` (as *measured away*, not implemented) or
+to keep as a watch item.
+**Priority:** — (nothing open).
 **Class:** Distinctive feature — the whole point of decanter is that Code-node
 source lives in git; an agent that never finds the CLI gets none of it.
 **Source:** [Plan 35](../open/35-blind-agent-field-test.md) blind field test,
@@ -32,20 +34,27 @@ came back **FOUND-AND-USED**, not BYPASSED:
 `verify` with 0 violations and an **empty `guard.log`**: not one ever used the
 n8n MCP route. The n=1 objection is settled.
 
-**The premise does not hold against today's scaffold.** What actually gets the
-agent there is the **machine-readable** evidence, not the prose:
+**The premise does not hold against today's scaffold.** The breadcrumbs the
+agent *explicitly consulted* were machine-readable:
 
 - `package.json` declaring `n8n-decanter` (round 1);
 - `.mcp.json` — round 2 read it and copied its **exact `npx --no-install` form**;
 - and in rounds 3–4 the agent's own reflex: `which n8n-decanter || npx …`.
 
-**No round ever opened `AGENTS.md` explicitly.** So the contract prose is not
-what produced these results.
+**Caveat that matters (corrected 2026-07-26):** no round explicitly *opened*
+`AGENTS.md`, but the scaffolded `CLAUDE.md` starts with `@AGENTS.md` and Claude
+Code auto-loads it — so **the contract was in the system prompt throughout**,
+and the transcripts do not record system prompts. Its contribution is real but
+**unmeasured**. An earlier note here claimed the prose was not the mechanism;
+that was unsupported and is retracted.
 
-**Consequence for this plan: directions 1–3 are on hold, and direction 3
-(positioning/docs) looks like the wrong lever entirely** — prose was not the
-mechanism in any of the four. If a gap remains, it is in the **no-evidence**
-case, which is what direction 4(b) now specifies.
+**Consequence for this plan:** directions 1–3 are on hold — the gap they exist
+to close does not reproduce. Direction 3 (positioning/docs) is **not** disproven,
+just untested. **The no-decanter-evidence variant is OUT OF SCOPE** (maintainer
+call, 2026-07-26): decanter's concern is projects that use decanter, not
+greenfield discovery. With that dropped and the premise not reproducing, this
+plan has no remaining in-scope work — **it is a close-out candidate**; see
+"Status".
 
 ## The finding
 
@@ -127,15 +136,11 @@ measured a world where the breadcrumb already exists.
 
    a. **Repeat S6** (≥2 more rounds). n=1 cannot distinguish "the scaffold works"
       from "this run got lucky". Cheap, and it settles the headline.
-   b. **Add the harsher variant — the real control.** S6 stages a project *full*
-      of decanter evidence (`AGENTS.md`, `.mcp.json`, `package.json`), and the
-      agent read `package.json` **first**. That measures "does it follow a
-      breadcrumb", not "does it discover the tool". The control is a project with
-      **an n8n MCP connection and no decanter evidence at all** — which is the
-      case the original finding actually describes, and the one where the answer
-      is plausibly still BYPASSED. Stage flag alongside `FIELD_NO_CLI`, e.g.
-      `FIELD_NO_DECANTER=1` (skip init + scaffold, wire raw n8n MCP for the
-      agent).
+   b. ~~**Add the harsher variant — a project with no decanter evidence at
+      all.**~~ **DROPPED — out of scope (maintainer call, 2026-07-26.)** Decanter's
+      concern is projects that *use* decanter; whether an agent discovers the
+      tool in a project that has never heard of it is a marketing/adoption
+      question, not a product one. Not to be revived without a new reason.
    c. **Fix S6's fixture mismatch first** — it reuses the empty `s1-skeleton`
       node while its prompt says "on top of whatever it already does", which cost
       a turn (Plan 35 run report).

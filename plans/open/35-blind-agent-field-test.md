@@ -863,12 +863,20 @@ Two observations worth keeping:
 - **Round 2 learned the invocation from `.mcp.json`** — it read the guard entry
   and copied its `npx --no-install` form verbatim. The scaffolded MCP config is
   doing double duty as invocation documentation.
-- **No round ever opened `AGENTS.md` explicitly** (0 `Read`/`cat` across all
-  four; the 2–4 textual mentions are the agent referring to context, not
-  fetching it). Claude Code surfaces it as project context automatically, so
-  "did it read the contract" is the wrong question here — but it does mean the
-  *contract prose* is not what produced these results. The **machine-readable**
-  breadcrumbs (`package.json`, `.mcp.json`) are.
+- **No round *explicitly opened* `AGENTS.md`** — 0 `Read` calls and 0 `cat`s
+  across all four; its only textual appearances are an `ls -la` listing and a
+  hash in `.decanter-template.json`.
+  **This does NOT mean the contract went unused — correction 2026-07-26.** The
+  scaffolded `CLAUDE.md` begins with `@AGENTS.md`, and Claude Code auto-loads
+  `CLAUDE.md` and resolves that import, so **the full contract was in the
+  system prompt of every round**. The transcripts record only
+  `assistant`/`user`/`system:init` messages — never the system prompt — so this
+  analysis structurally *cannot* see whether the prose influenced the agent.
+  An earlier version of this report concluded "the contract prose is not what
+  produced these results"; that claim was unsupported and is retracted. What the
+  evidence does show is that the **explicitly-consulted** breadcrumbs were
+  `package.json` and `.mcp.json`; the contract's contribution is real but
+  unmeasured, and separating the two would need a round with the import removed.
 
 ### Why this contradicts round 1 — two candidates, not yet separated
 
