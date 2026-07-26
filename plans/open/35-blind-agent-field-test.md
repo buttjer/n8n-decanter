@@ -836,6 +836,40 @@ Three corroborating details:
 a global `npm link` install, so without that shadowing this round would have
 measured an agent that could run the CLI all along.
 
+### Repeats 2–4 (2026-07-26): 4/4 FOUND-AND-USED — it reproduces
+
+`ftrun-91113`, `ftrun-93211`, `ftrun-95680`, each on its own fresh stage, same
+scenario text. **Every round: `verify` `passed: true`, 0 violations, and an
+EMPTY `guard.log`** — not one of the four ever used the n8n MCP route, guarded or
+raw. The n=1 objection is settled: with today's scaffold committed, the
+fresh-clone agent finds and uses the CLI.
+
+**How each one got there differs, and that is the useful part** — three distinct
+breadcrumbs worked:
+
+| round | how it found the CLI |
+| --- | --- |
+| `87406` | `cat package.json` → `npx n8n-decanter list --remote` |
+| `91113` | `cat .mcp.json` → then used **that file's exact `npx --no-install` form** |
+| `93211` | `which n8n-decanter \|\| npx n8n-decanter --version` → `npx … --help` |
+| `95680` | `which n8n-decanter \|\| npx n8n-decanter --version` → `npx … --help` |
+
+Two observations worth keeping:
+
+- **Rounds 3 and 4 probed for the CLI explicitly** (`which … || npx …`) — i.e.
+  the agent's own reflex is to test PATH and fall back to `npx`. That is exactly
+  the recovery [Plan 58](58-guard-route-robustness.md) Task 4 documents, arrived
+  at unprompted.
+- **Round 2 learned the invocation from `.mcp.json`** — it read the guard entry
+  and copied its `npx --no-install` form verbatim. The scaffolded MCP config is
+  doing double duty as invocation documentation.
+- **No round ever opened `AGENTS.md` explicitly** (0 `Read`/`cat` across all
+  four; the 2–4 textual mentions are the agent referring to context, not
+  fetching it). Claude Code surfaces it as project context automatically, so
+  "did it read the contract" is the wrong question here — but it does mean the
+  *contract prose* is not what produced these results. The **machine-readable**
+  breadcrumbs (`package.json`, `.mcp.json`) are.
+
 ### Why this contradicts round 1 — two candidates, not yet separated
 
 1. **The world changed.** Round 1's project had far less evidence; today's

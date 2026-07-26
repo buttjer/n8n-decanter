@@ -27,14 +27,25 @@ came back **FOUND-AND-USED**, not BYPASSED:
 - it **read `AGENTS.md`**; `verify` passed with 0 violations; **`guard.log` was
   empty** — it never used the raw MCP route at all.
 
-So the premise "an agent never discovers the tool" **did not reproduce** against
-today's scaffold. Two unseparated explanations: the world genuinely changed
-(round 1 predates `AGENTS.md` + `.mcp.json` + a `package.json` naming decanter —
-and the agent read that file *first*), or **n = 1**.
+**Repeated 3× more (2026-07-26): 4 of 4 FOUND-AND-USED.** Every round —
+`ftrun-87406`, `-91113`, `-93211`, `-95680`, each on a fresh stage — passed
+`verify` with 0 violations and an **empty `guard.log`**: not one ever used the
+n8n MCP route. The n=1 objection is settled.
 
-**Consequence for this plan:** its P1 framing is now in question, but not
-refuted. Do not execute directions 1–3 as if the gap were proven. **Next step is
-evidence, not fixes** — see direction 4.
+**The premise does not hold against today's scaffold.** What actually gets the
+agent there is the **machine-readable** evidence, not the prose:
+
+- `package.json` declaring `n8n-decanter` (round 1);
+- `.mcp.json` — round 2 read it and copied its **exact `npx --no-install` form**;
+- and in rounds 3–4 the agent's own reflex: `which n8n-decanter || npx …`.
+
+**No round ever opened `AGENTS.md` explicitly.** So the contract prose is not
+what produced these results.
+
+**Consequence for this plan: directions 1–3 are on hold, and direction 3
+(positioning/docs) looks like the wrong lever entirely** — prose was not the
+mechanism in any of the four. If a gap remains, it is in the **no-evidence**
+case, which is what direction 4(b) now specifies.
 
 ## The finding
 
