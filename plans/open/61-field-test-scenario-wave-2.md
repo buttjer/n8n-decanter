@@ -1,4 +1,4 @@
-# Plan 58 — Field-test wave 2: full-surface scenarios seeded from real n8n workflows
+# Plan 61 — Field-test wave 2: full-surface scenarios seeded from real n8n workflows
 
 **Status:** Not started
 **Priority:** P2 — the harness exists and works ([Plan 35](35-blind-agent-field-test.md));
