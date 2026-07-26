@@ -113,6 +113,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   install; `--no-install` never downloads from npm, so a genuinely missing
   install fails loudly instead of silently. (Plan 58.)
 
+- **The scaffolded agent permissions now cover `npx n8n-decanter …` — including
+  the `push --force` denial.** The same local-install gap applies to the CLI
+  calls an agent makes in a shell: under a local (devDependency) install a bare
+  `n8n-decanter <verb>` is not on `PATH`, so the working form is
+  `npx n8n-decanter <verb>`. The permission matcher keys on the command prefix,
+  so that form previously matched **neither** the allow rules (every safe call
+  would stop to ask) **nor the `push --force` deny rule** — meaning the
+  force-push guard rail could be sidestepped simply by invoking through `npx`.
+  Both lists now carry the `npx` forms (Claude Code `settings.json` and
+  opencode), and the scaffolded `AGENTS.md` tells agents to add the prefix when
+  the bare command is not found. Installing globally is **not** required — a
+  per-sync-dir devDependency remains fully supported. (Plan 58.)
+
 ## [0.7.0] - 2026-07-24
 
 ### Added

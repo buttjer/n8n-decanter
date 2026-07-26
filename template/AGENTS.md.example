@@ -558,6 +558,15 @@ Rules:
 
 ## Commands — who runs what
 
+**If `n8n-decanter` is "command not found", prefix it with `npx`** —
+`npx n8n-decanter <verb>`. This project may install decanter as a **local**
+devDependency rather than globally, and a local install puts the command in
+`node_modules/.bin`, not on your `PATH`. `npx` finds it either way, so
+`npx n8n-decanter …` is the form that always works; the bare form is fine when
+decanter is installed globally. (`npm run check` / `npm run typecheck` also work
+locally — npm puts `node_modules/.bin` on `PATH` for scripts.) The commands
+below are written bare for readability; add the prefix if your shell needs it.
+
 - **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
   `n8n-decanter node run <file> [fixture]`,
   `n8n-decanter scenario create <workflow>` / `scenario check <workflow>` (committed pin-data sets),
