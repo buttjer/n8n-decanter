@@ -1,8 +1,8 @@
 # Plan 58 — the stdio guard should not silently fail to be the route the user configured
 
-**Status:** In progress (Task 1 done; Tasks 2–3 open)
-**Priority:** P1 for tasks 1 + 3 (silent-fail is a clear bug, and nothing
-currently tests that the scaffolded command starts at all); P2 for task 2.
+**Status:** In progress (Tasks 1 + 3 done; Task 2 open)
+**Priority:** P1 for tasks 1 + 3 (both done — the silent-fail and the missing
+spawn coverage that let it through); P2 for task 2.
 **Source:** 2026-07-24 discussion off [Plan 57](../draft/57-cli-discoverability-for-agents.md).
 Two concrete gaps found by inspecting the guard's discovery + startup path;
 Plan 57 is the *discoverability* half (agent finds the CLI), this is the
@@ -93,8 +93,9 @@ all**. That is exactly the "second door" case the hook exists to catch.
    hook stays a thin runner (root `AGENTS.md` "Agent tooling").
 
 3. **(P1) Prove the scaffolded command actually starts a guard — under BOTH
-   install shapes.** Task 1's bug survived because **nothing tests process
-   spawning**, only guard *behavior*:
+   install shapes. — DONE** (`test/mcpspawn.mts`, wired into `npm test`).
+   Task 1's bug survived because **nothing tested process spawning**, only guard
+   *behavior*:
    - [`test/guardproxy.mts`](../../test/guardproxy.mts) imports `runStdioGuard`
      **in-process** on PassThrough pipes — the scaffolded `command`/`args` are
      never executed.
@@ -110,16 +111,39 @@ all**. That is exactly the "second door" case the hook exists to catch.
      user's agent never gets is exactly the thing the harness supplies**, which
      is why every round measured a world where the guard always started.
 
-   The fix: a test that **reads `.mcp.json` after `init` and spawns exactly that
-   `command` + `args` as a child process with a CLEAN PATH** (no
-   `node_modules/.bin` injection), writes an `initialize` on stdin, and asserts a
-   JSON-RPC reply on stdout — run once against a **local** install and once
-   against a **global** one. That is the direct regression test for Task 1 and
-   the only check that would have caught it.
+   **What shipped:** `test/mcpspawn.mts` reads the **scaffolded** entry (from the
+   template `init` materializes, so it tracks whatever we ship rather than a
+   hard-coded argv), spawns **exactly that `command` + `args`** as a child
+   process against a localhost mock MCP upstream, writes an `initialize` on
+   stdin, and asserts a JSON-RPC reply on stdout. Four steps:
+   - a **static guard** — the scaffolded command must not be a bare program name
+     again;
+   - **LOCAL install** — a shim in the project's `node_modules/.bin`, spawned on
+     a PATH containing only `node`/`npx` + the system dirs. The shim drops a
+     sentinel, so the assertion proves the *local* copy ran and a machine-global
+     install cannot satisfy the step;
+   - **GLOBAL install** — no local install in scope, resolution from the ambient
+     PATH;
+   - **NEITHER** — must fail **loudly** (a guard that never starts is the bug),
+     never silently.
 
-   Separately, the field-test PATH crutch should be dropped or made a deliberate,
-   documented toggle so the harness stops hiding what real agents hit (recorded
-   as a finding on [Plan 35](../open/35-blind-agent-field-test.md)).
+   **Verified to actually catch the bug**: reverting the template to the bare
+   `n8n-decanter` fails the static guard, and — run in isolation — the LOCAL step
+   fails with `spawn n8n-decanter ENOENT`, i.e. it reproduces the real-world
+   silent-fail rather than merely asserting a string.
+
+   *Environment caveat (why "both" is honest, not absolute):* npm/npx re-adds its
+   own node bin dir to PATH, so a *fake* global install cannot reliably win over
+   a real one. Each of the GLOBAL / NEITHER steps therefore skips, with a printed
+   reason, on the machine shape that cannot express it — a machine with a global
+   install exercises GLOBAL and skips NEITHER; CI without one does the reverse.
+   **LOCAL — the actual regression — always runs.**
+
+   The paired field-test PATH crutch is resolved on
+   [Plan 35](../open/35-blind-agent-field-test.md): the guard no longer needs the
+   prepend (npx resolves it), the prepend stays for the agent's *Bash* surface
+   but is now named as a global-install simulation, `FIELD_NO_PATH_HELP=1` drops
+   it, and every run prints its `PATH policy`.
 
 ## Non-goals
 

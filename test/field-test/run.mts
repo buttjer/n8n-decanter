@@ -390,11 +390,25 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
       // CLI on PATH, and cwd /work is the bind-mounted sync dir. -T = no TTY (pipe).
       proc = spawn("docker", ["compose", "-f", COMPOSE, "--env-file", ENV_FILE, "exec", "-T", "-w", "/work", "agent", "claude", ...args], { env: { ...process.env, ...composeEnv } });
     } else {
-      // Prepend the workDir's node_modules/.bin so a bare `n8n-decanter` (in the
-      // agent's Bash and in the guard's .mcp.json command, both spawned by claude)
-      // resolves to the WORKDIR-LOCAL install — no global npm link needed.
+      // PATH policy for the blind session — deliberate, because it decides what
+      // the round can honestly measure (Plan 35 finding, 2026-07-26).
+      //
+      // The workDir install is LOCAL (a packed tarball, no global link), so a
+      // bare `n8n-decanter` in the agent's **Bash** does not resolve on its own.
+      // Prepending node_modules/.bin simulates the GLOBAL install most users
+      // have, and keeps Bash-surface friction out of the measurement.
+      //
+      // It is NOT needed by the guard any more: the scaffolded `.mcp.json` runs
+      // `npx --no-install n8n-decanter mcp connect` (Plan 58 Task 1), which
+      // resolves the local bin from cwd by itself. Set FIELD_NO_PATH_HELP=1 to
+      // drop the prepend and measure a genuinely unassisted PATH — that is the
+      // configuration a real local-install user's agent gets, and the one that
+      // would have caught Task 1's silent-fail.
+      const helpPath = process.env.FIELD_NO_PATH_HELP !== "1";
       const localBin = path.join(WORKDIR, "node_modules", ".bin");
-      const env = { ...process.env, PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}` };
+      const env = helpPath
+        ? { ...process.env, PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}` }
+        : { ...process.env };
       proc = spawn("claude", args, { cwd: WORKDIR, env });
     }
     let buf = "";
@@ -654,7 +668,15 @@ try {
       exitCode = ok ? 0 : 1;
     } catch (err) { console.error(`smoke FAILED: ${(err as Error).message}`); exitCode = 1; }
   } else {
-    console.log(`orchestrating ${scenarioIds.join(", ")} against ${manifest.host}${containerMode ? " (fenced container)" : ""}\n  workDir ${WORKDIR}\n  guard.log ${GUARD_LOG}`);
+    // Record the PATH policy in the round's own output: whether the agent got a
+    // resolvable bare `n8n-decanter` is a condition of what the round measures,
+    // so it must never be an invisible default again (Plan 35 finding).
+    const pathPolicy = containerMode
+      ? "container: CLI on PATH (global install in the image)"
+      : process.env.FIELD_NO_PATH_HELP === "1"
+        ? "host: UNASSISTED PATH (FIELD_NO_PATH_HELP=1) — bare `n8n-decanter` will NOT resolve in Bash"
+        : "host: node_modules/.bin prepended — simulates a global install for the agent's Bash";
+    console.log(`orchestrating ${scenarioIds.join(", ")} against ${manifest.host}${containerMode ? " (fenced container)" : ""}\n  workDir ${WORKDIR}\n  guard.log ${GUARD_LOG}\n  PATH policy: ${pathPolicy}`);
     const summary: Array<{ id: string; verifyExit: number | null; turns: number }> = [];
     for (const id of scenarioIds) {
       if (containerMode && !dryRun && Date.now() > deadline) { console.error(`[harness] run budget exhausted — stopping before ${id}`); exitCode = 2; break; }
