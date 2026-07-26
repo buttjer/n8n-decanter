@@ -375,6 +375,11 @@ unreachable macOS keychain:
 ```sh
 npm test              # unit tests (node:test, test/unit/) + e2e suite
                       #   (test/e2e.mts) + guard-proxy suite (test/guardproxy.mts) +
+                      #   mcp-spawn suite (test/mcpspawn.mts — spawns the
+                      #   SCAFFOLDED .mcp.json command as a child process on an
+                      #   unassisted PATH, local + global install shapes; Plan 58
+                      #   Task 3. guardproxy tests the guard in-process, so this
+                      #   is the only suite proving the command actually STARTS) +
                       #   interactive picker suite (test/interactive.mts,
                       #   PassThrough streams — no pty); e2e and guard-proxy bind
                       #   localhost ports, and one e2e step uses fs.watch
@@ -411,6 +416,12 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   probes; `field-test:verify <manifest>` runs the scripted
                       #   invariant checks; `field-test:report <manifest>` renders
                       #   a self-contained HTML timeline of the agentic sessions.
+                      #   Host mode prepends the workDir's node_modules/.bin to
+                      #   the blind session's PATH — a deliberate SIMULATION of
+                      #   the global install most users have (the guard itself no
+                      #   longer needs it; `npx --no-install` resolves it). Each
+                      #   run prints its `PATH policy`; FIELD_NO_PATH_HELP=1 drops
+                      #   the prepend to measure a genuinely unassisted PATH.
                       #   The stage packs + locally installs OUR built CLI (no
                       #   global link) + pre-seeds a correct
                       #   .env. Never part of npm test; grading is a separate pass.

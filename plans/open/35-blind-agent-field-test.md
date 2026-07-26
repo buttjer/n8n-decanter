@@ -769,6 +769,31 @@ what real agents hit. Until then, treat "the agent reached the CLI" results as
 (spawn the scaffolded command with a clean PATH, both install shapes) is
 [Plan 58](58-guard-route-robustness.md) Task 3.
 
+**Resolved 2026-07-26 (partially — deliberately).** The crutch is now explicit
+rather than invisible:
+
+- **The guard no longer needs it at all.** Plan 58 Task 1 made the scaffolded
+  `.mcp.json` run `npx --no-install n8n-decanter mcp connect`, which resolves the
+  workDir-local bin from cwd on its own. The MCP route is therefore measured
+  unassisted in every round from now on.
+- **The agent's `Bash` calls still need it**, because the workDir install is
+  local and a bare `n8n-decanter` in a shell does not resolve. Removing the
+  prepend outright would fail rounds for a reason unrelated to what they
+  measure, so it is **kept as the default and renamed for what it actually is**:
+  a simulation of the global install most users have.
+- **`FIELD_NO_PATH_HELP=1`** drops it, giving a genuinely unassisted PATH — the
+  configuration a real *local-install* user's agent gets.
+- **Every run now prints its `PATH policy`** in the orchestration header, so a
+  round's own record states whether the agent got a resolvable bare command.
+  That is what stops this from silently qualifying results again.
+
+Remaining: run a round with `FIELD_NO_PATH_HELP=1` to measure the unassisted
+Bash surface. **The fix direction is already settled — see
+[Plan 58](58-guard-route-robustness.md) Task 4: it is an invocation-form fix, NOT
+"install decanter globally".** (An earlier draft of this note floated global-only
+as an option; that was wrong and is retracted — a devDependency install is a
+documented, supported path, and it works.)
+
 ## Notes
 
 - **CHANGELOG:** none (internal dev tooling + plan). **PLAN.md:** no design
