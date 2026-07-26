@@ -694,6 +694,73 @@ try {
     assert.equal(remote.activeVersionId, remote.versionId, "published & in sync: live version == draft");
   });
 
+  await step("MCP read semantics: draft, published, AND superseded versions are all readable over MCP", async () => {
+    // Corrects the retired claim that "get_workflow_version returns metadata
+    // without node params, so published content can't be read back over MCP".
+    // Timeline on a dedicated workflow: V1→publish→V2→publish→V3-draft, then
+    // read every version back and assert the jsCode each returns. get_workflow_
+    // history is the index (metadata only); get_workflow_version is the content.
+    const { McpClient, getWorkflowDetails, updateWorkflow, publishWorkflowMcp } = await import(
+      pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href
+    );
+    const rs = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    const JS = (v: number) => `// READSEM_V${v}\nreturn [{ json: { v: ${v} } }];\n`;
+    // deno-lint style: pull the code-node jsCode tag out of whichever shape
+    // (details = {nodes}, version = {nodes}, activeVersion = {nodes})
+    const tagOf = (wf: any): string => {
+      const nodes = wf?.nodes ?? wf?.workflow?.nodes ?? [];
+      const code = nodes.find((n: any) => n?.type === "n8n-nodes-base.code")?.parameters?.jsCode;
+      const m = typeof code === "string" ? code.match(/READSEM_V\d/) : null;
+      return m ? m[0].replace("READSEM_", "") : "<none>";
+    };
+
+    // webhook trigger so it can ACTIVATE (a manual-only trigger can't publish,
+    // so there'd be no activeVersionId and no draft/published split to test)
+    const created = await api("POST", "/api/v1/workflows", {
+      name: "Smoke ReadSemantics",
+      nodes: [
+        { id: "rw", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { httpMethod: "POST", path: "smoke-readsem-hook", responseMode: "responseNode" } },
+        { id: "rc", name: "Compute", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { jsCode: JS(1) } },
+        { id: "rr", name: "Respond", type: "n8n-nodes-base.respondToWebhook", typeVersion: 1.1, position: [440, 0], parameters: { respondWith: "allIncomingItems" } },
+      ],
+      connections: { Hook: { main: [[{ node: "Compute", type: "main", index: 0 }]] }, Compute: { main: [[{ node: "Respond", type: "main", index: 0 }]] } },
+      settings: { executionOrder: "v1" },
+    });
+    const rsId: string = created.id;
+    await enableMcpAccess(rsId);
+
+    // V1 → publish → verA (becomes SUPERSEDED after the next publish)
+    await publishWorkflowMcp(rs, rsId);
+    const verA = ((await getWorkflowDetails(rs, rsId)) as any).activeVersionId as string;
+    // V2 → publish → verB (the ACTIVE/published version)
+    await updateWorkflow(rs, rsId, [{ type: "updateNodeParameters", nodeName: "Compute", parameters: { jsCode: JS(2) } }]);
+    await publishWorkflowMcp(rs, rsId);
+    const verB = ((await getWorkflowDetails(rs, rsId)) as any).activeVersionId as string;
+    // V3 → leave unpublished → verC (the DRAFT tip)
+    await updateWorkflow(rs, rsId, [{ type: "updateNodeParameters", nodeName: "Compute", parameters: { jsCode: JS(3) } }]);
+    const details: any = await getWorkflowDetails(rs, rsId);
+    const verC = details.versionId as string;
+    assert.equal(new Set([verA, verB, verC]).size, 3, `three distinct version ids: ${verA}/${verB}/${verC}`);
+
+    // ONE get_workflow_details carries BOTH the draft tip and the published version
+    assert.equal(tagOf(details), "V3", "get_workflow_details.nodes is the draft tip (V3)");
+    assert.equal(tagOf(details.activeVersion), "V2", "get_workflow_details.activeVersion is the published version (V2)");
+
+    // get_workflow_version returns full node params for ANY version — incl. the superseded one
+    const readVer = (versionId: string) => rs.callTool("get_workflow_version", { workflowId: rsId, versionId });
+    assert.equal(tagOf(await readVer(verA)), "V1", "SUPERSEDED published version is readable over MCP (V1)");
+    assert.equal(tagOf(await readVer(verB)), "V2", "active published version readable over MCP (V2)");
+    assert.equal(tagOf(await readVer(verC)), "V3", "draft tip readable by version id (V3)");
+
+    // get_workflow_history is the INDEX: it lists versions but carries NO node params
+    const hist: any = await rs.callTool("get_workflow_history", { workflowId: rsId });
+    const versions: any[] = hist.versions ?? hist.data ?? [];
+    assert.ok(versions.length >= 3, `get_workflow_history lists every version (>=3): got ${versions.length}`);
+    assert.ok(!JSON.stringify(hist).includes("READSEM_V"), "get_workflow_history is metadata-only (no node params)");
+
+    await api("DELETE", `/api/v1/workflows/${rsId}`); // tidy up
+  });
+
   await step("lifecycle: workflow born over raw MCP → pull → publish → unpublish → archive round-trip", async () => {
     // The create verb is retired — the agent path: create over n8n's MCP
     // (validate_workflow gate is the skills' discipline), then pull the id.
