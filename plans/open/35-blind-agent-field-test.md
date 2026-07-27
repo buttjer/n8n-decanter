@@ -359,7 +359,7 @@ per-turn grading + Task-4 run report are the next pass.
   node-rename handled; the `.js→.ts` conversion exposed finding 4 below.
 
 **Findings (ranked, for maintainer triage — Task 5):**
-1. **Discoverability (P1) — TRIAGED 2026-07-24 → [Plan 57](../draft/57-cli-discoverability-for-agents.md).**
+1. **Discoverability (P1) — TRIAGED 2026-07-24 → [Plan 57](../done/57-cli-discoverability-for-agents.md).**
    No project-level `n8n-decanter` ⇒ a blind agent never finds it and hand-rolls
    raw n8n MCP. Harness now installs the CLI so the project carries the
    breadcrumb; the gap itself is the finding. Positioning/onboarding, not a
@@ -790,7 +790,7 @@ rather than invisible:
 **Follow-on 2026-07-26:** the same "what does the harness quietly supply?"
 question produced `FIELD_NO_CLI=1` + scenario
 [`S6`](../../test/field-test/scenarios/S6.md) — the deliberate version of round
-1's accidental no-CLI condition ([Plan 57](../draft/57-cli-discoverability-for-agents.md)
+1's accidental no-CLI condition ([Plan 57](../done/57-cli-discoverability-for-agents.md)
 direction 4). It shadows any ambient `n8n-decanter` off the session PATH and
 empties the npm prefix, so a maintainer's global install cannot satisfy the
 round; `run.mts` refuses S6 against a normal stage or in `--container` mode.
@@ -899,7 +899,7 @@ Two observations worth keeping:
    `n8n-decanter` — and the agent demonstrably read the last one first.
 2. **n = 1.** One round, one model, one prompt phrasing.
 
-**Do not rewrite [Plan 57](../draft/57-cli-discoverability-for-agents.md) on this
+**Do not rewrite [Plan 57](../done/57-cli-discoverability-for-agents.md) on this
 alone.** What it does establish: with the *current* scaffold committed, a
 fresh-clone agent finds and uses the CLI rather than hand-rolling MCP.
 

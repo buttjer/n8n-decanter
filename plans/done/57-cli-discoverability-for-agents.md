@@ -1,10 +1,11 @@
 # Plan 57 — a coding agent should find decanter before it hand-rolls raw n8n MCP
 
-**Status:** Draft — **close-out candidate.** The premise was measured 4× on
-2026-07-26 and did not reproduce (4/4 FOUND-AND-USED); the one remaining variant
-was ruled **out of scope** by the maintainer. No in-scope work is left — needs a
-maintainer decision to move to `done/` (as *measured away*, not implemented) or
-to keep as a watch item.
+**Status:** **Done — closed by measurement, not implementation (2026-07-27).**
+No code shipped for this plan and none is needed: the gap it exists to close was
+measured 5× and does not occur (4/4 FOUND-AND-USED on the scored rounds), and the
+one remaining variant was ruled out of scope. It lives in `done/` because it is
+**resolved**, not because it was built — see "Re-open triggers" before assuming
+the question is permanently settled.
 **Priority:** — (nothing open).
 **Class:** Distinctive feature — the whole point of decanter is that Code-node
 source lives in git; an agent that never finds the CLI gets none of it.
@@ -55,6 +56,24 @@ no-decanter-evidence variant is OUT OF SCOPE** (maintainer call, 2026-07-26):
 decanter's concern is projects that use decanter, not greenfield discovery. With
 that dropped and the premise not reproducing, this plan has no remaining in-scope
 work — **it is a close-out candidate**; see "Status".
+
+## Re-open triggers
+
+The result is conditional on the scaffold that produced it. **Either of these
+changes invalidates it and this plan becomes live again:**
+
+1. **`template/CLAUDE.md.example` stops importing `@AGENTS.md`** (or Claude Code
+   stops auto-loading `CLAUDE.md`). The contract would no longer reach the agent
+   automatically, and every result here assumed it did.
+2. **`init` stops scaffolding a `package.json` that names `n8n-decanter`.** That
+   file was the breadcrumb the agent read *first* in the round that started the
+   re-measurement.
+
+Weaker signals worth watching, not triggers on their own: a `guard.log` showing
+its first blocked `jsCode` write, or a field-test round scoring BYPASSED.
+
+Also bounded by: 5 rounds, one model (Sonnet), one scenario shape, and a harness
+that vendors `skills/*` without the plugin's SessionStart router.
 
 ## The finding
 

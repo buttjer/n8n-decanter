@@ -3,7 +3,7 @@
 **Status:** Not started
 **Priority:** P2
 **Class:** Distinctive feature — the verb surface *is* the product's ergonomics; a tool an agent (or human) can't navigate loses to raw n8n MCP.
-**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](../done/60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](../done/60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](../draft/57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
+**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](../done/60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](../done/60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](../done/57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
 **Snapshot:** 2026-07-25T00:00Z @ 9f3a78a
 **Theme:** The verify cluster is five verbs that all feel like "check my thing." Bury `check`, `status`, and `simulate` into `preflight`; promote the one unique capability (`status --diff`) to a `diff` verb; replace the profile vocabulary with two plain flags.
 
