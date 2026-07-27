@@ -42,16 +42,20 @@ plus one source file per Code node in a `code/` subdir — see
 push, the workflow's folder is git-committed automatically (scoped to that
 folder; outside a git repo it just warns).
 
-To fix a default set that a bare `pull`/`push`/`status` acts on, list ids in
-`decanter.config.json` (`"workflows": ["0cXNQKKzmO0pXiCq"]`); all keys are
+To fix a default set that a bare `pull`/`push`/`diff`/`preflight` acts on, list
+ids in `decanter.config.json` (`"workflows": ["0cXNQKKzmO0pXiCq"]`); all keys are
 documented in [Configuration](/docs/concepts/configuration/).
 
 ## 3. Edit and push
 
-Edit the node files in your IDE (or let your agent do it), verify offline
-with [check](/docs/cli/check/) and [node run](/docs/cli/node-run/), then:
+Edit the node files in your IDE (or let your agent do it), then verify with
+[preflight](/docs/cli/preflight/) — the single gate: layout, types, and,
+unless you pass `--offline`, read-only drift checks against the instance.
+[node run](/docs/cli/node-run/) executes one node locally when you want to see
+its actual output.
 
 ```sh
+n8n-decanter preflight        # the gate (add --offline for static-only, no network)
 n8n-decanter push             # lands on the workflow's DRAFT
 n8n-decanter publish          # take it live (or: push --publish)
 ```
@@ -59,6 +63,8 @@ n8n-decanter publish          # take it live (or: push --publish)
 Every push updates the workflow's **draft** — the live version keeps running
 until you `publish`. Push refuses to overwrite remote code changes made since
 the last sync and blocks on layout or type errors — the
-[push gates](/docs/concepts/push-gates/) page explains the guard rules. For a
+[push gates](/docs/concepts/push-gates/) page explains the guard rules. To read
+the actual changed lines first, [diff](/docs/cli/diff/) prints a per-node
+unified diff of your files against the draft. For a
 save-to-push loop, see [watch](/docs/cli/watch/) — the open n8n editor
 updates live on each push.

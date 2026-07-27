@@ -97,7 +97,10 @@ when a condition fires (agent stalls, retries a blocked path, asks a question).
   failure — grade the block→pull→seed→push sequence as success. Only a genuine
   **stall** (agent doesn't recover, or keeps retrying `jsCode` over MCP) is a
   finding.
-- An agent reaching for a **retired verb** (`n8n-decanter rename/create/archive`)
-  or `backup` under "we don't need X" wording is signal — log the exact command.
+- An agent reaching for a **retired verb** — the structure/lifecycle set
+  (`n8n-decanter rename/create/archive`) or the Plan 59 verify set
+  (`check`/`status`/`simulate`, now folded into `preflight` + `diff`) — or
+  `backup` under "we don't need X" wording is signal: log the exact command and
+  whether the removal hint got it to the replacement in one hop.
 - A misread error message, a doc gap that stalls a session, a skill nudging
   `jsCode` over MCP — each finding is tied to the exact CLI/docs surface.

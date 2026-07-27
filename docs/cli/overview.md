@@ -25,15 +25,15 @@ n8n-decanter publish [workflow…]    # take the draft(s) live
 n8n-decanter unpublish [workflow…]  # back to draft-only
 
 # Inspect & test
-n8n-decanter status [workflow…] [--diff]
-n8n-decanter check [workflow…] [--no-typecheck]
+n8n-decanter preflight [workflow…] [--simulate] [--offline] [--viewer] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]
+                                    # the gate: grades LOCAL code, scored (read-only) — then push, then test
+                                    #   --simulate ADDS a local-engine run (Docker); --offline DROPS the instance reads
+n8n-decanter diff [workflow…]       # per-node line diff, local code vs the n8n draft (always exits 0)
 n8n-decanter executions [workflow…] [--status=…] [--limit=N]
 n8n-decanter executions [workflow…] clean
 n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=col:asc|desc] [--limit=N] [--all]
 n8n-decanter data-tables [table…] clean
 n8n-decanter test <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
-n8n-decanter simulate <workflow> [--execution <execution-id> | --scenario <slug>] [--network-none] [--json]
-n8n-decanter preflight [workflow…] [--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]   # grades LOCAL code, scored (read-only) — then push, then test
 n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold]   # committed, gap-fillable pin-data set (offline; --scaffold needs MCP)
 n8n-decanter scenario check <workflow> ["<slug>"]                                    # structurally validate a scenario (offline)
 
@@ -65,8 +65,8 @@ first push seeds a node born empty.
 | --- | --- |
 | `<workflow>` / `[workflow…]` | a workflow: **id · name · unique name-prefix · folder name** |
 | `<node-file>` | a path to a node source file (`node run`) |
-| `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
-| `<slug>` | a scenario name — `scenario create`/`scenario check`, `simulate --scenario`/`test --scenario` (kebab-cased) |
+| `<execution-id>` | an n8n execution id (numeric) — `preflight --execution`, `test --execution`, `executions <execution-id>` |
+| `<slug>` | a scenario name — `scenario create`/`scenario check`, `preflight --scenario`/`test --scenario` (kebab-cased) |
 | `<ids>` | a comma list of [preflight](/docs/cli/preflight/) check ids — `preflight --require=layout,simulate` |
 | `<backup>` | a backup: **timestamp (or a prefix, e.g. a bare date) · versionId (short or full)** — `backup restore` |
 
@@ -78,7 +78,10 @@ on a terminal opens a picker instead of printing usage: type to filter,
 workflow (green), `○` for a not-yet-pulled remote one (yellow), `⊘` for a
 remote workflow **not yet available in MCP** (red, sorted last) — so the state
 reads by shape, not color alone, and the ids line up in an aligned column.
-`Enter` on a pulled workflow offers status/pull/push/watch/check/preflight/executions/simulate;
+`Enter` on a pulled workflow offers `preflight` / `preflight --simulate` /
+`diff` / `pull` / `push` / `watch` / `executions` — a row may carry flags, and
+the `--simulate` row runs the browsable
+[`--viewer`](/docs/cli/preflight/#--viewer--browse-the-run-in-a-real-n8n) form.
 `Enter` on an unpulled one pulls it directly; `Enter` on a `⊘` row explains
 where to flip the "Available in MCP" switch in n8n. It stays in the workflow's verb
 menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
@@ -104,7 +107,7 @@ names against the server's workflow list. Without a workflow argument, all
 workflows from the config are processed (or the picker opens, on a terminal).
 
 **Verb-first grammar.** The verb is the first argument; everything after it is
-an argument. `n8n-decanter status push` runs `status` on the workflow named
+an argument. `n8n-decanter diff push` runs `diff` on the workflow named
 `push` — no "address it by id" caveat. Verb-last (`n8n-decanter wf123 push`)
 errors with *unknown verb*. Flags may still appear in any position.
 
@@ -112,11 +115,11 @@ errors with *unknown verb*. Flags may still appear in any position.
 
 | Verbs | Network |
 | --- | --- |
-| `check`, `node run`, `list`, `simulate`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
-| `status`, `list --remote`, `executions`, `data-tables`, `backup create`/`restore` | Read the remote (`backup restore` also writes a **new** workflow, never touching the source) |
+| `preflight --offline`, `node run`, `list`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `preflight --offline --simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
+| `diff`, `list --remote`, `executions`, `data-tables`, `backup create`/`restore` | Read the remote (`backup restore` also writes a **new** workflow, never touching the source) |
 | `backup list` | Fully offline — reads the local `backups/` store |
 | `test` | Runs the workflow's **draft** on the instance with pinned data — run it **after a push** so the draft holds your code. On a terminal, when local differs: a **published** workflow gets a local-vs-draft prompt; an **unpublished** one is pushed without asking (a draft nobody runs). Non-interactive runs never write |
-| `preflight` | Verifies your **local** code as one scored gate — static + instance reads + an optional local-engine `simulate` run; **never writes and never runs on the instance**, in every profile. Run it *before* `push`; `test` comes after |
+| `preflight` | Verifies your **local** code as one scored gate — static + instance reads, plus an optional local-engine replay (`--simulate`); **never writes and never runs on the instance**, with any flag combination. `--offline` drops the instance reads entirely. Run it *before* `push`; `test` comes after |
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |
 | `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes; a forwarded structure edit also triggers a background `workflow.json` refresh (`liveMirror`, on by default) |
 

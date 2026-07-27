@@ -33,7 +33,9 @@ has the full rules:
 1. **Typecheck** — blocking; `--no-typecheck` skips it (auto-skipped when no
    `tsconfig.json` is found).
 2. **Compliance guard** — layout violations are hard errors that `--force`
-   does **not** bypass. Same checks as [check](/docs/cli/check/).
+   does **not** bypass. The full list is under
+   [preflight](/docs/cli/preflight/#what-the-compliance-guard-catches), which
+   runs the same guard as its `layout` check.
 3. **Per-node drift guard** — a Code node's remote code changed since the
    last sync → abort with `pull first`. Only this gate is bypassed by
    `--force`. Remote *structure* changes never block a push.

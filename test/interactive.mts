@@ -61,7 +61,9 @@ await step("filter narrows the list, arrows move, enter opens the verb menu, ent
   assert.doesNotMatch(io.text(), /Billing Sync/, "filtered-out entries must not render");
   await sendKey(io, "\r"); // enter on the sole match opens its verb menu
   assert.match(io.text(), /Mail Digest/, "verb stage header names the workflow");
-  await sendKey(io, "\x1b[B"); // down: status -> pull
+  // Plan 59 reordered the menu — three downs from the top row:
+  // preflight -> preflight --simulate -> diff -> pull
+  for (let i = 0; i < 3; i++) await sendKey(io, "\x1b[B");
   await sendKey(io, "\r"); // enter runs the highlighted verb
   assert.deepEqual(await result, { verb: "pull", id: "bbb222", name: "Mail Digest" });
 });

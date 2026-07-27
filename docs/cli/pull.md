@@ -35,14 +35,14 @@ After a successful pull the folder is git-committed automatically
 
 `.ts` node sources are one-way — pull never modifies them. Remote changes to
 a TS-managed node (for example a UI edit) are **warned about**, not merged:
-inspect them with `status --diff` and port what you want to keep into the
-`.ts` by hand. See [TypeScript nodes](/docs/concepts/typescript-nodes/).
+inspect them with [`diff`](/docs/cli/diff/) and port what you want to keep into
+the `.ts` by hand. See [TypeScript nodes](/docs/concepts/typescript-nodes/).
 
 ## Pull re-baselines the sync state
 
 Pulling records the remote code as the new sync base — **after a warned
 pull, the next push overwrites the surfaced remote edits by design**, with
-`status --diff` and git history as the safety net. `.js` files are
+[`diff`](/docs/cli/diff/) and git history as the safety net. `.js` files are
 overwritten with the remote body (pull warns when that clobbers unpushed
 local edits — recover via git).
 

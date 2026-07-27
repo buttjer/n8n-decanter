@@ -33,7 +33,7 @@ export interface Workflow {
   /**
    * Published (live) version id (n8n 2.x GET). `null`/absent when unpublished;
    * equals `versionId` when the live version matches the draft. It only lags the
-   * draft after a UI edit that isn't published yet — the version-aware `status`
+   * draft after a UI edit that isn't published yet — the version-aware sync-fact
    * signal (see publishedVersionLagsDraft).
    */
   activeVersionId?: string | null;
@@ -144,7 +144,7 @@ export interface DecanterConfig {
    */
   dataTables: boolean;
   /**
-   * n8n version the `simulate` engine runs (npx tag / Docker tag). Optional —
+   * n8n version the local `--simulate` engine runs (npx tag / Docker tag). Optional —
    * absent, simulate defaults to the smoke pin (DEFAULT_N8N_VERSION) and hints
    * to pin it to match your instance. "Engine-true" means true to *your* n8n,
    * so pinning this to the running version is recommended (Plan 7).

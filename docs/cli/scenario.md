@@ -1,6 +1,6 @@
 ---
 title: scenario
-description: Create and validate committed scenarios — named, full-workflow pin-data sets that fill simulate/test's gaps, captured or schema-scaffolded, no LLM API.
+description: Create and validate committed scenarios — named, full-workflow pin-data sets that fill a replay's gaps, captured or schema-scaffolded, no LLM API.
 order: 16
 ---
 
@@ -15,10 +15,12 @@ other ref-taking verb); piped/non-TTY runs still error with the usage line, so
 scripts and agents never block.
 
 A **scenario** is a named, committed input set for your workflow — captured
-from a real run or scaffolded from its schemas — that
-[test](/docs/cli/test/)/[simulate](/docs/cli/simulate/) replay and diff
-against. It's the **only committed pin artifact**: `workflows/<folder>/scenarios/<slug>.json`
-is a self-contained, execution-shaped file, so `simulate --scenario <slug>` /
+from a real run or scaffolded from its schemas — that the two replays,
+[test](/docs/cli/test/) (on your instance) and
+[`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage) (on a local
+engine), run and diff against. It's the **only committed pin artifact**:
+`workflows/<folder>/scenarios/<slug>.json`
+is a self-contained, execution-shaped file, so `preflight --simulate --scenario <slug>` /
 `test --scenario <slug>` replay it directly, no precedence rules to reason
 about. Everything here is **offline** — no engine for `scenario create`/`check`
 themselves, and **no LLM API or key**: you (or your IDE agent) author the
@@ -26,7 +28,7 @@ values.
 
 A *gap* is a network node reached during a replay with **no pinned data** — a
 node added or reparametrized since the capture, or every node when building a
-scenario from scratch. `simulate`/`test` hard-error on a gap; a scenario is how
+scenario from scratch. Both replays hard-error on a gap; a scenario is how
 you supply the missing data as a reproducible, reviewable set.
 
 ## `scenario create`
@@ -63,7 +65,7 @@ n8n-decanter scenario create order-sync "from-scratch" --scaffold
   a fill entry. Needs MCP; offline or on an older n8n it errors naming the
   capture-based alternative.
 - Neither `--execution` nor `--scaffold` given → defaults to the newest capture
-  under `executions/` (same as `simulate`/`test`'s default).
+  under `executions/` (same as the replays' default).
 - **`--json`** prints `{ slug, file, gaps, coverage }` for tooling (`coverage`
   only present when `--scaffold` ran).
 - A capture-seeded scenario copies **real captured data** (which can hold
@@ -89,7 +91,7 @@ type, parameters, an `inputSample`, and — when scaffolded — its
     "sourceExecution": "4812",
     "createdAt": "2026-07-21",
     "workflowVersionId": "…",
-    "guidance": "For each node in \"fill\", add data.resultData.runData[\"<node>\"] = [ { \"data\": { \"main\": [ [ { \"json\": { …output… } } ] ] } } ], using its type/parameters/inputSample/expectedSchema as context. Keep \"fill\" as-is — scenario check validates it. Then: simulate --scenario happy-path.",
+    "guidance": "For each node in \"fill\", add data.resultData.runData[\"<node>\"] = [ { \"data\": { \"main\": [ [ { \"json\": { …output… } } ] ] } } ], using its type/parameters/inputSample/expectedSchema as context. Keep \"fill\" as-is — scenario check validates it. Then: preflight --simulate --scenario happy-path.",
     "fill": [
       {
         "node": "Enrich Customer",
@@ -131,9 +133,9 @@ scenario scenarios/happy-path.json is invalid:
 n8n publishes **no JSON Schema** for execution data — the format lives only in
 the `n8n-workflow` TypeScript types (`IRunExecutionData` → `ITaskData` →
 `INodeExecutionData`). `scenario check` is decanter's own structural check of
-the exact shape it replays. `simulate --scenario`/`test --scenario` run the
-same check when they load a scenario, so a bad file never reaches the engine
-or the instance.
+the exact shape it replays. `preflight --simulate --scenario` and
+`test --scenario` run the same check when they load a scenario, so a bad file
+never reaches the engine or the instance.
 
 The shape to match, per node:
 
@@ -152,11 +154,11 @@ The shape to match, per node:
 ## The full loop
 
 ```sh
-n8n-decanter simulate order-sync --execution 4812        # ✗ gap: Enrich Customer has no data
+n8n-decanter preflight order-sync --simulate --execution 4812   # ✗ gap: Enrich Customer has no data
 n8n-decanter scenario create order-sync "happy-path" --execution 4812
 #   → fill scenarios/happy-path.json's runData for the flagged nodes
-n8n-decanter scenario check order-sync happy-path          # ✓ valid   (offline, fast)
-n8n-decanter simulate order-sync --scenario happy-path     # replay the scenario
+n8n-decanter scenario check order-sync happy-path               # ✓ valid   (offline, fast)
+n8n-decanter preflight order-sync --simulate --scenario happy-path   # replay the scenario
 ```
 
 ## Provenance and synthetic pins
@@ -165,7 +167,7 @@ Each node's pins in a scenario carry a **provenance**: **`capture`** (real
 execution data — can serve as the diff baseline), **`authored`**
 (hand/agent-filled with no schema), or **`scaffolded`** (schema-guided fill,
 `--scaffold`'s `expectedSchema`). A scenario with *any* non-`capture` node is
-**synthetic pins** — `test`/`simulate` label the run "**synthetic pins —
+**synthetic pins** — both replays label the run "**synthetic pins —
 proves executability, not output correctness**": no per-node diff is
 asserted, and divergence is informational, not a fail. A capture-only
 scenario (no `fill` entries left) keeps the full per-node diff and
@@ -176,7 +178,7 @@ exit-1-on-divergence semantics unchanged. `--json` reports gain
 
 Unlike `executions/` (gitignored temp data), **`scenarios/` is tracked in
 git**, so a scenario-based replay is reproducible for teammates and CI.
-Scenarios are chosen explicitly by slug (`simulate --scenario <slug>` /
+Scenarios are chosen explicitly by slug (`preflight --simulate --scenario <slug>` /
 `test --scenario <slug>`) — they're named scenarios, not a "latest" default.
 
 ## Migration and removed mechanisms
@@ -187,9 +189,11 @@ Scenarios are chosen explicitly by slug (`simulate --scenario <slug>` /
   `scenarios/` exist (merge them by hand first). The legacy metadata key
   `_decanterMock` is still read (as `_decanterScenario`) for files written
   before the rename.
-- The legacy per-node `fixtures/<node>.json` mechanism and `simulate --pin`
-  are **removed outright** — no read path. A leftover legacy `fixtures/`
-  dir is a **hard error** from `simulate`/`check` naming the replacement:
+- The legacy per-node `fixtures/<node>.json` mechanism and the old `--pin`
+  flag are **removed outright** — no read path. A leftover legacy `fixtures/`
+  dir is a **hard error** from the
+  [compliance guard](/docs/cli/preflight/#what-the-compliance-guard-catches)
+  (so from `push`, `watch`, and `preflight` alike), naming the replacement:
   recreate the data as a scenario (`scenario create --execution <id>`),
   then delete the legacy `fixtures/` dir.
 

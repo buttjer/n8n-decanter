@@ -1,9 +1,9 @@
 # Plan 59 — Declutter the verify surface: `check`/`status`/`simulate` → `preflight` (flags, no profiles) + `diff`
 
-**Status:** Not started
+**Status:** Done
 **Priority:** P2
 **Class:** Distinctive feature — the verb surface *is* the product's ergonomics; a tool an agent (or human) can't navigate loses to raw n8n MCP.
-**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](../done/60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](../done/60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](../done/57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](../draft/26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
+**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](../draft/26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
 **Snapshot:** 2026-07-25T00:00Z @ 9f3a78a
 **Theme:** The verify cluster is five verbs that all feel like "check my thing." Bury `check`, `status`, and `simulate` into `preflight`; promote the one unique capability (`status --diff`) to a `diff` verb; replace the profile vocabulary with two plain flags.
 
@@ -169,10 +169,50 @@ They compose, and every old profile is reconstructable:
 - Prereq-1 latency numbers recorded.
 - `npm test`, `typecheck`, `lint`, `check:docs` green.
 
+## Outcome (execution record)
+
+**Prereq 1 — edit-hook latency: parity, no fast-path needed.** `check` (at
+`a58a677`) vs `preflight --offline` (this branch), cold process each time,
+against a synthetic sync dir of 3 workflows × 4 Code nodes (half `.js`, half
+`.ts` with a `shared/` import), median of 15 runs on macOS:
+
+| invocation | `check` (main) | `preflight --offline` | delta |
+| --- | --- | --- | --- |
+| scoped to one workflow (the hook's normal path) | 377 ms | 371 ms | **−1.5%** |
+| project-wide (the hook's fallback) | 371 ms | 377 ms | **+1.5%** |
+
+Both are dominated by the `tsc` spawn they share, and the spread is inside
+run-to-run noise — so the hook keeps the plain `preflight --offline` entry
+point. Under `--offline` the sync tier never runs, so the replacement does no
+extra git/state/instance work.
+
+**Two decisions taken during execution:**
+
+1. **`--quick`/`--full` leave no tombstone — Task 1 executed as written.**
+   Removing the flag model makes both *unrecognized* rather than rejected, and
+   because the CLI ignores unknown flags, a CI job on `preflight --full`
+   silently gets the default gate with no engine and still exits 0. That
+   silent-coverage-loss risk was raised, and the **maintainer's call was to
+   drop them anyway: pre-1.0, a clean surface beats a migration shim, and
+   breaking is acceptable.** Documented loudly in the changelog and
+   `docs/cli/preflight.md` instead, since nothing warns at runtime. Revisit
+   only if the removal actually bites someone.
+2. **A corrupt `.decanter.json` warns instead of failing.** `check` scanned
+   *folders*, so an unparseable state file anywhere was a hard error for the
+   whole run; `preflight` grades resolved *workflows*, and such a folder can't
+   resolve to one. It is now named in a warning and skipped while healthy
+   workflows are still graded. The fact survives (Task 4's "confirm no fact is
+   lost"), but its severity dropped — recorded here and in the changelog
+   because it is user-visible.
+
+**`--viewer` (Task 2's open sub-decision)** resolved as the plan recommended:
+preserved as `preflight --simulate --viewer`; `--viewer` without `--simulate`
+is a hard error. No viewer code was deleted.
+
 ## Naming note
 `simulate` was kept over sandbox / playground / container / rehearse. Rationale
 for the record: **sandbox** is already overloaded in this repo (shell-sandbox +
-the `node run` boundary, [Plan 31](31-run-sandbox-boundary.md)); **playground**
+the `node run` boundary, [Plan 31](../open/31-run-sandbox-boundary.md)); **playground**
 implies interactivity this one-shot CI check doesn't have; **container** names
 the mechanism and would age wrong against the [Plan 26](../draft/26-npx-engine-backend.md)
 npx backend; **rehearse/replay** were viable verbs but not worth the churn. If
@@ -191,7 +231,7 @@ the name is ever revisited, revisit it once, here.
   only if Prereq 1 fails for `check`.)
 
 ## Notes
-- **Second (larger) breaking wave in the same area as [Plan 60](../done/60-preflight-first-verb-surface.md).**
+- **Second (larger) breaking wave in the same area as [Plan 60](60-preflight-first-verb-surface.md).**
   Plan 60 **has landed** (#162, merged 2026-07-25); this builds on it and removes
   the profile scaffold it left behind. Sequence into a **separate release** from
   60 so users migrate once per step. *(`--quick` never shipped a transient

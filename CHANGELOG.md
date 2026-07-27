@@ -7,7 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`diff` — the new verb for "show me the actual changed lines".** It is the
+  promoted half of `status --diff`: per-node unified line diffs of your local
+  code against the n8n draft, `.ts` compiled first (bundling `shared/*`, so a
+  helper edit shows every importing node). Nodes that are in sync are omitted
+  entirely, and a clean tree says so in one line. Multi-ref like `pull`/`push`;
+  no workflow on a terminal opens the picker.
+
+  **It always exits 0.** `diff` is an inspection view, like `git diff` — the
+  gate is `preflight`. See the migration note under Removed.
+
+- **`preflight --viewer`** (with `--simulate`): leaves a browsable throwaway
+  n8n running so you can open the replayed run in the UI — the interactive half
+  of the old `simulate` verb, now explicit instead of implied by a TTY. It does
+  **not** relax preflight's safety contract: the graded run stays headless with
+  `--network-none`, and the viewer is a second, separate container. A workflow
+  with a multi-batch loop reports `simulate` as **skipped** under `--viewer`
+  ("a preview, not a pass/fail check"), never as a pass.
+
+- **`preflight --no-typecheck`** skips the `types` check — the escape hatch the
+  retired `check` verb had.
+
+- **The agent guard now logs a startup line and an audit trail** (`mcp connect`
+  and `mcp serve` alike, on stderr):
+
+  ```
+  guard: connected to <host> — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+  guard: forwarded search_workflows
+  ```
+
+  Previously the guard spoke **only** when it blocked something, so an empty log
+  meant either "ran, blocked nothing" or "never started" — indistinguishable,
+  and opposite in meaning. The startup line settles that; the per-call lines
+  make the guard the one place that can answer *what did an agent actually do
+  to my n8n instance?*, since every MCP call passes through it.
+
+  **Tool names only — arguments are never logged**, so the log stays safe to
+  attach to a bug report.
+
+- **Every `preflight` finding can now carry `details[]`** — the full list behind
+  the one-line message: *every* layout violation, *every* `tsc` error, the
+  drifted node names, the viewer URL. Printed indented under the check line,
+  and present in `--json`. This is how the information `check` printed in full
+  survives its removal; without it, folding `check` into `preflight` would have
+  truncated a 12-violation layout failure to its first line.
+
 ### Changed
+
+- **Breaking: `preflight`'s profiles are replaced by two orthogonal flags.**
+  `--full` and the `Profile` model are gone. Depth is now `--simulate`
+  (**additive** — appends the local-engine run of your code) and `--offline`
+  (**subtractive** — drops the instance-reads tier), and they compose:
+
+  ```
+  preflight                       static + instance reads            (the default gate)
+  preflight --simulate            + a local-engine run of your code
+  preflight --offline             static only — no instance contact
+  preflight --offline --simulate  static + local engine, no instance
+  ```
+
+  **Migration:** `--full` → `--simulate`. And read the next entry carefully —
+  `--offline` still exists but means something narrower.
+
+- **Breaking: `preflight --offline` no longer runs the local-engine replay.**
+  It used to mean "static + engine, no instance"; it now means "static only".
+  The flag name is unchanged, so **nothing will error** — an air-gapped CI job
+  on `preflight --offline` simply stops running the engine and quietly loses
+  that coverage. **Migration:** `preflight --offline --simulate` is the old
+  `--offline`. (This narrowing is also what makes `--offline` fast enough for
+  the per-edit hook: it now spawns no Docker container.)
+
+- **Breaking: `preflight --json` replaces `profile` with `flags`.** Where the
+  report carried `"profile": "default" | "full" | "offline"` it now carries
+  `"flags": {"simulate": false, "offline": false}`. Agents key on this. Every
+  other field is unchanged, and each entry in `checks[]` gains an optional
+  `details: string[]`.
+
+- **`preflight` with no workflow and an empty `"workflows"` config now checks
+  every *pulled* workflow** instead of erroring with "no workflow ids" — the
+  behaviour the `check` verb had, kept now that `preflight` absorbs it.
+
+- **A workflow folder with an unreadable `.decanter.json` no longer fails your
+  gate.** `check` scanned *folders*, so a corrupt state file anywhere under
+  `workflows/` was a hard error for the whole run. `preflight` grades resolved
+  *workflows*, and a folder whose state won't parse can't resolve to one — so
+  it is named in a warning (`corrupt .decanter.json (…) — skipping this
+  folder`) and skipped, while every healthy workflow is still graded. The fact
+  is still reported; it just no longer blocks work on unrelated workflows.
+
+- **`preflight --simulate` accepts multiple workflows.** The old `simulate`
+  verb took exactly one; preflight loops, so a multi-ref run spins one engine
+  container per workflow, serially.
+
+- **The scaffolded template now runs `preflight --offline` where it ran
+  `check`** — the PostToolUse verify hook, both `package.json` scripts, and the
+  agent-facing prose in `AGENTS.md` / `CLAUDE.md`. *Existing sync dirs keep
+  their files*: re-run `n8n-decanter init` to be offered the refresh, and note
+  that init leaves locally-modified files alone, so a hand-edited hook or
+  `package.json` still invokes a removed verb until you update it yourself.
+
+- The scaffolded agent permission allowlist swaps its `check`/`status`/
+  `simulate` rules for a `diff` pair (both the bare and `npx` shapes);
+  `preflight --simulate` is already covered by the existing `preflight:*` rule.
+
+- The interactive picker's action menu is now `preflight`, `preflight
+  --simulate`, `diff`, `pull`, `push`, `watch`, `executions` — a menu row may
+  carry flags, which is how the browsable local-engine run survives the fold.
 
 - **The scaffolded agent contract now treats `push` as part of finishing the
   work, and reserves "ask the user first" for `publish`.** A push lands on the
@@ -46,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Nothing was removed from the toolbox — the instance run moved to where it
   means something.
 
-  **Migration:** a CI job that gates on a plain `preflight` (any profile) no
+  **Migration:** a CI job that gates on a plain `preflight` no
   longer gets an instance run inside that gate — the draft is never executed by
   preflight. To keep instance-run coverage, add `n8n-decanter test` as its own
   step **after** your push step (`--require=test` users get a hard error with
@@ -56,20 +163,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at the new flow rather than a bare "unknown check". The `test` id is gone
   from `--require`, from `--json` `checks[]`, and from `coverage`.
 
-- **`preflight` auto-fetches a capture only under `--full`** — the one profile
-  that both runs a runtime stage and contacts the instance. The default profile
-  has no runtime stage, so it no longer fetches, and a missing or stale capture
-  is reported as `info` rather than `warn` — nothing there consumes one
-  (`--offline` never reaches the instance to fetch).
+- **`preflight` auto-fetches a capture only under `--simulate`** — the flag
+  that adds the one stage which consumes a capture. Without it there is no
+  runtime stage, so preflight no longer fetches, and a missing or stale capture
+  is reported as `info` rather than `warn` — nothing would consume one
+  (`--offline` never reaches the instance to fetch either way).
 
 - The `parity` warn is reworded. It was a caveat about the runtime tier
   grading the wrong artifact; that's no longer possible, so it is now the plain
   next step: *"local code differs from the draft in N node(s) — push to make it
   the draft, then test"*.
 
-- **`simulate` is the sole runtime stage** (under `--full`, or `--offline` for
-  the no-instance variant) and needs Docker. For runtime evidence without
-  Docker, push and then run `test`.
+- **The local-engine replay is the sole runtime stage** (`preflight --simulate`)
+  and needs Docker. For runtime evidence without Docker, push and then run
+  `test`.
 
 - **Node-file type checking moved off TypeScript's legacy `node10` module
   resolution** to `moduleResolution: "bundler"` (with `module: "preserve"`), in
@@ -88,13 +195,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Breaking: the `check`, `status`, and `simulate` verbs.** All three were
+  variations on "check my thing", and telling them apart was the single most
+  confusing part of the surface. They fold into two:
+
+  | You used to run | Now run |
+  | --- | --- |
+  | `check [workflow…]` | `preflight --offline [workflow…]` |
+  | `check --no-typecheck` | `preflight --offline --no-typecheck` |
+  | `status [workflow…]` | `preflight [workflow…]` (the scored summary) |
+  | `status --diff` | `diff [workflow…]` (the changed lines) |
+  | `simulate <workflow>` | `preflight <workflow> --offline --simulate` |
+  | `simulate --network-none` | `preflight --simulate` (always network-none) |
+
+  Each removed verb exits non-zero naming its replacement, so a stale script
+  fails loudly rather than silently. **Note the `simulate` row:** the verb
+  needed no credentials, and a bare `preflight --simulate` still runs the
+  instance tier — add `--offline` for the credential-free equivalent.
+
+  Nothing was lost with the verbs. The compliance guard still gates every push
+  and watch save (only the standalone *view* is gone, and preflight's `layout`
+  finding now lists every violation); the publish state, live-lags-draft note
+  and snapshot-stale hint are preflight's `lifecycle` and `snapshot` findings.
+
+- **Breaking: `status`'s CI exit codes.** `status` exited 1 on a code conflict
+  or remote drift, and pipelines gated on that. `diff` always exits 0.
+  **Migration:** gate on `preflight`, whose `drift` check **fails** on a
+  CONFLICT and warns on remote drift (add `--fail-on=warn` to gate on the warn
+  too).
+
+- **`simulate --network-none`.** `preflight` always runs the graded engine
+  replay with no network, so the flag had nothing left to turn off.
+
 - **Breaking: the `preflight --quick` profile.** With the `test` stage gone it
   was byte-identical to the default profile, and rather than redefine it into a
-  meaning users would have to learn and then unlearn (the profile vocabulary is
-  on its way out — Plan 59 replaces profiles with flags), it is gone: passing
-  `--quick` errors with the migration. Static-only checking is `check`'s job;
-  a no-instance gate is `preflight --offline` (which still replays via
-  `simulate`). `--full` and `--offline` are unchanged.
+  meaning users would have to learn and then unlearn, it is gone. Static-only
+  checking is now `preflight --offline`; the local-engine replay is
+  `preflight --simulate` (see the profile→flags entry above, which retired
+  `--full` and the whole profile vocabulary in the same release).
+
+  **Neither `--quick` nor `--full` is recognized any more — they are simply
+  gone, not rejected with a migration.** The CLI ignores flags it does not
+  know, so `preflight --full` now runs the *default* gate (no engine) and
+  `preflight --quick` runs it too, both exiting 0. **If you have either in a CI
+  job, update it in the same step as this upgrade** — nothing will tell you at
+  runtime. `--full` → `--simulate`; `--quick` → `--offline`.
 - **Breaking: `preflight --trigger <node>`.** It existed only to feed the
   removed instance `test` stage; since that stage's removal it parsed and did
   nothing. `test --trigger <node>` (the post-push instance run) keeps the flag

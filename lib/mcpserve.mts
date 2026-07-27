@@ -91,6 +91,24 @@ export function guardMessage(msg: Record<string, unknown>): Record<string, unkno
 }
 
 /**
+ * Audit line for one forwarded `tools/call` — the guard's only positive signal.
+ *
+ * **Tool name only, never arguments.** Arguments carry workflow content (node
+ * parameters, pinned run data) and would turn a debug log into a PII/secret
+ * surface; the name alone answers "what did the agent do to my instance?".
+ * Non-`tools/call` traffic (the initialize handshake, notifications) is not
+ * logged — it is protocol noise, not agent intent.
+ *
+ * Shared by BOTH transports on purpose: `mcp connect` and `mcp serve` must not
+ * drift in what they record, the same way they share `guardMessage`.
+ */
+export function logToolCall(msg: Record<string, unknown>, log: Log): void {
+  if (msg.method !== "tools/call") return;
+  const name = (msg.params as { name?: unknown } | undefined)?.name;
+  if (typeof name === "string" && name !== "") log.info(`guard: forwarded ${name}`);
+}
+
+/**
  * The live-mirror hook (Plan 51 Part A): the workflow id a message targets when
  * it is a **forwardable, non-blocked** `update_workflow` — i.e. a structure edit
  * the guard lets through. `null` for anything else (blocked jsCode writes, other
@@ -179,6 +197,7 @@ export async function startGuardProxy(
               .writeHead(200, { "content-type": "application/json" })
               .end(JSON.stringify(Array.isArray(parsed) ? [blocked] : blocked));
           }
+          logToolCall(record, log); // audit trail — same line shape as `mcp connect`
           // Live mirror (Plan 51 Part A): a forwardable structure edit — refresh
           // the local snapshot after it lands. None here are blocked (a block
           // short-circuits above), so collect and schedule post-forward.
@@ -237,6 +256,9 @@ export async function startGuardProxy(
   });
   const actualPort = (server.address() as AddressInfo).port;
   const url = `http://127.0.0.1:${actualPort}${MCP_PATH}`;
+  // Same "I am alive" line as the stdio guard — an empty log must never be
+  // ambiguous between "ran, blocked nothing" and "never started".
+  log.info(`guard: connected to ${host} — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow`);
 
   const stateFile = path.join(configDir, PROXY_STATE_FILE);
   try {

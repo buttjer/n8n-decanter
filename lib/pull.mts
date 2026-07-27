@@ -70,7 +70,7 @@ function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: Workf
  * truth for Code-node source: `.js` files are overwritten with the remote body
  * (git is the safety net — a warning flags overwritten unpushed edits), `.ts`
  * sources are never touched (divergence is warned, inspect with
- * `status --diff`; no `.remote.js` artifacts since Plan 32).
+ * the `diff` verb; no `.remote.js` artifacts since Plan 32).
  */
 export async function pullWorkflow(mcp: McpClient, root: string, id: string, { commitOnPull = false }: { commitOnPull?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
   const wf = await getWorkflowDetails(mcp, id);
@@ -103,18 +103,18 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
 
     if (tsManaged) {
       if (!existsSync(filePath)) {
-        log.warn(`${wf.name} / ${node.name}: TS-managed on remote but no local ${file} — pull cannot reconstruct .ts source; add the file (its compiled code stays on the n8n draft, see status --diff) before pushing`);
+        log.warn(`${wf.name} / ${node.name}: TS-managed on remote but no local ${file} — pull cannot reconstruct .ts source; add the file (its compiled code stays on the n8n draft, see \`n8n-decanter diff\`) before pushing`);
       } else {
         const compiled = await compileTs(filePath, log);
         const localHash = sha256(compiled);
         if (localHash === remoteHash) {
           // in sync — nothing to do
         } else if (localHash === nodeState.lastPushedHash) {
-          log.warn(`${wf.name} / ${node.name}: edited in the n8n UI since last push — remote edits are not merged into ${file} (inspect with status --diff, port manually); the next push overwrites them`);
+          log.warn(`${wf.name} / ${node.name}: edited in the n8n UI since last push — remote edits are not merged into ${file} (inspect with \`n8n-decanter diff\`, port manually); the next push overwrites them`);
         } else if (remoteHash === nodeState.lastPushedHash) {
           log.info(`${node.name}: local ${file} modified, not yet pushed`);
         } else {
-          log.warn(`${wf.name} / ${node.name}: CONFLICT — both ${file} and the remote code changed since last sync; inspect with status --diff and reconcile before pushing`);
+          log.warn(`${wf.name} / ${node.name}: CONFLICT — both ${file} and the remote code changed since last sync; inspect with \`n8n-decanter diff\` and reconcile before pushing`);
         }
       }
     } else if (nodeState.file?.endsWith(".ts") || existsSync(path.join(dir, CODE_DIR, base + ".ts"))) {

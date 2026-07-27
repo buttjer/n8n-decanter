@@ -31,6 +31,7 @@ Keep the n8n editor tab open on the watched workflow — n8n 2.x reflects each
 push in the open canvas natively (no proxy, no manual refresh), and skips the
 update if the tab has unsaved edits so nothing in-browser is clobbered.
 
-Node saves are guarded by the same [compliance rules](/docs/cli/check/) as a
+Node saves are guarded by the same
+[compliance rules](/docs/cli/preflight/#what-the-compliance-guard-catches) as a
 manual push, so a broken save doesn't reach n8n. `--force` carries through to
 the per-node drift guard, exactly as on [push](/docs/cli/push/).

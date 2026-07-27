@@ -1,4 +1,5 @@
-// Plan 7 — the engine backend for `simulate`. Runs a transformed simulation
+// Plan 7 — the engine backend for preflight's `--simulate` stage. Runs a
+// transformed simulation
 // workflow through a *real* n8n via route B (validated by the Plan 7 spike):
 // `n8n import:workflow` + `n8n execute --id --rawOutput` in a throwaway
 // container, no server and no credentials, output scraped from the result JSON.
@@ -45,7 +46,7 @@ export interface EngineRun {
 const docker = (args: string[], opts: { timeoutMs?: number } = {}) =>
   execFile("docker", args, { encoding: "utf8", maxBuffer: 128 * 1024 * 1024, timeout: opts.timeoutMs ?? 120_000 });
 
-/** True when a Docker daemon is reachable — lets `simulate`/`test:sim` skip cleanly. */
+/** True when a Docker daemon is reachable — lets the simulate stage / `test:sim` skip cleanly. */
 export async function dockerAvailable(): Promise<boolean> {
   try {
     await docker(["version", "--format", "{{.Server.Version}}"], { timeoutMs: 10_000 });

@@ -131,27 +131,30 @@ describe("verb stage", () => {
 
   it("arrows move within the verb list and clamp", () => {
     let s = next(reduceKey(verbState(), { name: "down" }));
-    assert.equal(PICKER_VERBS[s.verbCursor], "pull");
+    assert.equal(PICKER_VERBS[s.verbCursor], "preflight --simulate");
     for (let i = 0; i < 10; i++) s = next(reduceKey(s, { name: "down" }));
-    assert.equal(PICKER_VERBS[s.verbCursor], "simulate");
+    assert.equal(PICKER_VERBS[s.verbCursor], "executions", "clamped at the last row");
   });
 
   it("a letter cycles through verbs starting with it", () => {
+    // Post-Plan-59 order: preflight, preflight --simulate, diff, pull, push,
+    // watch, executions — so FOUR rows start with "p" and the cursor starts on
+    // the first of them, making "p" a four-stop cycle.
     let s = next(reduceKey(verbState(), { name: "p", sequence: "p" }));
+    assert.equal(PICKER_VERBS[s.verbCursor], "preflight --simulate");
+    s = next(reduceKey(s, { name: "p", sequence: "p" }));
     assert.equal(PICKER_VERBS[s.verbCursor], "pull");
     s = next(reduceKey(s, { name: "p", sequence: "p" }));
     assert.equal(PICKER_VERBS[s.verbCursor], "push");
     s = next(reduceKey(s, { name: "p", sequence: "p" }));
-    assert.equal(PICKER_VERBS[s.verbCursor], "preflight");
-    s = next(reduceKey(s, { name: "p", sequence: "p" }));
-    assert.equal(PICKER_VERBS[s.verbCursor], "pull");
+    assert.equal(PICKER_VERBS[s.verbCursor], "preflight", "wraps back to the top");
     s = next(reduceKey(s, { name: "e", sequence: "e" }));
     assert.equal(PICKER_VERBS[s.verbCursor], "executions");
-    // from executions, "s" cycles forward: simulate, then wraps to status
-    s = next(reduceKey(s, { name: "s", sequence: "s" }));
-    assert.equal(PICKER_VERBS[s.verbCursor], "simulate");
-    s = next(reduceKey(s, { name: "s", sequence: "s" }));
-    assert.equal(PICKER_VERBS[s.verbCursor], "status");
+    // a sole match is a fixpoint, not a no-op: "d" from the end wraps forward
+    s = next(reduceKey(s, { name: "d", sequence: "d" }));
+    assert.equal(PICKER_VERBS[s.verbCursor], "diff");
+    s = next(reduceKey(s, { name: "d", sequence: "d" }));
+    assert.equal(PICKER_VERBS[s.verbCursor], "diff");
   });
 
   it("enter runs the highlighted verb on the selected workflow", () => {
@@ -170,9 +173,20 @@ describe("verb stage", () => {
   });
 
   it("enter carries the workflow name for the trace line", () => {
+    // Cursor 0 is `preflight` (Plan 59 put the read-only gate first).
     assert.deepEqual(reduceKey(verbState(), { name: "return" }), {
       done: true,
-      result: { verb: "status", id: "aaa111", name: "Billing Sync" },
+      result: { verb: "preflight", id: "aaa111", name: "Billing Sync" },
+    });
+  });
+
+  it("a flag-carrying row resolves as its whole label, flags included", () => {
+    // `preflight --simulate` is one row, not a verb — the CLI's PICKER_ACTIONS
+    // maps the label to a verb plus a flag set.
+    const s = next(reduceKey(verbState(), { name: "down" }));
+    assert.deepEqual(reduceKey(s, { name: "return" }), {
+      done: true,
+      result: { verb: "preflight --simulate", id: "aaa111", name: "Billing Sync" },
     });
   });
 });
@@ -264,7 +278,7 @@ describe("resume (picker loop re-entry)", () => {
   });
 
   it("ignores an unknown resume id and an unknown verb", () => {
-    const gone = initialState(entries, false, { resume: { id: "zzz999", verb: "status" } });
+    const gone = initialState(entries, false, { resume: { id: "zzz999", verb: "diff" } });
     assert.equal(gone.stage, "workflow");
     assert.equal(gone.cursor, 0);
     const oddVerb = initialState(entries, false, { resume: { id: "aaa111", verb: "list" } });

@@ -219,7 +219,7 @@ Concretely:
    (ladder, profiles, scoring table, safety contract);
    [overview](../../docs/cli/overview.md) command surface + safety table row +
    picker line; the "Preflights" sections in
-   [test.md](../../docs/cli/test.md)/[simulate.md](../../docs/cli/simulate.md)/[check.md](../../docs/cli/check.md)
+   [test.md](../../docs/cli/test.md)/simulate.md/check.md *(the latter two folded into [preflight.md](../../docs/cli/preflight.md) — Plan 59)*
    point at the one-command form; README `## Commands` + the preflights
    feature bullet + compare-table cell; CHANGELOG `[Unreleased]` Added;
    **PLAN.md** new design section (registry, profiles, scoring, safety

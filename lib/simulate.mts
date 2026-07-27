@@ -4,7 +4,8 @@
 // nodes execute for real, every network/side-effectful node is pinned to its
 // captured output, credentials are stripped, and no outbound-capable node
 // survives. The engine run itself (n8n import:workflow + execute) lives in the
-// `simulate` verb (task 3); this module has no I/O beyond reading local files.
+// preflight's `--simulate` stage (task 3); this module has no I/O beyond
+// reading local files.
 //
 // Route B recipe validated by the Plan 7 spike (2026-07-20): `n8n execute`
 // does NOT honor a workflow's `pinData` in CLI mode, and it needs a real
@@ -166,7 +167,7 @@ function sourceName(ref: string, source: SimSource): string {
 
 /**
  * Locate a replay source file: `scenarios/<slug>.json` for a committed scenario
- * (chosen explicitly by `simulate --scenario <slug>`) or `executions/<id>.json`
+ * (chosen explicitly by `preflight --simulate --scenario <slug>`) or `executions/<id>.json`
  * for a gitignored raw capture. `null` when it doesn't exist.
  */
 export function sourceFile(dir: string, ref: string, source: SimSource): string | null {
@@ -226,7 +227,7 @@ export function scenarioIsSynthetic(exec: Execution): boolean {
  * Structural validation of a hand-filled scenario. n8n publishes **no JSON
  * Schema** for run data — the format is only the `n8n-workflow` TS types
  * (`IRunExecutionData` → `ITaskData` → `INodeExecutionData`) — so we validate the
- * exact shape `simulate` consumes and give an actionable error naming the node.
+ * exact shape the simulate stage consumes and give an actionable error naming the node.
  * Runs only on files carrying a `_decanterScenario`/`_decanterMock` marker (real
  * captures come straight from the API and are trusted); their copied-in nodes
  * were valid, so this effectively checks the agent's/human's edits. Also flags
@@ -473,7 +474,7 @@ export async function buildSimulation(
     throw new SimulationGapError(
       source === "scenario"
         ? `scenario "${ref}" still has network node(s) with no data: ${names} — add their runData under data.resultData.runData in ${SCENARIOS_DIR}/${sourceName(ref, "scenario")}.json (see the _decanterScenario block), then re-run. Validate offline with: n8n-decanter scenario check <workflow> ${ref}.`
-        : `network node(s) reached with no captured data: ${names} — create a committed, fillable scenario with \`n8n-decanter scenario create <workflow> --execution ${ref}\`, add their runData, and replay with \`simulate --scenario\`. The scenario is edited locally — the CLI never calls a model.`,
+        : `network node(s) reached with no captured data: ${names} — create a committed, fillable scenario with \`n8n-decanter scenario create <workflow> --execution ${ref}\`, add their runData, and replay with \`preflight --simulate --scenario <slug>\`. The scenario is edited locally — the CLI never calls a model.`,
       gaps,
     );
   }
@@ -629,7 +630,7 @@ export async function writeScenario(
     createdAt: new Date().toISOString().slice(0, 10),
     ...(wfVersion !== undefined ? { workflowVersionId: wfVersion } : {}),
     guidance: gaps.length > 0
-      ? `Scenario pin data — synthetic, not a full real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample${opts.scaffold ? "/expectedSchema" : ""} as context. Keep the "fill" list as-is — it records which nodes are synthetic (provenance) and is what "scenario check" validates. Validate offline: n8n-decanter scenario check <workflow> ${name}. Then replay: n8n-decanter simulate <workflow> --scenario ${name}.`
+      ? `Scenario pin data — synthetic, not a full real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample${opts.scaffold ? "/expectedSchema" : ""} as context. Keep the "fill" list as-is — it records which nodes are synthetic (provenance) and is what "scenario check" validates. Validate offline: n8n-decanter scenario check <workflow> ${name}. Then replay: n8n-decanter preflight <workflow> --simulate --scenario ${name}.`
       : `Committed, reproducible copy of capture ${opts.execId} — no gaps to fill.`,
     fill,
   };
@@ -646,9 +647,9 @@ export async function writeScenario(
   if (gaps.length > 0) {
     log.info(`scenario "${name}" written from ${seededFrom} -> ${rel}`);
     if (opts.scaffold) log.info(`scaffold coverage: ${opts.scaffold.coverage.withSchemaFromExecution + opts.scaffold.coverage.withSchemaFromDefinition} with schema, ${opts.scaffold.coverage.withoutSchema} without, ${opts.scaffold.coverage.skipped} run for real (of ${opts.scaffold.coverage.total})`);
-    log.warn(`author runData for ${gaps.length} node${gaps.length === 1 ? "" : "s"}: ${gaps.map((g) => g.node).join(", ")} — see "_decanterScenario", validate with \`scenario check ${name}\`, then \`simulate --scenario ${name}\``);
+    log.warn(`author runData for ${gaps.length} node${gaps.length === 1 ? "" : "s"}: ${gaps.map((g) => g.node).join(", ")} — see "_decanterScenario", validate with \`scenario check ${name}\`, then \`preflight --simulate --scenario ${name}\``);
   } else {
-    log.ok(`scenario "${name}" written from ${seededFrom} -> ${rel} — no gaps; replay with \`simulate --scenario ${name}\``);
+    log.ok(`scenario "${name}" written from ${seededFrom} -> ${rel} — no gaps; replay with \`preflight --simulate --scenario ${name}\``);
   }
   if (opts.execId !== undefined) log.warn("scenario copies real captured data — review for credentials/PII before committing");
   return { slug: name, file: scenarioFile, gaps: gaps.map((g) => g.node), coverage: opts.scaffold?.coverage };
@@ -718,7 +719,7 @@ export interface NodeDiff {
   actual: unknown[];
 }
 
-/** Full result of a `simulate` run — the report the verb prints / emits as JSON. */
+/** Full result of a local-engine replay — what preflight's `simulate` check scores. */
 export interface SimulationReport {
   execId: string;
   version: string;

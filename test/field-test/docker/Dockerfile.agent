@@ -17,8 +17,9 @@ RUN apt-get update \
 # template/package.json.example), installed globally as ROOT → /usr/local. The
 # decanter CLI (baked into the per-run image, also as root) lands in the SAME
 # prefix, so: n8n-decanter is on the standard PATH (survives a login shell's
-# profile PATH reset) and `check`'s typecheck fallback resolver finds typescript
-# beside it. The fence blocks the npm registry at runtime, so deps bake at build.
+# profile PATH reset) and the typecheck fallback resolver (`preflight`'s `types`
+# stage, and `push`) finds typescript beside it. The fence blocks the npm
+# registry at runtime, so deps bake at build.
 RUN npm install -g --no-audit --no-fund @anthropic-ai/claude-code typescript@^5.6.0
 
 # Run as a non-root user — the container is the isolation boundary; least-privilege inside.

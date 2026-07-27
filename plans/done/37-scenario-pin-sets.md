@@ -153,7 +153,7 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
 7. **Docs + bookkeeping (all surfaces, one PR).**
    docs/cli/mock.md *(page removed with the mock verb)* → `docs/cli/scenario.md` (rewrite
    around the one-artifact story; "Not `--pin`" section retired);
-   [simulate.md](../../docs/cli/simulate.md)/[test.md](../../docs/cli/test.md)
+   simulate.md *(folded into [preflight.md](../../docs/cli/preflight.md) — Plan 59)*/[test.md](../../docs/cli/test.md)
    flag + loop updates; [overview](../../docs/cli/overview.md) command surface;
    README commands + feature bullet; CHANGELOG `[Unreleased]` **Breaking:**
    entries (verb rename, flag rename, dir rename + auto-migration, `--pin`

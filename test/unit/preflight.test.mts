@@ -2,6 +2,10 @@
 // scorer/verdict/coverage/require functions, the line renderer, and the
 // orchestrator itself driven against a stubbed McpClient + a seeded capture —
 // asserting the ladder runs, scores, and NEVER mutates.
+//
+// Plan 59: profiles are gone. Depth is the two orthogonal booleans
+// `{simulate, offline}`, so the pure seam under test is `activeStages` and the
+// orchestrator is driven by `flags`, not a preset name.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -9,8 +13,9 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { McpClient } from "../../lib/mcp.mts";
 import {
-  applyRequire, type CheckFinding, coverageOf, exitCodeOf, formatCheckLine,
-  type PreflightContext, profileSpec, renderPreflightSummary, runPreflight, scoreFindings, verdictOf,
+  type ActiveStages, activeStages, applyRequire, type CheckFinding, coverageOf, describeFlags,
+  exitCodeOf, formatCheckDetails, formatCheckLine, type PreflightContext, type PreflightFlags,
+  renderPreflightSummary, runPreflight, scoreFindings, verdictOf,
 } from "../../lib/preflight.mts";
 import type { DecanterConfig, Log, Workflow } from "../../lib/types.mts";
 import { sha256 } from "../../lib/util.mts";
@@ -58,22 +63,41 @@ describe("preflight coverage + require (pure)", () => {
   });
 });
 
-describe("preflight profiles (pure)", () => {
-  // Plan 60: no `test` tier — and no `--quick`: with `test` gone it was
-  // identical to the default profile, so it was removed rather than redefined
-  // (static-only is check's job; Plan 59 retires profiles entirely).
-  it("maps each profile to its active tiers", () => {
-    assert.deepEqual(profileSpec("default"), { sync: true, simulate: false });
-    assert.deepEqual(profileSpec("full"), { sync: true, simulate: true });
-    assert.deepEqual(profileSpec("offline"), { sync: false, simulate: true });
-  });
-  it("no two profiles are identical", () => {
-    const seen = new Map<string, string>();
-    for (const p of ["default", "full", "offline"] as const) {
-      const key = JSON.stringify(profileSpec(p));
-      assert.equal(seen.get(key), undefined, `${p} is identical to ${seen.get(key)} — a profile flag with no effect`);
-      seen.set(key, p);
+describe("preflight depth flags (pure)", () => {
+  // Plan 59's whole depth model, as the table the plan specifies. `--simulate`
+  // is ADDITIVE, `--offline` SUBTRACTIVE; the static tier is unconditional and
+  // therefore not part of the spec at all.
+  //
+  // Note the BREAKING inversion against the retired profiles: the old
+  // `--offline` profile RAN the engine ({sync:false, simulate:true}); bare
+  // `--offline` now runs nothing but the static tier — the old behaviour is
+  // spelled `--offline --simulate`.
+  const TABLE: ReadonlyArray<{ flags: PreflightFlags; stages: ActiveStages; label: string }> = [
+    { flags: { simulate: false, offline: false }, stages: { sync: true, simulate: false }, label: "static + instance reads" },
+    { flags: { simulate: true, offline: false }, stages: { sync: true, simulate: true }, label: "--simulate" },
+    { flags: { simulate: false, offline: true }, stages: { sync: false, simulate: false }, label: "--offline" },
+    { flags: { simulate: true, offline: true }, stages: { sync: false, simulate: true }, label: "--offline --simulate" },
+  ];
+
+  it("maps every flag combination to its active tiers", () => {
+    assert.equal(TABLE.length, 4, "two booleans — the table must stay exhaustive");
+    for (const { flags, stages } of TABLE) {
+      assert.deepEqual(activeStages(flags), stages, `flags ${JSON.stringify(flags)}`);
     }
+  });
+
+  it("no two combinations run the same tiers — neither flag is ever a no-op", () => {
+    const seen = new Map<string, string>();
+    for (const { flags } of TABLE) {
+      const key = JSON.stringify(activeStages(flags));
+      const label = JSON.stringify(flags);
+      assert.equal(seen.get(key), undefined, `${label} is identical to ${seen.get(key)}`);
+      seen.set(key, label);
+    }
+  });
+
+  it("describeFlags labels every combination for the header line", () => {
+    for (const { flags, label } of TABLE) assert.equal(describeFlags(flags), label);
   });
 });
 
@@ -83,6 +107,19 @@ describe("formatCheckLine", () => {
     assert.match(line, /!/);
     assert.match(line, /parity/);
     assert.match(line, /local differs/);
+  });
+});
+
+describe("formatCheckDetails", () => {
+  // The `check` verb's full output survives here: one indented line per
+  // violation, with embedded newlines (a multi-line tsc error) split apart so
+  // the indent holds for every line.
+  it("indents each detail and splits embedded newlines", () => {
+    const lines = formatCheckDetails(finding({ details: ["one", "two\nthree"] }));
+    assert.deepEqual(lines, ["      one", "      two", "      three"]);
+  });
+  it("is empty when a finding has nothing to expand", () => {
+    assert.deepEqual(formatCheckDetails(finding({})), []);
   });
 });
 
@@ -148,13 +185,13 @@ describe("runPreflight (stubbed)", () => {
   }
 
   const baseCtx = (dir: string, root: string, mcp: McpClient, over: Partial<PreflightContext> = {}): PreflightContext => ({
-    config: config(root), dir, id: "wf1", name: "Order Sync", profile: "default",
+    config: config(root), dir, id: "wf1", name: "Order Sync", flags: { simulate: false, offline: false },
     noFetch: true, failFast: false, simVersion: "1.100.0", hasApiKey: false,
     mcp: () => mcp, api: () => { throw new Error("no api in this test"); },
     dockerAvailable: async () => false, ...over,
   });
 
-  it("default profile: runs the ladder, passes, and NEVER mutates", async () => {
+  it("bare preflight: runs the ladder, passes, and NEVER mutates", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
@@ -165,25 +202,71 @@ describe("runPreflight (stubbed)", () => {
     assert.equal(byId.get("access")?.status, "pass");
     assert.equal(byId.get("parity")?.status, "pass");
     assert.equal(byId.get("drift")?.status, "pass");
-    assert.equal(byId.get("simulate")?.status, "skip", "simulate is --full only");
+    assert.equal(byId.get("simulate")?.status, "skip", "the local-engine replay is --simulate only");
     assert.equal(report.verdict, "ready");
     assert.equal(report.subject.parity, "match");
+    // The --json contract (Plan 59): `flags` replaced the `profile` string, and
+    // agents key on it.
+    assert.deepEqual(report.flags, { simulate: false, offline: false });
     assert.ok(!calls.some((c) => /update_workflow|publish|restore/.test(c)), "preflight issued no writes: " + calls.join(","));
   });
 
   // Plan 60's core contract: preflight never EXECUTES the workflow on the
   // instance. Not a write — a run. `test_workflow` grades the draft, which
   // before a push is not the code being shipped.
-  it("never runs the workflow on the instance, in any profile", async () => {
-    for (const profile of ["default", "full", "offline"] as const) {
-      tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
-      const dir = seed(tmp);
-      const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
-      await runPreflight(baseCtx(dir, tmp, mcp, { profile }));
-      assert.ok(!calls.some((c) => /test_workflow|execute_workflow|get_execution/.test(c)), `${profile} executed on the instance: ${calls.join(",")}`);
-      rmSync(tmp, { recursive: true, force: true });
-      tmp = undefined;
+  it("never runs the workflow on the instance, in any flag combination", async () => {
+    for (const offline of [false, true]) {
+      for (const simulate of [false, true]) {
+        const flags: PreflightFlags = { simulate, offline };
+        tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+        const dir = seed(tmp);
+        const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
+        await runPreflight(baseCtx(dir, tmp, mcp, { flags }));
+        assert.ok(!calls.some((c) => /test_workflow|execute_workflow|get_execution/.test(c)), `${JSON.stringify(flags)} executed on the instance: ${calls.join(",")}`);
+        rmSync(tmp, { recursive: true, force: true });
+        tmp = undefined;
+      }
     }
+  });
+
+  // Plan 59: with `check` retired, the static tier is the ONLY view of a layout
+  // violation — so the one-line message names the first and `details` carries
+  // every one: all errors, then the warnings the summary line never mentions.
+  it("a layout failure carries EVERY violation in details, not just the first", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    rmSync(path.join(dir, "code", "compute.js")); // placeholder points at a missing file
+    writeFileSync(path.join(dir, "code", "stray.js"), "return [];\n"); // orphan: no placeholder points here
+    const { mcp } = stub(wf(), {});
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { flags: { simulate: false, offline: true } }));
+    const layout = report.checks.find((c) => c.id === "layout")!;
+    const details = layout.details ?? [];
+    assert.equal(layout.status, "fail");
+    assert.match(layout.message, /2 layout violations/, "the summary counts the ERRORS and names the first");
+    assert.ok(/referenced file code\/compute\.js is missing/.test(details[0]), JSON.stringify(details));
+    assert.ok(/orphan code file code\/stray\.js/.test(details[1]), JSON.stringify(details));
+    // …and the warning that the "2 violations" summary line never mentions —
+    // errors first, warnings after, so nothing `check` used to print is lost.
+    assert.equal(details.length, 3, JSON.stringify(details));
+    assert.ok(/still records|records code\/compute\.js/.test(details[2]), JSON.stringify(details));
+    // `remediation` is contractually a runnable command; the fix here is editing
+    // the files named above, so the finding deliberately carries none.
+    assert.equal(layout.remediation, undefined);
+  });
+
+  it("--no-typecheck skips the types check (the escape hatch `check` had)", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    const { mcp } = stub(wf(), {});
+    const offline: PreflightFlags = { simulate: false, offline: true };
+    const skipped = (await runPreflight(baseCtx(dir, tmp, mcp, { flags: offline, noTypecheck: true }))).checks.find((c) => c.id === "types")!;
+    assert.equal(skipped.status, "skip");
+    assert.match(skipped.reason!, /--no-typecheck was passed/);
+    assert.match(skipped.unlock!, /drop --no-typecheck/);
+    // Without the flag the check still runs — it lands on the no-tsconfig skip
+    // here, a DIFFERENT skip, which is what proves the flag did the skipping.
+    const ran = (await runPreflight(baseCtx(dir, tmp, mcp, { flags: offline }))).checks.find((c) => c.id === "types")!;
+    assert.match(ran.reason!, /no tsconfig\.json/);
   });
 
   it("no check id reports on the draft: every verdict-bearing stage grades local code", async () => {
@@ -210,25 +293,43 @@ describe("runPreflight (stubbed)", () => {
     assert.match(hist!.message, /1 of 2 recent runs failed/);
   });
 
-  it("offline profile skips the whole sync tier; runs simulate (skipped without Docker)", async () => {
+  it("--offline --simulate skips the whole sync tier and still reaches the engine stage", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp, calls } = stub(wf(), {});
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "offline" }));
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { flags: { simulate: true, offline: true } }));
     const byId = new Map(report.checks.map((c) => [c.id, c]));
     assert.equal(byId.get("layout")?.status, "pass", "static tier still runs offline");
     for (const id of ["connect", "access", "parity", "drift", "history"] as const) assert.equal(byId.get(id)?.status, "skip", `${id} skipped offline`);
-    assert.equal(byId.get("simulate")?.status, "skip", "simulate skipped without Docker");
+    assert.equal(byId.get("simulate")?.status, "skip", "the engine stage was reached, then skipped for lack of Docker");
+    assert.match(byId.get("simulate")!.reason!, /Docker not available/);
     assert.equal(calls.length, 0, "offline made no MCP calls");
   });
 
-  it("--require promotes a skipped required check to a fail", async () => {
+  // The Plan 59 inversion, pinned at the orchestrator: the retired `--offline`
+  // PROFILE implied the engine run; the flag does not.
+  it("bare --offline does not reach the engine stage — the replay is opt-in", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp);
+    const { mcp } = stub(wf(), {});
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { flags: { simulate: false, offline: true } }));
+    const sim = report.checks.find((c) => c.id === "simulate")!;
+    assert.equal(sim.status, "skip");
+    assert.match(sim.reason!, /the local-engine replay is opt-in/);
+    assert.match(sim.unlock!, /--simulate/);
+  });
+
+  it("--require promotes a skipped required check to a fail, pointing at --simulate", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "default", requireIds: ["simulate"] }));
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { requireIds: ["simulate"] }));
     const sim = report.checks.find((c) => c.id === "simulate");
-    assert.equal(sim?.status, "fail", "simulate was skipped by the default profile then promoted by --require");
+    assert.equal(sim?.status, "fail", "simulate was skipped as opt-in, then promoted by --require");
+    // The unlock becomes the remediation — and it must name the FLAG now; the
+    // pre-Plan-59 text said "pass --full (or --offline)".
+    assert.match(sim!.remediation!, /--simulate/);
+    assert.doesNotMatch(sim!.remediation!, /--full/);
     assert.equal(report.verdict, "not ready");
   });
 
@@ -323,14 +424,14 @@ describe("runPreflight (stubbed)", () => {
         return [{ id: 305, workflowId: "wf1", data: { resultData: { runData: { Hook: runData([{ n: 1 }]), Compute: runData([{ x: 1 }]) } } } }];
       },
     }) as any;
-    // --full: `simulate` is the runtime consumer that makes a pin source worth fetching
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "full", hasApiKey: true, noFetch: false, api }));
+    // --simulate: the runtime consumer that makes a pin source worth fetching
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { flags: { simulate: true, offline: false }, hasApiKey: true, noFetch: false, api }));
     assert.equal(fetched, true, "auto-fetch ran");
     const capture = report.checks.find((c) => c.id === "capture");
     assert.match(capture!.message, /auto-fetched/);
   });
 
-  it("the default profile does not auto-fetch — nothing consumes a capture", async () => {
+  it("without --simulate nothing auto-fetches — nothing would consume a capture", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     rmSync(path.join(dir, "executions", "301.json"));
@@ -338,14 +439,14 @@ describe("runPreflight (stubbed)", () => {
     let fetched = false;
     const api = () => ({ listExecutions: async () => { fetched = true; return []; } }) as any;
     const report = await runPreflight(baseCtx(dir, tmp, mcp, { hasApiKey: true, noFetch: false, api }));
-    assert.equal(fetched, false, "no runtime stage in the default profile → no fetch");
+    assert.equal(fetched, false, "no runtime stage without --simulate → no fetch");
     assert.equal(report.checks.find((c) => c.id === "capture")?.status, "info", "a missing capture is informational, not a warning");
   });
 
   it("a stale capture is info when nothing consumes it, warn when the runtime tier does", async () => {
-    // Same rule as the missing-capture case: only a profile that actually RUNS a
+    // Same rule as the missing-capture case: only a run that actually EXECUTES a
     // runtime stage should lose points over a stale pin.
-    for (const [profile, expected] of [["default", "info"], ["full", "warn"]] as const) {
+    for (const [simulate, expected] of [[false, "info"], [true, "warn"]] as const) {
       tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
       const dir = seed(tmp);
       const capFile = path.join(dir, "executions", "301.json");
@@ -353,9 +454,9 @@ describe("runPreflight (stubbed)", () => {
       cap.workflowVersionId = "v-predates-draft"; // wf() draft is v1 → stale
       writeFileSync(capFile, JSON.stringify(cap));
       const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
-      const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile }));
+      const report = await runPreflight(baseCtx(dir, tmp, mcp, { flags: { simulate, offline: false } }));
       const capture = report.checks.find((c) => c.id === "capture");
-      assert.equal(capture?.status, expected, `${profile}: a stale capture should be ${expected}`);
+      assert.equal(capture?.status, expected, `simulate=${simulate}: a stale capture should be ${expected}`);
       rmSync(tmp, { recursive: true, force: true });
     }
   });
@@ -364,7 +465,7 @@ describe("runPreflight (stubbed)", () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
     const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { profile: "full", executionId: "99999" }));
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { flags: { simulate: true, offline: false }, executionId: "99999" }));
     const capture = report.checks.find((c) => c.id === "capture");
     assert.equal(capture?.status, "warn");
     assert.match(capture!.message, /#99999 not found/);

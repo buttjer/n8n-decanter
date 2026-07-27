@@ -60,7 +60,7 @@ session and split off — see [Deferred to Plan 59](#deferred-to-plan-59) below.
    during execution).** The task as written planned to redefine `--quick` to
    static-only, since with `test` gone it was byte-identical to the default
    profile. The maintainer chose to **remove the flag outright** rather than
-   give users a fourth meaning to learn and then unlearn — [Plan 59](../open/59-declutter-verify-verbs.md)
+   give users a fourth meaning to learn and then unlearn — [Plan 59](59-declutter-verify-verbs.md)
    retires the profile vocabulary entirely, so a transient redefinition would
    have been churn for nothing. `--quick` now **rejects** with a migration hint
    (static-only is `check`; a no-instance gate is `preflight --offline`), pinned
@@ -112,12 +112,12 @@ session and split off — see [Deferred to Plan 59](#deferred-to-plan-59) below.
 
 ## Deferred to Plan 59
 
-Now [Plan 59](../open/59-declutter-verify-verbs.md).
+Now [Plan 59](59-declutter-verify-verbs.md).
 
 Collapsing **`check`**, **`status`**, and **`simulate`** into `preflight` (+ a
 new `diff` verb, + dropping the profile system for plain flags) was part of the
 original ask and is deliberately not in this change. It has its own plan now —
-[Plan 59](../open/59-declutter-verify-verbs.md), which **supersedes this plan's
+[Plan 59](59-declutter-verify-verbs.md), which **supersedes this plan's
 `--quick` redefinition** (Plan 59 removes profiles entirely). The reasons it's
 separate:
 

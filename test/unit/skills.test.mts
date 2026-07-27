@@ -47,8 +47,13 @@ describe("detectAgent", () => {
   });
 
   it("returns null when nothing points at an agent", () => {
-    assert.equal(detectAgent({}, path.join(TMP, "nope"), EMPTY_HOME), null);
-    assert.equal(detectAgent({}, undefined, EMPTY_HOME), null);
+    assert.equal(detectAgent({}, path.join(TMP, "nope"), EMPTY_HOME), null); // a PATH whose dirs hold nothing
+    // An EMPTY PATH string, not `undefined`: `pathValue` defaults to
+    // `process.env.PATH`, so passing `undefined` explicitly selects the REAL
+    // PATH and the assertion turns environment-dependent — it failed on any
+    // machine with `claude` installed. The `undefined` branch of `onPath` is
+    // unreachable through `detectAgent` for that same reason.
+    assert.equal(detectAgent({}, "", EMPTY_HOME), null);
   });
 });
 

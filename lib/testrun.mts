@@ -2,9 +2,9 @@
 // MCP `test_workflow` — the recommended runtime check. The instance's real
 // engine (instance-exact version, community nodes included) executes the
 // DRAFT: trigger/credentialed/HTTP nodes are pinned from a local capture or
-// committed mock (the same classification `simulate` uses), logic nodes run
+// committed mock (the same classification the local-engine replay uses), logic nodes run
 // for real, and each pure node's output is diffed client-side against the
-// capture (exit 1 on divergence). `simulate` remains the offline/pre-push/
+// capture (exit 1 on divergence). `preflight --simulate` remains the offline/pre-push/
 // CI sibling — see docs/concepts for the taxonomy.
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -65,7 +65,7 @@ export interface TestReport {
 /**
  * Build the pinData map for `test_workflow` from a capture: every non-pure,
  * non-loop-driver, enabled node with captured output gets pinned (the same
- * split `simulate` uses — triggers/network/credentialed nodes must not run
+ * split the local-engine replay uses — triggers/network/credentialed nodes must not run
  * for real). Nodes without captured data are GAPS and abort — an unpinned
  * network node would execute against the real world. Exported for tests.
  */
@@ -125,7 +125,8 @@ function snapshotOf(remote: Workflow): DraftSnapshot {
  * else fall back to writing the snapshot's jsCode back — but only onto a
  * draft that still matches what OUR push produced (re-checked here; a
  * concurrent edit wins and aborts the fallback). Either way the local state
- * re-baselines to the restored remote, so `status` reads "local changes
+ * re-baselines to the restored remote, so `diff` (and preflight's `parity`
+ * check) read "local changes
  * pending push", not a conflict.
  */
 async function restoreDraft(mcp: McpClient, dir: string, id: string, snapshot: DraftSnapshot, pushedHashes: Map<string, string>, log: Log): Promise<boolean> {
@@ -307,7 +308,7 @@ export async function runTest(
   };
 }
 
-/** Human-readable report — mirrors `simulate`'s output style. */
+/** Human-readable report — mirrors the local-engine replay's output style. */
 export function printTestReport(r: TestReport, log: Log): void {
   if (r.status !== "success") {
     log.error(`instance test run failed: ${r.error ?? r.status}${r.executionId !== null ? ` (execution ${r.executionId})` : ""}`);

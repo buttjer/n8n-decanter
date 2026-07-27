@@ -127,7 +127,7 @@ function packageName(spec: string): string {
  * Offline import rules for a node file (plans/14): relative imports stay
  * inside the sync dir, bare specifiers need a `bundleDependencies` opt-in,
  * builtins can never be bundled. Shared by the compliance guard and the
- * compiler, so `check` and `push` disagree on nothing.
+ * compiler, so preflight's `layout` check and `push` disagree on nothing.
  */
 export function checkNodeImports(file: string, specifiers: string[], ctx: BundleContext): string[] {
   const problems: string[] = [];

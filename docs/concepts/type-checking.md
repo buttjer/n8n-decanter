@@ -6,8 +6,9 @@ order: 6
 
 n8n Code-node source is a *function body* — top-level `return`/`await` — which
 plain `tsc` rejects in `.ts` files (TS1108). The typecheck behind
-[check](/docs/cli/check/) and the [push gate](/docs/concepts/push-gates/)
-therefore wraps node files in an `async function` **in memory** and maps
+[preflight](/docs/cli/preflight/)'s `types` check and the
+[push gate](/docs/concepts/push-gates/) therefore wraps node files in an
+`async function` **in memory** and maps
 diagnostics back to real line numbers. A `.decanter.json` next to a file — or
 in the parent of its `code/` dir — is what marks it as a node file.
 
@@ -18,7 +19,7 @@ function or stripping its top-level return.
 
 The IDE's own tsserver doesn't apply the wrapper, so editors show a spurious
 TS1108/TS1375/TS1378 on top-level `return`/`await` in node files. Ignore it —
-`n8n-decanter check` is authoritative.
+`n8n-decanter preflight --offline` is authoritative.
 
 Scaffolded sync dirs ship a TypeScript language-service plugin
 (`decanter-ts-plugin/`) that suppresses exactly these three codes on node

@@ -105,6 +105,21 @@ await step("pass-through: harmless calls forward with the REAL token; SSE + sess
   assert.equal(fwd.auth, "Bearer real-n8n-token", "agent secret swapped for the real credential");
 });
 
+// Both transports share `guardMessage`; they must not drift in what they RECORD
+// either, or an audit trail means different things depending on how the agent
+// happens to be wired.
+await step("http guard logs: same startup line and same NAME-ONLY audit trail as the stdio guard", async () => {
+  assert.ok(
+    logs.some((l) => /^info guard: connected to .* blocking jsCode writes in update_workflow$/.test(l)),
+    "the http transport announces itself too: " + logs.join(" | "),
+  );
+  const before = logs.length;
+  await post(JSON.stringify({ jsonrpc: "2.0", id: 77, method: "tools/call", params: { name: "search_workflows", arguments: { token: "sh-hh-hh" } } }));
+  const fresh = logs.slice(before);
+  assert.ok(fresh.includes("info guard: forwarded search_workflows"), "forwarded call is audited: " + fresh.join(" | "));
+  assert.ok(!fresh.some((l) => l.includes("sh-hh-hh")), "arguments must NEVER be logged: " + fresh.join(" | "));
+});
+
 await step("structure ops pass: update_workflow WITHOUT jsCode forwards", async () => {
   const r = await post(rpc({ params: { name: "update_workflow", arguments: { workflowId: "wf1", operations: [{ type: "renameNode", oldName: "A", newName: "B" }] } } }));
   assert.equal(r.status, 200);
@@ -259,6 +274,36 @@ await step("stdio guard: a jsCode write is answered locally, upstream untouched"
   assert.equal(msg.result.isError, true);
   assert.match(msg.result.content[0].text, /guard-proxy.*n8n-decanter push/s);
   assert.equal(seen.length, before, "the write never reached n8n");
+});
+
+// The guard used to speak ONLY when it blocked, so an empty log meant either
+// "ran, blocked nothing" or "never started" — indistinguishable exactly when it
+// matters (a Plan 35 harness bug left the guard dead for three field-test rounds
+// and the silence read as innocence). Startup line + per-call audit trail fix that.
+await step("stdio guard logs: a startup line, then one NAME-ONLY line per forwarded tool call", async () => {
+  assert.ok(
+    logs.some((l) => /^info guard: connected to .* blocking jsCode writes in update_workflow$/.test(l)),
+    "a guard that never started must be distinguishable from one that blocked nothing: " + logs.join(" | "),
+  );
+  const before = logs.length;
+  stdio.send({ jsonrpc: "2.0", id: 44, method: "tools/call", params: { name: "get_workflow_details", arguments: { workflowId: "wf-audit", secret: "sh-hh-hh" } } });
+  await stdio.next();
+  const fresh = logs.slice(before);
+  assert.ok(fresh.includes("info guard: forwarded get_workflow_details"), "forwarded call is audited: " + fresh.join(" | "));
+  assert.ok(!fresh.some((l) => l.includes("sh-hh-hh")), "arguments must NEVER be logged — this log is not a secret surface: " + fresh.join(" | "));
+});
+
+await step("stdio guard logs: protocol noise is not audited, and a blocked call is not logged as forwarded", async () => {
+  let before = logs.length;
+  stdio.send({ jsonrpc: "2.0", id: 45, method: "initialize", params: {} });
+  await stdio.next();
+  assert.ok(!logs.slice(before).some((l) => l.startsWith("info guard: forwarded")), "the handshake is protocol noise, not agent intent");
+  before = logs.length;
+  stdio.send({ jsonrpc: "2.0", id: 46, method: "tools/call", params: { name: "update_workflow", arguments: { operations: [{ type: "updateNodeParameters", nodeName: "T", parameters: { jsCode: "x" } }] } } });
+  await stdio.next();
+  const fresh = logs.slice(before);
+  assert.ok(!fresh.some((l) => l.startsWith("info guard: forwarded")), "a blocked write never counts as forwarded: " + fresh.join(" | "));
+  assert.ok(fresh.some((l) => l.includes("blocked a jsCode write")), "the block is still reported: " + fresh.join(" | "));
 });
 
 await step("stdio live mirror: a forwarded update_workflow schedules a refresh; a blocked jsCode write does not", async () => {

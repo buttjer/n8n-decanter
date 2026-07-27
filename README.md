@@ -35,19 +35,22 @@ clean git diffs.
 - **TypeScript or typed JS** — write nodes in TS (compiled on push) or plain
   JS; n8n globals (`$input`, `$('…')`, …) are typed in both.
 - **Agent-native** — `init` scaffolds Claude Code / Cursor / Codex configs;
-  offline `check` and `node run` give agents a credential-free feedback loop.
-- **Guardrails & preflights** — a compliance guard, typecheck gate, and
-  per-node drift guard gate every push; `check` (offline), `simulate`
-  (offline engine replay, Docker), and `test` (instance-side) each diff every
-  node against a real captured execution and exit 1 on divergence — and
-  `preflight` scores your local code into one **read-only, CI-gateable
-  verdict** (never writes, never runs on your instance). The flow is
-  **`preflight` → `push` → `test` → `publish`**: verify local, make it the
-  draft, run what you pushed, go live.
+  the offline `preflight --offline` / `node run` loop gives agents a
+  credential-free feedback loop.
+- **One gate, two depth flags** — a compliance guard, typecheck gate, and
+  per-node drift guard gate every push; `preflight` folds layout, types and
+  instance sync facts into a single **read-only, CI-gateable verdict** (never
+  writes, never runs on your instance). `--simulate` *adds* an offline engine
+  replay (Docker), `--offline` *drops* the instance reads — and both that
+  replay and instance-side `test` diff every node against a real captured
+  execution and exit 1 on divergence. The flow is **`preflight` → `push` →
+  `test` → `publish`**: verify local, make it the draft, run what you pushed,
+  go live.
 - **Committed, schema-scaffolded scenarios** — `scenario create` turns a
   captured execution and/or the workflow's own output schemas
   (`--scaffold`, no LLM API) into a reviewable, git-tracked pin-data set that
-  `test`/`simulate` replay — the durable counterpart to an agent's ephemeral
+  `test` and `preflight --simulate` replay — the durable counterpart to an
+  agent's ephemeral
   in-session pin flow.
 - **Live editing** — `watch` pushes on save; the open n8n editor tab reflects
   each push live (n8n's own draft-edit refresh, no proxy needed).
@@ -89,7 +92,7 @@ On a terminal, `pull` with no argument lists your n8n workflows — pick one and
 it lands in `workflows/<slug>/`. Know the id already? `n8n-decanter pull
 <id-or-name>` pulls it directly (scriptable, no TTY needed).
 (`decanter.config.json`'s optional `"workflows"` array just sets the default
-set a bare `pull`/`push`/`status` acts on.)
+set a bare `pull`/`push`/`diff` acts on.)
 
 **Credentials:** OAuth by default (via `init`); `N8N_MCP_TOKEN` for
 headless/CI; `N8N_API_KEY` is optional, needed only for `executions`,
@@ -126,13 +129,11 @@ Full flag reference: `n8n-decanter --help`, or the
 | `push [workflow…]` | Push Code-node source to the workflow's **draft** |
 | `watch [workflow]` | Push on save (draft-only); editor updates live |
 | `publish` / `unpublish [workflow…]` | Take the draft live / back to draft-only |
-| `status [workflow…]` | Drift report — exits 1 on conflict or remote drift |
-| `check [workflow…]` | Offline layout-compliance check + typecheck |
+| `diff [workflow…]` | Per-node line diff of local code vs the n8n draft — an inspection view, always exits 0 |
 | `executions [workflow…]` | Fetch recent execution data (read-only) |
 | `data-tables [table…]` | Fetch data-table schema + rows (read-only) |
 | `test <workflow>` | Pinned run **on the instance** (draft); diffs vs a capture |
-| `simulate <workflow>` | Offline engine replay (Docker); diffs vs a capture |
-| `preflight [workflow…]` | Verifies your local code as one scored, read-only gate — run before `push` (exits 1 on *not ready*) |
+| `preflight [workflow…]` | The one local gate — layout, types, instance sync facts, optional local-engine replay — scored and read-only; run before `push` (exits 1 on *not ready*) |
 | `scenario create` / `scenario check` | Build / validate a committed scenario (captured and/or schema-scaffolded) |
 | `backup create` / `restore` / `list` | Git-native disaster recovery — capture / redeploy / list versioned full-export backups |
 | `list [--remote]` | Pulled workflows (`--remote` adds unpulled ones) |
@@ -172,10 +173,10 @@ whole-workflow authoring toolkit.
 | **Shared types & helpers in Code nodes** | ❌ self-host `NODE_FUNCTION_ALLOW_*` only; no libraries | ❌ not part of its model | ✅ `shared/*.ts` + npm bundled into self-contained nodes (Cloud-safe) |
 | **Code as individual files** | ❌ no source files (JSON blob) | 🟡 one `.workflow.ts` per workflow | ✅ folder per workflow; each Code node its own `.js`/`.ts` |
 | **Code-level git versioning** | 🟡 in-app history (DB snapshots, tiered retention); Git source control is Enterprise-only | ✅ GitOps sync of workflow source | ✅ real git — diffs, PRs, blame per Code node; auto-commit each sync (+ read-only structure snapshot) |
-| **Preflights** (`check` / `simulate` / `preflight`, then `test`) | 🟡 re-run past executions / pin data, but online in-editor | 🟡 inspect executions against a live env | ✅ `preflight` scores your **local** code (layout, types, instance reads, optional offline `simulate` replay) into one read-only, CI-gateable verdict *before* the push — then instance-side `test` runs the pushed draft; each runtime check diffs every node vs a real capture, exits 1 on divergence |
+| **Preflights** (`preflight`, then `test`) | 🟡 re-run past executions / pin data, but online in-editor | 🟡 inspect executions against a live env | ✅ `preflight` scores your **local** code (layout, types, instance reads, optional offline `--simulate` engine replay) into one read-only, CI-gateable verdict *before* the push — then instance-side `test` runs the pushed draft; each runtime check diffs every node vs a real capture, exits 1 on divergence |
 | **Draft-first code sync** | ✅ editor *Save* vs *Publish* (manual, in-browser) | 🟡 API sync republishes on push (no draft-only) | ✅ pushes land on the **draft**; `publish` is the deliberate go-live (over MCP) |
 | **Live editing** | ✅ the canvas (baseline) | 🟡 explicit pull/push, no auto-watch | ✅ `watch`: push on save; the open editor tab reflects each push live (n8n-native) |
-| **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs incl. a pre-wired `mcp connect` guard holding the credentials; offline `check`/`node run` loop |
+| **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs incl. a pre-wired `mcp connect` guard holding the credentials; offline `preflight --offline`/`node run` loop |
 | **Model ownership** | ❌ locked to n8n's own hosted AI; can't use your Claude subscription | 🟡 beta Claude Code plugin uses your subscription; flagship Workbench needs an Anthropic key for Claude | ✅ never calls an LLM itself — your agent/subscription does 100%, no key or model config ever |
 | **Agentic workflow creation** | 🟡 AI Workflow Builder (natural language), but Cloud / plan-gated — credits, self-host needs setup | ✅ 537 node schemas + 7,700+ templates + skills | ✅ your agent builds structure over n8n's MCP (through the pre-wired `mcp connect` guard); decanter owns the Code-node source (files + `push`) |
 | **Whole-workflow authoring** | ❌ | ✅ `.workflow.ts` decorator classes (structure + links) | ❌ not as repo code — Code-node source only; your agent builds structure live over MCP (row above), mirrored to a read-only `workflow.json` |
