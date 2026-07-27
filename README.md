@@ -180,7 +180,7 @@ whole-workflow authoring toolkit.
 | **Agent-native tooling** | 🟡 n8n's own canvas AI, not your agent on the codebase | ✅ Agent Workbench, skills, MCP, Claude/editor plugins | ✅ scaffolds Claude Code / Cursor / Codex configs incl. a pre-wired `mcp connect` guard holding the credentials; offline `preflight --offline`/`node run` loop |
 | **Model ownership** | ❌ locked to n8n's own hosted AI; can't use your Claude subscription | 🟡 beta Claude Code plugin uses your subscription; flagship Workbench needs an Anthropic key for Claude | ✅ never calls an LLM itself — your agent/subscription does 100%, no key or model config ever |
 | **Agentic workflow creation** | 🟡 AI Workflow Builder (natural language), but Cloud / plan-gated — credits, self-host needs setup | ✅ 537 node schemas + 7,700+ templates + skills | ✅ your agent builds structure over n8n's MCP (through the pre-wired `mcp connect` guard); decanter owns the Code-node source (files + `push`) |
-| **Whole-workflow authoring** | ❌ | ✅ `.workflow.ts` decorator classes (structure + links) | ❌ not as repo code — Code-node source only; your agent builds structure live over MCP (row above), mirrored to a read-only `workflow.json` |
+| **Whole-workflow authoring** | ❌ | ✅ `.workflow.ts` decorator classes (structure + links) | 🟡 Code-node source only; your agent builds structure live over MCP (row above), mirrored to a read-only `workflow.json` |
 | **Multi-environment promotion** | 🟡 Enterprise source control / environments | ✅ `promote` remaps creds + refs Dev→Prod | 🟡 separate sync dir per instance, but no `promote` (IDs/creds/refs not remapped) |
 
 Legend: ✅ first-class · 🟡 partial or indirect · ❌ not supported.

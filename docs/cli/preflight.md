@@ -1,6 +1,6 @@
 ---
 title: preflight
-description: The gate — grades your LOCAL code as one scored, read-only verdict: layout, types, instance reads, and an optional local-engine replay. Nothing it does can touch the published version or the outside world.
+description: "The gate — grades your LOCAL code as one scored, read-only verdict: layout, types, instance reads, and an optional local-engine replay. Nothing it does can touch the published version or the outside world."
 order: 9
 ---
 
