@@ -4,19 +4,117 @@
 Breaking rework of the entire agent-facing surface, **now released in 0.6.0
 (2026-07-23, #133)**; this validates it the way it will actually be consumed,
 before further releases build on it untested.
-**Status:** In progress — **harness built + stabilized, round-1 blind
-execution RUN**, and **3 of the 5 findings now fixed** (#142 host scheme, #144
-non-interactive `init`, #143 `.js→.ts` pull reconcile). Tasks 1–3 + 6 done;
-**S1 + S2 passed**; finding #1 (discoverability) stays open. **Next pass is
-Round 2** (see "Round 2" below): re-run the blind harness on the fixed CLI +
-the deferred per-turn grading / Task-4 run report.
-**Snapshot:** 2026-07-23T21:55Z @ aef18b1
+**Status:** **Done** (2026-07-27) — harness built, stabilized, fenced, and
+**exercised across 22 archived rounds** (`test/field-test/runs/`); all six tasks
+complete and **every finding triaged** to a merged fix or a plan. The three
+*conditions* this plan never got around to measuring (unassisted PATH, cold
+`init`, `watch`) are future rounds on a finished harness, not unfinished build
+work — they moved to [Plan 62](../open/62-field-test-unrun-conditions.md). See
+**"Close-out"** immediately below for the round index and the task-by-task
+verdict; everything after it is the historical record, kept as written.
+**Snapshot:** 2026-07-27T12:05Z @ 0be700c
 **Theme:** Put the whole product — `init` → skills/MCP structure work →
 Code-node authoring → `push` → runs — in front of **blind** Sonnet coding
 agents acting as typical users against a real n8n in Docker, and grade what
 happens. A UX/contract field test, not a CI suite.
 **Model:** Opus for the orchestrator + graders (this plan's executor);
 **Sonnet is fixed for the blind user agents** (by design, maintainer's call).
+
+## Close-out (2026-07-27)
+
+**Everything below this section is the historical record**, written round by
+round and left as written. This section is the summary that closes the plan.
+
+### Task verdicts
+
+| task | verdict |
+| --- | --- |
+| 1 stage script | **Done** — plus `FIELD_N8N_URL`, `FIELD_NO_SEED_ENV`, `FIELD_NO_CLI`, tarball unblinding, per-scenario prerequisites |
+| 2 scenario pack | **Done** — S1–S6 + `STYLE.md` (S6 added post-design for the Plan 57 condition) |
+| 3 invariant verifier | **Done** — `verify.mts`, independent of `lib/` for the fail-generating checks |
+| 4 round execution + report | **Done in substance, not in the named shape** — see "The report Task 4 asked for" below |
+| 5 triage | **Done** — every finding routed; table below |
+| 6 repo hygiene | **Done** — AGENTS.md Commands note; no changelog (internal tooling) |
+
+Scope also grew well past the original design: **egress-fenced container mode**,
+**committed run archives** (raw-first, view-derived), subscription-token billing,
+and the discoverability condition — each documented in its own section below.
+
+### Round index — 22 archived rounds
+
+All in `test/field-test/runs/<iso>-<runId>/` as `raw.tgz` + `report.html`;
+re-render any of them with `npm run field-test:report -- --from <raw.tgz>`.
+
+| scenario | rounds | verify verdicts |
+| --- | --- | --- |
+| S1 green field | 10 | 9 PASS / 1 FAIL |
+| S2 medium build via the guard | 10 | 8 PASS / 2 FAIL |
+| S3 remote drift | 5 | 4 PASS / 1 FAIL *(the deliberate drift scored as failure — a verifier bug, fixed in #171)* |
+| S4 refactor + lifecycle | 5 | 1 PASS / 2 FAIL / **2 unscored** (`ftrun-93355` has no verify file; `ftrun-90305` lacks its S4 verdict) |
+| S6 fresh clone, no CLI | 6 | 6 PASS |
+| S5 watch | **0** | never run — moved to [Plan 62](../open/62-field-test-unrun-conditions.md) |
+
+**The close-out evidence is [`ftrun-99503`](../../test/field-test/runs/2026-07-27T10-48-15Z-ftrun-99503/)**
+(2026-07-27): the **only round that sweeps S1–S4 in one go, all four PASS** —
+and one of three rounds (`90305`, `92069`, `99503`) run on the **post-Plan-59/60
+verb surface** (`preflight` + `diff`; no `check`/`status`/`simulate`). Every
+other archived round measured a CLI whose verify verbs no longer exist. Those
+three landed inside #179 and were, until this close-out, cited nowhere.
+
+### What the rounds established
+
+- **The core value prop holds under blind use:** structure over the guarded MCP,
+  **code via files + `push`**, byte-equal on the instance — in every passing
+  round, host and fenced alike.
+- **The MCP guard has blocked nothing, ever** — 0 `jsCode` blocks across all 22
+  rounds, including every round where the official `n8n-code-nodes-official`
+  skill loaded. The scaffolded `AGENTS.md` contract **pre-empts** the skills
+  pack's routing nudge rather than colliding with it. *(This answers the
+  guard-stderr evidence question the plan was built to answer.)*
+- **The fresh-clone agent finds and uses the CLI** (S6 ×6, `FIELD_NO_CLI=1`,
+  ambient install shadowed) — via `package.json`, `.mcp.json`, or a
+  `which … || npx …` probe. [Plan 57](57-cli-discoverability-for-agents.md)'s
+  founding premise did **not** reproduce against today's scaffold.
+- **S2's failures were the agent obeying our own contract**, not misreading
+  state — traced from the transcripts, fixed at the source (#163: `push` is part
+  of finishing the work; only `publish` needs the ask).
+- **S3's drift guard fires correctly** and the conflict messaging lands.
+- **The harness's own crutches are findings too** — the PATH prepend
+  (now an explicit, printed policy) and the blinding leak in the packed
+  `package.json` (now stripped at pack time).
+
+### Findings ledger (Task 5 — all routed)
+
+| finding | outcome |
+| --- | --- |
+| Discoverability — no project-level CLI | [Plan 57](57-cli-discoverability-for-agents.md) (Done) + S6 |
+| `init` writes `https://` for a local host | Fixed #142 |
+| `init` not agent-drivable | Fixed #144 (`--host`/`--token`/`--api-key`) |
+| `.js→.ts` leaves `.decanter.json` stale | Fixed #143 |
+| Converted-but-not-pushed; green `check` read as done | [Plan 30](../open/30-agent-llm-working-ergonomics.md) Theme A → #154, then subsumed by [Plan 59](59-declutter-verify-verbs.md)/[60](60-preflight-first-verb-surface.md) |
+| Contract gated `push` behind an ask | Fixed #163 (+ #162's `preflight → push → test → publish`) |
+| Blinding leak via packed `package.json` | Fixed — `unblindTarball` in `stage.mts` |
+| Harness PATH crutch | Explicit + printed; `FIELD_NO_PATH_HELP=1` opts out ([Plan 58](../open/58-guard-route-robustness.md) Tasks 3/4) |
+| Round archives died with their worktree | Fixed — rounds auto-archive into git (#153/#157/#159) |
+
+### The report Task 4 asked for
+
+Task 4 named a single `## Run report — round 1` with per-turn Opus grading.
+**That artifact was never written, and is not going to be** — round 1's fixes
+landed, the CLI moved on twice (Plans 59/60), and grading a superseded surface
+turn-by-turn buys nothing. What exists instead, and stands as the record:
+"Round-1 results — preliminary", "Run report — round 2", "Run report — S6
+discoverability", the cross-round sections, and 22 committed archives. Recorded
+as **superseded, not delivered** — no report is fabricated here.
+
+### Deferred — three conditions, not three tasks
+
+Never measured, and each one a *round* on a finished harness rather than
+missing machinery — spun out as [Plan 62](../open/62-field-test-unrun-conditions.md):
+`FIELD_NO_PATH_HELP=1` (unassisted Bash PATH), `FIELD_NO_SEED_ENV=1` (the cold
+`init` path — #144's flags have still never met a blind agent), and **S5**
+(`watch`, host-only). Plan 61 *(unmerged — PR #160)* widens *what* is tested;
+Plan 62 finishes *how* it is staged.
 
 > **Post-#107 review (2026-07-23), refreshed 2026-07-23 for the backlog reorg
 > (#122), the watch-proxy removal (#128), and 0.6.0's live-mirror + `backup`
@@ -92,7 +190,7 @@ happens. A UX/contract field test, not a CI suite.
 >    *(Superseded 2026-07-25: `preflight` has been pre-approved in the template
 >    since #138, and the file is `settings.json.example` since #149 — the
 >    harness extension is redundant here, not a requirement.)*
-> 8. **[Plan 51](../done/51-live-mirror-and-backups.md) (#125) shipped in 0.6.0
+> 8. **[Plan 51](51-live-mirror-and-backups.md) (#125) shipped in 0.6.0
 >    and changes the very guard surface under test — reconcile before executing.**
 >    *(A) On-by-default live `workflow.json` mirror (Part A):* after the guard
 >    **forwards** a non-blocked structure edit (either transport), it schedules a
@@ -145,7 +243,7 @@ guard).
   network/API nodes**.
 - [Plan 30](../open/30-agent-llm-working-ergonomics.md) — the ergonomics this
   test measures (orientation, offline loop, grounding ladder).
-- [Plan 33](../done/33-post-mcp-pivot-wave.md) Task 4 (the HTTP `mcp serve` guard)
+- [Plan 33](33-post-mcp-pivot-wave.md) Task 4 (the HTTP `mcp serve` guard)
   **and the skills-first wave (#107)** — which made the stdio **`mcp connect`**
   guard the auto-wired default that this test actually exercises;
   Plan 50 *(dropped)* distinctive-features →
@@ -359,7 +457,7 @@ per-turn grading + Task-4 run report are the next pass.
   node-rename handled; the `.js→.ts` conversion exposed finding 4 below.
 
 **Findings (ranked, for maintainer triage — Task 5):**
-1. **Discoverability (P1) — TRIAGED 2026-07-24 → [Plan 57](../done/57-cli-discoverability-for-agents.md).**
+1. **Discoverability (P1) — TRIAGED 2026-07-24 → [Plan 57](57-cli-discoverability-for-agents.md).**
    No project-level `n8n-decanter` ⇒ a blind agent never finds it and hand-rolls
    raw n8n MCP. Harness now installs the CLI so the project carries the
    breadcrumb; the gap itself is the finding. Positioning/onboarding, not a
@@ -714,15 +812,24 @@ the missing hooks in mind.
 
 ## Acceptance / verification
 
-- Stage script boots + provisions the pinned tag end-to-end on a clean
+*(Checked off at close-out 2026-07-27 — evidence in "Close-out" above.)*
+
+- ✅ Stage script boots + provisions the pinned tag end-to-end on a clean
   machine, and `FIELD_N8N_URL` mode works against a running local instance.
-- ≥4 scenarios executed blind with Sonnet; every scenario's invariant checks
-  ran; zero un-flagged contamination (grader-confirmed).
-- Run report appended here with per-scenario verdicts, classified guard
-  events, and a ranked findings list the maintainer can triage 1:1.
-- The captured-guard-stderr evidence question is answered explicitly (did the
-  skills' routing nudge bite, yes/no + examples) and cross-referenced from the
-  Plan 50 *(dropped)* authoring-skill entry.
+- ✅ ≥4 scenarios executed blind with Sonnet; every scenario's invariant checks
+  ran; zero un-flagged contamination (grader-confirmed). **6 scenarios, 22
+  rounds, 34 verify verdicts** — with two S4 rounds left unscored (named in the
+  round index rather than glossed).
+- ⚠️ Run report appended here with per-scenario verdicts, classified guard
+  events, and a ranked findings list — **met in substance across four report
+  sections + the findings ledger; the single "round 1" report Task 4 named was
+  superseded, not written** (see "The report Task 4 asked for").
+- ✅ The captured-guard-stderr evidence question is answered explicitly: **the
+  nudge never bit — 0 blocked `jsCode` writes in 22 rounds**, including rounds
+  where the official code-node skill loaded; the scaffolded contract steers
+  file-first before the skills' routing advice applies. *(The Plan 50
+  cross-reference is void — that plan was dropped in #178; this bullet is now
+  where the answer lives.)*
 - Blind sessions produced no changes to this repo. *(Amended 2026-07-25: the
   original criterion also said "no scratch artifacts were committed", which the
   archive redesign deliberately reversed — #153/#157/#159 **commit** each
@@ -747,7 +854,7 @@ the missing hooks in mind.
 
 ## Finding — the harness's PATH crutch hides a real failure mode (2026-07-26)
 
-Surfaced while fixing [Plan 58](58-guard-route-robustness.md) Task 1. The
+Surfaced while fixing [Plan 58](../open/58-guard-route-robustness.md) Task 1. The
 harness stages **both** install shapes — host mode installs decanter
 **locally** (`npm install <tgz>` into the workDir), container mode installs it
 **globally** (`npm install -g`) — but then **masks the difference in both**:
@@ -767,7 +874,7 @@ supplied the one thing that made the bug invisible.
 what real agents hit. Until then, treat "the agent reached the CLI" results as
 *conditional on a crutch the field doesn't have*. The paired regression test
 (spawn the scaffolded command with a clean PATH, both install shapes) is
-[Plan 58](58-guard-route-robustness.md) Task 3.
+[Plan 58](../open/58-guard-route-robustness.md) Task 3.
 
 **Resolved 2026-07-26 (partially — deliberately).** The crutch is now explicit
 rather than invisible:
@@ -790,14 +897,16 @@ rather than invisible:
 **Follow-on 2026-07-26:** the same "what does the harness quietly supply?"
 question produced `FIELD_NO_CLI=1` + scenario
 [`S6`](../../test/field-test/scenarios/S6.md) — the deliberate version of round
-1's accidental no-CLI condition ([Plan 57](../done/57-cli-discoverability-for-agents.md)
+1's accidental no-CLI condition ([Plan 57](57-cli-discoverability-for-agents.md)
 direction 4). It shadows any ambient `n8n-decanter` off the session PATH and
 empties the npm prefix, so a maintainer's global install cannot satisfy the
 round; `run.mts` refuses S6 against a normal stage or in `--container` mode.
 
-Remaining: run a round with `FIELD_NO_PATH_HELP=1` to measure the unassisted
-Bash surface. **The fix is an invocation-form change, not an install-shape one**
-— see [Plan 58](58-guard-route-robustness.md) Task 4. A per-sync-dir
+Remaining *(moved to [Plan 62](../open/62-field-test-unrun-conditions.md) at close-out —
+never run under this plan)*: a round with `FIELD_NO_PATH_HELP=1` to measure the
+unassisted Bash surface. **The fix is an invocation-form change, not an
+install-shape one**
+— see [Plan 58](../open/58-guard-route-robustness.md) Task 4. A per-sync-dir
 devDependency is a documented, supported install and works correctly when
 invoked as `npx n8n-decanter <verb>`; requiring a global install is explicitly
 not the answer.
@@ -866,7 +975,7 @@ Two observations worth keeping:
 
 - **Rounds 3 and 4 probed for the CLI explicitly** (`which … || npx …`) — i.e.
   the agent's own reflex is to test PATH and fall back to `npx`. That is exactly
-  the recovery [Plan 58](58-guard-route-robustness.md) Task 4 documents, arrived
+  the recovery [Plan 58](../open/58-guard-route-robustness.md) Task 4 documents, arrived
   at unprompted.
 - **Round 2 learned the invocation from `.mcp.json`** — it read the guard entry
   and copied its `npx --no-install` form verbatim. The scaffolded MCP config is
@@ -899,18 +1008,20 @@ Two observations worth keeping:
    `n8n-decanter` — and the agent demonstrably read the last one first.
 2. **n = 1.** One round, one model, one prompt phrasing.
 
-**Do not rewrite [Plan 57](../done/57-cli-discoverability-for-agents.md) on this
+**Do not rewrite [Plan 57](57-cli-discoverability-for-agents.md) on this
 alone.** What it does establish: with the *current* scaffold committed, a
 fresh-clone agent finds and uses the CLI rather than hand-rolling MCP.
 
-### Scenario bug found by the run (fix before the next S6)
+### Scenario bug found by the run (✅ fixed at close-out)
 
 S6 reuses the `s1-skeleton` workflow, whose Code node is **empty**, but its
-turn-1 prompt says *"on top of whatever it already does"*. The agent correctly
+turn-1 prompt said *"on top of whatever it already does"*. The agent correctly
 flagged the mismatch and spent turn 1 clarifying instead of working. It did not
 invalidate the measurement (the *route* is what S6 scores, and the route was
-taken before the mismatch surfaced), but it wasted a turn. Either seed a
-non-empty node for S6 or reword the prompt.
+taken before the mismatch surfaced), but it wasted a turn. **Fixed by rewording
+turn 1** — the prompt no longer presupposes existing behaviour, and still states
+the goal state (`STYLE.md`'s rule) without naming a verb. Rounds 1–6 stay
+comparable: the route measurement is unaffected.
 
 ## Cross-round: skills uptake, and the MCP guard has never fired (2026-07-27)
 
@@ -947,7 +1058,7 @@ Agents also self-verify without being told — round B ran `check`×4, `node run
 - **CHANGELOG:** none (internal dev tooling + plan). **PLAN.md:** no design
   change; a post-run observation note only if round 1 surfaces one worth
   recording.
-- **[Plan 39](../done/39-docs-drift-refresh.md) landed (#123):** the verb-last
+- **[Plan 39](39-docs-drift-refresh.md) landed (#123):** the verb-last
   command hints a blind agent would have tripped on are fixed, so that
   anticipated friction source is already retired — the field test measures the
   current, corrected surface, not that known gap.
@@ -990,7 +1101,8 @@ end-to-end**.
   push/pull) never executed. #143 is correct for its scope.
 - **#144 (non-interactive init flags): not exercised** — the stage pre-seeds a
   correct `.env`, so `init` reused it without prompting (a `FIELD_NO_SEED_ENV`
-  variant would exercise the flags).
+  variant would exercise the flags). *(Still true at close-out: no round has ever
+  run the cold-`init` path → [Plan 62](../open/62-field-test-unrun-conditions.md).)*
 
 **Findings (ranked):**
 1. **`.js`→`.ts` conversion left unregistered — agent ran `check`, not `push`

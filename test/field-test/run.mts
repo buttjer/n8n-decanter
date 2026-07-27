@@ -780,7 +780,7 @@ try {
     for (const r of summary) console.log(`  ${r.id}: ${r.turns} turns, verify ${r.verifyExit === 0 ? "PASS" : r.verifyExit === null ? "(dry-run)" : "FAIL"}`);
     if (existsSync(GUARD_LOG)) console.log(`\nguard stderr captured -> ${GUARD_LOG}`);
     console.log(`transcripts -> ${path.join(HARNESS, "transcripts")}`);
-    console.log("\nNext: grade transcripts (Opus, unblinded) + contamination check, then append the run report to plans/open/35-blind-agent-field-test.md");
+    console.log("\nNext: grade transcripts (Opus, unblinded) + contamination check, then append the run report to the plan this round serves (plans/open/) — Plan 35 built this harness and is closed: plans/done/35-blind-agent-field-test.md");
     if (!dryRun) await archiveRun(); // auto-render + archive BEFORE any teardown
   }
 } finally {

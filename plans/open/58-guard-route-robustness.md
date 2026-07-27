@@ -139,7 +139,7 @@ all**. That is exactly the "second door" case the hook exists to catch.
    **LOCAL — the actual regression — always runs.**
 
    The paired field-test PATH crutch is resolved on
-   [Plan 35](../open/35-blind-agent-field-test.md): the guard no longer needs the
+   [Plan 35](../done/35-blind-agent-field-test.md): the guard no longer needs the
    prepend (npx resolves it), the prepend stays for the agent's *Bash* surface
    but is now named as a global-install simulation, `FIELD_NO_PATH_HELP=1` drops
    it, and every run prints its `PATH policy`.
