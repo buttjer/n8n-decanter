@@ -19,7 +19,7 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { MCP_PATH, type McpClient } from "./mcp.mts";
-import { guardMessage, mirrorTargetId } from "./mcpserve.mts";
+import { guardMessage, logToolCall, mirrorTargetId } from "./mcpserve.mts";
 import type { Mirror } from "./mirror.mts";
 import type { Log } from "./types.mts";
 
@@ -59,6 +59,13 @@ function rpcError(id: unknown, code: number, text: string): Record<string, unkno
 export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input = process.stdin, output = process.stdout }: StdioGuardOptions): Promise<void> {
   const upstream = host + MCP_PATH;
   let sessionId: string | undefined;
+
+  // Say we are alive BEFORE any traffic. A guard that only ever speaks to
+  // report a block leaves an empty log meaning two opposite things — "ran,
+  // blocked nothing" and "never started" — and they are indistinguishable
+  // exactly when it matters. (A Plan 35 harness bug left the guard dead for
+  // three committed field-test rounds; the silence read as innocence.)
+  log.info(`guard: connected to ${host} — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow`);
 
   /** One protocol message (or batch) out — a single output line. */
   const emit = (message: unknown): void => {
@@ -165,6 +172,11 @@ export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input =
         log.warn("blocked a jsCode write (update_workflow) — pointed the agent at the file + push flow");
         return emit(Array.isArray(parsed) ? [blocked] : blocked);
       }
+      // Audit trail: one line per tool call the guard lets through. NAME ONLY —
+      // arguments carry workflow content and would make this log a PII/secret
+      // surface. Every n8n MCP call an agent makes passes through here, so this
+      // is the one place that can answer "what did the agent do to my instance?"
+      logToolCall(record, log);
       if (record.id !== undefined) ids.push(record.id);
       // Live mirror (Plan 51 Part A): a forwardable structure edit — refresh the
       // local snapshot after it lands (none reach here blocked; a block returns).

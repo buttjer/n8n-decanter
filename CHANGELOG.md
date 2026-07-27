@@ -30,6 +30,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`preflight --no-typecheck`** skips the `types` check — the escape hatch the
   retired `check` verb had.
 
+- **The agent guard now logs a startup line and an audit trail** (`mcp connect`
+  and `mcp serve` alike, on stderr):
+
+  ```
+  guard: connected to <host> — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+  guard: forwarded search_workflows
+  ```
+
+  Previously the guard spoke **only** when it blocked something, so an empty log
+  meant either "ran, blocked nothing" or "never started" — indistinguishable,
+  and opposite in meaning. The startup line settles that; the per-call lines
+  make the guard the one place that can answer *what did an agent actually do
+  to my n8n instance?*, since every MCP call passes through it.
+
+  **Tool names only — arguments are never logged**, so the log stays safe to
+  attach to a bug report.
+
 - **Every `preflight` finding can now carry `details[]`** — the full list behind
   the one-line message: *every* layout violation, *every* `tsc` error, the
   drifted node names, the viewer URL. Printed indented under the check line,

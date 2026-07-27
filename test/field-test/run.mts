@@ -401,7 +401,21 @@ function applyPostInit(): void {
     // command is `npx --no-install n8n-decanter …` (Plan 58) or a bare
     // `n8n-decanter …` — rebuild the full argv either way, don't key on it.
     if (srv && typeof srv.command === "string") {
-      const inner = [srv.command, ...(srv.args ?? [])].join(" ");
+      // MUST be idempotent: this runs once per SCENARIO, against the same
+      // workDir. Re-wrapping an already-wrapped command produced
+      // `sh -c 'exec sh -c exec npx … 2>>log 2>>log'`, and `sh -c` takes only
+      // its first word as the command — so that form runs the no-op `exec`
+      // builtin and exits instantly. The guard then never started, and every
+      // scenario after the FIRST ran with no `n8n-instance` tools at all,
+      // silently: an empty guard.log reads exactly like "the guard blocked
+      // nothing". S2/S3/S4 — whose whole subject is structure/lifecycle work
+      // through the guard — were never actually exercising it.
+      // So: peel every wrapper layer back to the pristine argv, then wrap once.
+      let inner = [srv.command, ...(srv.args ?? [])].join(" ");
+      for (let prev = ""; prev !== inner; ) {
+        prev = inner;
+        inner = inner.replace(/^sh\s+-c\s+/, "").replace(/^exec\s+/, "").replace(/(\s+2>>\S+)+$/, "");
+      }
       // container mode redirects to the harnessRoot's bind-mount inside the agent
       // (/harness) so the guard stderr still lands in HARNESS on the host.
       const guardTarget = containerMode ? "/harness/guard.log" : GUARD_LOG;
