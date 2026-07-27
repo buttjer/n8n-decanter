@@ -359,7 +359,7 @@ per-turn grading + Task-4 run report are the next pass.
   node-rename handled; the `.js→.ts` conversion exposed finding 4 below.
 
 **Findings (ranked, for maintainer triage — Task 5):**
-1. **Discoverability (P1) — TRIAGED 2026-07-24 → [Plan 57](../draft/57-cli-discoverability-for-agents.md).**
+1. **Discoverability (P1) — TRIAGED 2026-07-24 → [Plan 57](../done/57-cli-discoverability-for-agents.md).**
    No project-level `n8n-decanter` ⇒ a blind agent never finds it and hand-rolls
    raw n8n MCP. Harness now installs the CLI so the project carries the
    breadcrumb; the gap itself is the finding. Positioning/onboarding, not a
@@ -787,12 +787,160 @@ rather than invisible:
   round's own record states whether the agent got a resolvable bare command.
   That is what stops this from silently qualifying results again.
 
+**Follow-on 2026-07-26:** the same "what does the harness quietly supply?"
+question produced `FIELD_NO_CLI=1` + scenario
+[`S6`](../../test/field-test/scenarios/S6.md) — the deliberate version of round
+1's accidental no-CLI condition ([Plan 57](../done/57-cli-discoverability-for-agents.md)
+direction 4). It shadows any ambient `n8n-decanter` off the session PATH and
+empties the npm prefix, so a maintainer's global install cannot satisfy the
+round; `run.mts` refuses S6 against a normal stage or in `--container` mode.
+
 Remaining: run a round with `FIELD_NO_PATH_HELP=1` to measure the unassisted
-Bash surface. **The fix direction is already settled — see
-[Plan 58](58-guard-route-robustness.md) Task 4: it is an invocation-form fix, NOT
-"install decanter globally".** (An earlier draft of this note floated global-only
-as an option; that was wrong and is retracted — a devDependency install is a
-documented, supported path, and it works.)
+Bash surface. **The fix is an invocation-form change, not an install-shape one**
+— see [Plan 58](58-guard-route-robustness.md) Task 4. A per-sync-dir
+devDependency is a documented, supported install and works correctly when
+invoked as `npx n8n-decanter <verb>`; requiring a global install is explicitly
+not the answer.
+
+## Run report — S6 discoverability, first round (2026-07-26, `ftrun-87406`)
+
+**Result: FOUND-AND-USED. The round-1 premise did NOT reproduce.** One round,
+host mode, unsandboxed, Sonnet, 2 turns; archive committed at
+`test/field-test/runs/2026-07-26T19-21-54Z-ftrun-87406/`.
+
+The agent's actual route, from `turn-1.jsonl`:
+
+```
+ls -la
+find workflows -maxdepth 3
+cat package.json                  ← read the breadcrumb
+npx n8n-decanter list --remote    ← reached for the CLI, unprompted
+npx n8n-decanter pull <id>
+```
+
+…then edited the file and pushed. `verify-S6.json`: **0 violations** — remote
+`jsCode` byte-equals the local `.js`, `lastPushedHash` matches, and decanter
+auto-committed (`decanter: pulled "Contact normalizer"`).
+
+Three corroborating details:
+
+- **It read `AGENTS.md`** (twice, turn 1) — the evidence was found *and* used.
+- **`guard.log` is empty** — it never used the n8n MCP route at all, guarded or
+  not. There was no bypass to catch.
+- **`node_modules` was never restored** — it never ran `npm install`. `npx`
+  fetched the published CLI from the registry on demand, which is a legitimate
+  recovery path the stage deliberately leaves open.
+
+**Condition validity confirmed in-run:** the runner logged
+`[noCli] shadowed /Users/malte/.nvm/…/bin` — the maintainer machine *does* carry
+a global `npm link` install, so without that shadowing this round would have
+measured an agent that could run the CLI all along.
+
+### Repeats 2–4 (2026-07-26): 4/4 FOUND-AND-USED — it reproduces
+
+`ftrun-91113`, `ftrun-93211`, `ftrun-95680`, each on its own fresh stage, same
+scenario text. **Every round: `verify` `passed: true`, 0 violations, and an
+empty `guard.log`.** The n=1 objection is settled: with today's scaffold
+committed, the fresh-clone agent finds and uses the CLI.
+
+**Read `guard.log` correctly:** the guard logs only what it **blocks**, and
+forwards everything else silently. An empty `guard.log` therefore means *"no
+`jsCode` write was ever attempted"* — **not** "the MCP route went unused". In
+fact 3 of 5 rounds did use the **guarded** route for reads
+(`mcp__n8n-instance__get_workflow_details` / `get_workflow_history`, reached via
+`ToolSearch`); the other two never needed it, because `pull` had already brought
+the workflow down as files. Either way the division of labour held: **reads and
+metadata over MCP, code over files + `push`.**
+
+**How each one got there differs, and that is the useful part** — three distinct
+breadcrumbs worked:
+
+| round | how it found the CLI |
+| --- | --- |
+| `87406` | `cat package.json` → `npx n8n-decanter list --remote` |
+| `91113` | `cat .mcp.json` → then used **that file's exact `npx --no-install` form** |
+| `93211` | `which n8n-decanter \|\| npx n8n-decanter --version` → `npx … --help` |
+| `95680` | `which n8n-decanter \|\| npx n8n-decanter --version` → `npx … --help` |
+
+Two observations worth keeping:
+
+- **Rounds 3 and 4 probed for the CLI explicitly** (`which … || npx …`) — i.e.
+  the agent's own reflex is to test PATH and fall back to `npx`. That is exactly
+  the recovery [Plan 58](58-guard-route-robustness.md) Task 4 documents, arrived
+  at unprompted.
+- **Round 2 learned the invocation from `.mcp.json`** — it read the guard entry
+  and copied its `npx --no-install` form verbatim. The scaffolded MCP config is
+  doing double duty as invocation documentation.
+- **The scaffolded `AGENTS.md` contract is in the agent's context from the first
+  token of every session.** The scaffolded `CLAUDE.md` begins with `@AGENTS.md`
+  and Claude Code auto-loads `CLAUDE.md` and resolves that import. The agent
+  confirmed it directly in `ftrun-98438` turn 3, using **no tools**, when asked
+  how it got oriented:
+
+  > "It was already available — I didn't have to go find it. It was loaded
+  > automatically at the start of the session via `CLAUDE.md`'s `@AGENTS.md`
+  > import, before I did any exploring of the repo myself."
+
+  …and then stated the contract's ship flow correctly from memory
+  (`edit → preflight → push → test → publish`, with `preflight` local-only,
+  `push` to the draft, `test` on the draft, `publish` deliberate) — a
+  decanter-specific fact it could not have inferred from general n8n knowledge.
+
+  **Consequence for reading any transcript:** the absence of a `Read`/`cat` of
+  `AGENTS.md` means nothing. The contract is background context, and transcripts
+  record only `assistant`/`user`/`system:init` messages — never the system
+  prompt. The files the agent *actively* consulted to work out how to invoke the
+  CLI were `package.json` and `.mcp.json`.
+
+### Why this contradicts round 1 — two candidates, not yet separated
+
+1. **The world changed.** Round 1's project had far less evidence; today's
+   scaffold ships `AGENTS.md`, `.mcp.json`, and a `package.json` naming
+   `n8n-decanter` — and the agent demonstrably read the last one first.
+2. **n = 1.** One round, one model, one prompt phrasing.
+
+**Do not rewrite [Plan 57](../done/57-cli-discoverability-for-agents.md) on this
+alone.** What it does establish: with the *current* scaffold committed, a
+fresh-clone agent finds and uses the CLI rather than hand-rolling MCP.
+
+### Scenario bug found by the run (fix before the next S6)
+
+S6 reuses the `s1-skeleton` workflow, whose Code node is **empty**, but its
+turn-1 prompt says *"on top of whatever it already does"*. The agent correctly
+flagged the mismatch and spent turn 1 clarifying instead of working. It did not
+invalidate the measurement (the *route* is what S6 scores, and the route was
+taken before the mismatch surfaced), but it wasted a turn. Either seed a
+non-empty node for S6 or reword the prompt.
+
+## Cross-round: skills uptake, and the MCP guard has never fired (2026-07-27)
+
+Two dedicated verification rounds (`ftrun-6820`, `ftrun-13558`), each running
+S1+S2 on its own fresh stage, both `verify` PASS / 0 violations:
+
+| | round A | round B |
+| --- | --- | --- |
+| S1 | `n8n-code-nodes-official` | `n8n-code-nodes-official` |
+| S2 | *(none)* | `using-n8n-skills-official`, `n8n-workflow-lifecycle-official` |
+
+- **The official n8n skills pack is genuinely consulted** — `n8n-code-nodes-official`,
+  the skill overlapping decanter's own territory, fired in **both** S1 rounds.
+- **Uptake is variable, not a property.** S2 used 3–4 skills in earlier rounds,
+  then **0** and **2** here. Any claim about skill usage needs several rounds
+  behind it.
+- **S6 (code-editing, fresh clone) used none in 5 rounds** — a property of that
+  *task*, which is code-only; the skills cover building and wiring.
+
+**The MCP guard has blocked nothing, ever: zero `jsCode` blocks across ~14
+archived rounds**, including every round where `n8n-code-nodes-official` was
+loaded. Agents read n8n's own code-node skill and still route code through
+files + `push`.
+
+Keep the two guards distinct when reading this: the **MCP guard**
+(`mcp connect`, blocks code writes over MCP) has never fired; the **push-side
+guards** (compliance + drift) do fire and are exercised by S3.
+
+Agents also self-verify without being told — round B ran `check`×4, `node run`×3,
+`test`×3, `status`×2, `preflight`×1 unprompted.
 
 ## Notes
 

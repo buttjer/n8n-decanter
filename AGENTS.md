@@ -422,6 +422,14 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   longer needs it; `npx --no-install` resolves it). Each
                       #   run prints its `PATH policy`; FIELD_NO_PATH_HELP=1 drops
                       #   the prepend to measure a genuinely unassisted PATH.
+                      #   FIELD_NO_CLI=1 stages the Plan 57 DISCOVERABILITY
+                      #   condition (scenario S6): full committed project
+                      #   evidence, but node_modules removed — a fresh clone.
+                      #   The run then shadows any ambient n8n-decanter off PATH
+                      #   and points npm at an empty prefix, so a maintainer's
+                      #   global install can't silently satisfy the round; node/
+                      #   npm/npx/git survive and `npm install` still recovers.
+                      #   Host mode only (the container bakes the CLI globally).
                       #   The stage packs + locally installs OUR built CLI (no
                       #   global link) + pre-seeds a correct
                       #   .env. Never part of npm test; grading is a separate pass.

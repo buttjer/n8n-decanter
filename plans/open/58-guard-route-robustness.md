@@ -4,7 +4,7 @@
 **Priority:** P1 for tasks 1, 3, 4 (all done — the silent-fail, the missing
 spawn coverage that let it through, and the same gap on the Bash surface);
 P2 for task 2.
-**Source:** 2026-07-24 discussion off [Plan 57](../draft/57-cli-discoverability-for-agents.md).
+**Source:** 2026-07-24 discussion off [Plan 57](../done/57-cli-discoverability-for-agents.md).
 Two concrete gaps found by inspecting the guard's discovery + startup path;
 Plan 57 is the *discoverability* half (agent finds the CLI), this is the
 *route-integrity* half (once found, the guard is the reliable/only route).
@@ -217,7 +217,7 @@ discoverable (Task 2 + Plan 57); it does not police the instance.
 
 ## Cross-links
 
-- [Plan 57](../draft/57-cli-discoverability-for-agents.md) — discoverability
+- [Plan 57](../done/57-cli-discoverability-for-agents.md) — discoverability
   half; a guard that silently fails to start (task 1) is itself a discoverability
   failure.
 - [Plan 50](../draft/50-code-node-authoring-skill.md) — the skill route (steer

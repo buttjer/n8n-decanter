@@ -26,7 +26,7 @@
 //   node test/field-test/run.mts <manifest.json> --dry-run    # print turns, spawn nothing
 //   node test/field-test/run.mts --help
 import { execFile as execFileCb, execFileSync, spawn } from "node:child_process";
-import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -54,7 +54,7 @@ const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
 
-interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
+interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const WORKDIR = manifest.workDir;
 const HARNESS = manifest.harnessRoot;
@@ -84,7 +84,7 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[] }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean }
 
 /**
  * Which workflow the `remote-drift` preHook edits — kept in one place so the
@@ -161,12 +161,78 @@ function loadScenario(id: string): Scenario {
  * beats silently auto-including the prerequisite, which would double the spend
  * without asking.
  */
+/**
+ * A PATH for a noCli round: everything still resolves EXCEPT `n8n-decanter`.
+ *
+ * Naively dropping each PATH entry that carries the binary is wrong — a global
+ * install lives in the same bin dir as `node`/`npm`/`npx` (nvm, brew), so
+ * dropping it would leave the blind session with no Node at all. Instead each
+ * offending dir is replaced by a shadow dir of symlinks to everything in it
+ * *except* `n8n-decanter`, so only the CLI disappears.
+ *
+ * Why this must exist: a maintainer machine commonly has a global install
+ * (`npm link` from this repo). Inherited, it would sit on the session's PATH
+ * and silently defeat the entire condition — the round would "measure" an agent
+ * that could run the CLI all along.
+ */
+function sanitizedPath(inputPath: string): { PATH: string; npmPrefix: string } {
+  const shadowRoot = path.join(HARNESS, "nocli-path");
+  const out: string[] = [];
+  let shadowed = 0;
+  for (const [i, dir] of inputPath.split(path.delimiter).entries()) {
+    if (dir === "" || !existsSync(path.join(dir, "n8n-decanter"))) {
+      out.push(dir);
+      continue;
+    }
+    const shadow = path.join(shadowRoot, String(i));
+    mkdirSync(shadow, { recursive: true });
+    for (const entry of readdirSync(dir)) {
+      if (entry === "n8n-decanter") continue;
+      const link = path.join(shadow, entry);
+      if (!existsSync(link)) {
+        try {
+          symlinkSync(path.join(dir, entry), link);
+        } catch { /* unreadable/duplicate entry — skipping it only narrows PATH */ }
+      }
+    }
+    out.push(shadow);
+    shadowed++;
+    console.log(`  [noCli] shadowed ${dir} (every command except n8n-decanter still resolves)`);
+  }
+  if (shadowed === 0) console.log("  [noCli] no n8n-decanter found on PATH — nothing to shadow");
+
+  // Shadowing PATH is not enough on its own: `npx` re-resolves its OWN node bin
+  // dir (through the symlink) and finds machine-global installs there anyway —
+  // verified, `npx --no-install n8n-decanter` still succeeded. Pointing npm at
+  // an EMPTY prefix hides them. Its `bin/` goes on PATH so the agent's own
+  // `npm i -g` would still work: we remove the pre-existing install, we do not
+  // block the recovery paths a real user has.
+  const npmPrefix = path.join(HARNESS, "nocli-npm-prefix");
+  mkdirSync(path.join(npmPrefix, "bin"), { recursive: true });
+  mkdirSync(path.join(npmPrefix, "lib", "node_modules"), { recursive: true });
+  return { PATH: `${out.join(path.delimiter)}${path.delimiter}${path.join(npmPrefix, "bin")}`, npmPrefix };
+}
+
 function assertPrerequisites(ids: string[]): void {
   const problems: string[] = [];
   ids.forEach((id, i) => {
     const earlier = new Set(ids.slice(0, i));
-    for (const need of loadScenario(id).requires ?? []) {
+    const sc = loadScenario(id);
+    for (const need of sc.requires ?? []) {
       if (!earlier.has(need)) problems.push(`${id} requires ${need} to run first (it acts on state ${need} creates)`);
+    }
+    // A stage-shape precondition, not an ordering one: S6 measures what an agent
+    // does when the CLI is NOT runnable. Against an ordinary stage the CLI is
+    // installed, so the scenario would quietly measure nothing — the worst
+    // outcome for an expensive round. Refuse instead.
+    if (sc.requiresNoCli === true && manifest.noCli !== true) {
+      problems.push(`${id} needs a stage created with FIELD_NO_CLI=1 (this manifest has noCli=${JSON.stringify(manifest.noCli)}); against a normal stage it would measure nothing`);
+    }
+    // Container mode bakes the CLI into the fenced image as a GLOBAL install, so
+    // it is on PATH no matter what the workDir looks like — the no-CLI condition
+    // cannot exist there. Host mode only.
+    if (sc.requiresNoCli === true && containerMode) {
+      problems.push(`${id} cannot run in --container mode: the image installs the CLI globally, so it stays on PATH and the no-CLI condition cannot be staged. Run it host-mode (unsandboxed).`);
     }
   });
   if (problems.length === 0) return;
@@ -404,12 +470,24 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
       // drop the prepend and measure a genuinely unassisted PATH — that is the
       // configuration a real local-install user's agent gets, and the one that
       // would have caught Task 1's silent-fail.
-      const helpPath = process.env.FIELD_NO_PATH_HELP !== "1";
+      //
+      // A noCli stage (Plan 57 / S6) needs BOTH: no prepend, and no ambient
+      // global either. A maintainer machine commonly has a global install (an
+      // `npm link` from this repo), which would sit on the inherited PATH and
+      // quietly defeat the whole condition — the round would "measure" an agent
+      // that could run the CLI all along. So strip every PATH entry that
+      // contains an `n8n-decanter` executable.
       const localBin = path.join(WORKDIR, "node_modules", ".bin");
-      const env = helpPath
-        ? { ...process.env, PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}` }
-        : { ...process.env };
-      proc = spawn("claude", args, { cwd: WORKDIR, env });
+      let PATH = process.env.PATH ?? "";
+      const extraEnv: Record<string, string> = {};
+      if (manifest.noCli === true) {
+        const sane = sanitizedPath(PATH);
+        PATH = sane.PATH;
+        extraEnv.npm_config_prefix = sane.npmPrefix;
+      } else if (process.env.FIELD_NO_PATH_HELP !== "1") {
+        PATH = `${localBin}${path.delimiter}${PATH}`;
+      }
+      proc = spawn("claude", args, { cwd: WORKDIR, env: { ...process.env, PATH, ...extraEnv } });
     }
     let buf = "";
     let sessionId: string | undefined;
@@ -673,9 +751,11 @@ try {
     // so it must never be an invisible default again (Plan 35 finding).
     const pathPolicy = containerMode
       ? "container: CLI on PATH (global install in the image)"
-      : process.env.FIELD_NO_PATH_HELP === "1"
-        ? "host: UNASSISTED PATH (FIELD_NO_PATH_HELP=1) — bare `n8n-decanter` will NOT resolve in Bash"
-        : "host: node_modules/.bin prepended — simulates a global install for the agent's Bash";
+      : manifest.noCli === true
+        ? "host: NO-CLI stage — no prepend AND any ambient n8n-decanter stripped from PATH (Plan 57 discoverability condition)"
+        : process.env.FIELD_NO_PATH_HELP === "1"
+          ? "host: UNASSISTED PATH (FIELD_NO_PATH_HELP=1) — bare `n8n-decanter` will NOT resolve in Bash"
+          : "host: node_modules/.bin prepended — simulates a global install for the agent's Bash";
     console.log(`orchestrating ${scenarioIds.join(", ")} against ${manifest.host}${containerMode ? " (fenced container)" : ""}\n  workDir ${WORKDIR}\n  guard.log ${GUARD_LOG}\n  PATH policy: ${pathPolicy}`);
     const summary: Array<{ id: string; verifyExit: number | null; turns: number }> = [];
     for (const id of scenarioIds) {
