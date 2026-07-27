@@ -106,6 +106,31 @@ describe("compileTs", () => {
     assert.deepEqual(out, [{ json: { total: 25 } }]);
   });
 
+  it("bundled output is rename-stable: the same source under a different filename compiles byte-identically", async () => {
+    // Regression: esbuild labels every bundled module with a `// <path>`
+    // comment, and the entry used to be labelled with the node's own filename.
+    // That put the filename inside the compiled bytes -> inside the
+    // `@ts-n8n sha256:` marker, so a pure remote rename (which makes `pull`
+    // rename the local .ts) left the node reading "push pending" on a
+    // comment-only diff. Only the smoke suite caught it, and that runs on
+    // release PRs alone.
+    const { codeDir } = makeSyncDir("rename");
+    const src = 'import { total, type Line } from "../../../shared/money";\nconst lines: Line[] = $input.all().map((i: any) => i.json);\nreturn [{ json: { total: total(lines) } }];\n';
+    const before = path.join(codeDir, "compute.ts");
+    writeFileSync(before, src);
+    const compiledBefore = await compileTs(before);
+
+    // exactly what `pull` does when the node is renamed in n8n — same dir,
+    // same bytes, new name (unicode, as the smoke suite renames it)
+    const after = path.join(codeDir, "ümläut-nödé.ts");
+    writeFileSync(after, src);
+    const compiledAfter = await compileTs(after);
+
+    assert.equal(compiledAfter, compiledBefore, "a rename must not change the compiled artifact");
+    assert.doesNotMatch(compiledBefore, /compute\.ts/, "the node filename must not leak into the bundle");
+    assert.doesNotMatch(compiledAfter, /ümläut-nödé\.ts/, "the node filename must not leak into the bundle");
+  });
+
   it("pure type-only imports bundle to an executable body with nothing inlined", async () => {
     const { codeDir } = makeSyncDir("typeonly");
     const file = path.join(codeDir, "node.ts");

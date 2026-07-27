@@ -161,6 +161,25 @@ n8n-decanter/
   Pull strips the marker line before hashing/comparing. Push also sends a
   body-equal node when the remote lacks the marker (so a freshly converted
   `.ts` node gets marked on its first push instead of warning forever).
+- **The compiled artifact must depend only on the SOURCE, never on the node's
+  filename** (decided 2026-07-27, after a real smoke failure). esbuild labels
+  each bundled module with a `// <path>` comment, so anything we name the stdin
+  entry lands inside the compiled bytes — and therefore inside the marker hash.
+  Labelling it with the node's own filename made a *pure remote rename* change
+  the artifact: `pull` renames the local `.ts`, the comment follows, and the
+  node reads "push pending" on a comment-only diff forever. The entry is now
+  labelled with a fixed name (`ENTRY_SOURCEFILE` in `lib/compile.mts`), so a
+  rename round-trip is byte-stable. Two related invariants already held and
+  must keep holding: module labels are **sync-root-relative** (machine-
+  independent hashes, via `absWorkingDir`), and the workflow folder is
+  **sticky** (never follows a remote rename — Plan 27), which is what keeps the
+  surrounding `resolveDir` portion of the label stable too.
+
+  *Why it hid for so long:* the smoke step asserted only `status`'s **exit
+  code**, and `status` exited 0 for "push pending" (it reserved 1 for
+  conflicts). Plan 59 replaced it with a `diff` **content** match, which is what
+  finally surfaced it. The lesson is in the test shape, not the code: assert the
+  reported state, not just the exit code.
 - **Git workflow (decided 2026-07-19; releases decoupled 2026-07-21):
   protected main, releases via a dedicated release PR.** No direct commits to
   main; short-lived branches, squash-merged via PR (linear main, one commit per
