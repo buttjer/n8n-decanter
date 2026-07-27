@@ -9,7 +9,7 @@ the question is permanently settled.
 **Priority:** — (nothing open).
 **Class:** Distinctive feature — the whole point of decanter is that Code-node
 source lives in git; an agent that never finds the CLI gets none of it.
-**Source:** [Plan 35](../open/35-blind-agent-field-test.md) blind field test,
+**Source:** [Plan 35](35-blind-agent-field-test.md) blind field test,
 round-1 finding 1 — carried unfixed through round 2 and the 2026-07-24 triage,
 where the maintainer chose to give it its own plan.
 **Snapshot:** 2026-07-26T19:27Z @ b239e00
@@ -21,7 +21,7 @@ work follows.
 
 The finding below is round 1's, from **before** the current scaffold existed. The
 first deliberate re-measurement ([S6](../../test/field-test/scenarios/S6.md),
-`ftrun-87406`, full report in [Plan 35](../open/35-blind-agent-field-test.md))
+`ftrun-87406`, full report in [Plan 35](35-blind-agent-field-test.md))
 came back **FOUND-AND-USED**, not BYPASSED:
 
 - dropped into a fresh clone with no runnable CLI, the agent ran `cat
