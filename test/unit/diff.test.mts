@@ -1,4 +1,5 @@
-// Unit tests for the minimal unified line diff behind `status --diff`.
+// Unit tests for the minimal unified line diff behind the `diff` verb (Plan 59
+// promoted it out of the retired `status --diff`; the renderer is unchanged).
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { unifiedDiff } from "../../lib/diff.mts";

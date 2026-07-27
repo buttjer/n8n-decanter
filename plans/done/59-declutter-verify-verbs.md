@@ -1,9 +1,9 @@
 # Plan 59 — Declutter the verify surface: `check`/`status`/`simulate` → `preflight` (flags, no profiles) + `diff`
 
-**Status:** Not started
+**Status:** Done
 **Priority:** P2
 **Class:** Distinctive feature — the verb surface *is* the product's ergonomics; a tool an agent (or human) can't navigate loses to raw n8n MCP.
-**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](../done/60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](../done/60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](../done/57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
+**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](../open/26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
 **Snapshot:** 2026-07-25T00:00Z @ 9f3a78a
 **Theme:** The verify cluster is five verbs that all feel like "check my thing." Bury `check`, `status`, and `simulate` into `preflight`; promote the one unique capability (`status --diff`) to a `diff` verb; replace the profile vocabulary with two plain flags.
 
@@ -48,7 +48,7 @@ preflight --offline --simulate  static + local engine, no instance (air-gapped r
 ```
 
 - **`--simulate`** is *additive*: it appends the local-engine stage (Docker /
-  the [Plan 26](26-npx-engine-backend.md) npx backend), `--network-none` always
+  the [Plan 26](../open/26-npx-engine-backend.md) npx backend), `--network-none` always
   forced, credentials stripped, pins from a capture/scenario.
 - **`--offline`** is *subtractive*: it drops the instance-reads tier and skips
   `requireHost` (it already joins the dispatcher's offline set).
@@ -169,12 +169,49 @@ They compose, and every old profile is reconstructable:
 - Prereq-1 latency numbers recorded.
 - `npm test`, `typecheck`, `lint`, `check:docs` green.
 
+## Outcome (execution record)
+
+**Prereq 1 — edit-hook latency: parity, no fast-path needed.** `check` (at
+`a58a677`) vs `preflight --offline` (this branch), cold process each time,
+against a synthetic sync dir of 3 workflows × 4 Code nodes (half `.js`, half
+`.ts` with a `shared/` import), median of 15 runs on macOS:
+
+| invocation | `check` (main) | `preflight --offline` | delta |
+| --- | --- | --- | --- |
+| scoped to one workflow (the hook's normal path) | 377 ms | 371 ms | **−1.5%** |
+| project-wide (the hook's fallback) | 371 ms | 377 ms | **+1.5%** |
+
+Both are dominated by the `tsc` spawn they share, and the spread is inside
+run-to-run noise — so the hook keeps the plain `preflight --offline` entry
+point. Under `--offline` the sync tier never runs, so the replacement does no
+extra git/state/instance work.
+
+**Two decisions taken during execution, both departing from the plan's letter:**
+
+1. **`--quick`/`--full` reject instead of disappearing.** Task 1 said to delete
+   the `--quick` rejection along with the flag model. Doing so made `--quick`
+   an *unrecognized* flag — silently dropped, with the run falling through to a
+   different, weaker gate. That is precisely the failure this plan and #162
+   both argued against, so both flags are kept as hard errors naming their
+   replacement. The flag model is gone; only the tombstones remain.
+2. **A corrupt `.decanter.json` warns instead of failing.** `check` scanned
+   *folders*, so an unparseable state file anywhere was a hard error for the
+   whole run; `preflight` grades resolved *workflows*, and such a folder can't
+   resolve to one. It is now named in a warning and skipped while healthy
+   workflows are still graded. The fact survives (Task 4's "confirm no fact is
+   lost"), but its severity dropped — recorded here and in the changelog
+   because it is user-visible.
+
+**`--viewer` (Task 2's open sub-decision)** resolved as the plan recommended:
+preserved as `preflight --simulate --viewer`; `--viewer` without `--simulate`
+is a hard error. No viewer code was deleted.
+
 ## Naming note
 `simulate` was kept over sandbox / playground / container / rehearse. Rationale
 for the record: **sandbox** is already overloaded in this repo (shell-sandbox +
-the `node run` boundary, [Plan 31](31-run-sandbox-boundary.md)); **playground**
+the `node run` boundary, [Plan 31](../open/31-run-sandbox-boundary.md)); **playground**
 implies interactivity this one-shot CI check doesn't have; **container** names
-the mechanism and would age wrong against the [Plan 26](26-npx-engine-backend.md)
+the mechanism and would age wrong against the [Plan 26](../open/26-npx-engine-backend.md)
 npx backend; **rehearse/replay** were viable verbs but not worth the churn. If
 the name is ever revisited, revisit it once, here.
 
@@ -191,7 +228,7 @@ the name is ever revisited, revisit it once, here.
   only if Prereq 1 fails for `check`.)
 
 ## Notes
-- **Second (larger) breaking wave in the same area as [Plan 60](../done/60-preflight-first-verb-surface.md).**
+- **Second (larger) breaking wave in the same area as [Plan 60](60-preflight-first-verb-surface.md).**
   Plan 60 **has landed** (#162, merged 2026-07-25); this builds on it and removes
   the profile scaffold it left behind. Sequence into a **separate release** from
   60 so users migrate once per step. *(`--quick` never shipped a transient

@@ -16,8 +16,9 @@ needs to behave:
   pointers to `AGENTS.md`, so every agent follows the same rules.
 - **Guard hooks** — on Claude Code and opencode, edits that would break a
   hard invariant are blocked *before the write happens*; a Claude Code
-  PostToolUse hook runs [check](/docs/cli/check/) after node edits. The same
-  rules are enforced by the CLI at push time regardless of who made the edit.
+  PostToolUse hook runs [`preflight --offline`](/docs/cli/preflight/) after
+  node edits. The same rules are enforced by the CLI at push time regardless
+  of who made the edit.
   On Claude Code these live in **`.claude/settings.json`** — *project* scope,
   meant to be committed, so everyone who clones the repo gets the same
   permissions and hooks. `.claude/settings.local.json` stays yours for
@@ -47,8 +48,8 @@ that boundary safe by construction.
 
 | Commands | Agent policy |
 | --- | --- |
-| `check`, `node run`, `scenario` | Offline and safe — run freely (`scenario create --scaffold` is the exception; it needs MCP). |
-| `status`, `list --remote` | Read the remote, no writes — safe, but they do contact the instance. |
+| `preflight --offline`, `node run`, `scenario` | Offline and safe — run freely (`scenario create --scaffold` is the exception; it needs MCP). Adding `--simulate` stays credential-free but boots a local Docker engine — minutes, not milliseconds, so opt in deliberately. |
+| `preflight`, `diff`, `list --remote` | Read the remote, no writes — safe, but they do contact the instance. `preflight` is the gate (exit 1 when `not ready`); `diff` is the view and **always exits 0**. |
 | `pull`, `push`, `watch` | Sync code with the instance. A push lands on the **draft** and never changes what is running, so it is **part of finishing the work** — code that only exists in the folder is not done. Say a word first if the workflow is published/active or a teammate is editing it. |
 | `publish`, `unpublish`, `push --publish` | **Change what is actually live — only when the user explicitly asks.** Never fold going live into "finishing the work". |
 | Structure/lifecycle acts over n8n's MCP (create, add/wire nodes — via the [guard](/docs/cli/mcp-connect/)) | Building the structure a request describes is part of the work. **Renaming or archiving something that already exists is not** — ask first. After a structure act, `pull` reconciles the local mirror. |
@@ -56,7 +57,8 @@ that boundary safe by construction.
 | Archiving (MCP `archive_workflow`) | **Outward-facing** — the workflow leaves the active list; a published one goes offline. Reversible only in the n8n UI. Never without an explicit instruction to archive *that* workflow. |
 | `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. |
 
-The default loop for an agent: edit → verify locally (`preflight`) → **push**
-→ **`test`** (the draft now holds your code) → say what landed and what the
-test showed. Stop before `publish` unless the user asked for it. See
+The default loop for an agent: edit → verify ([`preflight`](/docs/cli/preflight/),
+or `preflight --offline` to stay credential-free) → **push** → **`test`** (the
+draft now holds your code) → say what landed and what the test showed. Stop
+before `publish` unless the user asked for it. See
 [The offline feedback loop](/docs/agents/offline-loop/).

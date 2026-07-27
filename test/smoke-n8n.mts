@@ -287,22 +287,25 @@ try {
     assert.match(read(wfDir, "code", "compute.js"), /doubled: n \* 2/);
   });
 
-  await step("no false drift: pull→push→status stays in sync against the real MCP round-trip", async () => {
+  await step("no false drift: pull→push→diff stays in sync against the real MCP round-trip", async () => {
     let r = await cli("push");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /code already in sync — nothing to push/, "fresh pull must be a no-op push: " + r.out);
-    r = await cli("status");
-    assert.equal(r.code, 0, "status must be in sync after pull: " + r.out);
-    assert.match(r.out, /Compute: in sync/);
+    // Plan 59: `diff` replaced `status` here. It always exits 0, so the
+    // in-sync claim rides on the output line, not the exit code — an in-sync
+    // node prints nothing at all, only the "no differences" summary.
+    r = await cli("diff");
+    assert.equal(r.code, 0, "diff must not error after pull: " + r.out);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after pull: " + r.out);
     assert.ok(!r.out.includes("push pending"), "no false local drift: " + r.out);
     // a real edit round-trips byte-exact (the Plan 32 invariant)
     writeFileSync(path.join(wfDir, "code", "compute.js"),
       read(wfDir, "code", "compute.js").replace("n * 2", "n * 2 + 0"));
     r = await cli("push");
     assert.equal(r.code, 0, r.out);
-    r = await cli("status");
-    assert.equal(r.code, 0, "in sync after push: " + r.out);
-    assert.match(r.out, /Compute: in sync/);
+    r = await cli("diff");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after push: " + r.out);
     r = await cli("pull");
     assert.equal(r.code, 0, r.out);
     assert.match(read(wfDir, "code", "compute.js"), /n \* 2 \+ 0/, "byte-exact round-trip");
@@ -432,8 +435,8 @@ try {
     assert.equal(r.code, 0, "--force must override the per-node drift guard: " + r.out);
     r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
-    r = await cli("status", wfId);
-    assert.equal(r.code, 0, "in sync after force push + pull: " + r.out);
+    r = await cli("diff", wfId);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after force push + pull: " + r.out);
     const out = await webhook({ n: 2 });
     assert.deepEqual(out, [{ doubled: 4, mode: "forced" }], JSON.stringify(out));
   });
@@ -459,8 +462,8 @@ try {
     assert.equal(r.code, 0, r.out);
     const out = await webhook({ n: 3 });
     assert.deepEqual(out, [{ doubled: 6, mode: "forced" }], "workflow still executes after rename: " + JSON.stringify(out));
-    r = await cli("status", wfId);
-    assert.equal(r.code, 0, "in sync after rename round-trip: " + r.out);
+    r = await cli("diff", wfId);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after rename round-trip: " + r.out);
   });
 
   await step("tags survive an untouched pull→push round-trip", async () => {
@@ -555,14 +558,17 @@ try {
     writeFileSync(srcFile, original);
     let r = await cli("push", wfId, "--publish");
     assert.equal(r.code, 0, r.out);
-    r = await cli("status", wfId);
-    assert.equal(r.code, 0, "in sync after watch session: " + r.out);
+    r = await cli("diff", wfId);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after watch session: " + r.out);
   });
 
   await step("error surfaces: bad MCP token -> clean 401 guidance, unknown id -> clean not-found", async () => {
     const badEnv = { ...env, N8N_MCP_TOKEN: "definitely-wrong" };
+    // `diff` (Plan 59's replacement for `status`) is the cheapest instance read
+    // there is: never a gate, but a *thrown* error still exits 1 — which is
+    // exactly the failure surface under test here.
     try {
-      await execFile(process.execPath, [CLI, "status", wfId], { cwd: TMP, env: badEnv, encoding: "utf8" });
+      await execFile(process.execPath, [CLI, "diff", wfId], { cwd: TMP, env: badEnv, encoding: "utf8" });
       assert.fail("must exit non-zero with a bad MCP token");
     } catch (err) {
       const e = err as { stdout?: string; stderr?: string };
@@ -570,7 +576,7 @@ try {
       assert.match(out, /MCP token was rejected \(401\)/, "401 guidance surfaced: " + out);
       assert.ok(!out.includes("    at "), "no stack trace without DEBUG: " + out);
     }
-    const r = await cli("status", "aaaaaaaaaaaaaaaa");
+    const r = await cli("diff", "aaaaaaaaaaaaaaaa");
     assert.equal(r.code, 1);
     assert.match(r.out, /not found|permission/i, r.out);
   });
@@ -880,8 +886,11 @@ try {
     });
     r = await cli("pull", authId);
     assert.equal(r.code, 0, r.out);
-    r = await cli("check", authId);
+    // Plan 59: the compliance guard's own view is `preflight --offline` — the
+    // static tier alone (layout + types), no instance contact, no engine.
+    r = await cli("preflight", authId, "--offline");
     assert.equal(r.code, 0, "wired scaffold must stay compliant: " + r.out);
+    assert.match(r.out, /layout compliant/, "the layout check is what passed: " + r.out);
 
     // the code itself rides the file + push flow (seeding the born-empty node)
     writeFileSync(path.join(authDir, "code", "enrich.js"), "for (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\nreturn $input.all();\n");
@@ -1125,7 +1134,7 @@ try {
       assert.ok("startedAt" in row && "stoppedAt" in row, "rows carry startedAt/stoppedAt timing");
     }
 
-    // the verb itself: default profile (static + sync) against the real
+    // the verb itself: default depth (static + instance reads) against the real
     // instance, as JSON. Read-only — the draft version must not move.
     // Plan 60 (#162) removed the instance `test` stage from preflight: it graded
     // the DRAFT while every other stage graded local files, so one score
@@ -1135,7 +1144,10 @@ try {
     const r = await cli("preflight", wfId, "--json");
     assert.equal(r.code, 0, r.out);
     const report = JSON.parse(r.out.slice(r.out.indexOf("{")));
-    assert.equal(report.profile, "default");
+    // Plan 59 replaced the `profile` string with the two resolved depth flags —
+    // the breaking half of the --json contract agents key on.
+    assert.deepEqual(report.flags, { simulate: false, offline: false }, "bare preflight resolves to both flags off: " + JSON.stringify(report.flags));
+    assert.ok(!("profile" in report), "the retired profile field is gone, not merely unused");
     assert.ok(["ready", "caution"].includes(report.verdict), "a healthy in-sync workflow is ready/caution: " + report.verdict);
     for (const id of ["connect", "access", "parity"]) {
       assert.ok(report.checks.find((c: any) => c.id === id && c.status === "pass"), `${id} passed: ` + JSON.stringify(report.checks.find((c: any) => c.id === id)));

@@ -15,10 +15,10 @@ Request nodes are fed captured data, while logic nodes (Code, Set, If, …)
 nodes included, no Docker needed. The run targets the **draft** and is
 synchronous (the server caps it at 5 minutes; a timeout is reported as
 such). Afterwards each pure node's output is diffed client-side against the
-capture — divergence exits 1, so it's CI-gateable like
-[simulate](/docs/cli/simulate/).
+capture — divergence exits 1, so it's CI-gateable like the local-engine
+[`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage).
 
-Pins come from the same sources `simulate` uses: a fetched capture
+Pins come from the same sources that stage uses: a fetched capture
 (`--execution <id>`, defaulting to the newest under `executions/`) or a
 committed [scenario](/docs/cli/scenario/) (`--scenario <slug>`). A
 trigger/network node with no captured output **aborts before anything
@@ -47,11 +47,11 @@ so an instance run would grade something you aren't shipping — which is why
 [`preflight`](/docs/cli/preflight/) does **not** run `test` as a stage. Push
 first, then test what you pushed.
 
-| Verb | Where it runs | What it needs | Reach for it when |
+| Command | Where it runs | What it needs | Reach for it when |
 | --- | --- | --- | --- |
-| [check](/docs/cli/check/) | locally, static | nothing | every edit — layout + types, offline |
-| [simulate](/docs/cli/simulate/) | local engine, runtime | Docker + a capture/scenario | runtime evidence about **local** code, before pushing; CI without an instance; `--network-none` isolation |
-| [**preflight**](/docs/cli/preflight/) | the above, scored | as available | **before `push`** — one verdict over your local code |
+| [`preflight --offline`](/docs/cli/preflight/) | locally, static | nothing | every edit — layout + types, offline |
+| [`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage) | local engine, runtime | Docker + a capture/scenario | runtime evidence about **local** code, before pushing; CI without an instance; enforced network isolation |
+| [**`preflight`**](/docs/cli/preflight/) | the above, scored | as available | **before `push`** — one verdict over your local code |
 | **`test`** | **your instance**, runtime | MCP + a capture/scenario | **after `push`** — instance-exact engine, community nodes, no Docker |
 
 ## What gets tested — local code or the draft?

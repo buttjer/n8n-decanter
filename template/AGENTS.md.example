@@ -172,9 +172,10 @@ Code-node override above, which wins over anything a skill says.
 
 ## Reading `workflow.json` (the structure snapshot)
 
-The snapshot exists for review diffs and the offline tooling (`check`,
-`node run`, `simulate` all read it). It is pretty-printed with a stable key
-order so structure changes made in n8n show up as clean diffs after a `pull`.
+The snapshot exists for review diffs and the offline tooling (`preflight
+--offline`, `node run`, `preflight --simulate` all read it). It is
+pretty-printed with a stable key order so structure changes made in n8n show up
+as clean diffs after a `pull`.
 
 A node object, for orientation:
 
@@ -194,7 +195,7 @@ A node object, for orientation:
 
 Connections are keyed by **node name**, not id. Expressions keep their `=`
 prefix (`"={{ $json.sku }}"`). None of it is pushable from here — a stale
-snapshot is refreshed by `pull` (`status` prints a hint when it lags n8n).
+snapshot is refreshed by `pull` (`preflight` prints a hint when it lags n8n).
 
 ### Renaming a node
 
@@ -226,7 +227,7 @@ display name in `.decanter.json`.
    source. Wire it up in n8n (wiring is structure), `pull` to refresh the
    snapshot.
 4. Verify: `n8n-decanter node run <file> [fixture.json]` to execute it, then
-   `n8n-decanter check` (typecheck + layout).
+   `n8n-decanter preflight --offline` (typecheck + layout).
 
 ## Writing Code node code
 
@@ -238,8 +239,9 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
   - `runOnceForEachItem`: return a single `{ json: {…} }`.
   - Editors squiggle that top-level `return`/`await` (TS1108/TS1375/TS1378) —
     a **false positive** from the editor's own tsserver; ignore it, and never
-    "fix" it by wrapping the file in a function. `n8n-decanter check` wraps
-    node bodies in memory before typechecking and is authoritative.
+    "fix" it by wrapping the file in a function. `n8n-decanter preflight
+    --offline` wraps node bodies in memory before typechecking and is
+    authoritative.
     The bundled `decanter-ts-plugin/` suppresses exactly these three codes on
     node files (all other diagnostics stay live) once tsserver runs the
     workspace TypeScript: `npm install`, then in VS Code accept
@@ -297,8 +299,8 @@ discriminated unions). Costs, so you can weigh them:
   — n8n error line numbers won't match the source, and the node code in the
   n8n UI is undocumented output. Documentation belongs in the `.ts`.
 - Instance-side edits can't be merged back automatically — `pull` warns and
-  `status --diff` shows what changed remotely; port it into the `.ts` by hand
-  (the next push overwrites the remote edit).
+  `n8n-decanter diff` shows what changed remotely; port it into the `.ts` by
+  hand (the next push overwrites the remote edit).
 
 Rules: full TS is fine (interfaces, type aliases, enums, generics); still
 ends in a top-level `return`. Never commit compiled output; never add the
@@ -316,7 +318,8 @@ return [{ json: { total: total(lines) } }];
 
 Push inlines the imported code into the compiled node (each importing node
 carries its own copy — keep helpers small). Editing a shared file makes every
-importing node show up as "push pending" in `status`; push to propagate.
+importing node show up as "push pending" in `preflight` (and in `diff`, with
+the lines); push to propagate.
 Small npm libraries work the same way once installed here (`npm i zod`) and
 opted in via `"bundleDependencies": ["zod"]` in `decanter.config.json` —
 pure-JS packages only (no native addons, no builtins). `.js` nodes cannot
@@ -327,30 +330,31 @@ import; give them JSDoc `@typedef`s or convert to `.ts`.
 1. Rename the file, convert JSDoc ↔ annotations.
 2. Update the `//@file:` placeholder in `workflow.json` (the one meaningful
    local edit there — it re-points the file map).
-3. `n8n-decanter check` to verify the layout, then **`n8n-decanter push`** —
-   the push is what registers the conversion: it rewrites `.decanter.json`'s
-   file map and sends the compiled code to n8n. Direction of sync changes
-   accordingly (`.ts` = one-way).
+3. `n8n-decanter preflight --offline` to verify the layout, then
+   **`n8n-decanter push`** — the push is what registers the conversion: it
+   rewrites `.decanter.json`'s file map and sends the compiled code to n8n.
+   Direction of sync changes accordingly (`.ts` = one-way).
 
-**Stopping after step 2 or 3's `check` leaves the conversion local**: n8n still
-runs the old code and `.decanter.json` still names the file you deleted. `check`
-warns about exactly this (it is a pending sync, not an error) — heed the warning
-rather than reading the green typecheck line as done.
+**Stopping after step 2 or 3's `preflight` leaves the conversion local**: n8n
+still runs the old code and `.decanter.json` still names the file you deleted.
+The `layout` check warns about exactly this (it is a pending sync, not an error)
+— heed the warning rather than reading the green typecheck line as done.
 
 ## Verification
 
 Two offline tools, always available (no credentials, no network, no live n8n):
 
-- **`n8n-decanter check`** — runs the layout-compliance guard *and* the
-  typecheck (the same wrapper that maps top-level-`return` node bodies back to
-  real line numbers). Run it after editing any code file or `n8n-globals.d.ts`;
-  treat a failure as a blocker. `npm run typecheck` is an alias for it.
-  **A green `check` is not a finished task.** It is offline by definition, so it
-  proves the files are well-formed — never that n8n is running them. Its success
-  line says so: `OK (local layout — status compares with n8n)`. Editing and then
+- **`n8n-decanter preflight --offline`** — runs the layout-compliance guard
+  *and* the typecheck (the same wrapper that maps top-level-`return` node bodies
+  back to real line numbers), with no network and no engine. Run it after
+  editing any code file or `n8n-globals.d.ts`; treat a failure as a blocker.
+  `npm run typecheck` is an alias for it, and the edit hook runs it for you.
+  **A green `--offline` run is not a finished task.** It is offline by
+  definition, so it proves the files are well-formed — never that n8n is running
+  them; its coverage line says which checks were skipped. Editing and then
   stopping here is the single most common way to leave work unfinished: the repo
-  looks right and the instance is unchanged. Finish with `status` (compare) and
-  `push` (make it real).
+  looks right and the instance is unchanged. Finish with a full `preflight`
+  (which adds the instance-read checks) and `push` (make it real).
 - **`n8n-decanter node run <file> [fixture.json]`** — actually executes a node's body
   against a faked n8n context (`$input`, `$json`, `$('Node')`, `DateTime`, …) and
   prints the items it returns. Prefer this over hand-rolling a throwaway test
@@ -418,20 +422,29 @@ Rules:
 instance, so it is the gate to run **before `push`**. `test` runs the
 workflow's **draft** on the instance — which holds your code only *after* you
 have pushed it — so it is a **post-push** check: before a push it would
-exercise the old draft, not your edits. `simulate` is an offline engine replay
-of local code (Docker), usable before a push or in CI without an instance. The
-two pinned-run checks (`test`, `simulate`) share the capture/scenario sources,
-diff node output against the capture, and exit 1 on divergence.
+exercise the old draft, not your edits. `preflight --simulate` adds an offline
+engine replay of local code (Docker), usable before a push or in CI without an
+instance. The two pinned-run checks (`test` and the `simulate` stage) share the
+capture/scenario sources, diff node output against the capture, and fail on
+divergence.
 
 - `n8n-decanter preflight <workflow> [--json]` — **the gate to run before
   `push`.** It runs the read-only ladder — static (layout + typecheck) +
-  instance reads (drift/parity vs the draft, execution `history`); `--full`
-  adds a local `simulate` run — and **never executes the workflow on the
-  instance**. It scores everything into one verdict (`ready` / `caution` /
-  `not ready`, exit 0/1). Read `--json` for stable check ids + per-check
-  remediation; `--require=simulate` fails the gate unless the runtime check
-  actually ran (the teeth for "must have coverage"). It **never mutates** (no
-  push/publish/restore), so run it freely.
+  instance reads (drift/parity vs the draft, execution `history`) — and
+  **never executes the workflow on the instance**. It scores everything into
+  one verdict (`ready` / `caution` / `not ready`, exit 0/1). Read `--json` for
+  stable check ids + per-check remediation; `--require=simulate` fails the gate
+  unless the runtime check actually ran (the teeth for "must have coverage").
+  It **never mutates** (no push/publish/restore), so run it freely. Two
+  orthogonal depth flags:
+  - **`--simulate`** *adds* a local-engine replay of your code (Docker) — the
+    same pinned-run idea as `test`, but through a **local** n8n engine, fully
+    offline (`--network-none` isolation, engine-version rehearsal via
+    `--n8n-version`). Add `--viewer` to leave a browsable local n8n running.
+  - **`--offline`** *drops* the instance-read tier — static only, no
+    credentials, no network. This is the edit-hook / air-gapped-CI form. They
+    compose: `preflight --offline --simulate` is a runtime check with no
+    instance at all.
 - `n8n-decanter push <workflow>` — make your local code the workflow's draft
   (see the push rule above; a push lands on the draft and never goes live).
 - `n8n-decanter test <workflow>` — pinned run **on the instance** (MCP; draft
@@ -439,10 +452,10 @@ diff node output against the capture, and exit 1 on divergence.
   is the strongest runtime check — the instance's exact engine, community nodes
   included, no Docker. Non-interactive runs never mutate and say so when your
   local edits aren't pushed yet.
-- `n8n-decanter simulate <workflow>` — the same pinned-run idea through a
-  **local** n8n engine (Docker), fully offline: verify local code before a
-  push, or run in CI without an instance (`--network-none` isolation,
-  engine-version rehearsal).
+- `n8n-decanter diff [workflow…]` — the **inspection** view next to
+  `preflight`'s gate: per-node line diffs of local code vs what n8n holds
+  (`.ts` compiled first, so a `shared/` edit shows in every importing node).
+  Always exits 0 — it shows, it doesn't grade.
 
 The loop: **`edit → preflight → push → test → publish`** — going live
 (`publish`) only when the user asks.
@@ -451,8 +464,8 @@ The loop: **`edit → preflight → push → test → publish`** — going live
 
 A **scenario** is a named, committed input set for a workflow —
 `scenarios/<slug>.json`, captured from a real run or scaffolded from the
-workflow's schemas — that `test`/`simulate` replay and diff against. Both verbs
-pin network nodes to it; a **gap** is a network node the replay reaches that has
+workflow's schemas — that `test` and `preflight --simulate` replay and diff
+against. Both pin network nodes to it; a **gap** is a network node the replay reaches that has
 **no data** (added or reparametrized since the capture). They hard-error on a
 gap rather than run half-real — and filling it is a task you, the agent, are
 well-suited to complete. **The CLI never calls an LLM or invents values; you
@@ -461,11 +474,11 @@ author the data locally and it is reviewed in the diff.**
 The loop:
 
 ```sh
-n8n-decanter simulate "<workflow>" --execution <id>                 # ✗ gap: <Node> has no data
+n8n-decanter preflight "<workflow>" --simulate --execution <id>     # ✗ gap: <Node> has no data
 n8n-decanter scenario create "<workflow>" "<slug>" --execution <id> # writes a committed, fillable scenario
 #   → edit workflows/<folder>/scenarios/<slug>.json  (see below)
 n8n-decanter scenario check "<workflow>" <slug>                     # validate offline (fast, no Docker)
-n8n-decanter simulate "<workflow>" --scenario <slug>               # replay the filled scenario
+n8n-decanter preflight "<workflow>" --simulate --scenario <slug>    # replay the filled scenario
 ```
 
 Add `--scaffold` to `scenario create` to annotate each gap with its **output
@@ -511,7 +524,7 @@ How to author good data:
 - **Validate offline with `scenario check <slug>`** — a fast, node-named
   structural check that needs no Docker; run it in your fill→check→fix loop. It
   fails if an item isn't `{ "json": … }` or a `fill` node is still empty.
-  `simulate --scenario` runs the same check on load. There is no official n8n
+  `preflight --simulate --scenario` runs the same check on load. There is no official n8n
   JSON Schema — this is the decanter's own check of the exact shape it replays.
 - **Committed, so review for PII.** Unlike `executions/`, `scenarios/` is tracked
   in git (reproducible replays). The data you author is synthetic, but a copied
@@ -567,13 +580,14 @@ decanter is installed globally. (`npm run check` / `npm run typecheck` also work
 locally — npm puts `node_modules/.bin` on `PATH` for scripts.) The commands
 below are written bare for readability; add the prefix if your shell needs it.
 
-- **Offline, safe — run freely:** `n8n-decanter check` (or `npm run typecheck`),
-  `n8n-decanter node run <file> [fixture]`,
+- **Offline, safe — run freely:** `n8n-decanter preflight --offline` (or `npm
+  run typecheck`), `n8n-decanter node run <file> [fixture]`,
   `n8n-decanter scenario create <workflow>` / `scenario check <workflow>` (committed pin-data sets),
   `n8n-decanter executions clean`, `n8n-decanter data-tables clean`. These never
   touch the network.
-- **Reads remote, no writes:** `n8n-decanter status` (`--diff` shows the line
-  diffs; exits 1 on code conflict/remote code drift), `n8n-decanter list
+- **Reads remote, no writes:** `n8n-decanter preflight` (the scored gate; exits
+  1 on code conflict/remote code drift), `n8n-decanter diff` (the same drift as
+  per-node line diffs; always exits 0), `n8n-decanter list
   --remote` (marks workflows not yet available in MCP), `n8n-decanter
   executions <workflow>` (fetches execution data, read-only), and `n8n-decanter
   data-tables [table…]` (fetches data-table schema + rows, read-only) — safe to
@@ -584,7 +598,7 @@ below are written bare for readability; add the prefix if your shell needs it.
   n8n ("build me an hourly job…", "fix the normalise step"), pushing is how you
   finish it: leaving the code in this folder means the workflow still runs the
   old version, or nothing at all. Verify locally first (`preflight`, or
-  `check` + `node run` piecemeal), then push, then `test` the draft, then say
+  `preflight --offline` + `node run` piecemeal), then push, then `test` the draft, then say
   what you pushed and what the test showed. Two cases still call for a word first:
   the workflow is **published/active** (a stale draft can be published by
   someone else), or a **teammate is editing it** (n8n holds a single-writer

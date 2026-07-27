@@ -13,7 +13,8 @@ are available.
 What you write is byte-for-byte what runs in n8n and what round-trips back on
 pull. Type safety via JSDoc (`// @ts-check` on the first line, `@typedef` for
 shapes). **No imports** — a `.js` node is pushed verbatim into n8n, where
-Code nodes cannot load modules; [check](/docs/cli/check/) rejects them.
+Code nodes cannot load modules; the layout guard rejects them (at push time,
+and as [preflight](/docs/cli/preflight/)'s `layout` check).
 Comments survive into n8n and document the node in place.
 
 ## `.ts` nodes — one-way
@@ -28,8 +29,9 @@ discriminated unions). The local `.ts` is the only source of truth:
   n8n error line numbers won't match the source, and the node code shown in
   the n8n UI is undocumented output. Documentation belongs in the `.ts`.
 - [pull](/docs/cli/pull/) never touches `.ts` sources; instance-side edits
-  are warned about — inspect them with `status --diff` and port what you want
-  to keep into the `.ts` by hand (the next push overwrites the remote edit).
+  are warned about — inspect them with [diff](/docs/cli/diff/) and port what
+  you want to keep into the `.ts` by hand (the next push overwrites the remote
+  edit).
 
 To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
 its `//@file:` placeholder in `workflow.json` — the tool picks up the new
@@ -60,8 +62,10 @@ return [{ json: { total: total(lines) } }];
 Push bundles the imports into the compiled node, so the pushed code is
 **self-contained and runs anywhere — n8n Cloud included**, no
 `NODE_FUNCTION_ALLOW_*` setup. Each importing node carries its own copy, so
-keep helpers small; editing a shared file marks every importing node as
-push-pending in [status](/docs/cli/status/).
+keep helpers small; editing one shared file makes **every** importing node
+differ from the draft — [diff](/docs/cli/diff/) compiles before comparing, so
+it lists them all, and [preflight](/docs/cli/preflight/)'s `parity` check
+counts them.
 
 Rules: imports at the top of the file only; relative paths must stay inside
 the repo; pure-JS packages only — unlisted npm packages and Node builtins

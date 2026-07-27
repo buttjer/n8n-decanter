@@ -10,11 +10,24 @@ Your Node is older than 22.18 — the CLI is TypeScript run natively via type
 stripping, and older Node can't parse it. Check `node --version`;
 [Installation](/docs/getting-started/installation/) has the details.
 
+## `check`, `status`, or `simulate` says the verb was removed
+
+The three verify verbs folded into two. `check` → **`preflight --offline`**
+(layout + types, no network, no engine). `status` → **`preflight`** for the
+summary, **[diff](/docs/cli/diff/)** for the per-node lines. `simulate` →
+**`preflight --simulate`** (add `--offline` for the credential-free,
+no-instance form the verb had; `--viewer` for the browsable run). The profile
+flags went with them: depth is now `--simulate` (adds the local engine) and
+`--offline` (drops the instance reads), and they compose — `--full`,
+`--quick`, and `--network-none` no longer exist (preflight always forces
+network isolation on the graded engine run). CI that branched on `status`'s
+exit code moves to [preflight](/docs/cli/preflight/): `diff` always exits 0.
+
 ## My editor shows TS1108 "return not inside a function" on a node file
 
 A false positive: node files are function bodies, and the editor's tsserver
 doesn't know about the in-memory wrapper the real typecheck uses. Don't "fix"
-it by wrapping the file — [check](/docs/cli/check/) is authoritative.
+it by wrapping the file — `n8n-decanter preflight --offline` is authoritative.
 [Type checking](/docs/concepts/type-checking/) explains the wrapper and the
 bundled tsserver plugin that suppresses the squiggle.
 
@@ -22,23 +35,27 @@ bundled tsserver plugin that suppresses the squiggle.
 
 A Code node's remote code changed since your last sync — the
 [per-node drift guard](/docs/concepts/push-gates/) is protecting code edited
-on the instance. Run [status](/docs/cli/status/) (`--diff` shows exactly what
-differs), then pull. Remember: after a warned pull, the next push overwrites
-the surfaced remote edits — `status --diff` and git history are your safety
-net. (Remote *structure* changes never block a push.)
+on the instance. Run [diff](/docs/cli/diff/) to see exactly which lines differ,
+then pull. ([preflight](/docs/cli/preflight/) reports the same situation as a
+failing `drift` check — `CONFLICT`, with the node list in its details; `diff`
+is the view of the lines and always exits 0.) Remember: after a warned pull,
+the next push overwrites the surfaced remote edits — `diff` and git history are
+your safety net. (Remote *structure* changes never block a push.)
 
 ## Push fails even with `--force`
 
 Then it's the **compliance guard**, not drift: a layout violation (dangling
 placeholder, orphan file, duplicate node name, …) that `--force` deliberately
-does not bypass. Run [check](/docs/cli/check/) and fix what it lists.
+does not bypass. Run `n8n-decanter preflight --offline` and fix what its
+`layout` check lists — the one-line message names the first violation, the
+indented details under it name them all.
 
 ## Pull warns "edited in the n8n UI" / "CONFLICT" on a `.ts` node
 
 Someone edited a TS-managed node on the instance. Pull never merges into (or
-clobbers) `.ts` sources — inspect the remote edit with `status --diff`, port
-what you want to keep into the `.ts`, then push (which overwrites the remote
-edit). Leftover `code/<node>.remote.js` files from older CLI versions just
+clobbers) `.ts` sources — inspect the remote edit with [diff](/docs/cli/diff/),
+port what you want to keep into the `.ts`, then push (which overwrites the
+remote edit). Leftover `code/<node>.remote.js` files from older CLI versions just
 warn — port and delete them.
 
 ## Pull says "Workflow is not available in MCP"
@@ -66,8 +83,8 @@ crash at the wrong moment, or a concurrent run, can burn one). Re-running
 Workflow refs match by id, name, or unique name prefix — case-insensitively,
 and ambiguity errors instead of prompting. Use more of the name, or the id.
 Since the verb comes first (`n8n-decanter <verb> <workflow>`), a workflow
-literally named like a verb needs no special handling — `n8n-decanter status push`
-runs `status` on the workflow named `push`.
+literally named like a verb needs no special handling — `n8n-decanter diff push`
+runs `diff` on the workflow named `push`.
 
 ## Where do my credentials live?
 

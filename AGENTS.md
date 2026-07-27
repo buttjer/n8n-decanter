@@ -442,7 +442,7 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   from the raw: `field-test:report -- --from <raw.tgz>`.
                       #   Teardown: `field-test:stage --down <manifest>`.
 
-node n8n-decanter.mts <init|pull|push|status|check|watch> …
+node n8n-decanter.mts <init|pull|push|preflight|diff|watch> …
 ```
 
 The e2e suite is one sequential, stateful scenario (each step builds on the
@@ -470,8 +470,8 @@ mock server.
   files follow renames; a Code node added over MCP without `jsCode` (the
   guard blocks code in `addNode`) lands as an **empty file** whose first push
   seeds the source (normalized in `getWorkflowDetails`).
-- **Backends (Plan 32):** the workflow code path (pull/push/watch/status/
-  publish/unpublish) rides `lib/mcp.mts` — a hand-rolled JSON-RPC client for
+- **Backends (Plan 32):** the workflow code path (pull/push/watch/preflight/
+  diff/publish/unpublish) rides `lib/mcp.mts` — a hand-rolled JSON-RPC client for
   n8n's `POST /mcp-server/http` (initialize handshake, SSE parsing, bearer or
   OAuth auth with rotate-persist refresh, 429 backoff). `lib/api.mts` (public
   REST, `N8N_API_KEY` optional) serves only what MCP can't: executions and
@@ -508,19 +508,20 @@ mock server.
     `moduleResolution: "bundler"`; `node16`/`nodenext` would reject the
     extensionless relative imports the template documents (TS2835).
 - Push runs two independent gates, in order:
-  1. Compliance guard (`lib/validate.mts`, shared with `check` and watch):
-     layout violations are hard errors that `--force` does NOT bypass.
+  1. Compliance guard (`lib/validate.mts`, shared with preflight's `layout`
+     check and watch): layout violations are hard errors that `--force` does
+     NOT bypass.
   2. Per-node drift guard: a node's remote CODE moved off the last-sync hash
      (and differs from the local payload) → abort; only this one is bypassed
-     by `--force`. Remote structure changes never block (status prints an
-     informational snapshot-stale hint instead).
+     by `--force`. Remote structure changes never block (preflight's `snapshot`
+     check reports an informational stale hint instead).
 - Pushes land on the workflow's **draft** (one atomic `update_workflow`
   batch of `{jsCode}`-only merge writes); `publish` / `push --publish` is the
   go-live step. Pull reads the **tip** (draft if one exists). A workflow must
   be `availableInMCP` (per-workflow n8n-side switch) — the picker shows
   unavailable ones as a red third state with guidance.
 - Pull never touches `.ts` sources; remote edits to TS-managed nodes are
-  warned about (`status --diff` to inspect — no `.remote.js` artifacts since
+  warned about (`diff` to inspect — no `.remote.js` artifacts since
   Plan 32). Pull re-baselines `lastPushedHash` even on conflict — meaning the
   next push overwrites remote edits by design. Pull's rename machinery also
   migrates pre-`code/` flat layouts.

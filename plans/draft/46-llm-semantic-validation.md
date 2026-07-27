@@ -12,7 +12,7 @@ the offline structural subset and explicitly defers this.
 
 **Shape note (2026-07-25).** The verify surface is **consolidating, not
 expanding**: [Plan 60](../done/60-preflight-first-verb-surface.md) made
-`preflight` the one local-code gate, and [Plan 59](../open/59-declutter-verify-verbs.md)
+`preflight` the one local-code gate, and [Plan 59](../done/59-declutter-verify-verbs.md)
 *removes* `check`/`status`/`simulate` as verbs in favour of `preflight` flags.
 A semantic check should therefore land as a **preflight stage** (opt-in flag),
 not a fifth verb. Two consequences worth stating when this graduates: the stage

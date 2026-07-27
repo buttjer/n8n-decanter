@@ -2,7 +2,7 @@
 // editor-only false positives on n8n Code node files. Node source is a
 // *function body* (top-level `return` / `await` is legal), but the editor's
 // tsserver reads the raw file and reports TS1108 / TS1375 / TS1378.
-// `n8n-decanter check` wraps node bodies in memory and stays authoritative;
+// `n8n-decanter preflight` wraps node bodies in memory and stays authoritative;
 // this plugin only filters those three codes in the editor, for node files
 // only — every other diagnostic and every other file passes through.
 //

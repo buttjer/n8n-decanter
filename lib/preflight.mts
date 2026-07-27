@@ -3,9 +3,11 @@
 // parity/drift/snapshot/lifecycle/history/capture) → local-engine replay
 // (simulate) — ordered fast→slow, and condenses them into a scored, CI-gateable
 // verdict. It adds ZERO execution paths: every stage reuses existing machinery
-// (validate/status/simulate/executions), quietly (a silent Log), and scores the
-// returned facts. Nothing here mutates: no push, no publish, no restore, no
-// draft write — `runSimulation` runs headless with `--network-none` forced on.
+// (validateWorkflowDir/computeSyncFacts/runSimulation/executions), quietly (a
+// silent Log), and scores the returned facts.
+// Nothing here mutates: no push, no publish, no restore, no
+// draft write — the graded `runSimulation` run is always headless with
+// `--network-none` forced on.
 //
 // Plan 60 — preflight does NOT run the instance-side `test` stage. Every stage
 // that produces a *verdict* now reads the same artifact: the LOCAL code. The
@@ -14,6 +16,14 @@
 // same score meant one number describing two artifacts. The honest order is
 // `preflight → push → test → publish`: preflight clears local code, push makes
 // it the draft, and only then does an instance run mean anything.
+//
+// Plan 59 — preflight absorbed `check`, `status` and `simulate`, and the
+// profile vocabulary (`--full`/`--offline`/`--quick` as named presets) is gone.
+// Depth is two orthogonal booleans instead: `simulate` is ADDITIVE (append the
+// local-engine replay) and `offline` is SUBTRACTIVE (drop the instance-read
+// tier). Because the static tier is now the only view of a layout violation or
+// a type error, findings carry `details` — the full violation/`tsc` list the
+// retired `check` verb used to print.
 import { existsSync, readFileSync } from "node:fs";
 import type { N8nApi } from "./api.mts";
 import { fetchExecutions, latestCaptureId, migrateScenariosDir } from "./executions.mts";
@@ -21,7 +31,7 @@ import { ENABLE_MCP_HINT, getWorkflowDetails, isUnavailableInMcp, type McpClient
 import { computeSyncFacts, type SyncFacts } from "./status.mts";
 import { readScenarioMeta, runSimulation, type SimSource, sourceFile } from "./simulate.mts";
 import type { DecanterConfig, Execution, Log, Workflow } from "./types.mts";
-import { runTypecheckResult, validateWorkflowDir } from "./validate.mts";
+import { runTypecheckResult, type TypecheckResult, validateWorkflowDir } from "./validate.mts";
 import { publicationState, publishedVersionLagsDraft } from "./util.mts";
 
 // ---------- model ----------
@@ -43,7 +53,18 @@ export const RETIRED_CHECK_IDS: Record<string, string> = {
 export type Tier = "static" | "sync" | "runtime";
 export type CheckStatus = "pass" | "warn" | "fail" | "skip" | "info";
 export type Verdict = "ready" | "caution" | "not ready";
-export type Profile = "default" | "full" | "offline";
+
+/**
+ * The two orthogonal depth flags that replaced the profile enum (Plan 59).
+ * `simulate` adds the local-engine tier; `offline` removes the instance tier.
+ * They compose — every retired profile is reconstructable from them.
+ */
+export interface PreflightFlags {
+  /** `--simulate`: append the local-engine replay of LOCAL code (needs Docker). */
+  simulate: boolean;
+  /** `--offline`: drop the instance read-only tier entirely (no network). */
+  offline: boolean;
+}
 
 export const ALL_CHECK_IDS: readonly CheckId[] = [
   "layout", "types", "connect", "access", "parity", "drift", "snapshot", "lifecycle", "history", "capture", "simulate",
@@ -55,7 +76,18 @@ export interface CheckFinding {
   status: CheckStatus;
   /** One-line human summary for the card. */
   message: string;
-  /** The exact next command to fix a warn/fail (agent + human contract). */
+  /**
+   * Every violation behind the one-line `message`, verbatim — the full list the
+   * retired `check` verb printed (layout errors/warnings, the `tsc` output), or
+   * the viewer's URL/login lines. Rendered indented under the check line; the
+   * `message` alone stays a summary. Absent when there is nothing to expand.
+   */
+  details?: string[];
+  /**
+   * The exact next COMMAND to fix a warn/fail (agent + human contract) — never
+   * prose. Absent when the fix is "edit the files in `details`" rather than a
+   * command an agent could run.
+   */
   remediation?: string;
   durationMs: number;
   /** Skip-only: why it didn't run … */
@@ -79,7 +111,8 @@ export interface Coverage {
 export interface PreflightReport {
   workflow: string;
   id: string;
-  profile: Profile;
+  /** Resolved depth flags (Plan 59 — replaced the `profile` string). */
+  flags: PreflightFlags;
   subject: PreflightSubject;
   checks: CheckFinding[];
   score: number;
@@ -138,29 +171,31 @@ export function applyRequire(checks: CheckFinding[], requireIds: CheckId[]): Che
   );
 }
 
-interface ProfileSpec {
-  /** run the instance read-only tier (connect/access/parity/drift/…/history/capture). */
+/** Which tiers a flag combination actually runs (the static tier always does). */
+export interface ActiveStages {
+  /** the instance read-only tier (connect/access/parity/drift/…/history). */
   sync: boolean;
-  /** run the local-engine `simulate` replay. */
+  /** the local-engine `simulate` replay. */
   simulate: boolean;
 }
 
 /**
- * `--quick` is GONE (removed with the test stage, same release). With the
- * instance `test` stage out of preflight it was byte-identical to the default
- * profile, and rather than redefine it into a fourth meaning users would have
- * to learn and then unlearn (Plan 59 replaces profiles with flags), it was
- * dropped: static-only remains `check`'s job, `--offline` remains "no
- * network, but do replay".
+ * The whole depth model, in one function (Plan 59). `--simulate` is additive,
+ * `--offline` is subtractive, and they compose — no presets, no escalation:
+ *
+ *   preflight                       static + sync
+ *   preflight --simulate            static + sync + simulate
+ *   preflight --offline             static
+ *   preflight --offline --simulate  static + simulate
  */
-const PROFILES: Record<Profile, ProfileSpec> = {
-  default: { sync: true, simulate: false },
-  full: { sync: true, simulate: true },
-  offline: { sync: false, simulate: true },
-};
+export function activeStages(flags: PreflightFlags): ActiveStages {
+  return { sync: !flags.offline, simulate: flags.simulate };
+}
 
-export function profileSpec(profile: Profile): ProfileSpec {
-  return PROFILES[profile];
+/** `--offline`/`--simulate` as a human label for the header line. */
+export function describeFlags(flags: PreflightFlags): string {
+  const on = [flags.offline ? "--offline" : undefined, flags.simulate ? "--simulate" : undefined].filter(Boolean);
+  return on.length > 0 ? on.join(" ") : "static + instance reads";
 }
 
 // ---------- orchestrator ----------
@@ -172,7 +207,25 @@ export interface PreflightContext {
   dir: string;
   id: string;
   name: string;
-  profile: Profile;
+  /** Resolved `--simulate` / `--offline` (Plan 59 — replaced the profile enum). */
+  flags: PreflightFlags;
+  /**
+   * `--viewer`: additionally leave a browsable local n8n running for the
+   * simulate stage. Never affects the graded run — that stays headless with
+   * `--network-none` on; the viewer is a second, separate container.
+   */
+  viewer?: boolean;
+  /** `--no-typecheck`: skip the `types` stage (the escape hatch `check` had). */
+  noTypecheck?: boolean;
+  /**
+   * This workflow's slice of a typecheck the caller already ran. The whole
+   * project compiles on every `tsc` invocation, so a multi-workflow run does it
+   * ONCE (`runTypecheckPerDir`) and hands each report its share; without this
+   * the cost is linear in the number of workflows. Absent → run our own.
+   */
+  typecheckResult?: TypecheckResult;
+  /** Real logger for the long-running viewer boot — never used by a graded stage. */
+  viewerLog?: Log;
   /** Pin source: an explicit `--scenario <slug>` or (else) a capture. */
   scenarioSlug?: string;
   /** Explicit `--execution <id>`; without it a capture defaults to the newest. */
@@ -197,7 +250,7 @@ export interface PreflightContext {
 
 /** Run the ladder for one workflow and return the scored report. Never mutates. */
 export async function runPreflight(ctx: PreflightContext): Promise<PreflightReport> {
-  const spec = PROFILES[ctx.profile];
+  const spec = activeStages(ctx.flags);
   const checks: CheckFinding[] = [];
   const requireSet = new Set(ctx.requireIds ?? []);
   let anyFailed = false;
@@ -236,15 +289,27 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
   const cli = (verb: string) => `n8n-decanter ${verb} ${ctx.name}`;
 
   // ---- STATIC (offline, ms) — always runs ----
+  // Plan 59: `check` is gone, so this tier is the ONLY view of a layout
+  // violation or a type error. Both findings therefore carry every violation in
+  // `details` — the summary line names the first, the details name them all.
   await run("layout", "static", async () => {
     const { errors, warnings } = validateWorkflowDir(ctx.dir);
-    if (errors.length > 0) return { status: "fail", message: `${errors.length} layout violation${errors.length === 1 ? "" : "s"}: ${errors[0]}`, remediation: cli("check") };
-    if (warnings.length > 0) return { status: "warn", message: `${warnings.length} layout warning${warnings.length === 1 ? "" : "s"}: ${warnings[0]}`, remediation: cli("check") };
+    if (errors.length > 0) {
+      // No `remediation`: the fix is editing the listed files, and a prose
+      // string in a field contracted to hold "the exact next command" is worse
+      // than none — an agent would try to run it.
+      return { status: "fail", message: `${errors.length} layout violation${errors.length === 1 ? "" : "s"}: ${errors[0]}`, details: [...errors, ...warnings] };
+    }
+    if (warnings.length > 0) return { status: "warn", message: `${warnings.length} layout warning${warnings.length === 1 ? "" : "s"}: ${warnings[0]}`, details: warnings };
     return { status: "pass", message: "layout compliant" };
   });
   await run("types", "static", async () => {
-    const r = await runTypecheckResult(ctx.config.configDir, [ctx.dir]);
-    if (r.status === "failed") return { status: "fail", message: `typecheck failed: ${(r.output ?? "").split("\n")[0]}`, remediation: cli("check") };
+    if (ctx.noTypecheck) return { status: "skip", message: "--no-typecheck", reason: "--no-typecheck was passed", unlock: "drop --no-typecheck to typecheck the node files" };
+    const r = ctx.typecheckResult ?? await runTypecheckResult(ctx.config.configDir, [ctx.dir]);
+    if (r.status === "failed") {
+      const lines = (r.output ?? "").split("\n").filter((l) => l.trim() !== "");
+      return { status: "fail", message: `typecheck failed: ${lines[0] ?? "unknown error"}`, details: lines };
+    }
     if (r.status === "skipped") return { status: "skip", message: "no tsconfig.json — typecheck skipped", reason: "no tsconfig.json found", unlock: "add a tsconfig.json to enable type checks" };
     return { status: "pass", message: "node files typecheck clean" };
   });
@@ -254,7 +319,7 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
   let facts: SyncFacts | undefined;
   if (!spec.sync) {
     for (const id of ["connect", "access", "parity", "drift", "snapshot", "lifecycle", "history"] as CheckId[]) {
-      skip(id, "sync", `--${ctx.profile} skips the instance tier`, "drop --offline to run instance checks");
+      skip(id, "sync", "--offline skips the instance tier", "drop --offline to run instance checks");
     }
   } else {
     // connect + access: one getWorkflowDetails read. Reaching + authing the
@@ -308,6 +373,7 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
             message: missing
               ? `${off.length} node(s) differ from the draft (a local file is missing) — pull, or push to make the draft match local`
               : `local code differs from the draft in ${off.length} node(s) — push to make it the draft, then test`,
+            details: off.map((n) => `${n.name}: ${n.state === "local-missing" ? `local file ${n.file} missing` : `local changes in ${n.file}`}`),
             remediation: cli("push"),
           };
         });
@@ -315,12 +381,16 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
         await run("drift", "sync", async () => {
           const conflict = facts!.nodes.filter((n) => n.state === "conflict");
           if (conflict.length > 0) {
-            return { status: "fail", message: `CONFLICT — ${conflict.length} node(s) changed both locally and remotely`, remediation: `${cli("status")} --diff` };
+            return { status: "fail", message: `CONFLICT — ${conflict.length} node(s) changed both locally and remotely`, details: conflict.map((n) => `${n.name} (${n.file ?? "?"})`), remediation: cli("diff") };
           }
           const moved = facts!.nodes.filter((n) => n.state === "changed-remotely" || n.state === "unknown-locally");
           if (moved.length > 0 || facts!.deleted.length > 0) {
             const n = moved.length + facts!.deleted.length;
-            return { status: "warn", message: `${n} node(s) changed remotely — pull before publishing`, remediation: cli("pull") };
+            const details = [
+              ...moved.map((m) => `${m.name}: ${m.state === "unknown-locally" ? "remote code node unknown locally" : "changed remotely"}`),
+              ...facts!.deleted.map((d) => `${d.file}: node ${d.id} deleted remotely`),
+            ];
+            return { status: "warn", message: `${n} node(s) changed remotely — pull before publishing`, details, remediation: cli("pull") };
           }
           return { status: "pass", message: "no remote code drift" };
         });
@@ -364,7 +434,7 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
 
   const score = scoreFindings(checks);
   const verdict = verdictOf(checks);
-  return { workflow: ctx.name, id: ctx.id, profile: ctx.profile, subject, checks, score, verdict, coverage: coverageOf(checks) };
+  return { workflow: ctx.name, id: ctx.id, flags: { ...ctx.flags }, subject, checks, score, verdict, coverage: coverageOf(checks) };
 }
 
 // ---------- stage helpers ----------
@@ -446,10 +516,10 @@ function captureStaleness(dir: string, ref: string, source: SimSource, remote: W
 
 function staleFinding(label: string, stale: Staleness, ctx: PreflightContext, runtimeActive: boolean): Omit<CheckFinding, "id" | "tier" | "durationMs"> {
   if (stale === "stale") {
-    // Only a profile that actually RUNS a runtime stage should lose points over
+    // Only a run that actually EXECUTES a runtime stage should lose points over
     // a stale pin — mirroring the missing-capture branches above, which are
     // info when nothing would consume the capture anyway.
-    if (!runtimeActive) return { status: "info", message: `${label} predates the current draft (nothing in this profile consumes it)`, remediation: `n8n-decanter executions ${ctx.name}` };
+    if (!runtimeActive) return { status: "info", message: `${label} predates the current draft (nothing consumes it without --simulate)`, remediation: `n8n-decanter executions ${ctx.name}` };
     return { status: "warn", message: `${label} predates the current draft — refetch so runtime checks pin against fresh reality`, remediation: `n8n-decanter executions ${ctx.name}` };
   }
   return { status: "pass", message: `${label}${stale === "fresh" ? " (fresh)" : ""} available to pin from` };
@@ -465,7 +535,8 @@ async function runtimeCheck(
   stage: () => Promise<Omit<CheckFinding, "id" | "tier" | "durationMs">>,
 ): Promise<void> {
   if (!active) {
-    await run(id, "runtime", async () => ({ status: "skip", message: `${id} not in the ${ctx.profile} profile`, reason: `${id} not in the ${ctx.profile} profile`, unlock: "pass --full (or --offline) to add simulate" }));
+    const reason = "the local-engine replay is opt-in";
+    await run(id, "runtime", async () => ({ status: "skip", message: reason, reason, unlock: "pass --simulate to run it (needs Docker)" }));
     return;
   }
   if (src.ref === undefined) {
@@ -479,12 +550,35 @@ async function runSimulateStage(ctx: PreflightContext, src: ResolvedSource): Pro
   if (!(await ctx.dockerAvailable())) {
     return { status: "skip", message: "Docker not available — the simulate engine needs it", reason: "Docker not available", unlock: "start Docker (or wait for the npx engine backend)" };
   }
-  // safety contract: headless + --network-none always on; the viewer never applies here.
-  const report = await runSimulation(ctx.dir, src.ref!, { version: ctx.simVersion, source: src.source, networkNone: true, viewer: false }, SILENT);
-  if (!report.engineOk) return { status: "fail", message: `local engine run failed: ${report.engineError ?? "unknown error"}`, remediation: `${cliRef(ctx, "simulate")} --network-none` };
-  if (report.syntheticPins) return { status: "pass", message: `local engine ran clean — synthetic pins: proves executability, not output correctness (no per-node diff)` };
-  if (report.divergent.length > 0) return { status: "fail", message: `${report.divergent.length} node(s) diverged from the capture: ${report.divergent.join(", ")}`, remediation: `${cliRef(ctx, "simulate")}` };
-  return { status: "pass", message: `${report.pure.length} node(s) ran on a local engine, all matched the capture` };
+  // Safety contract: the GRADED run is always headless with --network-none on.
+  // `--viewer` does not relax that — `runSimulation` starts the browsable
+  // instance as a second, separate container alongside the isolated run.
+  const viewer = ctx.viewer === true;
+  // The stage log is SILENT so the scored card stays clean — but the viewer
+  // container takes 30–180s to boot, and swallowing its progress line would
+  // read as a hang. Under --viewer, pass the real log through.
+  const stageLog = viewer ? (ctx.viewerLog ?? SILENT) : SILENT;
+  const report = await runSimulation(ctx.dir, src.ref!, { version: ctx.simVersion, source: src.source, networkNone: true, viewer }, stageLog);
+  const viewerLines = report.url !== undefined && report.login !== undefined
+    ? [`open the run in n8n: ${report.url}`, `local login: ${report.login.email} / ${report.login.password} — throwaway instance, replaced on the next run`]
+    : viewer ? ["the browsable viewer did not start"] : [];
+  const withViewer = (f: Omit<CheckFinding, "id" | "tier" | "durationMs">): Omit<CheckFinding, "id" | "tier" | "durationMs"> =>
+    viewerLines.length > 0 ? { ...f, details: [...(f.details ?? []), ...viewerLines] } : f;
+
+  // Tier-2 multi-batch loop (only reachable under --viewer, which opts into it):
+  // there is no faithful diff for N>1, so nothing was graded. Reporting this as
+  // a pass would be a lie — it is a skip, and --require=simulate rightly fails.
+  if (report.bestEffortLoop) {
+    const reason = `multi-batch loop — the viewer shows iteration 1 of ${report.loopIterations ?? "N"} only, which is a preview, not a pass/fail check`;
+    return withViewer({ status: "skip", message: reason, reason, unlock: `pin a single-batch scenario (n8n-decanter scenario create ${ctx.name}) for a gateable run` });
+  }
+  if (!report.engineOk) return withViewer({ status: "fail", message: `local engine run failed: ${report.engineError ?? "unknown error"}`, remediation: `n8n-decanter preflight ${ctx.name} --simulate --viewer` });
+  if (report.syntheticPins) return withViewer({ status: "pass", message: `local engine ran clean — synthetic pins: proves executability, not output correctness (no per-node diff)` });
+  if (report.divergent.length > 0) {
+    const details = report.diffs.filter((d) => !d.equal).map((d) => `${d.node}: expected ${JSON.stringify(d.expected)} · actual ${JSON.stringify(d.actual)}`);
+    return withViewer({ status: "fail", message: `${report.divergent.length} node(s) diverged from the capture: ${report.divergent.join(", ")}`, details, remediation: `n8n-decanter preflight ${ctx.name} --simulate --viewer` });
+  }
+  return withViewer({ status: "pass", message: `${report.pure.length} node(s) ran on a local engine, all matched the capture` });
 }
 
 async function historyCheck(ctx: PreflightContext): Promise<Omit<CheckFinding, "id" | "tier" | "durationMs">> {
@@ -511,10 +605,6 @@ async function historyCheck(ctx: PreflightContext): Promise<Omit<CheckFinding, "
   const last = failed.map((r) => r.stoppedAt ?? r.startedAt ?? "").filter(Boolean).sort().at(-1);
   const when = last !== undefined && last !== "" ? ` (last ${last.slice(0, 10)})` : "";
   return { status: "warn", message: `${failed.length} of ${rows.length} recent runs failed${when}`, remediation: `n8n-decanter executions ${ctx.name} --status=error` };
-}
-
-function cliRef(ctx: PreflightContext, verb: string): string {
-  return `n8n-decanter ${verb} ${ctx.name}`;
 }
 
 // ---------- rendering ----------
@@ -548,6 +638,15 @@ export function formatCheckLine(f: CheckFinding, palette: Palette = PLAIN): stri
   return `  ${glyph} ${palette.bold(id)} ${f.message}${dur}`;
 }
 
+/**
+ * The indented expansion under a check line — every layout violation, every
+ * `tsc` error, every drifted node. This is what the retired `check` verb used
+ * to print in full; preflight is now the only place it can be read.
+ */
+export function formatCheckDetails(f: CheckFinding, palette: Palette = PLAIN): string[] {
+  return (f.details ?? []).flatMap((d) => d.split("\n")).map((d) => `      ${palette.dim(d)}`);
+}
+
 /** The header + score/verdict/coverage summary + warn/fail/skip detail lines. */
 export function renderPreflightSummary(report: PreflightReport, log: Log, palette: Palette = PLAIN): void {
   const verdictColor = report.verdict === "ready" ? palette.green : report.verdict === "caution" ? palette.yellow : palette.red;
@@ -572,7 +671,10 @@ export function renderPreflight(report: PreflightReport, log: Log, palette: Pale
     subj.draftVersionId !== undefined ? `draft ${subj.draftVersionId}` : undefined,
     subj.publishedVersionId != null ? `published ${subj.publishedVersionId}` : undefined,
   ].filter(Boolean);
-  log.info(`${palette.bold(`preflight: ${report.workflow}`)}${bits.length > 0 ? "   " + palette.dim(bits.join(" · ")) : ""}  ${palette.dim(`[${report.profile}]`)}`);
-  for (const c of report.checks) log.info(formatCheckLine(c, palette));
+  log.info(`${palette.bold(`preflight: ${report.workflow}`)}${bits.length > 0 ? "   " + palette.dim(bits.join(" · ")) : ""}  ${palette.dim(`[${describeFlags(report.flags)}]`)}`);
+  for (const c of report.checks) {
+    log.info(formatCheckLine(c, palette));
+    for (const d of formatCheckDetails(c, palette)) log.info(d);
+  }
   renderPreflightSummary(report, log, palette);
 }

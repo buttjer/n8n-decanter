@@ -1,6 +1,18 @@
-// Minimal unified line diff for `status --diff` (plans/3 B). Zero deps by
-// design (Plan 11's rule); classic LCS backtracking is plenty at Code-node
-// scale, with a size cutoff instead of a fancier algorithm.
+// The `diff` verb (Plan 59) and the minimal unified line diff behind it
+// (plans/3 B). Zero deps by design (Plan 11's rule); classic LCS backtracking
+// is plenty at Code-node scale, with a size cutoff instead of a fancier
+// algorithm.
+//
+// `diff` is the `git diff` half of the old `status` verb: it shows the actual
+// changed LINES for every node that differs from the draft, and nothing else.
+// The summary half (`git status`) is `preflight`. Like `git diff` it is an
+// inspection view, not a gate — it always exits 0.
+import path from "node:path";
+import { getWorkflowDetails, type McpClient } from "./mcp.mts";
+import { findWorkflowDir } from "./state.mts";
+import { computeSyncFacts, type NodeSync } from "./status.mts";
+import { style } from "./style.mts";
+import type { Log } from "./types.mts";
 
 interface Op {
   tag: " " | "-" | "+";
@@ -75,4 +87,69 @@ export function unifiedDiff(a: string, b: string, context = 2): string[] {
     for (const o of slice) out.push(o.tag + o.line);
   }
   return out;
+}
+
+/** A node whose local build differs from the draft — the only thing `diff` prints. */
+function isDifferent(node: NodeSync): boolean {
+  return node.state !== "in-sync";
+}
+
+/** One node's state headline; the line diff (when there is one) follows it. */
+function headline(node: NodeSync): { level: "info" | "warn" | "error"; text: string } {
+  switch (node.state) {
+    case "unknown-locally":
+      return { level: "warn", text: "remote code node unknown locally — pull" };
+    case "local-missing":
+      return { level: "warn", text: `local file ${node.file} missing` };
+    case "changed-remotely":
+      return { level: "warn", text: "changed remotely — pull" };
+    case "conflict":
+      return { level: "error", text: "CONFLICT — changed both locally and remotely" };
+    default:
+      return { level: "info", text: `local changes in ${node.file} — push pending` };
+  }
+}
+
+/**
+ * Print the per-node line diffs between local code and the n8n draft. For `.ts`
+ * nodes the local side is the **compiled** JS — the exact bytes `push` would
+ * send, and the same bodies the sync hashes compare.
+ *
+ * Always exits 0 (the caller sets no exit code): this is `git diff`, not a
+ * gate. `preflight` is the gate.
+ */
+export async function diffWorkflow(mcp: McpClient, root: string, id: string, log: Log): Promise<void> {
+  const remote = await getWorkflowDetails(mcp, id);
+  const dir = findWorkflowDir(root, id, log);
+  if (!dir) {
+    log.warn(`${remote.name} (${id}): not pulled yet — n8n-decanter pull ${id}`);
+    return;
+  }
+  log.info(`${remote.name} (${id})  [${path.relative(process.cwd(), dir)}]`);
+
+  const facts = await computeSyncFacts(remote, dir);
+  const changed = facts.nodes.filter(isDifferent);
+  if (changed.length === 0 && facts.deleted.length === 0) {
+    log.info(style.dim("  no differences — every tracked node matches the draft"));
+    return;
+  }
+
+  for (const node of changed) {
+    // Replay this node's captured compileTs warnings before its line — they are
+    // about the very build being diffed.
+    for (const w of node.warnings ?? []) log.warn(w);
+    const { level, text } = headline(node);
+    log[level](`  ${node.name}: ${text}`);
+    if (node.remoteBody === undefined || node.localBody === undefined || node.localBody === null || node.file === undefined) continue;
+    log.info(`    ${style.dim("--- remote (n8n)")}`);
+    log.info(`    ${style.dim(`+++ local (${node.file})`)}`);
+    for (const line of unifiedDiff(node.remoteBody, node.localBody)) {
+      const styled = line.startsWith("+") ? style.green(line) : line.startsWith("-") ? style.red(line) : style.dim(line);
+      log.info(`    ${styled}`);
+    }
+  }
+
+  for (const node of facts.deleted) {
+    log.warn(`  ${node.file}: node ${node.id} deleted remotely`);
+  }
 }

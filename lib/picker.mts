@@ -34,11 +34,17 @@ export interface PickerKey {
   sequence?: string;
 }
 
-// Verb menu for a *pulled workflow*, in display order. `data-tables` is
+// Action menu for a *pulled workflow*, in display order. `data-tables` is
 // deliberately absent (deviation from how `executions` was added, Plan 25):
 // data tables are project-scoped, not owned by a workflow, so they have no
 // place in a per-workflow menu.
-export const PICKER_VERBS = ["status", "pull", "push", "watch", "check", "preflight", "executions", "simulate"] as const;
+//
+// Plan 59 collapsed `status`/`check`/`simulate` into `preflight` + `diff`, so
+// most rows are now bare verbs again — except `preflight --simulate`, which
+// carries flags (see `PICKER_ACTIONS` in the CLI: a row's label is dispatched
+// as a verb plus a flag set, which is how the browsable local-engine run
+// survives the fold). `preflight` leads because it is the read-only gate.
+export const PICKER_VERBS = ["preflight", "preflight --simulate", "diff", "pull", "push", "watch", "executions"] as const;
 
 export interface PickerState {
   stage: "workflow" | "verb";

@@ -7,23 +7,23 @@ import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { assertNoLegacyFixtures, cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId, migrateScenariosDir } from "./lib/executions.mts";
 import { cliVersion, init, printBanner } from "./lib/init.mts";
-import { checkScenarios, listScenarioSlugs, runSimulation, writeScenario, type SimulationReport } from "./lib/simulate.mts";
+import { checkScenarios, listScenarioSlugs, writeScenario } from "./lib/simulate.mts";
 import { publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
 import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, prepareTestPinData, searchWorkflows } from "./lib/mcp.mts";
 import { runStdioGuard } from "./lib/mcpconnect.mts";
 import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { createMirror } from "./lib/mirror.mts";
 import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
-import { ALL_CHECK_IDS, type CheckId, exitCodeOf, formatCheckLine, type Palette, type Profile, renderPreflightSummary, RETIRED_CHECK_IDS, runPreflight } from "./lib/preflight.mts";
+import { ALL_CHECK_IDS, type CheckId, describeFlags, exitCodeOf, formatCheckDetails, formatCheckLine, type Palette, renderPreflightSummary, RETIRED_CHECK_IDS, runPreflight } from "./lib/preflight.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
 import { printTestReport, runTest } from "./lib/testrun.mts";
 import { runNode } from "./lib/run.mts";
-import { findWorkflowDir, listWorkflowDirs, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, readState } from "./lib/state.mts";
-import { statusWorkflow } from "./lib/status.mts";
+import { findWorkflowDir, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, readState } from "./lib/state.mts";
+import { diffWorkflow } from "./lib/diff.mts";
 import { style, styleErr, transientLine } from "./lib/style.mts";
 import type { DecanterConfig, Log } from "./lib/types.mts";
-import { runTypecheck, validateWorkflowDir } from "./lib/validate.mts";
+import { runTypecheck, runTypecheckPerDir, type TypecheckResult } from "./lib/validate.mts";
 import { watchWorkflow } from "./lib/watch.mts";
 
 // Every real log line first erases a pending transient "pulling …" status line.
@@ -66,18 +66,16 @@ ${b("Sync")} ${d("(over n8n's MCP server — Code-node source only; structure li
   ${b("unpublish")} [workflow…]                   ${d("return the draft(s) to draft-only")}
 
 ${b("Inspect & test")}
-  ${b("status")} [workflow…] [--diff]             ${d("drift report; exits 1 on conflict/remote drift")}
-  ${b("check")} [workflow…] [--no-typecheck]      ${d("offline layout-compliance check")}
+  ${b("preflight")} [workflow…] [--simulate] [--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]
+  ${d("                                            the gate: grades LOCAL code into one scored, read-only verdict")}
+  ${d("                                            --simulate ADDS a local-engine run (Docker); --offline DROPS instance reads")}
+  ${b("diff")} [workflow…]                        ${d("per-node line diff, local code vs the n8n draft (always exits 0)")}
   ${b("executions")} [workflow…] [--status=…] [--limit=N]   ${d("fetch execution data (numeric arg = one by id)")}
   ${b("executions")} [workflow…] clean            ${d("delete fetched execution data (offline)")}
   ${b("data-tables")} [table…] [--filter=… --search=… --sort=… --limit=N --all]   ${d("fetch data-table schema + rows (read-only)")}
   ${b("data-tables")} [table…] clean              ${d("delete fetched data-table data (offline)")}
   ${b("test")} <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
-  ${d("                                            pinned run on the INSTANCE (draft; recommended); exits 1 on divergence")}
-  ${b("simulate")} <workflow> [--execution <execution-id> | --scenario <slug>] [--network-none] [--json]
-  ${d("                                            replay through a LOCAL n8n engine (Docker, offline); exits 1 on divergence")}
-  ${b("preflight")} [workflow…] [--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]
-  ${d("                                            grades LOCAL code as one scored, read-only gate — push, then test, then publish")}
+  ${d("                                            pinned run on the INSTANCE (draft; after push); exits 1 on divergence")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
 
 ${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-scaffolded)")}
@@ -109,7 +107,18 @@ powers executions, data-tables, and backup.`;
 // lifecycle verbs (rename, create, archive, node create, node rename) are
 // retired — those acts go through n8n's MCP (guarded via `mcp connect`/
 // `mcp serve`) and `pull` reconciles the local mirror.
-const VERBS = new Set(["init", "pull", "push", "status", "check", "watch", "list", "executions", "data-tables", "simulate", "test", "preflight", "scenario", "backup", "mcp", "publish", "unpublish", "completion", "node", "__complete", "help"]);
+const VERBS = new Set(["init", "pull", "push", "diff", "watch", "list", "executions", "data-tables", "test", "preflight", "scenario", "backup", "mcp", "publish", "unpublish", "completion", "node", "__complete", "help"]);
+/**
+ * Verbs removed by Plan 59 → the replacement, printed as a hard error (exit 1)
+ * instead of a bare "unknown verb". They are deliberately NOT in `VERBS`: a
+ * removed verb must not re-enter the value-flag lookahead, the `--version`
+ * guard, or `check:docs`'s surface parity.
+ */
+const REMOVED_VERBS: Record<string, string> = {
+  check: "static-only checking is `n8n-decanter preflight --offline` (layout + types, no network, no engine)",
+  status: "the drift summary is `n8n-decanter preflight`; the per-node line diff is `n8n-decanter diff`",
+  simulate: "the local-engine replay is `n8n-decanter preflight --simulate` — add `--offline` for the credential-free, no-instance form the verb had, and `--viewer` for the browsable run",
+};
 /** Sub-verbs of the `node` namespace; dispatched as internal `node:<sub>` commands. */
 const NODE_VERBS = new Set(["run"]);
 /** Sub-verbs of the `scenario` namespace; dispatched as internal `scenario:<sub>` commands. */
@@ -119,7 +128,7 @@ const BACKUP_VERBS = new Set(["create", "restore", "list"]);
 /** Sub-verbs of the `mcp` namespace; dispatched as internal `mcp:<sub>` commands. */
 const MCP_VERBS = new Set(["serve", "connect"]);
 /** Verbs whose workflow arguments go through name resolution. */
-const REF_VERBS = new Set(["pull", "push", "status", "check", "watch", "simulate", "test", "preflight", "publish", "unpublish"]);
+const REF_VERBS = new Set(["pull", "push", "diff", "watch", "test", "preflight", "publish", "unpublish"]);
 
 // Both scripts delegate to the hidden `__complete` verb at completion time,
 // so candidates stay current without regenerating the script.
@@ -195,7 +204,7 @@ async function main() {
   // hard-error the old spelling with the replacement instead of silently
   // dropping `--mock` (it no longer matches the value-flag regex above).
   if (process.argv.slice(2).some((a) => a === "--mock" || a.startsWith("--mock=") || a === "--pin" || a.startsWith("--pin="))) {
-    throw new Error("`--mock`/`--pin` were removed (Plan 37): use `--scenario <slug>` (create scenarios with `scenario create`; `simulate --pin` is gone — use `scenario create --execution <id>`)");
+    throw new Error("`--mock`/`--pin` were removed (Plan 37): use `--scenario <slug>` — create scenarios with `scenario create --execution <id>`, then replay with `preflight --simulate --scenario <slug>`");
   }
   // Same treatment for `backup restore`'s v0.6.0 selectors, now a positional
   // backup ref. Silence would be worse than for most retired flags: `--at=<ts>`
@@ -204,19 +213,30 @@ async function main() {
   if (process.argv.slice(2).some((a) => a === "--at" || a.startsWith("--at=") || a === "--version-id" || a.startsWith("--version-id="))) {
     throw new Error("`--at`/`--version-id` were removed: `backup restore` takes the backup as an argument — `n8n-decanter backup restore <workflow> [<timestamp|versionId>]` (see `backup list`)");
   }
+  // The retired preflight PROFILE flags (Plan 59). Both shipped in 0.6.0, and
+  // both are the dangerous kind of retired flag: unmatched, they would be
+  // dropped silently and the run would fall through to a DIFFERENT, weaker
+  // gate than the caller asked for — a CI job passing `--full` would quietly
+  // stop running the engine. Reject with the migration instead.
+  if (process.argv.slice(2).some((a) => a === "--quick")) {
+    throw new Error("`--quick` was removed (Plan 59): the static-only gate is `preflight --offline` (layout + types, no network, no engine)");
+  }
+  if (process.argv.slice(2).some((a) => a === "--full")) {
+    throw new Error("`--full` was removed (Plan 59): profiles are gone — the local-engine run is now the additive `preflight --simulate` (add `--offline` to drop the instance reads)");
+  }
   const force = args.includes("--force");
   const publishFlag = args.includes("--publish");
   const noTypecheck = args.includes("--no-typecheck");
   const scaffoldFlag = args.includes("--scaffold");
   const allowEnv = args.includes("--allow-env");
   const remoteFlag = args.includes("--remote");
-  const diffFlag = args.includes("--diff");
   const jsonFlag = args.includes("--json");
-  const networkNoneFlag = args.includes("--network-none");
   const allFlag = args.includes("--all");
-  const quickFlag = args.includes("--quick");
-  const fullFlag = args.includes("--full");
+  // Plan 59: preflight's depth is two orthogonal booleans — `--simulate` adds
+  // the local-engine stage, `--offline` drops the instance tier. They compose.
+  const simulateFlag = args.includes("--simulate");
   const offlineFlag = args.includes("--offline");
+  const viewerFlag = args.includes("--viewer");
   const failFastFlag = args.includes("--fail-fast");
   const noFetchFlag = args.includes("--no-fetch");
   const positional = args.filter((a) => !a.startsWith("--"));
@@ -288,6 +308,11 @@ async function main() {
   // just an argument, so the old "address it by id" caveat is gone). `node:<sub>`
   // is internal and already validated above.
   if (!command.startsWith("node:") && !command.startsWith("scenario:") && !command.startsWith("backup:") && !command.startsWith("mcp:") && !VERBS.has(command)) {
+    // A verb this CLI used to have gets its replacement, not a bare "unknown
+    // verb" — the same courtesy `mock` got in Plan 37. `main()`'s catch turns
+    // the throw into exit 1, which is what the migration contract promises.
+    const replacement = REMOVED_VERBS[command];
+    if (replacement !== undefined) throw new Error(`the \`${command}\` verb was removed (Plan 59): ${replacement}`);
     console.log(usage());
     throw new Error(`unknown verb: ${command}`);
   }
@@ -319,7 +344,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--diff", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--network-none", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--full", "--offline", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--host=", "--token=", "--api-key=", "--help", "--version");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--host=", "--token=", "--api-key=", "--help", "--version");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -330,7 +355,7 @@ async function main() {
     return;
   }
 
-  await dispatch(command, rest, { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, diffFlag, jsonFlag, networkNoneFlag, allFlag, quickFlag, fullFlag, offlineFlag, failFastFlag, noFetchFlag, valueFlags });
+  await dispatch(command, rest, { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags });
 }
 
 interface Flags {
@@ -339,20 +364,28 @@ interface Flags {
   noTypecheck: boolean;
   scaffoldFlag: boolean;
   remoteFlag: boolean;
-  diffFlag: boolean;
   jsonFlag: boolean;
-  networkNoneFlag: boolean;
   allFlag: boolean;
-  quickFlag: boolean;
-  fullFlag: boolean;
+  simulateFlag: boolean;
   offlineFlag: boolean;
+  viewerFlag: boolean;
   failFastFlag: boolean;
   noFetchFlag: boolean;
   valueFlags: Map<string, string>;
 }
 
 /** Flag defaults for picker-launched verbs (no CLI flags in play). */
-const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, scaffoldFlag: false, remoteFlag: false, diffFlag: false, jsonFlag: false, networkNoneFlag: false, allFlag: false, quickFlag: false, fullFlag: false, offlineFlag: false, failFastFlag: false, noFetchFlag: false, valueFlags: new Map() };
+const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, scaffoldFlag: false, remoteFlag: false, jsonFlag: false, allFlag: false, simulateFlag: false, offlineFlag: false, viewerFlag: false, failFastFlag: false, noFetchFlag: false, valueFlags: new Map() };
+
+/**
+ * Picker rows that are a verb PLUS flags (Plan 59). Every other row dispatches
+ * as a bare verb with `PICKER_FLAGS`. This is what keeps the browsable
+ * local-engine run — the old `simulate` menu entry, which defaulted its viewer
+ * on for a TTY — reachable now that the verb is a flag.
+ */
+const PICKER_ACTIONS: Record<string, { command: string; flags: Flags }> = {
+  "preflight --simulate": { command: "preflight", flags: { ...PICKER_FLAGS, simulateFlag: true, viewerFlag: true } },
+};
 
 /**
  * Interactive session (Plan 19 + loop follow-up): banner, then pick → run →
@@ -401,8 +434,9 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
     }
     log.info(style.dim(`❯ ${picked.verb} ${picked.name}`));
     process.exitCode = 0;
+    const action = PICKER_ACTIONS[picked.verb] ?? { command: picked.verb, flags: PICKER_FLAGS };
     try {
-      await dispatch(picked.verb, [picked.id], PICKER_FLAGS);
+      await dispatch(action.command, [picked.id], action.flags);
     } catch (err) {
       process.exitCode = 1;
       log.error((err as Error).message);
@@ -447,51 +481,17 @@ async function pickOneWorkflow(config: DecanterConfig, verb: string, log: Log): 
   return picked.id;
 }
 
-/** Human-readable `simulate` report: per-node diff lines + a pass/fail summary. */
-function printSimulationReport(r: SimulationReport, log: Log): void {
-  // Tier-2 (viewer-only): a best-effort iteration 1 of a multi-batch loop. There
-  // is no diff and it is NOT a pass/fail check — say so plainly, show the viewer.
-  if (r.bestEffortLoop) {
-    log.warn(`multi-batch loop: showing iteration 1 of ${r.loopIterations ?? "N"} only — a browsable preview, NOT a pass/fail check (multi-batch loops can't be gated; pinning is single-valued)`);
-    if (r.url && r.login) {
-      log.info(`\nopen the run in n8n:  ${style.bold(r.url)}`);
-      log.info(style.dim(`  local login: ${r.login.email} / ${r.login.password}  ·  throwaway instance, replaced on the next simulate (docker rm -f decanter-sim-viewer to stop)`));
-    } else {
-      log.warn("the browsable viewer did not start — nothing to show for this multi-batch loop preview");
-    }
-    return;
-  }
-  log.info(`replayed execution ${r.execId} on n8n ${r.version}${r.networkNone ? " (network: none)" : ""} — ${r.pure.length} node(s) real, ${r.pinned.length} pinned${r.loops.length > 0 ? `, ${r.loops.length} loop driver(s) run (single-iteration)` : ""}`);
-  if (!r.engineOk) log.error(`engine run failed: ${r.engineError ?? "unknown error"}`);
-  for (const d of r.diffs) {
-    if (d.equal) log.ok(`${d.node}: matches capture`);
-    else {
-      log.error(`${d.node}: diverged from capture`);
-      log.info(style.dim(`    expected ${JSON.stringify(d.expected)}`));
-      log.info(style.dim(`    actual   ${JSON.stringify(d.actual)}`));
-    }
-  }
-  if (r.syntheticPins) {
-    if (r.engineOk) log.ok(`simulation ran clean — synthetic pins (authored/scaffolded), so this proves executability, not output correctness (no per-node diff asserted)`);
-    else log.error(`simulation engine run failed: ${r.engineError ?? "unknown error"}`);
-  } else if (r.ok) log.ok(`simulation matches the capture (${r.diffs.length} node${r.diffs.length === 1 ? "" : "s"} checked)`);
-  else log.error(`simulation diverged: ${r.divergent.length > 0 ? r.divergent.join(", ") : "engine error"}`);
-  if (r.url && r.login) {
-    log.info(`\nopen the run in n8n:  ${style.bold(r.url)}`);
-    log.info(style.dim(`  local login: ${r.login.email} / ${r.login.password}  ·  throwaway instance, replaced on the next simulate (docker rm -f decanter-sim-viewer to stop)`));
-  }
-}
-
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
 async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
-  const { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, diffFlag, jsonFlag, networkNoneFlag, allFlag, quickFlag, fullFlag, offlineFlag, failFastFlag, noFetchFlag, valueFlags } = flags;
-  // simulate reads local captures + drives a throwaway engine — it never calls
-  // n8n, so no credentials are required. Since Plan 32 the sync verbs (and the
-  // rename/node namespace, which forward structure acts to n8n) go over MCP;
-  // only the executions/data-tables fetches still use the REST API
-  // (requireApiKey at the verb).
-  const offline = command === "check" || command === "simulate"
-    || command === "scenario:check" || (command === "scenario:create" && !scaffoldFlag)
+  const { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags } = flags;
+  // Since Plan 32 the sync verbs (and the node namespace, which forwards
+  // structure acts to n8n) go over MCP; only the executions/data-tables fetches
+  // still use the REST API (requireApiKey at the verb).
+  //
+  // Plan 59: `preflight --offline` is the credential-free gate — including with
+  // `--simulate`, which drives a local throwaway engine and never calls n8n. A
+  // bare `preflight --simulate` still runs the instance tier, so it needs a host.
+  const offline = command === "scenario:check" || (command === "scenario:create" && !scaffoldFlag)
     || command === "backup:list"
     || (command === "preflight" && offlineFlag)
     || (command === "list" && !remoteFlag)
@@ -512,8 +512,8 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
    * prefix); `pull` falls back to the remote workflow list (MCP
    * `search_workflows` — it lists every workflow, opted-in or not) for
    * not-yet-pulled names. An id-shaped ref that matches nothing passes
-   * through unchanged — it may exist only remotely (pull/status by fresh id
-   * must keep working).
+   * through unchanged — it may exist only remotely (pull by fresh id must
+   * keep working).
    */
   const resolveRef = async (ref: string): Promise<string> => {
     const local = matchWorkflowRef(listWorkflowRefs(config.root, log), ref);
@@ -533,9 +533,9 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   };
 
   /**
-   * One-shot MCP verbs (archive/rename/node …): append the enable-MCP
-   * guidance to the per-workflow refusal, the same way the pull/push/status
-   * loop does (Plan 33 — previously these verbs surfaced only n8n's raw text).
+   * One-shot MCP verbs (test …): append the enable-MCP guidance to the
+   * per-workflow refusal, the same way the pull/push/diff loop does (Plan 33 —
+   * previously these verbs surfaced only n8n's raw text).
    */
   const withEnableHint = async (fn: () => Promise<unknown>): Promise<void> => {
     try {
@@ -567,18 +567,23 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     const picked = await pickOneWorkflow(config, command, log);
     if (picked !== undefined) refs = [picked];
   }
-  const ids = refs.length > 0 ? refs : config.workflows;
+  // `preflight` absorbed `check` (Plan 59), which checked every PULLED
+  // workflow when given no refs. Keep that: a scaffold whose config lists no
+  // workflows must still get a whole-project gate rather than "no workflow ids".
+  const pulledFallback = command === "preflight" && refs.length === 0 && config.workflows.length === 0
+    ? listWorkflowRefs(config.root).map((r) => r.id)
+    : [];
+  const ids = refs.length > 0 ? refs : config.workflows.length > 0 ? config.workflows : pulledFallback;
 
   switch (command) {
     case "pull":
     case "push":
-    case "status": {
+    case "diff": {
       if (ids.length === 0) {
         throw new Error('no workflow ids: pass them as arguments or list them in decanter.config.json "workflows"');
       }
       if (command === "push" && !noTypecheck) await runTypecheck(config.configDir, log);
       let failed = false;
-      let drifted = false;
       const total = ids.length;
       for (const [i, id] of ids.entries()) {
         // progress: [2/5] prefix in both modes (dim on a TTY), transient
@@ -601,8 +606,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
             transient.show(`${prefix}pushing ${id}…`);
             await pushWorkflow(mcp(), config.root, id, { force, commitOnPush: config.commitOnPush, publish: publishFlag }, { ...plog, ok: (m) => plog.ok(m + dur()) });
           } else {
-            const { remoteDrift } = await statusWorkflow(mcp(), config.root, id, plog, { diff: diffFlag });
-            drifted ||= remoteDrift;
+            await diffWorkflow(mcp(), config.root, id, plog);
           }
         } catch (err) {
           failed = true;
@@ -613,8 +617,9 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
           transient.clear();
         }
       }
-      // status: conflict/remote drift exits 1 so scripts and CI can gate on it
-      if (failed || drifted) process.exitCode = 1;
+      // A thrown error still exits 1 — but `diff` itself never gates (Plan 59:
+      // it is `git diff`, an inspection view; `preflight` is the gate).
+      if (failed) process.exitCode = 1;
       break;
     }
     case "list": {
@@ -649,46 +654,6 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       } else if (pulled.length === 0) {
         log.info(`no pulled workflows under ${config.root} — try: n8n-decanter list --remote`);
       }
-      break;
-    }
-    case "check": {
-      const dirs = refs.length > 0
-        ? refs.map((id) => {
-            const dir = findWorkflowDir(config.root, id, log);
-            if (!dir) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
-            return dir;
-          })
-        : listWorkflowDirs(config.root);
-      if (dirs.length === 0) log.info(`nothing to check — no pulled workflows under ${config.root}`);
-      let errorCount = 0;
-      for (const dir of dirs) {
-        // label by the cached display name (Plan 27) so a kebab folder still
-        // reads as the workflow; fall back to the folder if state is missing/corrupt
-        let name = path.basename(dir);
-        try {
-          name = readState(dir)?.name ?? name;
-        } catch {
-          // corrupt state — validateWorkflowDir surfaces the error; keep the folder label
-        }
-        const { errors, warnings } = validateWorkflowDir(dir);
-        for (const w of warnings) log.warn(`${name}: ${w}`);
-        for (const e of errors) log.error(`${name}: ${e}`);
-        // Say what green means. `check` is offline — it proves the layout is
-        // well-formed, NOT that the code is live in n8n. Field-test agents read
-        // a bare "OK" as "done" and stopped without pushing (Plan 35).
-        if (errors.length === 0) log.ok(`${name}: OK (local layout — \`status\` compares with n8n)`);
-        errorCount += errors.length;
-      }
-      if (!noTypecheck) {
-        try {
-          // explicit ids scope the typecheck output too; bare `check` stays project-wide
-          await runTypecheck(config.configDir, log, refs.length > 0 ? dirs : undefined);
-        } catch (err) {
-          log.error((err as Error).message);
-          errorCount++;
-        }
-      }
-      if (errorCount > 0) process.exitCode = 1;
       break;
     }
     case "executions": {
@@ -767,38 +732,6 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       }, log);
       break;
     }
-    case "simulate": {
-      if (refs.length !== 1) throw new Error("simulate needs exactly one workflow ref: n8n-decanter simulate <workflow> [--execution <id> | --scenario <slug>]");
-      const dir = findWorkflowDir(config.root, refs[0], log);
-      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
-      migrateScenariosDir(dir, log);
-      assertNoLegacyFixtures(dir);
-      // Replay source: an explicit committed scenario (--scenario <slug>) or a
-      // raw capture (--execution <id>, defaulting to the newest). Mutually exclusive.
-      const scenarioSlug = valueFlags.get("scenario");
-      if (scenarioSlug !== undefined && valueFlags.get("execution") !== undefined) {
-        throw new Error("pass either --scenario <slug> or --execution <id>, not both");
-      }
-      const source = scenarioSlug !== undefined ? "scenario" : "capture";
-      const ref = scenarioSlug ?? valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
-      if (ref === undefined) throw new Error(`no execution to simulate: pass --execution <id> (or --scenario <slug>), or fetch one with \`n8n-decanter executions ${refs[0]}\``);
-      if (source === "capture" && valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution/--scenario given; using the latest capture ${ref}`));
-      if (!(await dockerAvailable())) {
-        throw new Error("simulate needs a running Docker daemon (the engine backend) — start Docker and retry");
-      }
-      const version = valueFlags.get("n8n-version") ?? config.n8nVersion ?? DEFAULT_N8N_VERSION;
-      if (valueFlags.get("n8n-version") === undefined && config.n8nVersion === undefined) {
-        log.info(style.dim(`using default engine version ${version}; pin "n8nVersion" in decanter.config.json to match your instance`));
-      }
-      // Interactive terminals get a browsable run in a kept-alive local n8n;
-      // scripts/CI/--json/--network-none stay fast and headless (no container left).
-      const viewer = Boolean(process.stdout.isTTY) && !jsonFlag && !networkNoneFlag;
-      const report = await runSimulation(dir, ref, { version, source, networkNone: networkNoneFlag, viewer }, log);
-      if (jsonFlag) console.log(JSON.stringify(report, null, 2));
-      else printSimulationReport(report, log);
-      if (!report.ok) process.exitCode = 1;
-      break;
-    }
     case "test": {
       if (refs.length !== 1) throw new Error("test needs exactly one workflow ref: n8n-decanter test <workflow> [--execution <id> | --scenario <slug>] [--trigger <node>]");
       const dir = findWorkflowDir(config.root, refs[0], log);
@@ -828,17 +761,15 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       if (ids.length === 0) {
         throw new Error('no workflow ids: pass them as arguments or list them in decanter.config.json "workflows"');
       }
-      // Profiles are deterministic and distinct — no magic escalation (Plan 36).
-      // `--quick` shipped in 0.6.0 and was removed here rather than redefined
-      // (Plan 59 retires the profile vocabulary entirely) — reject with the
-      // migration, never silently fall through to a different profile.
-      if (quickFlag) {
-        throw new Error("--quick was removed — static-only checking is `n8n-decanter check`; a no-instance gate is `preflight --offline` (runs the local-engine replay too)");
+      // Depth is two orthogonal booleans, deterministic and composable — no
+      // profiles, no magic escalation (Plan 36's rule, Plan 59's vocabulary).
+      // `--simulate` ADDS the local-engine stage; `--offline` DROPS the
+      // instance tier. All four combinations are legal and mean exactly what
+      // they say.
+      const preflightFlags = { simulate: simulateFlag, offline: offlineFlag };
+      if (viewerFlag && !simulateFlag) {
+        throw new Error("--viewer browses the local-engine run — pass --simulate too (n8n-decanter preflight <workflow> --simulate --viewer)");
       }
-      if (fullFlag && offlineFlag) {
-        throw new Error("--full and --offline are distinct profiles — pass at most one");
-      }
-      const profile: Profile = offlineFlag ? "offline" : fullFlag ? "full" : "default";
       const failOn = valueFlags.get("fail-on");
       if (failOn !== undefined && failOn !== "warn") throw new Error('--fail-on only accepts "warn" (e.g. --fail-on=warn)');
       const failOnWarn = failOn === "warn";
@@ -863,8 +794,20 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       const reports: Awaited<ReturnType<typeof runPreflight>>[] = [];
       let failed = false;
       const total = ids.length;
-      for (const [i, id] of ids.entries()) {
+      // One typecheck for the whole run, split per workflow: `tsc` compiles the
+      // entire project every time and only filters its OUTPUT, so calling it
+      // per workflow made the cost linear in workflow count (3× the retired
+      // `check` verb on a 3-workflow dir). Resolve the dirs up front for it.
+      const targets = new Map<string, string>();
+      for (const id of ids) {
         const dir = findWorkflowDir(config.root, id, log);
+        if (dir) targets.set(id, dir);
+      }
+      const typechecks: Map<string, TypecheckResult> = noTypecheck || targets.size === 0
+        ? new Map()
+        : await runTypecheckPerDir(config.configDir, [...targets.values()]);
+      for (const [i, id] of ids.entries()) {
+        const dir = targets.get(id);
         if (!dir) {
           failed = true;
           log.error(`${id}: not found under ${config.root} — pull it first`);
@@ -878,14 +821,18 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         }
         if (!jsonFlag) {
           const prefix = total > 1 ? style.dim(`[${i + 1}/${total}] `) : "";
-          log.info(`${prefix}${style.bold(`preflight: ${name}`)} ${style.dim(`· ${profile} profile`)}`);
+          log.info(`${prefix}${style.bold(`preflight: ${name}`)} ${style.dim(`· ${describeFlags(preflightFlags)}`)}`);
         }
         const report = await runPreflight({
-          config, dir, id, name, profile,
+          config, dir, id, name, flags: preflightFlags,
+          viewer: viewerFlag, viewerLog: log, noTypecheck, typecheckResult: typechecks.get(path.resolve(dir)),
           scenarioSlug, executionId: valueFlags.get("execution"),
           noFetch: noFetchFlag, failFast: failFastFlag, requireIds, simVersion, hasApiKey,
           mcp, api: restApi, dockerAvailable,
-          onCheck: jsonFlag ? undefined : (f) => log.info(formatCheckLine(f, palette)),
+          onCheck: jsonFlag ? undefined : (f) => {
+            log.info(formatCheckLine(f, palette));
+            for (const d of formatCheckDetails(f, palette)) log.info(d);
+          },
         });
         reports.push(report);
         if (!jsonFlag) {

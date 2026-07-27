@@ -441,8 +441,11 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
-// The mutating verbs a consenting user would approve, plus preflight (read-only,
-// not yet in the template allow-list — Plan 36), plus git/npm/node bootstrap.
+// The mutating verbs a consenting user would approve, plus the read-only gate
+// verbs (`preflight` — Plan 36 — and `diff` — Plan 59), plus git/npm/node
+// bootstrap. The read-only pair is belt-and-braces: the template ships them
+// too, but a permission prompt mid-round costs an expensive, irreproducible
+// agentic session, so the harness never depends on the template for them.
 // The template DENY rules stay active (push --force, .decanter.json, .env) —
 // deny wins over allow, so the guards under test hold.
 const ALLOW_EXTENSION = [
@@ -453,6 +456,7 @@ const ALLOW_EXTENSION = [
   "Bash(n8n-decanter unpublish)", "Bash(n8n-decanter unpublish:*)",
   "Bash(n8n-decanter test)", "Bash(n8n-decanter test:*)",
   "Bash(n8n-decanter preflight)", "Bash(n8n-decanter preflight:*)",
+  "Bash(n8n-decanter diff)", "Bash(n8n-decanter diff:*)",
   "Bash(n8n-decanter watch)", "Bash(n8n-decanter watch:*)",
   "Bash(n8n-decanter scenario:*)", "Bash(n8n-decanter backup:*)",
   "Bash(git init:*)", "Bash(git add:*)", "Bash(git commit:*)",

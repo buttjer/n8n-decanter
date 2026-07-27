@@ -172,7 +172,7 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   // This MUST stay a warning. `push` runs this guard (assertCompliant, which
   // throws on errors) BEFORE it reconciles the map, so making this an error
   // would refuse the exact command that heals it. A field-test agent hit this
-  // state, read `check`'s green line as "done", and never pushed (Plan 35).
+  // state, read the green offline line as "done", and never pushed (Plan 35).
   try {
     const state = readState(dir);
     if (state) {
@@ -255,7 +255,7 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   // naming the replacement — no deprecation read-path.
   const fixturesDir = path.join(dir, LEGACY_FIXTURES_DIR);
   if (existsSync(fixturesDir) && readdirSync(fixturesDir).some((e) => e.endsWith(".json"))) {
-    errors.push(`${LEGACY_FIXTURES_DIR}/ dir is retired — per-node fixtures and \`simulate --pin\` were removed (Plan 37); recreate the data as a scenario (\`scenario create --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/`);
+    errors.push(`${LEGACY_FIXTURES_DIR}/ dir is retired — per-node fixtures and the old \`--pin\` flag were removed (Plan 37); recreate the data as a scenario (\`scenario create --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/`);
   }
   return { errors, warnings };
 }
@@ -267,26 +267,64 @@ export interface TypecheckResult {
   output?: string;
 }
 
+/** Nearest tsconfig.json at or above `startDir` — the typecheck's project root. */
+function findTsconfigDir(startDir: string): string | null {
+  let dir = path.resolve(startDir);
+  for (;;) {
+    if (existsSync(path.join(dir, "tsconfig.json"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * ONE typecheck for a whole multi-workflow run, attributed back to each dir
+ * (Plan 59). `scripts/typecheck.mts` compiles the entire project every time and
+ * only *filters* which diagnostics it reports, so preflight's old per-workflow
+ * call recompiled the project once per workflow — measured at 3× the cost of
+ * the retired `check` verb on a 3-workflow dir, and linear from there. Running
+ * it once and splitting the output by path prefix restores parity.
+ *
+ * A diagnostic with no file (a broken tsconfig, a global error) belongs to
+ * every workflow — it blocks all of them — so it is attributed to each.
+ */
+export async function runTypecheckPerDir(startDir: string, dirs: string[]): Promise<Map<string, TypecheckResult>> {
+  const result = await runTypecheckResult(startDir, dirs);
+  const out = new Map<string, TypecheckResult>();
+  if (result.status !== "failed") {
+    for (const d of dirs) out.set(d, result);
+    return out;
+  }
+  const tsconfigDir = findTsconfigDir(startDir)!;
+  const lines = (result.output ?? "").split("\n");
+  // `<rel/path>(line,col): error TS…` — everything else (file-less diagnostics,
+  // the "N error(s)" tally) has no path to attribute and goes to everyone.
+  const owner = (line: string): string | undefined => {
+    const m = line.match(/^(.+?)\(\d+,\d+\): /);
+    if (!m) return undefined;
+    const abs = path.resolve(tsconfigDir, m[1]);
+    return dirs.find((d) => abs === d || abs.startsWith(path.resolve(d) + path.sep));
+  };
+  const shared = lines.filter((l) => l.trim() !== "" && !/^(.+?)\(\d+,\d+\): /.test(l) && !/^\d+ error\(s\)$/.test(l.trim()));
+  for (const d of dirs) {
+    const mine = lines.filter((l) => owner(l) === path.resolve(d));
+    const all = [...mine, ...shared];
+    out.set(d, all.length > 0 ? { status: "failed", output: all.join("\n") } : { status: "ok" });
+  }
+  return out;
+}
+
 /**
  * Run scripts/typecheck.mts against the nearest tsconfig.json at or above
  * startDir and RETURN the outcome instead of logging/throwing. Missing tsconfig
  * (e.g. an init'ed sync dir without one) is a `skipped` result. `scopeDirs`
  * limits which files' diagnostics are reported (the whole project still
  * compiles). This is the quiet fact seam `preflight` consumes; `runTypecheck`
- * below wraps it to keep `check`/`push`'s console behavior byte-identical.
+ * below wraps it to keep `push`'s console behavior byte-identical.
  */
 export async function runTypecheckResult(startDir: string, scopeDirs?: string[]): Promise<TypecheckResult> {
-  let dir = path.resolve(startDir);
-  let tsconfigDir: string | null = null;
-  for (;;) {
-    if (existsSync(path.join(dir, "tsconfig.json"))) {
-      tsconfigDir = dir;
-      break;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
+  const tsconfigDir = findTsconfigDir(startDir);
   if (!tsconfigDir) return { status: "skipped", output: "no tsconfig.json found" };
   // dev runs the .mts sources directly; the published package ships compiled
   // .mjs (Node won't type-strip under node_modules), so mirror our own extension
@@ -307,7 +345,7 @@ export async function runTypecheckResult(startDir: string, scopeDirs?: string[])
 /**
  * Thin logging/throwing wrapper over `runTypecheckResult`: missing tsconfig is
  * an info-level skip, a pass logs `typecheck OK`, and type errors throw. Used by
- * `check`/`push`; behavior is unchanged from before the seam extraction.
+ * `push`; behavior is unchanged from before the seam extraction.
  */
 export async function runTypecheck(startDir: string, log: Log, scopeDirs?: string[]): Promise<void> {
   const result = await runTypecheckResult(startDir, scopeDirs);
