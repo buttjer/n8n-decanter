@@ -281,6 +281,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Renaming a `.ts` node in n8n no longer leaves it stuck on "push pending".**
+  A `.ts` node that imports from `shared/` (or an opted-in npm package) is
+  compiled with esbuild's bundler, and esbuild labels every bundled module with
+  a `// <path>` comment. That label used the node's **own filename**, so it
+  landed inside the compiled bytes — and inside the `@ts-n8n sha256:` marker.
+  Rename the node in n8n, `pull` renames `compute.ts` → `ümläut-nödé.ts`, and
+  the artifact changed even though **not one line of your source did**: `diff`
+  reported a difference that was purely the comment line, and the node read
+  "local changes — push pending" until you pushed a no-op. The entry label is
+  now a fixed name, so a pure rename round-trip is byte-stable and comes back
+  clean.
+
+  **One-time effect when you upgrade:** because the compiled bytes changed, the
+  first `diff`/`pull` after upgrading reports **"modified, not yet pushed"** for
+  every `.ts` node **that has imports** — a comment-line difference only. One
+  `push` per workflow clears it, and it is a plain push, not a conflict: the
+  remote code is untouched, so the drift guard does not trip and `--force` is
+  not needed. `.ts` nodes **without** imports compile through a different path
+  that never embedded the name, and `.js` nodes are unaffected.
+
 - **The scaffolded MCP guard now starts under a *local* install, not only a
   global one.** `init`'s `.mcp.json` / `opencode.json` spawned the guard as a
   bare `n8n-decanter mcp connect`, which only resolves when the CLI is on the
