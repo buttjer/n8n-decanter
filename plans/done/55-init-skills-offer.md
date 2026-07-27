@@ -95,7 +95,7 @@ does not.
 printed once per sync dir, ever. A CLI surface to suppress ~8 lines of first-run
 output is more cost than the noise it removes.
 
-**Who owns actually installing:** [Plan 56](../draft/56-declarative-claude-plugin-scaffold.md) —
+**Who owns actually installing:** Plan 56 *(dropped)* —
 declarative `.claude/settings.json` (`extraKnownMarketplaces` + `enabledPlugins`),
 which is idempotent, in git, and covers everyone who clones the repo rather than
 only whoever ran `init`. It needs a template-shape decision first.
@@ -148,4 +148,4 @@ Because nothing prompts and nothing spawns, there is **no untestable path left**
   bug).
 - PLAN.md: "Init flow" gained step 6; the template-AGENTS.md paragraph records
   the two-forms split and the routing cue.
-- Follow-up: [Plan 56](../draft/56-declarative-claude-plugin-scaffold.md).
+- Follow-up: Plan 56 *(dropped)*.
