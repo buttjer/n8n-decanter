@@ -19,6 +19,31 @@ code the user isn't shipping. `push` itself is part of finishing the work, not a
 step to ask permission for.)* Distribution with **skills.sh in mind** (`npx skills add`, 20+ agents)
 plus the plugin marketplaces (Claude Code, Codex) that also carry hook wiring.
 
+**Field evidence (2026-07-27).** Leg 1's premise **holds**: the competing skill
+is genuinely loaded — `n8n-code-nodes-official` was invoked in both S1 rounds of
+a dedicated 2-round verification, and earlier S1/S2 rounds also pulled in
+`n8n-workflow-lifecycle-official` / `n8n-node-configuration-official`. Uptake is
+**variable, not reliable** (S2 used 3–4 skills historically, then 0 and 2 in the
+two verification rounds), so any future claim about skill usage needs several
+rounds behind it.
+
+The feared *outcome*, though, does not occur: **zero blocked `jsCode` writes
+across ~14 archived rounds**, including every round where
+`n8n-code-nodes-official` was loaded. The agent reads n8n's own code-node skill
+and still routes code through files + `push`.
+
+That makes this plan's graduation trigger measurable and currently **not met**: a
+blocked `jsCode` write in `guard.log` is exactly the "routing nudge biting"
+signal, and it has never fired. The scaffolded `AGENTS.md` contract — which is
+in the agent's context from the first token via `CLAUDE.md`'s `@AGENTS.md`
+import — is winning the competition this plan exists to address. Leg 3 (skills.sh
+as an adoption channel) is unaffected by any of this.
+
+*Caveat: the field harness vendors `skills/*` **without** the plugin's
+SessionStart router or `plugin:` namespacing, so this measures the vendored pack,
+not a full plugin install ([Plan 56](../open/56-declarative-claude-plugin-scaffold.md)
+is the only way to test the latter).*
+
 Rationale: (1) routing-layer competition — the n8n meta-skill routes
 "build/edit code node" intents toward MCP builds; a decanter skill answers the
 same intent with files+push at the layer agents actually consult; (2) portable

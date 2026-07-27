@@ -912,6 +912,36 @@ invalidate the measurement (the *route* is what S6 scores, and the route was
 taken before the mismatch surfaced), but it wasted a turn. Either seed a
 non-empty node for S6 or reword the prompt.
 
+## Cross-round: skills uptake, and the MCP guard has never fired (2026-07-27)
+
+Two dedicated verification rounds (`ftrun-6820`, `ftrun-13558`), each running
+S1+S2 on its own fresh stage, both `verify` PASS / 0 violations:
+
+| | round A | round B |
+| --- | --- | --- |
+| S1 | `n8n-code-nodes-official` | `n8n-code-nodes-official` |
+| S2 | *(none)* | `using-n8n-skills-official`, `n8n-workflow-lifecycle-official` |
+
+- **The official n8n skills pack is genuinely consulted** — `n8n-code-nodes-official`,
+  the skill overlapping decanter's own territory, fired in **both** S1 rounds.
+- **Uptake is variable, not a property.** S2 used 3–4 skills in earlier rounds,
+  then **0** and **2** here. Any claim about skill usage needs several rounds
+  behind it.
+- **S6 (code-editing, fresh clone) used none in 5 rounds** — a property of that
+  *task*, which is code-only; the skills cover building and wiring.
+
+**The MCP guard has blocked nothing, ever: zero `jsCode` blocks across ~14
+archived rounds**, including every round where `n8n-code-nodes-official` was
+loaded. Agents read n8n's own code-node skill and still route code through
+files + `push`.
+
+Keep the two guards distinct when reading this: the **MCP guard**
+(`mcp connect`, blocks code writes over MCP) has never fired; the **push-side
+guards** (compliance + drift) do fire and are exercised by S3.
+
+Agents also self-verify without being told — round B ran `check`×4, `node run`×3,
+`test`×3, `status`×2, `preflight`×1 unprompted.
+
 ## Notes
 
 - **CHANGELOG:** none (internal dev tooling + plan). **PLAN.md:** no design
