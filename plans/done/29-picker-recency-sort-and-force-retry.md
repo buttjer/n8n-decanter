@@ -3,7 +3,7 @@
 **Priority:** P2 (three small, well-scoped CLI polish wins; touches the picker,
 `state.mts`, `style.mts`/`init.mts`, one typed error, tests, docs — no
 data-model change)
-**Status:** Not started
+**Status:** Done
 **Snapshot:** 2026-07-23T06:57Z @ 710d3f1
 **Theme:** Three CLI improvements: (1) the interactive picker lists pulled
 workflows **newest-synced first**; (2) a picker-run verb that fails on a
@@ -306,3 +306,83 @@ the site needs a **24-bit truecolor** SGR — `styleText` can't emit that.
 - **Non-goals:** re-ordering `list`; force-retry on the no-ref single-select path;
   any forceable gate other than push-drift (the type makes adding more trivial
   later).
+
+---
+
+## Execution record (2026-07-27)
+
+All three features shipped. Drift found at execution time and how it was
+handled, plus the one deliberate deviation from the task list:
+
+- **Plan 59 (#179) had landed since the snapshot**, retiring
+  `status`/`check`/`simulate` in favour of `preflight` + `diff`. The picker menu
+  is now 7 rows and — new since this plan was written — **a row may carry flags**
+  (`PICKER_ACTIONS`, e.g. `preflight --simulate`). The force-retry therefore
+  re-dispatches the *same row's* flag set with `force: true` added, not a bare
+  `PICKER_FLAGS`. Otherwise the plan's analysis held: `push` is still the only
+  drift-capable picker verb, and `writeState` is still unconditional on every
+  pull/push, so the mtime signal is intact (re-verified at the CLI surface).
+
+- **Deviation — the TTY confirm test uses injected streams, not `expect`.** Task
+  7 called for an `expect`-driven e2e step. That test could not run anywhere:
+  GitHub's `ubuntu-latest` runner image does **not** ship `expect` (checked
+  against the runner-images package list), so it would either fail CI or be
+  permanently skipped there; and the agent sandbox cannot allocate a pty at all
+  ("The system has no more ptys"), so it could not even be verified locally.
+  Writing an unverifiable, never-executed test is worse than not writing one.
+
+  Instead the decision was **decomposed into `lib/` behind the same seam Plan 22
+  used for `runPicker`** — injected streams, no pty, no new dependency:
+  `createPrompt` now takes optional `{input, output}`, and `lib/picker.mts` gains
+  `FORCE_RETRY_PROMPT`, `isForceRetryYes`, `confirmForceRetry(io)`, and
+  `runVerbWithForceRetry(run, log, confirm)`. The CLI's `pickerLoop` is now a
+  six-line call into it. Covered by:
+  - `test/unit/picker.test.mts` — the retry policy: clean run never prompts, a
+    `ForceableError` prompts and `yes` re-runs with `force: true`, declining
+    never re-runs, a **compliance failure never prompts**, a failed retry is
+    reported not thrown; plus the `y/yes`-only answer parsing.
+  - `test/interactive.mts` — the readline half over real `PassThrough` streams
+    (prompt text asserted, `y` / bare-Enter / EOF all driven), and the whole
+    drift→prompt→forced-retry flow end to end.
+  - `test/unit/push.test.mts` — `assertNoDrift` throws `ForceableError` while
+    `assertCompliant` stays a plain `Error`.
+
+  What this does **not** cover is the ~6 lines of glue inside `pickerLoop`
+  itself. A follow-up worth considering: move `pickerLoop` into `lib/` with
+  injected IO + dispatch, which would make the whole session drivable from
+  `test/interactive.mts`.
+
+- **Canonical brand value settled by computation, not by the plan's estimate.**
+  `oklch(0.7 0.15 60)` → Oklab → linear sRGB → gamma gives
+  `rgb(224.58, 132.58, 39.89)` → **`#E18528`** (the plan's `#E18428` was one
+  green step off). The 256-color fallback is **172** `rgb(215,135,0)` (Δ≈41), not
+  the plan's suggested 208 `rgb(255,135,0)` (Δ≈50) — 208 overshoots into red.
+  Both numbers live in `lib/style.mts` with the derivation in the comment.
+
+- **`brand()` gating delegates to `styleText` itself** (`s("red","x") === "x"` →
+  emit nothing) rather than re-deriving the NO_COLOR/FORCE_COLOR/TTY rules, so
+  there is one rule for every color. Depth comes from the stream's own
+  `hasColors`, which exists only on real TTY streams — on a non-TTY,
+  colorization can only have come from `FORCE_COLOR`, so its documented levels
+  are mapped directly. (Verified empirically: `FORCE_COLOR=1` is **16-color**,
+  so it yields the red fallback, not truecolor — the plan's test sketch assumed
+  otherwise.) `makeStyle` is now exported so the tests can build a fake TTY of a
+  given depth.
+
+- **README** got the one-line tweak the plan preferred over a new feature bullet.
+  `docs/cli/overview.md` gained both notes in both picker paragraphs,
+  `docs/cli/pull.md` in its no-ref paragraph, `CHANGELOG` an Added + two Changed
+  entries, and `PLAN.md` the recency **decision**, the force-retry flow, and the
+  brand-color derivation.
+
+- Verified at the CLI surface (real CLI as a subprocess against a throwaway MCP
+  mock, `/verify` recipe): `list` order stays alphabetical while the recency
+  order over the CLI's own on-disk state is reverse-pull-order; **a push
+  re-stamps its state file and moves that workflow to the top**; the drift abort
+  still exits 1 with the `--force` hint and **never prompts on a piped run**;
+  `--force` lands on the draft with the published version untouched; no ANSI or
+  brand SGR leaks into piped output.
+
+- `npm test` (393 unit + 84 e2e + 24 guard-proxy + 4 mcp-spawn + 18
+  interactive), `npm run lint`, `npm run typecheck`, `npm run check:docs` — all
+  green.

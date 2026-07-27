@@ -117,7 +117,8 @@ Code, Codex, or any skills.sh-supported agent, listing the one it detects first.
 
 ## Commands
 
-Bare `n8n-decanter` (no verb) opens an interactive picker on a terminal.
+Bare `n8n-decanter` (no verb) opens an interactive picker on a terminal —
+newest-synced workflow first.
 Full flag reference: `n8n-decanter --help`, or the
 [command overview](docs/cli/overview.md).
 

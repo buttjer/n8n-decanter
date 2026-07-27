@@ -6,7 +6,8 @@
 // lifecycle, the remote-promise repaint, resume, and EOF/interrupt exits.
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
-import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerEntry } from "../lib/picker.mts";
+import { ForceableError } from "../lib/errors.mts";
+import { ENABLE_MCP_VERB, confirmForceRetry, mergeRemote, runPicker, runVerbWithForceRetry, sortByRecency, type PickerEntry } from "../lib/picker.mts";
 import { createStepRunner } from "./harness.mts";
 
 const { step, passedCount } = createStepRunner();
@@ -251,6 +252,87 @@ await step("MCP-unavailable entry: red ⊘ row sorts last; Enter resolves to the
   // Enter never opens a verb menu for a gated workflow — it resolves to the
   // sentinel, and the CLI (pickerLoop) prints the enable-MCP guidance
   assert.deepEqual(await result, { verb: ENABLE_MCP_VERB, id: "ddd444", name: "Gated Flow" });
+});
+
+// ---------- Plan 29: recency order + the force-retry confirm ----------
+
+await step("pick order follows syncedAt: the newest-synced workflow is under the cursor, remotes stay last", async () => {
+  const io = makeIo();
+  // deliberately NOT alphabetical order, and not the array's own order either
+  const local: PickerEntry[] = [
+    { id: "aaa111", name: "Billing Sync", pulled: true, available: true, syncedAt: 1_000 },
+    { id: "bbb222", name: "Mail Digest", pulled: true, available: true, syncedAt: 3_000 },
+    { id: "ccc333", name: "Audit Trail", pulled: true, available: true, syncedAt: 2_000 },
+  ];
+  // exactly what the CLI's picker builders do: sort the LOCALS, then merge
+  const entries = mergeRemote(sortByRecency(local), [{ id: "ddd444", name: "Aaa Remote", available: true }]);
+  const result = runPicker(entries, undefined, { input: io.input, output: io.output });
+  await tick();
+  const rows = io.text().split("\n").filter((l) => /aaa111|bbb222|ccc333|ddd444/.test(l));
+  assert.deepEqual(
+    rows.map((l) => l.match(/(aaa111|bbb222|ccc333|ddd444)/)![1]),
+    ["bbb222", "ccc333", "aaa111", "ddd444"],
+    "newest-synced first, then the unpulled remote — never alphabetical",
+  );
+  assert.match(rows[0], /❯/, "the cursor starts on the most recently synced workflow");
+  await sendKey(io, "\r"); // Enter on row 0 opens ITS verb menu
+  assert.match(io.text(), /Mail Digest/, "Enter selects the newest-synced workflow");
+  await sendKey(io, "\x1b[B"); // preflight -> preflight --simulate
+  await sendKey(io, "\r");
+  assert.deepEqual(await result, { verb: "preflight --simulate", id: "bbb222", name: "Mail Digest" });
+});
+
+await step("force-retry confirm: 'y' forces, bare Enter declines, EOF declines — and it never asks twice", async () => {
+  // Same injected-stream trick as runPicker, so the readline half is really
+  // exercised (prompt written, line read, interface closed) with no pty.
+  const ask = async (typed: string | null): Promise<{ answered: boolean; prompt: string }> => {
+    const io = makeIo();
+    const pending = confirmForceRetry({ input: io.input, output: io.output });
+    await tick();
+    if (typed === null) io.input.end(); // EOF: a closed stdin must decline, not hang
+    else io.input.write(typed);
+    return { answered: await pending, prompt: io.text() };
+  };
+
+  const yes = await ask("y\n");
+  assert.equal(yes.answered, true);
+  assert.match(yes.prompt, /retry with --force and overwrite the remote draft\? \[y\/N\]/, "the copy says draft, not 'remote changes'");
+  assert.equal((await ask("YES\n")).answered, true, "case-insensitive, long form");
+  assert.equal((await ask("\n")).answered, false, "bare Enter is No — the default");
+  assert.equal((await ask("n\n")).answered, false);
+  assert.equal((await ask("maybe\n")).answered, false, "anything ambiguous is No");
+  assert.equal((await ask(null)).answered, false, "EOF declines instead of wedging");
+});
+
+await step("force-retry drives the verb: a drift failure re-runs with force; a compliance failure never asks", async () => {
+  const io = makeIo();
+  const lines: string[] = [];
+  const log = { info: () => {}, ok: () => {}, warn: () => {}, error: (m: string) => lines.push(m) };
+  const forces: boolean[] = [];
+  // the real ForceableError from the real push guard, answered over real streams
+  const drifted = runVerbWithForceRetry(async (force) => {
+    forces.push(force);
+    if (!force) throw new ForceableError("remote code changed since last sync — pull first (or repeat with --force to overwrite the draft)");
+  }, log, () => confirmForceRetry({ input: io.input, output: io.output }));
+  await tick();
+  io.input.write("y\n");
+  assert.equal(await drifted, true, "the forced retry succeeded");
+  assert.deepEqual(forces, [false, true], "the same verb re-ran, this time with force");
+  assert.match(io.text(), /overwrite the remote draft/);
+  assert.equal(lines.length, 1, "the drift error is reported once, not once per attempt");
+
+  // a layout violation is a plain Error: --force cannot fix it, so no offer
+  const io2 = makeIo();
+  let asked = false;
+  const complianceOk = await runVerbWithForceRetry(async () => {
+    throw new Error("workflow does not comply with the decanter layout (1 problem)");
+  }, log, async () => {
+    asked = true;
+    return confirmForceRetry({ input: io2.input, output: io2.output });
+  });
+  assert.equal(complianceOk, false);
+  assert.equal(asked, false, "a compliance failure must never offer --force");
+  assert.equal(io2.text(), "", "nothing was even printed to the prompt stream");
 });
 
 console.log(`\n${passedCount()} interactive checks passed`);
