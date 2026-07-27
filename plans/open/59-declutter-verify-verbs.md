@@ -96,7 +96,7 @@ They compose, and every old profile is reconstructable:
 - Drop `simulate` from `VERBS`/`REF_VERBS`, its `case`, its usage line; add a
   removed-verb hint → `preflight --simulate`.
 - **`--viewer` — open sub-decision.** The standalone `simulate --viewer` (the
-  browser pin/data inspector, cf. Plan 54 *(plan dropped 2026-07-27)*)
+  browser pin/data inspector, cf. Plan 54 *(dropped)*)
   fights the one-shot-gate model preflight embodies. **Recommend** preserving it
   as `preflight --simulate --viewer` rather than dropping it; confirm with the
   maintainer before deleting any viewer code. `--network-none` (always-on in

@@ -81,7 +81,7 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
   2. *Hybrid precedence:* scenarios are **always self-contained** — a run pins
      from a named scenario *or* a capture, never a mix. The layering variant
      (`--scenario` overlaid on a fresh capture, the old flaky-node `--pin`
-     use case) is deferred to Plan 41 *(plan dropped 2026-07-27)*
+     use case) is deferred to Plan 41 *(dropped)*
      ("Scenario layering over a fresh capture").
   3. *Old spelling:* **hard error** — `mock`/`--mock` fail naming
      `scenario`/`--scenario`; no alias release (the template
@@ -159,7 +159,7 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
    entries (verb rename, flag rename, dir rename + auto-migration, `--pin`
    removal) and Added (schema scaffolding); **PLAN.md** design section rewrite
    (one pin-artifact model, provenance, scaffold flow); template `AGENTS.md`
-   loop mentions; Plan 41 *(plan dropped 2026-07-27)*
+   loop mentions; Plan 41 *(dropped)*
    distinctive-features entry (committed
    scenario library + schema-scaffolded gap fills).
 

@@ -85,7 +85,7 @@ Requires n8n 2.x's collaboration stack (presence + single-writer lock +
   `LockedError` when a human is mid-edit — tracked separately in
   [`draft/53`](../draft/53-push-surface-write-lock-error.md).
 - The in-browser "Test workflow" pinData gap (MCP can't persist pinData) is
-  `draft/54` *(plan dropped 2026-07-27)*.
+  `draft/54` *(dropped)*.
 
 ## Non-goals
 

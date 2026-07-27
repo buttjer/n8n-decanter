@@ -36,7 +36,7 @@ happens. A UX/contract field test, not a CI suite.
 >    a blocked `jsCode` write is a single **stderr warn-line** of the
 >    agent-spawned `mcp connect` process, and successful forwards are unlogged.
 >    Replace every "proxy log" mention (Why, invariants, artifacts, acceptance,
->    the [Plan 50](../draft/50-code-node-authoring-skill.md) authoring-skill
+>    the Plan 50 *(dropped)* authoring-skill
 >    evidence tie-in) with a **designed capture
 >    channel** (stage-scaffold the `.mcp.json` command with a stderr redirect,
 >    e.g. `sh -c 'n8n-decanter mcp connect 2>>guard.log'`) plus **instance-state
@@ -81,7 +81,7 @@ happens. A UX/contract field test, not a CI suite.
 >    file to update** (the `ls plans/*/` dir listing is the index; conventions
 >    live in `plans/AGENTS.md`), and the old **"Plan 0" grab-bag placeholder is
 >    gone**: this plan's authoring-skill tie-in is now the concrete
->    [Plan 50](../draft/50-code-node-authoring-skill.md). The **watch
+>    Plan 50 *(dropped)*. The **watch
 >    browser-reload proxy was removed** (#128 / Plan 52) — `watch` no longer
 >    injects a reload proxy; n8n's editor reflects MCP draft edits natively and
 >    `watch` just prints the editor deep link, so S5's "just show up in n8n" is
@@ -132,7 +132,7 @@ skill nudging it to write `jsCode` via MCP, a doc gap that stalls a session.
 A **blind** test — the agent doesn't know it's being evaluated — is the only
 honest read: an agent that knows it's a test run performs the contract instead
 of using the product. Side benefit: the **captured guard-stderr** evidence the
-[Plan 50](../draft/50-code-node-authoring-skill.md) authoring-skill entry
+Plan 50 *(dropped)* authoring-skill entry
 explicitly waits on (does "the n8n skills' routing nudge bite agents in
 practice" — visible as blocked-`jsCode` warn-lines from the `mcp connect`
 guard).
@@ -148,7 +148,7 @@ guard).
 - [Plan 33](../done/33-post-mcp-pivot-wave.md) Task 4 (the HTTP `mcp serve` guard)
   **and the skills-first wave (#107)** — which made the stdio **`mcp connect`**
   guard the auto-wired default that this test actually exercises;
-  [Plan 50](../draft/50-code-node-authoring-skill.md) distinctive-features →
+  Plan 50 *(dropped)* distinctive-features →
   authoring-skill entry (consumes this plan's captured guard-stderr evidence).
 
 ## Design
@@ -422,7 +422,7 @@ blinding protocol, same Sonnet cast — **maintainer-run, UNSANDBOXED** (nested
    contamination check → **Opus grading** (the per-turn grading round 1
    deferred) → append `## Run report — round 1/2` here: per-scenario verdicts,
    invariant results, classified guard events, captured `guard.log` evidence for
-   [Plan 50](../draft/50-code-node-authoring-skill.md).
+   Plan 50 *(dropped)*.
 4. **S3 must actually exercise the drift guard this time.** Round 1's S3 was
    inconclusive — the drift preHook edited the *wrong* workflow (Contact
    normalizer vs. the *orders* target), so the guard never fired. The prompt is
@@ -695,7 +695,7 @@ test/field-test/run.mts <manifest>` → grade (Opus, unblinded) + contamination
 check → append `## Run report — round 1`. No blind runs were executed in the
 build session, so **no run report is fabricated here.**
 
-**Skills-pack finding (feeds [Plan 50](../draft/50-code-node-authoring-skill.md)
+**Skills-pack finding (feeds Plan 50 *(dropped)*
 — strong prior to confirm in round 1).** The official `n8n-io/skills` pack
 (Apache-2.0) frames the **Code node as a "last resort"** and routes any code it
 does write through `create_workflow_from_code` / `update_workflow` SDK code —
@@ -722,7 +722,7 @@ the missing hooks in mind.
   events, and a ranked findings list the maintainer can triage 1:1.
 - The captured-guard-stderr evidence question is answered explicitly (did the
   skills' routing nudge bite, yes/no + examples) and cross-referenced from the
-  [Plan 50](../draft/50-code-node-authoring-skill.md) authoring-skill entry.
+  Plan 50 *(dropped)* authoring-skill entry.
 - Blind sessions produced no changes to this repo. *(Amended 2026-07-25: the
   original criterion also said "no scratch artifacts were committed", which the
   archive redesign deliberately reversed — #153/#157/#159 **commit** each
