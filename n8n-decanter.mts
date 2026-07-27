@@ -213,17 +213,6 @@ async function main() {
   if (process.argv.slice(2).some((a) => a === "--at" || a.startsWith("--at=") || a === "--version-id" || a.startsWith("--version-id="))) {
     throw new Error("`--at`/`--version-id` were removed: `backup restore` takes the backup as an argument — `n8n-decanter backup restore <workflow> [<timestamp|versionId>]` (see `backup list`)");
   }
-  // The retired preflight PROFILE flags (Plan 59). Both shipped in 0.6.0, and
-  // both are the dangerous kind of retired flag: unmatched, they would be
-  // dropped silently and the run would fall through to a DIFFERENT, weaker
-  // gate than the caller asked for — a CI job passing `--full` would quietly
-  // stop running the engine. Reject with the migration instead.
-  if (process.argv.slice(2).some((a) => a === "--quick")) {
-    throw new Error("`--quick` was removed (Plan 59): the static-only gate is `preflight --offline` (layout + types, no network, no engine)");
-  }
-  if (process.argv.slice(2).some((a) => a === "--full")) {
-    throw new Error("`--full` was removed (Plan 59): profiles are gone — the local-engine run is now the additive `preflight --simulate` (add `--offline` to drop the instance reads)");
-  }
   const force = args.includes("--force");
   const publishFlag = args.includes("--publish");
   const noTypecheck = args.includes("--no-typecheck");

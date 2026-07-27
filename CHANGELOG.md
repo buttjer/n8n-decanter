@@ -217,12 +217,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `preflight --simulate` (see the profile→flags entry above, which retired
   `--full` and the whole profile vocabulary in the same release).
 
-  **Both retired profile flags hard-error rather than being ignored.**
-  `--quick` and `--full` each exit non-zero naming their replacement. This
-  matters more than for most retired flags: an unrecognized flag is dropped
-  silently, so a CI job on `preflight --full` would have quietly stopped
-  running the engine and still reported a green gate. Failing loudly is the
-  whole point.
+  **Neither `--quick` nor `--full` is recognized any more — they are simply
+  gone, not rejected with a migration.** The CLI ignores flags it does not
+  know, so `preflight --full` now runs the *default* gate (no engine) and
+  `preflight --quick` runs it too, both exiting 0. **If you have either in a CI
+  job, update it in the same step as this upgrade** — nothing will tell you at
+  runtime. `--full` → `--simulate`; `--quick` → `--offline`.
 - **Breaking: `preflight --trigger <node>`.** It existed only to feed the
   removed instance `test` stage; since that stage's removal it parsed and did
   nothing. `test --trigger <node>` (the post-push instance run) keeps the flag

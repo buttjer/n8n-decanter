@@ -2471,18 +2471,6 @@ await step("preflight: one scored, local-code gate that never writes and never r
   assert.ok(Array.isArray(report.coverage.ran));
   assert.ok(report.checks.every((c: any) => typeof c.durationMs === "number"));
 
-  // Both retired PROFILE flags reject with their migration. Silence would be
-  // the dangerous outcome: an unmatched flag is dropped and the run falls
-  // through to a different, weaker gate than the caller asked for.
-  r = await cli("preflight", "wfT1", "--quick");
-  assert.notEqual(r.code, 0, "--quick must be rejected, not remapped");
-  assert.match(r.out, /`--quick` was removed/);
-  assert.match(r.out, /preflight --offline/, "the rejection names the migration");
-  r = await cli("preflight", "wfT1", "--full");
-  assert.notEqual(r.code, 0, "--full must be rejected, not silently ignored");
-  assert.match(r.out, /`--full` was removed/);
-  assert.match(r.out, /preflight --simulate/, "the rejection names the migration");
-
   // --require turns a skipped runtime check into a hard fail (the CI teeth)
   r = await cli("preflight", "wfT1", "--require=simulate");
   assert.equal(r.code, 1, "a required-but-skipped check fails the gate");

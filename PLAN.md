@@ -828,9 +828,9 @@ never calls `runTest`) rather than a mode.
   it and `--require=simulate` depends on it.
 - **Depth: two orthogonal flags, no profiles** (deterministic, no
   auto-escalation — Plan 59 deleted the `Profile`/`PROFILES`/`profileSpec`
-  machinery, and `--full`/`--quick` with it; both are kept only as
-  **hard-error rejections** naming their replacement, because an unrecognized
-  flag is dropped silently and would quietly weaken the gate). `--simulate` is **additive**
+  machinery, and `--full`/`--quick` with it, leaving no tombstone: pre-1.0 the
+  maintainer's call was a clean surface over a migration shim, so both are now
+  merely unrecognized flags). `--simulate` is **additive**
   (appends the local-engine stage); `--offline` is **subtractive** (drops the
   instance-reads tier and joins the dispatcher's `offline` set, so `loadConfig`
   skips `requireHost`). One pure function, `activeStages({simulate, offline})

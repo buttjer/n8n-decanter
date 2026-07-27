@@ -186,14 +186,17 @@ run-to-run noise — so the hook keeps the plain `preflight --offline` entry
 point. Under `--offline` the sync tier never runs, so the replacement does no
 extra git/state/instance work.
 
-**Two decisions taken during execution, both departing from the plan's letter:**
+**Two decisions taken during execution:**
 
-1. **`--quick`/`--full` reject instead of disappearing.** Task 1 said to delete
-   the `--quick` rejection along with the flag model. Doing so made `--quick`
-   an *unrecognized* flag — silently dropped, with the run falling through to a
-   different, weaker gate. That is precisely the failure this plan and #162
-   both argued against, so both flags are kept as hard errors naming their
-   replacement. The flag model is gone; only the tombstones remain.
+1. **`--quick`/`--full` leave no tombstone — Task 1 executed as written.**
+   Removing the flag model makes both *unrecognized* rather than rejected, and
+   because the CLI ignores unknown flags, a CI job on `preflight --full`
+   silently gets the default gate with no engine and still exits 0. That
+   silent-coverage-loss risk was raised, and the **maintainer's call was to
+   drop them anyway: pre-1.0, a clean surface beats a migration shim, and
+   breaking is acceptable.** Documented loudly in the changelog and
+   `docs/cli/preflight.md` instead, since nothing warns at runtime. Revisit
+   only if the removal actually bites someone.
 2. **A corrupt `.decanter.json` warns instead of failing.** `check` scanned
    *folders*, so an unparseable state file anywhere was a hard error for the
    whole run; `preflight` grades resolved *workflows*, and such a folder can't

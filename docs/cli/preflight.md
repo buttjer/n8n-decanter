@@ -71,11 +71,12 @@ n8n-decanter preflight --offline --simulate  # static + local engine, still no i
 > **`--offline` no longer implies the engine replay.** It used to; now it does
 > exactly one thing — drop the instance tier. The old `--offline` behaviour
 > (static + a local engine run, no instance) is
-> **`preflight --offline --simulate`**. The `--full` and `--default` profile
-> flags are gone with the vocabulary: `--full` is `--simulate`. `--full` and
-> `--quick` both **hard-error** naming their replacement rather than being
-> ignored — an unrecognized flag would be dropped silently and hand you a
-> weaker gate than you asked for.
+> **`preflight --offline --simulate`**. The `--full`, `--quick`, and
+> `--default` profile flags are gone with the vocabulary: `--full` is
+> `--simulate`, `--quick` is `--offline`. They are **unrecognized, not
+> rejected** — the CLI ignores unknown flags, so `preflight --full` silently
+> runs the default gate with no engine. Update any CI job that passes one;
+> nothing will warn you at runtime.
 
 Nothing escalates on its own. An auto-escalating variant (run the engine only
 "when it would add signal") was **rejected** — surprise Docker boots and
