@@ -84,7 +84,7 @@ the escape hatch; `run` stays honest about its edges.
   boundary. This plan is the *inside* of that boundary (the emulated-global
   surface); Plan 31 line 151 already lists "changing the emulated-global
   surface" as its own **non-goal**, so the two are complementary by design.
-- **Relates to** [Plan 47](../draft/47-run-from-execution.md) — a `run` *fixture
+- **Relates to** Plan 47 *(plan dropped 2026-07-27)* — a `run` *fixture
   source*, an orthogonal axis (where input comes from, not how faithfully
   globals are emulated).
 - **Relates to** [Plan 30](../open/30-agent-llm-working-ergonomics.md) — treats
@@ -277,8 +277,8 @@ it authors decanter's code, never pastes n8n's).
 - **Sandboxing `run`** — that's [Plan 31](../open/31-run-sandbox-boundary.md); this plan
   is the emulated-global *surface* inside that boundary, not the isolation
   mechanism.
-- **`run --from-execution`** fixture loading — [Plan
-  47](../draft/47-run-from-execution.md).
+- **`run --from-execution`** fixture loading — Plan
+  47 *(plan dropped 2026-07-27)*.
 - **Emulating instance-scoped state** (`$vars`/`$secrets` *values*, live linked
   items, real execution ids) — `test` over MCP is the fidelity path; here we
   signpost, not emulate.

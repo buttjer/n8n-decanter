@@ -81,7 +81,7 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
   2. *Hybrid precedence:* scenarios are **always self-contained** — a run pins
      from a named scenario *or* a capture, never a mix. The layering variant
      (`--scenario` overlaid on a fresh capture, the old flaky-node `--pin`
-     use case) is deferred to [Plan 41](../draft/41-scenario-layering-over-capture.md)
+     use case) is deferred to Plan 41 *(plan dropped 2026-07-27)*
      ("Scenario layering over a fresh capture").
   3. *Old spelling:* **hard error** — `mock`/`--mock` fail naming
      `scenario`/`--scenario`; no alias release (the template
@@ -151,7 +151,7 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
    as partial and labeled. (Wording coordinated via Plan 36's relation note;
    the scoring itself lands with whichever plan executes second.)
 7. **Docs + bookkeeping (all surfaces, one PR).**
-   [docs/cli/mock.md](../../docs/cli/mock.md) → `docs/cli/scenario.md` (rewrite
+   docs/cli/mock.md *(page removed with the mock verb)* → `docs/cli/scenario.md` (rewrite
    around the one-artifact story; "Not `--pin`" section retired);
    [simulate.md](../../docs/cli/simulate.md)/[test.md](../../docs/cli/test.md)
    flag + loop updates; [overview](../../docs/cli/overview.md) command surface;
@@ -159,7 +159,7 @@ pin-data set": rename `mock` → **`scenario`**, fold the shipped per-node
    entries (verb rename, flag rename, dir rename + auto-migration, `--pin`
    removal) and Added (schema scaffolding); **PLAN.md** design section rewrite
    (one pin-artifact model, provenance, scaffold flow); template `AGENTS.md`
-   loop mentions; [Plan 41](../draft/41-scenario-layering-over-capture.md)
+   loop mentions; Plan 41 *(plan dropped 2026-07-27)*
    distinctive-features entry (committed
    scenario library + schema-scaffolded gap fills).
 

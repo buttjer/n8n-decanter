@@ -3,7 +3,7 @@
 **Status:** Not started
 **Priority:** P2
 **Class:** Distinctive feature — the verb surface *is* the product's ergonomics; a tool an agent (or human) can't navigate loses to raw n8n MCP.
-**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](../done/60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](../done/60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](../done/57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
+**Source:** Maintainer session 2026-07-24/25, continuing the [Plan 60](../done/60-preflight-first-verb-surface.md) thread (renumbered from 58 — the guard-route draft owns that number). Graduates and widens its [Deferred to Plan 59](../done/60-preflight-first-verb-surface.md#deferred-to-plan-59) section. Relates to [Plan 57](../done/57-cli-discoverability-for-agents.md) (agent discovery) and [Plan 26](../draft/26-npx-engine-backend.md) (engine backend). Decisions taken in-session via the run-mode + depth-control questions.
 **Snapshot:** 2026-07-25T00:00Z @ 9f3a78a
 **Theme:** The verify cluster is five verbs that all feel like "check my thing." Bury `check`, `status`, and `simulate` into `preflight`; promote the one unique capability (`status --diff`) to a `diff` verb; replace the profile vocabulary with two plain flags.
 
@@ -48,7 +48,7 @@ preflight --offline --simulate  static + local engine, no instance (air-gapped r
 ```
 
 - **`--simulate`** is *additive*: it appends the local-engine stage (Docker /
-  the [Plan 26](26-npx-engine-backend.md) npx backend), `--network-none` always
+  the [Plan 26](../draft/26-npx-engine-backend.md) npx backend), `--network-none` always
   forced, credentials stripped, pins from a capture/scenario.
 - **`--offline`** is *subtractive*: it drops the instance-reads tier and skips
   `requireHost` (it already joins the dispatcher's offline set).
@@ -96,7 +96,7 @@ They compose, and every old profile is reconstructable:
 - Drop `simulate` from `VERBS`/`REF_VERBS`, its `case`, its usage line; add a
   removed-verb hint → `preflight --simulate`.
 - **`--viewer` — open sub-decision.** The standalone `simulate --viewer` (the
-  browser pin/data inspector, cf. [Plan 54](../draft/54-persist-pindata-for-browser-test.md))
+  browser pin/data inspector, cf. Plan 54 *(plan dropped 2026-07-27)*)
   fights the one-shot-gate model preflight embodies. **Recommend** preserving it
   as `preflight --simulate --viewer` rather than dropping it; confirm with the
   maintainer before deleting any viewer code. `--network-none` (always-on in
@@ -174,7 +174,7 @@ They compose, and every old profile is reconstructable:
 for the record: **sandbox** is already overloaded in this repo (shell-sandbox +
 the `node run` boundary, [Plan 31](31-run-sandbox-boundary.md)); **playground**
 implies interactivity this one-shot CI check doesn't have; **container** names
-the mechanism and would age wrong against the [Plan 26](26-npx-engine-backend.md)
+the mechanism and would age wrong against the [Plan 26](../draft/26-npx-engine-backend.md)
 npx backend; **rehearse/replay** were viable verbs but not worth the churn. If
 the name is ever revisited, revisit it once, here.
 

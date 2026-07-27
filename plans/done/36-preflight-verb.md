@@ -280,7 +280,7 @@ Concretely:
   spike); `test_workflow`'s server-side execution-record footprint worth one
   smoke assertion (does a test run appear in `search_executions`? If so, the
   `history` check should exclude test-mode runs).
-- **Relation to [Plan 26](../open/26-npx-engine-backend.md):** when the npx
+- **Relation to [Plan 26](../draft/26-npx-engine-backend.md):** when the npx
   backend lands, `simulate`'s availability probe (today: Docker) widens
   automatically — preflight inherits it through the registry's availability
   logic; no coupling now.

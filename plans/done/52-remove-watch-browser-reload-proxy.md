@@ -60,7 +60,7 @@ Requires n8n 2.x's collaboration stack (presence + single-writer lock +
    [`test/e2e.mts`](../../test/e2e.mts), [`test/smoke-n8n.mts`](../../test/smoke-n8n.mts),
    `test/unit/config.test.mts`, `test/unit/preflight.test.mts`,
    `test/unit/testrun.test.mts`.
-6. **Docs** — delete [`docs/concepts/watch-live-reload.md`](../../docs/concepts/watch-live-reload.md);
+6. **Docs** — delete `docs/concepts/watch-live-reload.md` *(page removed with the proxy)*;
    trim `docs/cli/watch.md`, `docs/getting-started/quickstart.md`,
    `docs/concepts/configuration.md`, `docs/faq/troubleshooting.md`, README. Add a
    short "the editor live-updates natively on push (n8n 2.x) — keep the tab open"
@@ -85,7 +85,7 @@ Requires n8n 2.x's collaboration stack (presence + single-writer lock +
   `LockedError` when a human is mid-edit — tracked separately in
   [`draft/53`](../draft/53-push-surface-write-lock-error.md).
 - The in-browser "Test workflow" pinData gap (MCP can't persist pinData) is
-  [`draft/54`](../draft/54-persist-pindata-for-browser-test.md).
+  `draft/54` *(plan dropped 2026-07-27)*.
 
 ## Non-goals
 

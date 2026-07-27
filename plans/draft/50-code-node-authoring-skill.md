@@ -41,8 +41,9 @@ as an adoption channel) is unaffected by any of this.
 
 *Caveat: the field harness vendors `skills/*` **without** the plugin's
 SessionStart router or `plugin:` namespacing, so this measures the vendored pack,
-not a full plugin install ([Plan 56](../open/56-declarative-claude-plugin-scaffold.md)
-is the only way to test the latter).*
+not a full plugin install. Testing the real plugin would need a declarative
+plugin scaffold — drafted as Plan 56 and **dropped 2026-07-27**; revive that idea
+only if the vendored-pack evidence is ever contested.*
 
 Rationale: (1) routing-layer competition — the n8n meta-skill routes
 "build/edit code node" intents toward MCP builds; a decanter skill answers the
