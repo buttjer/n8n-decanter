@@ -13,7 +13,7 @@ import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, p
 import { runStdioGuard } from "./lib/mcpconnect.mts";
 import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { createMirror } from "./lib/mirror.mts";
-import { ENABLE_MCP_VERB, mergeRemote, runPicker, type PickerResume } from "./lib/picker.mts";
+import { ENABLE_MCP_VERB, mergeRemote, runPicker, runVerbWithForceRetry, sortByRecency, type PickerResume } from "./lib/picker.mts";
 import { ALL_CHECK_IDS, type CheckId, describeFlags, exitCodeOf, formatCheckDetails, formatCheckLine, type Palette, renderPreflightSummary, RETIRED_CHECK_IDS, runPreflight } from "./lib/preflight.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
@@ -382,8 +382,10 @@ const PICKER_ACTIONS: Record<string, { command: string; flags: Flags }> = {
  * or Ctrl-C. The remote list comes over MCP (`search_workflows` sees every
  * workflow; the `availableInMCP` flag feeds the third picker state, Plan 32),
  * fetched once and cached across iterations; a verb error is logged and
- * returns to the menu instead of ending the session. The process exit code
- * reflects the last verb run.
+ * returns to the menu instead of ending the session — except a *forceable* one
+ * (push drift), which first offers a `--force` retry (Plan 29). Pulled
+ * workflows are listed newest-synced first. The process exit code reflects the
+ * last verb run.
  */
 async function pickerLoop(config: DecanterConfig): Promise<void> {
   printBanner(log);
@@ -405,8 +407,9 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
   });
   let resume: PickerResume | undefined;
   for (;;) {
-    // re-listed each round: a pull just added a folder (or renamed one)
-    const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true, available: true }));
+    // re-listed each round: a pull just added a folder (or renamed one), and a
+    // push just re-stamped a state file — so recency is re-read here too
+    const local = sortByRecency(listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true, available: true, syncedAt: r.syncedAt })));
     const entries = remoteCache !== undefined ? mergeRemote(local, remoteCache) : local;
     const picked = await runPicker(entries, remotePending, { resume, notice: remoteNotice });
     if (picked === "quit") return;
@@ -422,14 +425,15 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
       continue;
     }
     log.info(style.dim(`❯ ${picked.verb} ${picked.name}`));
-    process.exitCode = 0;
     const action = PICKER_ACTIONS[picked.verb] ?? { command: picked.verb, flags: PICKER_FLAGS };
-    try {
-      await dispatch(action.command, [picked.id], action.flags);
-    } catch (err) {
-      process.exitCode = 1;
-      log.error((err as Error).message);
-    }
+    // A forceable failure (the push drift guard) gets a y/N force-retry offer
+    // instead of only printing the hint — Plan 29. The retry re-dispatches the
+    // SAME row, so a flag-carrying row keeps its flags.
+    const ok = await runVerbWithForceRetry(
+      (force) => dispatch(action.command, [picked.id], force ? { ...action.flags, force: true } : action.flags),
+      log,
+    );
+    process.exitCode = ok ? 0 : 1;
     console.log("");
     resume = { id: picked.id, verb: picked.verb };
   }
@@ -452,7 +456,7 @@ function interactive(): boolean {
  * files only, so their menu stays local-only.
  */
 async function pickOneWorkflow(config: DecanterConfig, verb: string, log: Log): Promise<string | undefined> {
-  const local = listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true, available: true }));
+  const local = sortByRecency(listWorkflowRefs(config.root, log).map((r) => ({ id: r.id, name: r.name, pulled: true, available: true, syncedAt: r.syncedAt })));
   let entries = local;
   if (verb === "pull") {
     try {

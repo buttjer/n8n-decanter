@@ -32,7 +32,8 @@ n8n-decanter/
                           #   namespaces: node (run), scenario (create|check),
                           #   backup (create|restore|list), mcp (connect|serve)
   lib/                    # implementation: api, compile, config, datatables,
-                          #   diff, engine, executions, git, init, lifecycle,
+                          #   diff, engine, errors, executions, git, init,
+                          #   lifecycle,
                           #   mcp, mcpconnect, mcpserve, picker, prompt,
                           #   mirror, preflight, pull, push, run, simulate,
                           #   state, status, style, skills,
@@ -389,6 +390,44 @@ when such rows exist, and the Enter hint switches to "enter how to enable".
 The remote list rides `search_workflows`. Everything else about the picker
 (type-to-filter, verb menu, resume loop, skeleton rows, TTY-gating, pure
 state machine exported for tests) is unchanged from Plans 19/23/27.
+
+Pulled entries are ordered **newest-synced first** (Plan 29) by a pure exported
+`sortByRecency`; the CLI applies it to the **local** list *before* `mergeRemote`,
+which appends available-then-unavailable remotes, so the three-group order above
+survives for free. **Decision — the recency signal is `<slug>/.decanter.json`'s
+mtime, not a stored `lastSyncedAt` field.** Every pull and push rewrites that
+file unconditionally, but a no-op sync rewrites it *byte-identically*, so git
+sees no diff and the auto-commit stays a real no-op; a committed timestamp would
+change on every sync and turn no-op syncs into churn plus spurious commits.
+Known limitation, accepted: a fresh `git clone` stamps every state file with the
+checkout time, so ordering degrades to the name tie-break until the first local
+sync — mtime is a *local-activity* signal, not history. Scripted `list` output
+keeps its dir/alphabetical order; re-ordering it would change machine-read
+output for no gain.
+
+A picker-run verb that fails on a **forceable** gate offers a retry (Plan 29).
+`--force` bypasses exactly one gate — the per-node code-drift guard — so the
+offer is keyed on a typed **`ForceableError`** (`lib/errors.mts`) thrown by
+`assertNoDrift`, never on sniffing the message: the compliance guard keeps
+throwing a plain `Error`, so a layout violation can never be offered a `--force`
+that wouldn't help it. The confirm defaults to **No** (bare Enter, anything but
+`y`/`yes`, and EOF all decline) and its copy says **draft**, matching what a
+forced push actually overwrites since Plan 32. On yes the *same* menu row
+re-dispatches with `force: true`, so a flag-carrying row keeps its flags. The
+decision lives in the loop, not inside `runPicker`: the readline prompt runs
+after `runPicker`'s `finally` has restored the terminal, and is closed before
+the next round so raw-mode/keypress re-attach cleanly. Scope: the interactive
+`pickerLoop` session only — the no-ref single-select path runs its verb on the
+ordinary non-interactive path, which already prints the `--force` hint.
+
+The banner wordmark's `n8n` columns render the **website's brand orange**
+(Plan 29) via `style.brand`: `--color-accent-500: oklch(0.7 0.15 60)` converts
+to `#E18528`, emitted as a 24-bit SGR because `styleText` has neither an orange
+nor truecolor. Gating is delegated to `styleText` itself (one rule for every
+color: non-TTY, `NO_COLOR`, `FORCE_COLOR`), and the depth ladder degrades to
+xterm-256 `172` then to the pre-Plan-29 `red`. `style.mts` holds the single
+derived value for the CLI side; semantic reds (diff `-` lines, the error prefix)
+are deliberately left alone.
 
 Output follows **one rule: styling and transient output exist only when the
 target stream is a TTY**; piped output is plain line-oriented text and no

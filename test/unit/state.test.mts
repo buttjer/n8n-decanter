@@ -2,7 +2,7 @@
 // particular the corrupt-state behavior: one broken folder must not take
 // down commands for every other workflow.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -121,6 +121,18 @@ describe("listWorkflowRefs", () => {
     assert.deepEqual(ref.names, ["Order Sync v2", "order-sync"]);
     assert.equal(matchWorkflowRef(listWorkflowRefs(root), "order-sync")?.id, "wfN");
     assert.equal(matchWorkflowRef(listWorkflowRefs(root), "Order Sync v2")?.id, "wfN");
+  });
+
+  it("reports .decanter.json's mtime as syncedAt — the picker's recency signal (Plan 29)", () => {
+    const root = path.join(TMP, "syncedat");
+    const older = workflowDir("syncedat/older", JSON.stringify({ workflowId: "wfOld", nodes: {} }));
+    const newer = workflowDir("syncedat/newer", JSON.stringify({ workflowId: "wfNew", nodes: {} }));
+    // stamp them apart explicitly: two writes in the same tick can share an mtime
+    utimesSync(path.join(older, ".decanter.json"), new Date(1_000_000), new Date(1_000_000));
+    utimesSync(path.join(newer, ".decanter.json"), new Date(2_000_000), new Date(2_000_000));
+    const bySlug = new Map(listWorkflowRefs(root).map((r) => [path.basename(r.dir), r.syncedAt]));
+    assert.equal(bySlug.get("older"), 1_000_000, "mtimeMs of the state file");
+    assert.ok(bySlug.get("newer")! > bySlug.get("older")!, "a later sync ranks newer");
   });
 
   it("falls back to workflow.json then the folder when state.name is absent", () => {

@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The interactive picker offers a `--force` retry when a `push` hits the drift
+  guard.** Previously the error was printed and you were dropped back at the
+  menu, having to leave the picker and re-run `push --force` by hand — even
+  though the CLI had just told you `--force` would fix it. Now it asks:
+
+  ```
+  ✗ remote code changed since last sync — pull first (or repeat with --force to overwrite the draft)
+  retry with --force and overwrite the remote draft? [y/N]
+  ```
+
+  The default is **No**: a bare `Enter`, or anything other than `y`/`yes`,
+  returns to the menu exactly as before. Answering `y` re-runs the same menu row
+  (flags included) with `--force`, overwriting the n8n **draft** only — the
+  published version is untouched.
+
+  **It only appears for failures `--force` can actually fix.** A layout
+  compliance error never prompts, because forcing does not bypass it. And this
+  is the interactive picker session only: piped and non-interactive runs never
+  prompt — they print the `--force` hint and exit non-zero, unchanged.
+
 - **`diff` — the new verb for "show me the actual changed lines".** It is the
   promoted half of `status --diff`: per-node unified line diffs of your local
   code against the n8n draft, `.ts` compiled first (bundling `shared/*`, so a
@@ -55,6 +75,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   truncated a 12-violation layout failure to its first line.
 
 ### Changed
+
+- **The picker lists pulled workflows newest-synced first**, instead of the
+  folder's alphabetical order — the workflow you last pulled or pushed is under
+  the cursor when the picker opens. Unpulled remote rows keep their place after
+  the local ones. The signal is each workflow folder's sync timestamp, so it is
+  *local activity*, not committed history: right after a fresh `git clone`
+  everything looks equally recent and the list falls back to alphabetical until
+  your first pull or push. Scripted `list` output is deliberately unchanged.
+
+- **The CLI banner's `n8n` wordmark now uses the brand orange, matching the
+  website** (`#E18528`, derived from the site's accent color) rather than ANSI
+  red. It degrades gracefully — a 256-color terminal gets the nearest orange, a
+  16-color one keeps the old red — and piped output and `NO_COLOR` stay plain,
+  exactly as before.
 
 - **Breaking: `preflight`'s profiles are replaced by two orthogonal flags.**
   `--full` and the `Profile` model are gone. Depth is now `--simulate`

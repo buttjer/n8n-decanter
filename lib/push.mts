@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { compileTs } from "./compile.mts";
+import { ForceableError } from "./errors.mts";
 import { commitWorkflowDir } from "./git.mts";
 import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, writeState } from "./state.mts";
@@ -45,7 +46,10 @@ function assertNoDrift(problems: string[], force: boolean, log: Log): void {
   if (problems.length === 0) return;
   for (const p of problems) log[force ? "warn" : "error"](p);
   if (!force) {
-    throw new Error("remote code changed since last sync — pull first (or repeat with --force to overwrite the draft)");
+    // ForceableError, not Error: this is the ONE gate --force bypasses, so the
+    // picker loop may offer a force-retry after it (Plan 29). assertCompliant
+    // must keep throwing a plain Error.
+    throw new ForceableError("remote code changed since last sync — pull first (or repeat with --force to overwrite the draft)");
   }
   log.warn("--force: overwriting remote code changes");
 }

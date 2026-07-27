@@ -3,18 +3,23 @@
 // decides *what happens* on a key lives here and is covered.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { ForceableError } from "../../lib/errors.mts";
 import {
   PICKER_VERBS,
   filterEntries,
   initialState,
+  isForceRetryYes,
   mergeRemote,
   reduceKey,
   renderLines,
+  runVerbWithForceRetry,
+  sortByRecency,
   visibleWindow,
   type PickerEntry,
   type PickerState,
   type PickerStep,
 } from "../../lib/picker.mts";
+import type { Log } from "../../lib/types.mts";
 
 const entries: PickerEntry[] = [
   { id: "aaa111", name: "Billing Sync", pulled: true, available: true },
@@ -56,6 +61,54 @@ describe("mergeRemote", () => {
     ]);
     assert.deepEqual(merged.map((e) => e.id), ["aaa111", "bbb222", "ccc333", "ddd444", "eee555"]);
     assert.equal(merged[4].available, false);
+  });
+});
+
+describe("sortByRecency (Plan 29)", () => {
+  const dated: PickerEntry[] = [
+    { id: "a", name: "Alpha", pulled: true, available: true, syncedAt: 1000 },
+    { id: "b", name: "Bravo", pulled: true, available: true, syncedAt: 3000 },
+    { id: "c", name: "Charlie", pulled: true, available: true, syncedAt: 2000 },
+  ];
+
+  it("orders newest-synced first", () => {
+    assert.deepEqual(sortByRecency(dated).map((e) => e.id), ["b", "c", "a"]);
+  });
+
+  it("sorts entries without a syncedAt last (remote/unpulled were never synced)", () => {
+    const mixed = [...dated, { id: "d", name: "Delta", pulled: false, available: true }];
+    assert.deepEqual(sortByRecency(mixed).map((e) => e.id), ["b", "c", "a", "d"]);
+  });
+
+  it("breaks ties on name ascending — a fresh clone stamps every state file alike", () => {
+    const sameMtime: PickerEntry[] = [
+      { id: "z", name: "Zulu", pulled: true, available: true, syncedAt: 500 },
+      { id: "m", name: "Mike", pulled: true, available: true, syncedAt: 500 },
+      { id: "a", name: "Alpha", pulled: true, available: true, syncedAt: 500 },
+    ];
+    assert.deepEqual(sortByRecency(sameMtime).map((e) => e.name), ["Alpha", "Mike", "Zulu"]);
+    // two entries with NO syncedAt must not produce a NaN comparator either
+    const unsynced: PickerEntry[] = [
+      { id: "y", name: "Yankee", pulled: false, available: true },
+      { id: "x", name: "Xray", pulled: false, available: true },
+    ];
+    assert.deepEqual(sortByRecency(unsynced).map((e) => e.name), ["Xray", "Yankee"]);
+  });
+
+  it("is pure — the input array keeps its order", () => {
+    const input = [...dated];
+    sortByRecency(input);
+    assert.deepEqual(input.map((e) => e.id), ["a", "b", "c"]);
+  });
+
+  it("composes with mergeRemote: pulled newest-first, then available remote, then unavailable", () => {
+    // The CLI sorts LOCALS only, then merges — mergeRemote appends, so the
+    // three-group order survives for free (Plan 29 / Plan 32 interaction).
+    const merged = mergeRemote(sortByRecency(dated), [
+      { id: "gated", name: "Gated", available: false },
+      { id: "open", name: "Open", available: true },
+    ]);
+    assert.deepEqual(merged.map((e) => e.id), ["b", "c", "a", "open", "gated"]);
   });
 });
 
@@ -289,5 +342,87 @@ describe("resume (picker loop re-entry)", () => {
   it("passes the remote-failure notice through", () => {
     const s = initialState(entries, false, { notice: "remote list unavailable (boom)" });
     assert.equal(s.notice, "remote list unavailable (boom)");
+  });
+});
+
+describe("isForceRetryYes (Plan 29 — default No)", () => {
+  it("accepts only an explicit y/yes, any case, surrounding space allowed", () => {
+    for (const yes of ["y", "Y", "yes", "YES", " y ", "Yes\t"]) assert.equal(isForceRetryYes(yes), true, yes);
+  });
+
+  it("declines a bare Enter, an EOF-empty answer, n/no, and anything ambiguous", () => {
+    for (const no of ["", " ", "n", "N", "no", "NO", "yeah", "yep", "sure", "1", "force"]) {
+      assert.equal(isForceRetryYes(no), false, JSON.stringify(no));
+    }
+  });
+});
+
+describe("runVerbWithForceRetry (Plan 29)", () => {
+  const capture = (): { log: Log; lines: string[] } => {
+    const lines: string[] = [];
+    const push = (tag: string) => (m: string) => lines.push(`${tag} ${m}`);
+    return { log: { info: push("info"), ok: push("ok"), warn: push("warn"), error: push("error") }, lines };
+  };
+
+  it("a clean run never prompts and reports success", async () => {
+    const { log, lines } = capture();
+    const forces: boolean[] = [];
+    let asked = 0;
+    const ok = await runVerbWithForceRetry(async (force) => void forces.push(force), log, async () => {
+      asked++;
+      return true;
+    });
+    assert.equal(ok, true);
+    assert.deepEqual(forces, [false]);
+    assert.equal(asked, 0, "no failure, no confirm");
+    assert.deepEqual(lines, []);
+  });
+
+  it("a forceable failure prompts, and 'yes' re-runs the SAME verb with force", async () => {
+    const { log, lines } = capture();
+    const forces: boolean[] = [];
+    const ok = await runVerbWithForceRetry(async (force) => {
+      forces.push(force);
+      if (!force) throw new ForceableError("remote code changed since last sync");
+    }, log, async () => true);
+    assert.equal(ok, true, "the forced retry succeeded");
+    assert.deepEqual(forces, [false, true]);
+    assert.deepEqual(lines, ["error remote code changed since last sync"], "the drift error is logged once, the retry is silent");
+  });
+
+  it("declining leaves the failure standing and never re-runs", async () => {
+    const { log } = capture();
+    const forces: boolean[] = [];
+    const ok = await runVerbWithForceRetry(async (force) => {
+      forces.push(force);
+      throw new ForceableError("drift");
+    }, log, async () => false);
+    assert.equal(ok, false);
+    assert.deepEqual(forces, [false], "declining must not push anything");
+  });
+
+  // The whole point of the typed error: --force cannot fix a layout violation,
+  // so offering the retry there would be a lie.
+  it("a non-forceable failure is logged and never prompts", async () => {
+    const { log, lines } = capture();
+    let asked = 0;
+    const ok = await runVerbWithForceRetry(async () => {
+      throw new Error("does not comply with the decanter layout (2 problems)");
+    }, log, async () => {
+      asked++;
+      return true;
+    });
+    assert.equal(ok, false);
+    assert.equal(asked, 0, "a compliance failure must never offer --force");
+    assert.deepEqual(lines, ["error does not comply with the decanter layout (2 problems)"]);
+  });
+
+  it("a retry that also fails is logged and reported, not thrown", async () => {
+    const { log, lines } = capture();
+    const ok = await runVerbWithForceRetry(async (force) => {
+      throw force ? new Error("instance unreachable") : new ForceableError("drift");
+    }, log, async () => true);
+    assert.equal(ok, false);
+    assert.deepEqual(lines, ["error drift", "error instance unreachable"]);
   });
 });

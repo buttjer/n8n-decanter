@@ -88,14 +88,37 @@ menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
 output and dirs without a `decanter.config.json` keep printing usage — scripts
 and LLM harnesses never see the picker.
 
+**Pulled workflows are listed newest-synced first** — the one you last pulled
+or pushed is under the cursor when the picker opens, so the workflow you are
+actually working on doesn't have to be hunted for. Unpulled remote rows keep
+their place after the local ones. The order comes from each workflow folder's
+sync timestamp, which is *local activity* and not committed history: right
+after a fresh `git clone` everything looks equally recent, so the list falls
+back to alphabetical until your first pull or push. The scripted
+[`list`](/docs/cli/list/) output is unaffected — it stays alphabetical.
+
+**A drift failure offers a `--force` retry.** If a `push` from the picker
+aborts because the code changed in n8n since your last sync, the picker asks
+`retry with --force and overwrite the remote draft? [y/N]` instead of just
+printing the hint and dropping back to the menu. The default is **No** — a bare
+`Enter` (or anything other than `y`/`yes`) declines and returns to the menu,
+and answering `y` re-runs the same action with `--force`, which overwrites the
+n8n **draft** only. The offer appears *only* for failures `--force` can
+actually fix: a [layout-compliance](/docs/cli/preflight/) error never prompts,
+because forcing would not help. Non-interactive runs are unchanged — they never
+prompt, they print the `--force` hint and exit non-zero.
+
 **No-ref → picker.** A ref-taking verb given *no* workflow, on a terminal, opens
 the picker to choose one and then runs that verb on it (the verb menu is
-skipped). For `pull` the list includes **remote** workflows too (as in the bare
-picker), so a fresh setup with nothing pulled still gets a menu to pick from;
-the other verbs act on already-pulled workflows only. This includes the
-`backup …` and `scenario …` sub-verbs, whose first argument is a workflow ref.
-Piped/non-TTY runs keep the config-default / error path unchanged, so scripts
-and LLM harnesses never block.
+skipped). The same newest-synced-first ordering applies. For `pull` the list
+includes **remote** workflows too (as in the bare picker), so a fresh setup
+with nothing pulled still gets a menu to pick from; the other verbs act on
+already-pulled workflows only. This includes the `backup …` and `scenario …`
+sub-verbs, whose first argument is a workflow ref. Piped/non-TTY runs keep the
+config-default / error path unchanged, so scripts and LLM harnesses never
+block. The force-retry confirm belongs to the interactive picker *session*
+(bare `n8n-decanter`), so this single-select path prints the ordinary
+`--force` hint instead.
 
 ## Workflow refs
 
