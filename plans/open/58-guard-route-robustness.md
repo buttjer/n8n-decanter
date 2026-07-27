@@ -220,5 +220,5 @@ discoverable (Task 2 + Plan 57); it does not police the instance.
 - [Plan 57](../done/57-cli-discoverability-for-agents.md) — discoverability
   half; a guard that silently fails to start (task 1) is itself a discoverability
   failure.
-- [Plan 50](../draft/50-code-node-authoring-skill.md) — the skill route (steer
+- Plan 50 *(dropped)* — the skill route (steer
   the agent before it picks a tool); complementary to route-integrity.

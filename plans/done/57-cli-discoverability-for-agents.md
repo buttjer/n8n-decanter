@@ -109,7 +109,7 @@ measured a world where the breadcrumb already exists.
 2. **Meet the agent where its prior already points** — a decanter *skill* in the
    same shape as the official n8n skills pack, so an agent that loads n8n skills
    also learns "if this project syncs Code nodes, use the CLI". Overlaps
-   [Plan 50](50-code-node-authoring-skill.md); resolve the boundary before
+   Plan 50 *(dropped)*; resolve the boundary before
    executing either.
 3. **Positioning/docs** — README and docs currently explain decanter to a
    *human* evaluating a tool. Is there a page that answers an *agent's* first
@@ -166,7 +166,7 @@ measured a world where the breadcrumb already exists.
 
    **Only after (a)+(b)** should directions 1–3 be scoped: if the breadcrumb case
    holds up and only the no-evidence case fails, the fix is narrower (and closer
-   to [Plan 50](50-code-node-authoring-skill.md)'s skill route) than this plan
+   to Plan 50 *(dropped)*'s skill route) than this plan
    currently assumes.
 
 ## Non-goals

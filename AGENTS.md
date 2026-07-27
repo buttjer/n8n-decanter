@@ -739,9 +739,11 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    sections left by sandboxed deletes (see "Sandboxed shells" above). **Never
    `git clean -fdx` from the repo root** — it nukes both worktree dirs.
 5. **Dependency PR triage** — review open Dependabot PRs; merge the safe ones
-   (green CI, minor/patch). For majors, record the decision in the backlog
-   (e.g. TypeScript 7.x → [`plans/draft/49-typescript-7-native-major.md`](plans/draft/49-typescript-7-native-major.md))
-   rather than silently merging.
+   (green CI, minor/patch). For majors, record the decision rather than silently
+   merging. **Standing decision — do NOT adopt TypeScript 7 (native/Go) until a
+   stable release exposes the programmatic compiler API**: `scripts/typecheck.mts`
+   drives a custom `CompilerHost` and the ts-plugin tests need that JS API, so a
+   green-looking bump would silently break node-file typechecking. TS 6.x is fine.
 6. **CI & tests green** — main's required checks are green, `npm test` and
    `npm run typecheck` pass locally, and no open PR is red.
 7. **Drift audits** — `template/*.example` still match their repo counterparts;

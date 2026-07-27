@@ -44,7 +44,7 @@ the MCP foundation.
   lineage (Task 4 rewrites it proxy-first) and "override, not fork".
 - [Plan 0](../draft/) — decanter-native code-node authoring skill (deferred,
   distinctive-features group); Python `pythonCode` loophole relates to
-  [Plan 28](../open/28-python-code-nodes.md).
+  [Plan 28](../draft/28-python-code-nodes.md).
 
 ## Review outcome (PR #97, 2026-07-22) — the former "review gate", now answered
 
@@ -180,7 +180,7 @@ Task 1 (MCP re-expression; no hard delete in decanter).
      `writeMock` and/or scan `mocks/` in the compliance guard; Python Code
      nodes' `pythonCode` stays inline in `workflow.json` with no placeholder
      and no guard error — at minimum make the guard flag it honestly (full
-     extraction is [Plan 28](../open/28-python-code-nodes.md)).
+     extraction is [Plan 28](../draft/28-python-code-nodes.md)).
    - **Changelog gap:** add the `[Unreleased]` entry for the rewritten
      template contents (AGENTS.md.example contract + `.cursor` rules) — the
      changelog rule names template contents as user-facing.
@@ -312,7 +312,7 @@ Task 1 (MCP re-expression; no hard delete in decanter).
    pre-push/offline/CI/isolation/version-rehearsal — via Task 5's taxonomy
    table, `docs/cli/simulate.md`, the agents docs, and the template
    `AGENTS.md` loop guidance. Keeping it as a USP strengthens the case for
-   [Plan 26](../open/26-npx-engine-backend.md) (npx backend — drops `simulate`'s
+   [Plan 26](../draft/26-npx-engine-backend.md) (npx backend — drops `simulate`'s
    Docker dependency), which stays independent.
 7. *(Done 2026-07-22 — validate_workflow wording verified TRUE and annotated;
    the re-verified tooling facts folded into AGENTS.md's MCP section; the
@@ -365,7 +365,7 @@ Task 1 (MCP re-expression; no hard delete in decanter).
 - The decanter-native code-node authoring skill — deferred to
   [Plan 0](../draft/) (distinctive-features group).
 - Full op-inspecting harness hooks — superseded by proxy + slim detectors.
-- Python Code-node extraction — [Plan 28](../open/28-python-code-nodes.md); only
+- Python Code-node extraction — [Plan 28](../draft/28-python-code-nodes.md); only
   the guard-honesty half is in scope here (Task 2).
 
 ## Notes
