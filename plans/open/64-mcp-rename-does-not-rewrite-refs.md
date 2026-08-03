@@ -37,18 +37,35 @@ implicated.
 
 Unchanged at every tag checked, so pinning a newer n8n fixes nothing.
 
-**n8n's own docs are correct; ours are not.** docs.n8n.io's operations table
-(line 817) reads *"Renames a node and rewrites **connection** references."* —
-narrow and accurate. The whole 91 KB page contains zero `jsCode` and zero `$(`.
-Our text widened that into "connections **and** `$('…')` references
-**server-side**", which is wrong twice over: MCP rewrites no refs at all, and even
-the editor's rewrite is **client-side** — `useCanvasOperations.renameNode` clones
-a `Workflow` in the browser, calls `Workflow.renameNode()`, and the result is
-persisted by an ordinary whole-workflow `PATCH /rest/workflows/:id`. Control
-experiment: that same PATCH with refs deliberately left stale heals **nothing**
-server-side. The only fair criticism of n8n's docs is the *omission* — the
-neighbouring `removeNode` row carries a side-effect caveat and `renameNode` does
-not, though it breaks a workflow and returns no warning.
+**n8n's docs are misleading, and ours then made it worse.** docs.n8n.io's
+operations table (line 817) reads *"Renames a node and rewrites connection
+references."* That is defensible only under the narrow reading "references
+*inside* the connections object" — a reading no one picks without knowing n8n's
+internal data model, and which the table's own vocabulary argues against:
+
+| op | wording |
+|---|---|
+| `removeNode` | "all inbound and outbound **connections**" |
+| `addConnection` | "Adds a **connection**" |
+| `renameNode` | "rewrites **connection references**" |
+
+Everywhere else the graph edges are plain "connections". **`renameNode` is the one
+row that says "references"** — the broader word, naturally read as *references to
+the node*, which is exactly what `$('X')` is. Three things push the reader the
+same way: `removeNode` carries an explicit side-effect caveat right next door (so
+silence here reads as "nothing to watch out for"), the op returns
+`validationWarnings: []`, and the n8n **editor genuinely does** rewrite refs — so
+"an n8n rename fixes references" is a correct mental model that the docs never
+qualify with "unlike the editor". The whole 91 KB page contains zero `jsCode` and
+zero `$(`.
+
+So our own text — "connections **and** `$('…')` references" — is a *reasonable
+reading of a defective source*. What is ours alone is the **"server-side"**, which
+nothing supports and which is false for both paths: the editor's rewrite is
+**client-side** (`useCanvasOperations.renameNode` clones a `Workflow` in the
+browser, calls `Workflow.renameNode()`, and the result is persisted by an ordinary
+whole-workflow `PATCH /rest/workflows/:id`). Control experiment: that same PATCH
+with refs deliberately left stale heals **nothing** server-side.
 
 **It reads as an upstream miss, not a design split.** n8n has three rename paths;
 the editor and n8n's own AI Workflow Builder both delegate to
@@ -161,12 +178,24 @@ This is a **general** gap that the rename merely exposed.
   This is the permanent version of the throwaway probe.
 - Unit coverage for the new error strings.
 
-### 5. Report upstream
+### 5. Report upstream — two asks, not one
 
-The fix is small and the precedent is in-repo: `update-workflow.tool.ts` already
-imports `Workflow` from `n8n-workflow`, and the AI builder shows the call shape.
+**(a) The code.** The fix is small and the precedent is in-repo:
+`update-workflow.tool.ts` already imports `Workflow` from `n8n-workflow`, and
+`applyRenameNodeOperation` in the AI builder shows the exact call shape.
+
+**(b) The docs line, independently** — because even a fixed op leaves the current
+wording ambiguous, and because until (a) ships this line is what every MCP client
+reads. Concrete suggestion: *"Renames a node and rewrites its **connections**.
+`$('Old Name')` references in Code-node source and in other nodes' expression
+parameters are **not** updated — the caller must fix them."* Point out that
+`renameNode` is the only row in the table using "references" where every sibling
+says "connections", and that the neighbouring `removeNode` row shows the table
+does document side effects.
+
 Worth telling the n8n-io/skills maintainers too, since their review checklist
-walks agents straight into it. **Do not block this plan on it.**
+pushes agents to rename nodes with no follow-up step. **Do not block this plan on
+any of it.**
 
 ## Deferred — with reasons, not as an oversight
 
