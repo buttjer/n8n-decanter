@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Corrected the rename guidance: n8n's `renameNode` MCP op does NOT rewrite
+  `$('…')` references.** The scaffolded agent guide (and the 0.6.0 notes below)
+  claimed n8n rewrites connections *and* `$('…')` references server-side on a
+  rename. Verified against real n8n 2.30.7 and 2.33.3: the MCP op rewrites the
+  node name and the **connections only**, then reports success with
+  `validationWarnings: []` — every `$('Old Name')` ref is left dangling, both in
+  Code-node source and in other nodes' expression parameters. The n8n *editor*
+  does rewrite them, but in the browser before it saves, so "server-side" was
+  wrong for that path too. No amount of pulling repairs this; `pull` faithfully
+  mirrors what n8n stored.
+
+  `init`'s `AGENTS.md`/`CLAUDE.md` now describe the real contract, including the
+  repair order that matters: **fix other nodes' expression parameters over MCP
+  first, then local code, then `push`.** The other order loses the code fix,
+  because a forwarded MCP write schedules a background snapshot refresh whose
+  pull overwrites unpushed `.js` edits.
+- **A dangling-reference error now says which half it is and where to fix it.**
+  The two compliance errors were near-identical and neither mentioned a rename,
+  which led to `workflow.json` being hand-edited — turning the check green while
+  n8n stayed broken.
+
 ## [0.8.0] - 2026-07-27
 
 ### Added

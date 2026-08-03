@@ -99,19 +99,29 @@ describe("validateWorkflowDir", () => {
     assert.match(errors[0], /node "Main": inline code in workflow\.json — node code belongs in its own file/);
   });
 
-  it("errors on a dangling $('…') reference in a node source file", () => {
+  // The two dangling-ref errors are usually rename fallout (n8n's `renameNode`
+  // MCP op rewrites name + connections only), and the halves are repaired in
+  // DIFFERENT places — so each message must route its own half (Plan 64).
+  it("errors on a dangling $('…') reference in a node source file, routing the fix to the file", () => {
     const dir = scaffold({ files: { "code/main.js": "return $('Deleted Node').all();\n" } });
     const { errors } = validateWorkflowDir(dir);
-    assert.deepEqual(errors, [`node "Main": code/main.js references $('Deleted Node') — no node by that name`]);
+    assert.deepEqual(errors, [
+      `node "Main": code/main.js references $('Deleted Node') — no node by that name (renamed? edit code/main.js to the new name, then push)`,
+    ]);
   });
 
-  it("errors on a dangling $('…') reference in an expression parameter", () => {
+  it("errors on a dangling $('…') reference in an expression parameter, routing the fix to n8n", () => {
     const nodes = [
       codeNode("n2", "Main", "//@file:code/main.js"),
       { id: "n3", name: "Set", type: "n8n-nodes-base.set", parameters: { value: "={{ $('Also Gone').first().json.x }}" } },
     ];
     const { errors } = validateWorkflowDir(scaffold({ workflow: { nodes } }));
-    assert.deepEqual(errors, [`node "Set": a parameter references $('Also Gone') — no node by that name`]);
+    assert.deepEqual(errors, [
+      `node "Set": a parameter references $('Also Gone') — no node by that name (renamed? this is structure — fix it in n8n (updateNodeParameters over MCP, or the editor), not in workflow.json)`,
+    ]);
+    // The parameter half must never be routed at the local file — push only
+    // ever sends jsCode, so a workflow.json edit greens this check on a lie.
+    assert.doesNotMatch(errors[0], /then push\)/);
   });
 
   it("errors on orphan code files; .d.ts is exempt", () => {

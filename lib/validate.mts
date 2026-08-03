@@ -152,10 +152,16 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     coveredRemoteFiles.add(file.replace(/\.(ts|js)$/, ".remote.js"));
 
     // Dangling $('…') in the node's source (marker line can't contain a ref).
+    // Usually the fallout of a rename: n8n's `renameNode` MCP op rewrites the
+    // node name and connections ONLY (verified live on 2.30.7/2.33.3), so refs
+    // are the caller's to repair. This half is ours — edit the file and push.
     const filePath = path.join(dir, file);
     if (existsSync(filePath)) {
       for (const name of danglingRefs(readFileSync(filePath, "utf8"), nodeNames)) {
-        errors.push(`node "${node.name}": ${file} references $('${name}') — no node by that name`);
+        errors.push(
+          `node "${node.name}": ${file} references $('${name}') — no node by that name` +
+            ` (renamed? edit ${file} to the new name, then push)`,
+        );
       }
     }
   }
@@ -192,13 +198,21 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     // corrupt state already reported above
   }
 
-  // Dangling $('…') inside expression parameters of any node (the n8n UI
-  // rewrites these on rename; a dangling one breaks at run time).
+  // Dangling $('…') inside expression parameters of any node. The n8n EDITOR
+  // rewrites these on rename (client-side, before it saves); the `renameNode`
+  // MCP op does NOT — verified live on 2.30.7/2.33.3. A dangling one breaks at
+  // run time. Unlike the source half above this is STRUCTURE: it lives in the
+  // read-only workflow.json and push never sends it, so the message must route
+  // the fix to the instance — hand-editing workflow.json turns this check green
+  // while n8n stays broken, and the next pull reverts it.
   for (const node of nodes) {
     const texts = parameterStrings(node.parameters, "jsCode");
     const dangling = new Set(texts.flatMap((t) => danglingRefs(t, nodeNames)));
     for (const name of dangling) {
-      errors.push(`node "${node.name}": a parameter references $('${name}') — no node by that name`);
+      errors.push(
+        `node "${node.name}": a parameter references $('${name}') — no node by that name` +
+          ` (renamed? this is structure — fix it in n8n (updateNodeParameters over MCP, or the editor), not in workflow.json)`,
+      );
     }
   }
 
