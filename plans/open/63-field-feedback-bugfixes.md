@@ -5,7 +5,7 @@
 **Source:** the 2026-07-30 field report from an agent driving a 45-node
 production workflow (Shopify → eBay, 39 node renames, two code fixes, one
 scenario), verified claim-by-claim against the code on 2026-07-31. The clusters
-that needed a design call became [Plan 64](../draft/64-mcp-rename-does-not-rewrite-refs.md)
+that needed a design call became [Plan 64](64-mcp-rename-does-not-rewrite-refs.md)
 … [Plan 71](../draft/71-data-table-writes.md); this plan is the residue that
 needs none.
 **Snapshot:** 2026-07-31T05:37Z @ 11bbbc7
