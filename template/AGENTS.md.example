@@ -239,6 +239,11 @@ Parameters first, code second: every MCP write triggers a background snapshot
 refresh, and that `pull` overwrites unpushed `.js` edits with the remote body.
 Doing it the other way round loses your code fix.
 
+On Claude Code a hook does the first step for you — it watches `update_workflow`
+calls and lists the stranded references right after the rename. Elsewhere, run
+the `preflight`/`grep` above yourself: **this checklist is the contract, the
+hook is only a reminder.**
+
 Renaming a **workflow**: `setWorkflowMetadata` over MCP, or the n8n UI. The
 folder is a stable local slug and is left untouched; `pull` re-caches the
 display name in `.decanter.json`.

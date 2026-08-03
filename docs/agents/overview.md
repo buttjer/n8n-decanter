@@ -17,8 +17,13 @@ needs to behave:
 - **Guard hooks** — on Claude Code and opencode, edits that would break a
   hard invariant are blocked *before the write happens*; a Claude Code
   PostToolUse hook runs [`preflight --offline`](/docs/cli/preflight/) after
-  node edits. The same rules are enforced by the CLI at push time regardless
-  of who made the edit.
+  node edits. A second PostToolUse hook watches MCP `update_workflow` calls and
+  speaks up when a `renameNode` leaves `$('Old Name')` references behind —
+  n8n's rename rewrites the node name and connections only, so those refs are
+  the caller's to repair (see [`pull`](/docs/cli/pull/)). It scans for the old
+  name rather than running `preflight`, because it fires before the background
+  snapshot refresh, while every reference still resolves. The same rules are
+  enforced by the CLI at push time regardless of who made the edit.
   On Claude Code these live in **`.claude/settings.json`** — *project* scope,
   meant to be committed, so everyone who clones the repo gets the same
   permissions and hooks. `.claude/settings.local.json` stays yours for
