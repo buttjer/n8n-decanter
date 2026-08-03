@@ -1,6 +1,6 @@
 # Plan 64 — MCP `renameNode` strands every `$('…')` ref; our contract says the opposite
 
-**Status:** Not started
+**Status:** In progress — tasks 1 + 2 shipped (PR #191); 3–5 open
 **Priority:** P1
 **Source:** claim B1 of the 2026-07-30 field report (39 renames left every
 reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
@@ -8,7 +8,7 @@ reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
 tracker / the forum — and **reproduced live against real n8n in Docker (2.30.7
 and 2.33.3)**, twice: once for n8n's behavior alone, once end-to-end through
 decanter.
-**Snapshot:** 2026-08-03T19:18Z @ 7832364
+**Snapshot:** 2026-08-03T20:31Z @ f4bc105
 **Model:** Opus for task 1 (the contract prose is load-bearing); Sonnet for the rest.
 
 n8n's MCP `renameNode` rewrites the node name and the connections and leaves
@@ -150,18 +150,77 @@ normally" currently reads as a promise that a forwarded rename is safe.
 Cheapest high-leverage change in the plan: it fires from live data at the exact
 blocking moment and adds no mechanism.
 
-### 3. Gate `publish` on the compliance check
+### 3. Catch the breakage — three sites, earliest first
 
-~3 lines in `lib/lifecycle.mts` reusing `validateWorkflowDir`; `config.root` and
-`findWorkflowDir` are already in scope at the dispatch site
-(`n8n-decanter.mts:910-925`).
+Nothing runs a ref check at rename time today, so the damage surfaces at the next
+`push`, arbitrarily far from the act that caused it. Three separate sites, in
+value order. **3a is the one that matters** — the field report came from the
+agent path, and a `publish` gate would not have saved it.
 
-Throw a **`ForceableError`** here, unlike `push` — `publish` writes no code, so
-local compliance is advisory and a fresh clone with a missing `.ts` file should
-not be hard-blocked from a legitimate publish. Honest limit: best-effort — it
-catches the mirrored case and misses a stale snapshot when `liveMirror` is off.
+**Framing that has to survive implementation:** `workflow.json` is a
+backup/info snapshot, **not a workspace and not an authority**. The local
+`layout` check is therefore a statement about *the repo*, not about n8n — it can
+be green while the instance is broken (stale snapshot) and red while the instance
+is fine (a remote rename not yet pulled). Preflight's `layout` fail and a publish
+gate are **two different things** that happen to share one scan. Do not let them
+merge during implementation.
 
-This is a **general** gap that the rename merely exposed.
+#### 3a. Make an MCP rename trigger the verify hook
+
+`template/.claude/settings.json.example:61` matches `Edit|Write|MultiEdit`, so an
+MCP rename fires nothing. This is the **only site with a proven path into the
+model's context** — `template/.claude/hooks/verify.mjs.example` is the 66-line
+precedent (reads `tool_input`, exit 2 feeds output back to the agent).
+
+Two constraints that shape it:
+
+- **It must scan `tool_input` directly, not run `preflight`.** PostToolUse fires
+  immediately; the mirror pull is debounced 400 ms and fire-and-forget. Pre-pull,
+  `workflow.json` still holds the **old** name, so every ref still resolves and
+  `preflight` would report **green**. Take `oldName` out of the op batch and do a
+  literal scan of the workflow folder for `$('oldName')` — race-free, no pull, no
+  async.
+- **Do not make it Claude-only.** Root `AGENTS.md` ("Agent tooling") forbids
+  shipping agentic material for one agent. Put the logic in a plain node script
+  the hook merely invokes, so `opencode.json.example` can wire the same thing.
+  Open question worth settling first: should that script instead be a decanter
+  subcommand? It would give the advisory a **command** to name rather than prose
+  (`lib/preflight.mts:88-91` contracts `remediation` as "the exact next COMMAND …
+  never prose"), at the cost of the four-surface docs tax.
+
+#### 3b. Gate `publish` — against the instance, not the repo
+
+`publish` already reads what it is about to make live:
+`const before = await getWorkflowDetails(mcp, id)` (`lib/lifecycle.mts:12`), with
+byte-exact `jsCode` and every parameter. Scan **`before.nodes`**.
+
+Explicitly **do not** reuse `validateWorkflowDir` here — that validates the repo
+folder (placeholders, orphans, state, layout), none of which belongs in a go-live
+decision. Checking the remote read instead removes the whole staleness problem:
+no false green from an out-of-date snapshot, no false red from a fresh clone
+missing a `.ts` file, and therefore **no `ForceableError` pretext needed**. It
+also catches the case the local check structurally cannot — instance broken,
+local mirror clean.
+
+Requires extracting a **source-agnostic** scan. Today `lib/validate.mts` reads
+files off disk; both callers need a pure `(text, nodeNames)` function, because
+the text comes from different places: locally a Code node's `jsCode` is a
+`//@file:` placeholder and the real source is in the file, remotely it is inline
+on the node.
+
+Note this writes nothing — decanter reads, and refuses its own action. Consistent
+with `PLAN.md:94-99`, unlike the rejected "decanter repairs parameters over MCP".
+
+#### 3c. Guard policy on `publish_workflow` — decide separately
+
+`guardMessage` only inspects `update_workflow` for `jsCode`, so
+`publish_workflow` is forwarded unconditionally: **an agent can go live around
+3b entirely.** (`push --publish` is already covered — it runs through
+`pushWorkflow`'s gate. Only the bare verb and the raw MCP call are not.)
+
+Warning or blocking here touches the guard's stated contract ("forward everything
+except `jsCode` writes"), so it is a policy decision, not a bug fix. Kept out of
+3a/3b deliberately.
 
 ### 4. Make the tests honest
 
@@ -232,8 +291,15 @@ any of it.**
 ## Acceptance / verification
 
 - `preflight --offline` on a post-rename workflow names both halves with strings
-  that route each one; covered by unit tests.
-- `publish` refuses a non-compliant workflow; `--force` overrides.
+  that route each one; covered by unit tests. ✅ shipped (tasks 1+2, PR #191)
+- **3a**: an MCP rename whose refs go stale produces agent-visible output —
+  asserted with the hook driven directly on a captured `tool_input`, *without* a
+  pull having run (the pre-pull green is the trap the test must pin).
+- **3b**: `publish` refuses a workflow whose **remote** draft carries a dangling
+  ref, and still publishes when the remote is clean but the **local** snapshot is
+  stale or absent — that pair is the whole point of scanning `before.nodes`
+  rather than the folder, so both directions need a test.
+- **3c**: whatever is decided, `push --publish` and the bare `publish` verb agree.
 - e2e's rename step asserts the **real** semantics (refs dangle) and walks the
   documented repair order to green.
 - The smoke suite's rename step asserts stale refs against a real instance — it
@@ -243,9 +309,9 @@ any of it.**
 
 ## Notes
 
-- CHANGELOG: tasks 2 and 3 are user-facing (Fixed / Changed). Task 1 is a template
-  + docs correction — worth an entry, because it changes what the agent contract
-  instructs.
+- CHANGELOG: tasks 1 and 2 shipped their entries under `[Unreleased]` in PR #191.
+  Task 3 is user-facing in all three parts (3a changes what the scaffold does, 3b
+  changes when `publish` refuses, 3c changes what the guard forwards).
 - `lib/validate.mts:196`'s comment has always been correctly scoped to the UI —
   **the code was right; only the prose was wrong.** The dangling-ref check is what
   made the field report's fallout visible at all.
