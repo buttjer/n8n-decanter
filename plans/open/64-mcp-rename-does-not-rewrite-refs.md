@@ -1,0 +1,257 @@
+# Plan 64 — MCP `renameNode` strands every `$('…')` ref; our contract says the opposite
+
+**Status:** Not started
+**Priority:** P1
+**Source:** claim B1 of the 2026-07-30 field report (39 renames left every
+reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
+`n8n@2.33.3` and `master`, against docs.n8n.io / n8n-io/skills / the n8n issue
+tracker / the forum — and **reproduced live against real n8n in Docker (2.30.7
+and 2.33.3)**, twice: once for n8n's behavior alone, once end-to-end through
+decanter.
+**Snapshot:** 2026-08-03T19:18Z @ 7832364
+**Model:** Opus for task 1 (the contract prose is load-bearing); Sonnet for the rest.
+
+n8n's MCP `renameNode` rewrites the node name and the connections and leaves
+every `$('…')` reference dangling — in Code-node source *and* in other nodes'
+expression parameters — while reporting success. Our shipped agent contract
+promises the opposite, our e2e mock implements the promise, and `publish` never
+runs the check that would catch the fallout. **Worst of all, the repair order an
+agent would naturally pick silently destroys its own work.** This plan corrects
+the contract, makes the two hard errors route their halves, closes the `publish`
+hole, and makes the tests honest.
+
+## What was verified
+
+**n8n, live on 2.30.7 and 2.33.3** — the probe used no decanter code: seeded over
+the public REST API, renamed over raw MCP, read back over both REST *and*
+`get_workflow_details` (byte-identical), so the separate-files approach cannot be
+implicated.
+
+| | |
+|---|---|
+| node name + id | renamed, id stable |
+| connections | **rewritten** |
+| `jsCode` — `$('X')`, `$node["X"]`, `$items('X')` | **all stale** |
+| another node's `={{ $('X')… }}` parameter | **stale** |
+| `validationWarnings` | **`[]`** — the op reports success |
+
+Unchanged at every tag checked, so pinning a newer n8n fixes nothing.
+
+**n8n's docs are misleading, and ours then made it worse.** docs.n8n.io's
+operations table (line 817) reads *"Renames a node and rewrites connection
+references."* That is defensible only under the narrow reading "references
+*inside* the connections object" — a reading no one picks without knowing n8n's
+internal data model, and which the table's own vocabulary argues against:
+
+| op | wording |
+|---|---|
+| `removeNode` | "all inbound and outbound **connections**" |
+| `addConnection` | "Adds a **connection**" |
+| `renameNode` | "rewrites **connection references**" |
+
+Everywhere else the graph edges are plain "connections". **`renameNode` is the one
+row that says "references"** — the broader word, naturally read as *references to
+the node*, which is exactly what `$('X')` is. Three things push the reader the
+same way: `removeNode` carries an explicit side-effect caveat right next door (so
+silence here reads as "nothing to watch out for"), the op returns
+`validationWarnings: []`, and the n8n **editor genuinely does** rewrite refs — so
+"an n8n rename fixes references" is a correct mental model that the docs never
+qualify with "unlike the editor". The whole 91 KB page contains zero `jsCode` and
+zero `$(`.
+
+So our own text — "connections **and** `$('…')` references" — is a *reasonable
+reading of a defective source*. What is ours alone is the **"server-side"**, which
+nothing supports and which is false for both paths: the editor's rewrite is
+**client-side** (`useCanvasOperations.renameNode` clones a `Workflow` in the
+browser, calls `Workflow.renameNode()`, and the result is persisted by an ordinary
+whole-workflow `PATCH /rest/workflows/:id`). Control experiment: that same PATCH
+with refs deliberately left stale heals **nothing** server-side.
+
+**It reads as an upstream miss, not a design split.** n8n has three rename paths;
+the editor and n8n's own AI Workflow Builder both delegate to
+`Workflow.renameNode()` (the builder constructs a throwaway `Workflow` with a mock
+`INodeTypes` purely to reach it, commented *"to handle all the complexity of
+updating expressions"*). PR #24348 wrote that logic in January 2026; PR #29739
+introduced the MCP op four months later without it. No issue, no PR, no forum
+thread, no release note. n8n-io/skills says nothing either — while its review
+checklist actively pushes agents to rename nodes.
+
+**End-to-end through decanter, measured:**
+
+- After a rename through the guard, decanter is already blocked — the live mirror
+  pulls automatically, then `preflight --offline` reports **2 layout violations**
+  (one per half), score 60/100, exit 1. `push` and `push --force` are
+  byte-identically red: `assertCompliant` throws a plain `Error`, so `--force`
+  cannot bypass it.
+- **Fixing only `code/*.js` leaves push red** on the Set node's parameter alone.
+  A repair hook limited to local code unblocks nothing.
+- **The intuitive order livelocks.** Fix code → fix the parameter over MCP → that
+  op is a forwarded `update_workflow` → the guard schedules a mirror pull →
+  `pullWorkflow` overwrites the hand-fixed `code/*.js` with the stale remote body.
+  The `overwriting unpushed local changes … (recover via git)` warning fires onto
+  the guard's **stderr-only** logger, which no agent reads. Observed: three push
+  attempts, all red, no visible cause.
+- **The correct order goes green**: parameters over MCP first → then local code →
+  then `push` → `layout compliant`, 100/100, pushed.
+- The agent *is* allowed to make the parameter fix: `updateNodeParameters` without
+  `jsCode` is forwarded by the guard and applied by n8n, and merge semantics
+  preserve sibling params.
+
+**And a hole nobody was looking for: `publish` runs no compliance check.**
+`validateWorkflowDir` has three callers — `push` (`lib/push.mts:153`), `preflight`
+(`lib/preflight.mts:296`), `backup` (`lib/backup.mts:149`) — and `publish`
+(`lib/lifecycle.mts:11-19`) is not among them, while `publish_workflow` over MCP
+is forwarded unconditionally. **A pure-rename task never calls `push`, so nothing
+ever checks, and the broken workflow goes live.** The comforting "it can't ship
+silently" reading was false.
+
+## Tasks
+
+### 1. Correct the agent contract (the load-bearing task)
+
+Surfaces stating the false premise: `template/AGENTS.md.example` rule 7
+(~:72-76), the `### Renaming a node` section (~:200-215), the `$('Node Name')`
+bullet (~:263-268); `template/CLAUDE.md.example:23-26`; `PLAN.md:567` and `:1194`;
+`CHANGELOG.md:695`. `docs/cli/pull.md`'s rename section needs the same split.
+
+The new text must carry all four of these or it has not done its job:
+
+1. **Split the paths.** The n8n **editor** rewrites `$('…')` refs for you; the
+   **`renameNode` MCP op does not** — it rewrites the name and connections only,
+   returns success, and leaves every ref dangling.
+2. **Drop "server-side"** — false for both paths.
+3. **Name both halves and where each is fixed.** Code refs → edit
+   `code/<node>.js`/`.ts` here, then `push`. Expression-parameter refs → these are
+   **structure**, fix them on the instance over MCP (`updateNodeParameters`
+   without `jsCode` passes the guard) or in the editor. Editing `workflow.json`
+   locally changes nothing in n8n, turns `layout` green on a lie, and the next
+   pull reverts it.
+4. **State the order, and why.** *Parameters over MCP first, then local code, then
+   push* — because every forwarded MCP write schedules a background pull that
+   overwrites unpushed `.js` edits.
+
+Also drop `template/CLAUDE.md.example`'s "pull after each MCP rename so nothing is
+left half-updated": no pull ever fixes a ref, and the live mirror already pulls
+(`liveMirror` defaults on).
+
+### 2. Rewrite the two hard-error strings
+
+`lib/validate.mts:158` (source half) and `:201` (parameter half) are today
+near-identical, neither names a rename as the likely cause, and neither says the
+halves are repaired in different places. That is what misroutes an agent into
+hand-editing `workflow.json`. Each string should name the cause and route its
+half.
+
+Same change: the comment at `lib/validate.mts:195-196` ("the n8n UI rewrites these
+on rename" — true, but it now has to say *only* the UI), and `JSCODE_BLOCK_TEXT`
+(`lib/mcpserve.mts:31-34`), whose "…renames, new non-code fields) pass through
+normally" currently reads as a promise that a forwarded rename is safe.
+
+Cheapest high-leverage change in the plan: it fires from live data at the exact
+blocking moment and adds no mechanism.
+
+### 3. Gate `publish` on the compliance check
+
+~3 lines in `lib/lifecycle.mts` reusing `validateWorkflowDir`; `config.root` and
+`findWorkflowDir` are already in scope at the dispatch site
+(`n8n-decanter.mts:910-925`).
+
+Throw a **`ForceableError`** here, unlike `push` — `publish` writes no code, so
+local compliance is advisory and a fresh clone with a missing `.ts` file should
+not be hard-blocked from a legitimate publish. Honest limit: best-effort — it
+catches the mirrored case and misses a stale snapshot when `liveMirror` is off.
+
+This is a **general** gap that the rename merely exposed.
+
+### 4. Make the tests honest
+
+- **`test/e2e.mts:83`** — `renameRefsDeep(n.parameters, …)` implements the
+  falsified server property, under a docblock (`:59-61`) claiming it mirrors "the
+  verified 2.30.7 semantics". Delete it, fix the docblock and the comment at
+  `:1648-1650`. **This is the forcing function**: the rename step at `:1644` then
+  goes red, and the scenario has to be rewritten to the real agent path — rename,
+  refs dangle, agent repairs both halves in the documented order, green.
+- **`test/smoke-n8n.mts`** — contains **zero** `$('` occurrences, so its
+  real-instance rename step could never have measured this. Add a cross-node ref
+  (a Code node referencing another by name **and** a non-Code node with an
+  `={{ $('X')… }}` parameter) and assert the refs are stale after an MCP rename.
+  This is the permanent version of the throwaway probe.
+- Unit coverage for the new error strings.
+
+### 5. Report upstream — two asks, not one
+
+**(a) The code.** The fix is small and the precedent is in-repo:
+`update-workflow.tool.ts` already imports `Workflow` from `n8n-workflow`, and
+`applyRenameNodeOperation` in the AI builder shows the exact call shape.
+
+**(b) The docs line, independently** — because even a fixed op leaves the current
+wording ambiguous, and because until (a) ships this line is what every MCP client
+reads. Concrete suggestion: *"Renames a node and rewrites its **connections**.
+`$('Old Name')` references in Code-node source and in other nodes' expression
+parameters are **not** updated — the caller must fix them."* Point out that
+`renameNode` is the only row in the table using "references" where every sibling
+says "connections", and that the neighbouring `removeNode` row shows the table
+does document side effects.
+
+Worth telling the n8n-io/skills maintainers too, since their review checklist
+pushes agents to rename nodes with no follow-up step. **Do not block this plan on
+any of it.**
+
+## Deferred — with reasons, not as an oversight
+
+- **Guard-side detect-and-report** (annotate the rename's tool result). The only
+  signal that would reach the agent while it still holds `oldName`/`newName`. But
+  it falsifies two stated invariants (`lib/mcpserve.mts:9-10` "responses … pipe
+  through untouched", `:102-104` "both transports must not drift"), needs a
+  60–100-line incremental SSE transform to reach `mcp serve` without buffering the
+  long-lived notification stream, and its payload may be dropped by any client
+  that prefers `structuredContent` — `lib/mcp.mts:394` is decanter's own client
+  doing exactly that. Revisit if a field-test round shows tasks 1–4 are not enough.
+- **Auto-repairing local `.js` refs.** Doesn't unblock `push` (the parameter half
+  still hard-errors), and whatever it writes the next mirror pull reverts. Making
+  it durable means the mirror starts *writing* to the instance — new machinery on
+  the hot path.
+  **The one argument that could reopen this:** `.ts` sources can be repaired by
+  nothing else — n8n never sees them and pull never writes them. If TS nodes
+  become common, revisit that half alone.
+  Two corrections to this plan's earlier drafts, so they are not re-derived: the
+  objection that a local rewrite breaks the `lastPushedHash`-mirrors-remote
+  invariant is **wrong** (`codeDrift` keys on the *remote* hash), and so is "our
+  regex is weaker than n8n's" — n8n's `applyAccessPatterns` is a regex too, and
+  ours handles backticks theirs doesn't. Our repair ceiling equals our *detection*
+  ceiling, so a partial repair would be self-consistent. Deferred on cost, not on
+  correctness.
+- **Decanter writing the expression-parameter half.** Rejected outright: the first
+  structure write decanter would ever emit, bypassing decanter's own guard
+  (`lib/mcpserve.mts:11` — decanter's sync never routes through the proxy), with
+  no drift guard and no audit line, against `PLAN.md:94-99`. The agent is already
+  authorized and the guard already forwards it.
+- **A `rename` / `fix-refs` verb.** Repairs only the half an agent fixes trivially
+  and pays the full four-surface docs tax.
+
+## Acceptance / verification
+
+- `preflight --offline` on a post-rename workflow names both halves with strings
+  that route each one; covered by unit tests.
+- `publish` refuses a non-compliant workflow; `--force` overrides.
+- e2e's rename step asserts the **real** semantics (refs dangle) and walks the
+  documented repair order to green.
+- The smoke suite's rename step asserts stale refs against a real instance — it
+  must **fail** against a hypothetical fixed n8n, which is the signal to revisit
+  this plan.
+- `npm test`, `npm run typecheck`, `npm run lint`, `npm run check:docs` green.
+
+## Notes
+
+- CHANGELOG: tasks 2 and 3 are user-facing (Fixed / Changed). Task 1 is a template
+  + docs correction — worth an entry, because it changes what the agent contract
+  instructs.
+- `lib/validate.mts:196`'s comment has always been correctly scoped to the UI —
+  **the code was right; only the prose was wrong.** The dangling-ref check is what
+  made the field report's fallout visible at all.
+- Related: [Plan 69](../draft/69-watch-skips-folder-guard.md) — `watch` runs only
+  `validateNodeFile`, which has no ref check, so neither half fires in watch mode.
+  Same family as task 3.
+- Still unproven by experiment: the *positive* UI claim (nobody drove the actual
+  editor). The control experiment shows the server heals nothing and the source
+  shows the browser calling `Workflow.renameNode`. It changes no decision here.
