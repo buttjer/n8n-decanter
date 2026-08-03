@@ -20,9 +20,11 @@ The contract above (from `AGENTS.md`) is authoritative. A few Claude-only notes:
   The hook is a quiet no-op until the CLI is on your PATH (install it globally or
   `npm link` it) — until then run `n8n-decanter preflight --offline` /
   `n8n-decanter node run` yourself.
-- **Renames happen in n8n, then `pull` reconciles** (see "Renaming a node" in
-  AGENTS.md). For multi-node renames, pull after each MCP rename so nothing is
-  left half-updated — and remember `.ts` sources keep their `$('…')` refs
-  until you update them by hand.
+- **Renames happen in n8n — and an MCP rename strands every `$('…')` ref**
+  (see "Renaming a node" in AGENTS.md). The n8n editor rewrites them for you;
+  the `renameNode` MCP op rewrites the connections only, then reports success.
+  No amount of pulling fixes this — `pull` mirrors whatever n8n stored. Repair
+  both halves, **expression parameters over MCP first, then local code, then
+  `push`**; the other order loses your code fix to the background refresh.
 - **`push --force` is blocked from the agent by design.** It overrides the drift guard;
   if it is genuinely needed, ask the user to run it themselves in the terminal.

@@ -31,7 +31,8 @@ const MAX_BODY_BYTES = 10 * 1024 * 1024;
 export const JSCODE_BLOCK_TEXT =
   "blocked by the n8n-decanter guard-proxy: Code-node source (jsCode) is managed as files in this repo. " +
   "Edit the node's file under workflows/<workflow>/code/ and run `n8n-decanter push` (or ask the user to). " +
-  "Structure operations (wiring, parameters other than jsCode, renames, new non-code fields) pass through normally.";
+  "Structure operations (wiring, parameters other than jsCode, renames, new non-code fields) pass through normally — " +
+  "note that a renameNode op rewrites the node name and connections only, leaving every $('Old Name') reference to you.";
 
 export interface GuardProxyHandle {
   url: string;

@@ -55,3 +55,17 @@ MCP), and the id-keyed state maps each node to its file:
 pull follows renames by moving the local file to the new kebab-case name.
 Layouts from older versions (node files at the folder root) migrate
 automatically on the next pull.
+
+**A rename over MCP leaves `$('…')` references behind, and pull cannot fix
+them.** The n8n editor rewrites every `$('Old Name')` reference when you rename
+(in the browser, before it saves). n8n's `renameNode` MCP op does not — it
+rewrites the node name and the connections, reports success, and leaves the
+references dangling in Code-node source *and* in other nodes' expression
+parameters. Pull mirrors what n8n stored, so it copies the dangling references
+down; the compliance guard then blocks `push` until they are repaired
+(`preflight --offline` names each one).
+
+Repair them **in this order**: other nodes' expression parameters first, in n8n
+(`updateNodeParameters` over MCP, or the editor) — then the local code files,
+then `push`. The other order loses the code fix: an MCP write triggers a
+background snapshot refresh whose pull overwrites unpushed `.js` edits.

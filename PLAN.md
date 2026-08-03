@@ -74,8 +74,10 @@ n8n-decanter/
   jsCode-less JS Code node to `""` at the read choke point so every verb sees
   it; (b) the scaffolded **`.mcp.json`/`opencode.json` wire the guard by
   default** (see "MCP guard" below). Losses accepted: no client-side `$('…')`
-  rewrite in local `.ts` sources on rename (n8n never sees `.ts`; documented
-  as a by-hand step), and `create`'s enforced validate-before-create is now
+  rewrite on rename — this was scoped at the time as "`.ts` sources only,
+  since n8n rewrites the rest", which **Plan 64 falsified**: the MCP op
+  rewrites no refs at all, so the by-hand step covers every source and every
+  expression parameter. And `create`'s enforced validate-before-create is now
   the skills'/agent's discipline.
 - **Plan 32 (2026-07-22): the workflow code path rides n8n's MCP server; the
   public API stays only where MCP has no equivalent.** The invariant that
@@ -564,11 +566,18 @@ decanter's contract is the **reconcile**:
 
 - **Workflow rename** (`setWorkflowMetadata`, or the UI) → next `pull`
   re-caches the display name; the folder never moves (Plan 27).
-- **Node rename** (`renameNode`; n8n rewrites connections and `$('…')`
-  expression refs server-side, node id stable) → next `pull` renames the
+- **Node rename** (`renameNode`; node id stable) → next `pull` renames the
   local file (kebab collisions get `-<id8>`), re-points the placeholder,
-  updates the id-keyed map. `$('…')` refs inside local `.ts` sources are a
-  documented by-hand step (n8n holds compiled output, never `.ts`).
+  updates the id-keyed map. **The MCP op rewrites the node name and the
+  connections only** — verified live against n8n 2.30.7 and 2.33.3 (Plan 64):
+  every `$('…')` ref is left dangling, in Code-node source *and* in other
+  nodes' expression parameters, and the op reports success with
+  `validationWarnings: []`. Pull mirrors that faithfully; the dangling-ref
+  compliance error is what surfaces it. The n8n **editor** does rewrite refs,
+  but client-side in the browser before it saves — there is no server-side
+  rewrite for any client. Repair is a documented by-hand step, expression
+  parameters over MCP first (a forwarded write schedules a mirror pull that
+  would clobber an unpushed code fix), then local sources, then `push`.
 - **Code node added** (`addNode` **without** `jsCode` — the guard blocks
   code) → the node is born empty; `getWorkflowDetails` normalizes the
   missing `jsCode` to `""`, so `pull` lands it as an empty `code/` file
@@ -1191,8 +1200,9 @@ API-era build that still hold are kept; superseded ones are marked.
   `callTool`. The smoke suite bootstraps MCP itself (enable + rotate token +
   per-workflow toggle via the owner cookie — spike-only internals, fine for a
   throwaway container) and exercises the gate, draft-first pushes,
-  `--force`, the MCP rename (id stability + server-side reference rewriting,
-  live), watch, and lifecycle on the real image.
+  `--force`, the MCP rename (id stability + server-side **connection**
+  rewriting, live — expression refs are NOT rewritten; Plan 64 task 4 adds the
+  fixture that proves it), watch, and lifecycle on the real image.
 - **`shared/` bundling in `.ts` nodes** (plans/14): unchanged, including the
   export-free entry and CJS-interop rewrite (n8n's task-runner sandbox
   neuters getter descriptors) and the "no-import nodes keep byte-identical
