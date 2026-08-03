@@ -5,7 +5,8 @@
 **Source:** claim B1 of the 2026-07-30 field report (39 renames left every
 reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
 `n8n@2.33.3` and `master`, plus docs.n8n.io, n8n-io/skills, the n8n issue tracker
-and community forum, on 2026-07-31.
+and community forum — and then **reproduced live against real n8n in Docker
+(2.30.7 and 2.33.3)** on 2026-07-31.
 **Snapshot:** 2026-07-31T12:56Z @ 7832364
 
 The scaffolded agent contract tells agents to rename via the `renameNode` MCP op
@@ -15,6 +16,51 @@ are **not** holding the API wrong (no flag, no alternate op, no other tool), the
 UI really does rewrite but **client-side in the browser**, and we are **not**
 forgetting to pull — the live mirror already pulls after every guarded rename,
 and a pull faithfully mirrors a workflow n8n itself corrupted.
+
+## Reproduced live — decanter deliberately not in the loop
+
+Source reading is not proof, and one alternative hypothesis had to be excluded:
+that n8n rewrites the remote `jsCode` correctly and decanter's own **push of a
+stale local `.js`** clobbers the fix afterwards. So the probe uses **no decanter
+code at all** — it seeds a workflow over the public REST API, renames over
+**raw MCP** (hand-rolled JSON-RPC), and reads the result back over the public
+REST API. Whatever it shows is n8n's behavior, full stop; the separate-files
+approach cannot be the cause of anything in it.
+
+Fixture: a Code node `Transform` carrying all four access patterns
+(`$('Fetch')`, `$node["Fetch"]`, `$items('Fetch')`) and a Set node `Label` with
+`={{ $('Fetch').first().json.x }}` — the exact shape the field report saw go
+stale in 8 non-Code nodes.
+
+**E1 — rename `Fetch` → `Fetched` over raw MCP.** Identical on **2.30.7 and
+2.33.3**:
+
+| | result |
+|---|---|
+| node name + id | renamed, id stable |
+| connections | **rewritten** (`connections.Fetched`) |
+| `jsCode` `$('Fetch')` | **stale** |
+| `jsCode` `$node["Fetch"]` | **stale** |
+| `jsCode` `$items('Fetch')` | **stale** |
+| Set node expression param | **stale** — `={{ $('Fetch').first().json.x }}` |
+
+`validationWarnings` came back **`[]`** — the op reports full success. The
+workflow is left broken in n8n's own database, silently.
+
+**E2 — the control.** The editor persists through `PATCH /rest/workflows/:id`
+with the whole node array. Sending a rename through that endpoint with refs
+deliberately left stale: the server heals **nothing**. So the editor's rewrite
+provably happens client-side, and there is no server-side hook any client could
+lean on.
+
+The probe itself was a throwaway outside the repo. **Option A's smoke-fixture
+change is the permanent version** — that is what turns this into a regression
+test instead of a one-off observation.
+
+The one thing still unproven by experiment is the *positive* UI claim (that a
+rename in the editor heals refs). E2 establishes the server does nothing, and
+the source shows the browser calling `Workflow.renameNode` — but nobody has
+driven the actual UI. It does not change any decision here.
 
 ## The three questions, answered
 
