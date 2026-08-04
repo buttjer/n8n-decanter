@@ -54,11 +54,11 @@ node's source file:
 
 `workflow.json` never contains code, and **nothing pushes it**: pull refreshes
 it (reading the workflow *tip* — the draft when one exists), review diffs and
-the offline tooling ([check](/docs/cli/check/),
-[node run](/docs/cli/node-run/), [simulate](/docs/cli/simulate/)) read it, and
-local edits to it change nothing in n8n. When the structure changed remotely,
-[status](/docs/cli/status/) prints a snapshot-stale hint and `pull` refreshes
-the file.
+the offline tooling ([`preflight --offline`](/docs/cli/preflight/),
+[node run](/docs/cli/node-run/), the local-engine replay
+`preflight --offline --simulate`) read it, and local edits to it change nothing
+in n8n. When the structure changed remotely, preflight's `snapshot` check warns
+that the snapshot is out of date and `pull` refreshes the file.
 
 The one meaningful local edit: **re-pointing a `//@file:` placeholder** (for a
 `.js` ↔ `.ts` conversion) — the placeholders are the human-visible file map,
@@ -67,10 +67,10 @@ and push honors a re-point.
 Viewer-relative and derived fields are stripped on pull (`shared`, `scopes`,
 `canExecute`, the published-version copy `activeVersion`, and the
 published-version pointer `activeVersionId` — state that churns on each
-publish, with no local reader; the version-aware [status](/docs/cli/status/)
-reads `activeVersionId` off the live workflow). The draft `versionId` is kept,
-since the [executions](/docs/cli/executions/) stale-capture warning compares
-against it.
+publish, with no local reader; [preflight](/docs/cli/preflight/)'s `lifecycle`
+check reads `activeVersionId` off the live workflow). The draft `versionId` is
+kept, since the [executions](/docs/cli/executions/) stale-capture warning
+compares against it.
 
 ## `code/`
 
@@ -84,7 +84,8 @@ versions (files at the folder root) migrate automatically on the next pull.
 
 Committed, full-workflow **pin-data sets** — `scenarios/<slug>.json`, each a
 self-contained, execution-shaped file captured from a real run or scaffolded
-from the workflow's schemas. `test`/`simulate` replay one with `--scenario
+from the workflow's schemas. [`test`](/docs/cli/test/) and
+[`preflight --simulate`](/docs/cli/preflight/) replay one with `--scenario
 <slug>` and diff each node against it. Unlike the gitignored `executions/`
 sibling (temporary capture data), **`scenarios/` is tracked in git**, so a
 scenario-based replay is reproducible for teammates and CI. See

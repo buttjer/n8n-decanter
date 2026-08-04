@@ -1,6 +1,6 @@
 {
   "name": "n8n-decanter",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "The toolkit for building code-heavy n8n workflows — agent-first, MCP-native",
   "keywords": [
     "n8n",
@@ -41,7 +41,7 @@
     "lint:fix": "biome lint --write",
     "typecheck": "tsc -p tsconfig.cli.json && node scripts/typecheck.mts",
     "check:docs": "node scripts/check-docs-surface.mts",
-    "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/guardproxy.mts && node test/interactive.mts",
+    "test": "node --test 'test/unit/*.test.mts' && node test/e2e.mts && node test/guardproxy.mts && node test/mcpspawn.mts && node test/interactive.mts",
     "test:smoke": "node test/smoke-n8n.mts",
     "test:sim": "node test/sim.mts",
     "field-test:stage": "node test/field-test/stage.mts",
@@ -59,10 +59,10 @@
     "luxon": "^3.7.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.5",
+    "@biomejs/biome": "2.5.6",
     "@types/jmespath": "^0.15.2",
     "@types/luxon": "^3.7.2",
     "@types/node": "^26.1.1",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }

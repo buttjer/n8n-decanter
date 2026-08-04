@@ -124,7 +124,9 @@ implementations + two test suites, not a small switch (user decision
    network" + the `node run` doc + the verify-offline line) and
    `template/CLAUDE.md.example`. The retained plain-text "not a full jail"
    caveat is the doc half of the superseded backlog item.
-7. **Scaffolded-allowlist decision (NEW).** `template/.claude/settings.local.json.example`
+7. **Scaffolded-allowlist decision (NEW).** `template/.claude/settings.json.example`
+   *(renamed from `settings.local.json.example` in #149/Plan 56 — the scaffold
+   moved to project scope)*
    pre-approves `Bash(n8n-decanter node:*)`, whose prefix match will silently
    auto-approve `node run … --unsafe` the moment this ships — re-opening the
    full-host-access footgun on pre-approved commands. Decide (and record):

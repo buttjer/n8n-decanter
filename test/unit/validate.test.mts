@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 import type { Workflow } from "../../lib/types.mts";
-import { validateNodeFile, validateWorkflowDir } from "../../lib/validate.mts";
+import { danglingNodeRefs, validateNodeFile, validateWorkflowDir } from "../../lib/validate.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-validate-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -99,19 +99,29 @@ describe("validateWorkflowDir", () => {
     assert.match(errors[0], /node "Main": inline code in workflow\.json — node code belongs in its own file/);
   });
 
-  it("errors on a dangling $('…') reference in a node source file", () => {
+  // The two dangling-ref errors are usually rename fallout (n8n's `renameNode`
+  // MCP op rewrites name + connections only), and the halves are repaired in
+  // DIFFERENT places — so each message must route its own half (Plan 64).
+  it("errors on a dangling $('…') reference in a node source file, routing the fix to the file", () => {
     const dir = scaffold({ files: { "code/main.js": "return $('Deleted Node').all();\n" } });
     const { errors } = validateWorkflowDir(dir);
-    assert.deepEqual(errors, [`node "Main": code/main.js references $('Deleted Node') — no node by that name`]);
+    assert.deepEqual(errors, [
+      `node "Main": code/main.js references $('Deleted Node') — no node by that name (renamed? edit code/main.js to the new name, then push)`,
+    ]);
   });
 
-  it("errors on a dangling $('…') reference in an expression parameter", () => {
+  it("errors on a dangling $('…') reference in an expression parameter, routing the fix to n8n", () => {
     const nodes = [
       codeNode("n2", "Main", "//@file:code/main.js"),
       { id: "n3", name: "Set", type: "n8n-nodes-base.set", parameters: { value: "={{ $('Also Gone').first().json.x }}" } },
     ];
     const { errors } = validateWorkflowDir(scaffold({ workflow: { nodes } }));
-    assert.deepEqual(errors, [`node "Set": a parameter references $('Also Gone') — no node by that name`]);
+    assert.deepEqual(errors, [
+      `node "Set": a parameter references $('Also Gone') — no node by that name (renamed? this is structure — fix it in n8n (updateNodeParameters over MCP, or the editor), not in workflow.json)`,
+    ]);
+    // The parameter half must never be routed at the local file — push only
+    // ever sends jsCode, so a workflow.json edit greens this check on a lie.
+    assert.doesNotMatch(errors[0], /then push\)/);
   });
 
   it("errors on orphan code files; .d.ts is exempt", () => {
@@ -277,5 +287,39 @@ describe("validateNodeFile", () => {
   it("uses the label for messages when given", () => {
     const { errors } = validateNodeFile(scaffold(), "code/nope.js", 'node "Main"');
     assert.match(errors[0], /^node "Main": referenced file/);
+  });
+});
+
+// Plan 64 task 3b: the same rule, applied to nodes from ANY source. The local
+// mirror and the instance's draft carry one workflow in two shapes — locally a
+// Code node's jsCode is a //@file: placeholder, remotely it is inline.
+describe("danglingNodeRefs", () => {
+  const code = (name: string, jsCode: string) => ({ id: `c-${name}`, name, type: "n8n-nodes-base.code", parameters: { jsCode } }) as any;
+  const set = (name: string, value: unknown) => ({ id: `s-${name}`, name, type: "n8n-nodes-base.set", parameters: { value } }) as any;
+
+  it("separates the two halves, because they are repaired in different places", () => {
+    const found = danglingNodeRefs([code("Transform", "return $('Gone').all();"), set("Label", "={{ $('Vanished').first().json.x }}")]);
+    assert.deepEqual(found, [
+      { node: "Transform", name: "Gone", ref: "$('Gone')", where: "code" },
+      { node: "Label", name: "Vanished", ref: "$('Vanished')", where: "parameter" },
+    ]);
+  });
+
+  it("resolves against the nodes it is handed — a ref to a present node is clean", () => {
+    assert.deepEqual(danglingNodeRefs([code("Fetch", "return [];"), code("Transform", "return $('Fetch').all();")]), []);
+  });
+
+  it("skips a //@file: placeholder — locally the source is in the file, not the node", () => {
+    assert.deepEqual(danglingNodeRefs([code("Transform", "//@file:code/transform.js")]), []);
+  });
+
+  it("descends into nested objects and arrays", () => {
+    const node = set("Filter", undefined);
+    node.parameters = { filters: { conditions: [{ keyValue: "={{ $('Gone').first().json.x }}" }] } };
+    assert.deepEqual(danglingNodeRefs([node]), [{ node: "Filter", name: "Gone", ref: "$('Gone')", where: "parameter" }]);
+  });
+
+  it("reports each missing name once per node, not once per occurrence", () => {
+    assert.deepEqual(danglingNodeRefs([code("T", "$('Gone').all(); $('Gone').first();")]), [{ node: "T", name: "Gone", ref: "$('Gone')", where: "code" }]);
   });
 });

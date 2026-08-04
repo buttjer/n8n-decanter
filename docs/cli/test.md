@@ -1,12 +1,38 @@
 ---
 title: test
-description: Run the workflow on your n8n instance with pinned data — the recommended runtime check.
+description: Grade the draft on your n8n instance — statically, or with a pinned run.
 order: 10
 ---
 
 ```sh
 n8n-decanter test <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
 ```
+
+`test` grades **the draft on your instance** — the thing
+[`publish`](/docs/cli/publish/) would take live. It has two tiers.
+
+## Bare: the static tier — nothing runs
+
+```sh
+n8n-decanter test <workflow>
+```
+
+Reads the draft and checks it for dangling `$('…')` references, in Code-node
+source *and* in other nodes' expression parameters. **It executes nothing** and
+needs no capture, no scenario, and no pinning — so it always works, including on
+a fresh clone.
+
+This is the cheap half of the same question the pinned run asks, and it is what
+[`publish`](/docs/cli/publish/) refuses on. The usual cause of a finding is a
+rename: n8n's `renameNode` MCP op rewrites the node name and the connections
+only and leaves every reference behind (the n8n editor does rewrite them). The
+output names both halves and the order to repair them in — see
+[`pull`](/docs/cli/pull/#renames-and-migrations).
+
+> A green bare `test` means "statically clean, nothing was executed". It is not
+> a statement that the workflow runs. For that, pin it:
+
+## With `--execution` / `--scenario`: the pinned run
 
 Runs the workflow **on your n8n instance** (MCP `test_workflow`) with
 external touchpoints pinned: the trigger, credentialed nodes, and HTTP
@@ -15,15 +41,17 @@ Request nodes are fed captured data, while logic nodes (Code, Set, If, …)
 nodes included, no Docker needed. The run targets the **draft** and is
 synchronous (the server caps it at 5 minutes; a timeout is reported as
 such). Afterwards each pure node's output is diffed client-side against the
-capture — divergence exits 1, so it's CI-gateable like
-[simulate](/docs/cli/simulate/).
+capture — divergence exits 1, so it's CI-gateable like the local-engine
+[`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage).
 
-Pins come from the same sources `simulate` uses: a fetched capture
-(`--execution <id>`, defaulting to the newest under `executions/`) or a
-committed [scenario](/docs/cli/scenario/) (`--scenario <slug>`). A
-trigger/network node with no captured output **aborts before anything
-runs** — an unpinned one would hit the real world. `--trigger <node>` picks
-the start trigger in multi-trigger workflows.
+Pins come from the same sources that stage uses: a fetched capture
+(`--execution <id>`) or a committed [scenario](/docs/cli/scenario/)
+(`--scenario <slug>`). **One of the two is required** — there is no fallback to
+"the newest capture lying around", because a bare `test` must never execute. A
+trigger/network node with no captured output **aborts before anything runs** —
+an unpinned one would hit the real world. So does a dangling `$('…')` reference:
+the static tier runs first, and a known-broken draft is never fired at the
+instance. `--trigger <node>` picks the start trigger in multi-trigger workflows.
 
 **Synthetic pins are the exception to the diff.** A `--scenario` with any
 `authored`/`scaffolded` node (see
@@ -33,21 +61,31 @@ per-node diff is asserted, and `ok` reflects only that the instance run
 succeeded. A capture-only run keeps the diff/exit-1 semantics above
 unchanged. `--json` adds `syntheticPins: boolean` and `provenance`.
 
-## Preflights — which one when?
+## Where `test` sits: after the push
 
-**Preflights** are decanter's three ways to verify a workflow before you ship
-it: `check` (static, offline), `simulate` (offline engine replay), and `test`
-(instance-side pinned run). All are CI-gateable — the two runtime ones diff
-every node against a real capture and exit 1 on divergence.
-[**`preflight`**](/docs/cli/preflight/) runs the whole ladder as one scored,
-read-only gate — reach for it (not the three individually) as the pre-push gate.
+```sh
+n8n-decanter preflight <workflow>   # 1. is my local code sound?   (local, changes nothing)
+n8n-decanter push     <workflow>    # 2. make it the draft
+n8n-decanter test     <workflow>    # 3. ← you are here
+n8n-decanter publish  <workflow>    # 4. go live
+```
 
-| Preflight | Where it runs | What it needs | Reach for it when |
+`test_workflow` runs n8n's **draft**. Before step 2 the draft is not your code,
+so an instance run would grade something you aren't shipping — which is why
+[`preflight`](/docs/cli/preflight/) does **not** run `test` as a stage. Push
+first, then test what you pushed.
+
+| Command | Where it runs | What it needs | Reach for it when |
 | --- | --- | --- | --- |
-| [check](/docs/cli/check/) | locally, static | nothing | every edit — layout + types, offline |
-| **`test`** (recommended) | **your instance**, runtime | MCP + a capture/scenario | the default runtime check: instance-exact engine, community nodes, no Docker |
-| [simulate](/docs/cli/simulate/) | local engine, runtime | Docker + a capture/scenario | pre-push verification of *uncommitted local* code, CI without an instance, `--network-none` isolation, engine-version rehearsal |
-| [**preflight**](/docs/cli/preflight/) | all of the above, scored | as available | the one-command pre-publish gate — a single verdict over the whole ladder |
+| [`preflight --offline`](/docs/cli/preflight/) | locally, static | nothing | every edit — layout + types, offline |
+| [`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage) | local engine, runtime | Docker + a capture/scenario | runtime evidence about **local** code, before pushing; CI without an instance; enforced network isolation |
+| [**`preflight`**](/docs/cli/preflight/) | the above, scored | as available | **before `push`** — one verdict over your local code |
+| **`test`** (bare) | **your instance**, static | MCP | **after `push`** — is the draft internally sound? nothing runs |
+| **`test --execution/--scenario`** | **your instance**, runtime | MCP + a capture/scenario | **after `push`** — instance-exact engine, community nodes, no Docker |
+
+The split follows the same line as everything else here: `preflight` grades your
+**local files**, `test` grades **the instance's draft**. The static tier is not a
+second `preflight --offline` — it reads a different artifact.
 
 ## What gets tested — local code or the draft?
 

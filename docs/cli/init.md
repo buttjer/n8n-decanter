@@ -117,7 +117,7 @@ under `node_modules`).
 
 The template includes an `AGENTS.md` contract for coding agents plus
 per-agent configs (Claude Code, Cursor, Codex, opencode), including a hook
-that runs `check` after node edits — see
+that runs `preflight --offline` after node edits — see
 [Agents](/docs/agents/overview/). The scaffolded MCP config (`.mcp.json` /
 `opencode.json`) wires two servers out of the box: **`n8n-instance`** — your
 instance's full MCP surface through the [mcp connect](/docs/cli/mcp-connect/)

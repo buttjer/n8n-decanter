@@ -25,15 +25,17 @@ n8n-decanter publish [workflow…]    # take the draft(s) live
 n8n-decanter unpublish [workflow…]  # back to draft-only
 
 # Inspect & test
-n8n-decanter status [workflow…] [--diff]
-n8n-decanter check [workflow…] [--no-typecheck]
+n8n-decanter preflight [workflow…] [--simulate] [--offline] [--viewer] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]
+                                    # the gate: grades LOCAL code, scored (read-only) — then push, then test
+                                    #   --simulate ADDS a local-engine run (Docker); --offline DROPS the instance reads
+n8n-decanter diff [workflow…]       # per-node line diff, local code vs the n8n draft (always exits 0)
 n8n-decanter executions [workflow…] [--status=…] [--limit=N]
 n8n-decanter executions [workflow…] clean
 n8n-decanter data-tables [table…] [--filter='<json>'] [--search=…] [--sort=col:asc|desc] [--limit=N] [--all]
 n8n-decanter data-tables [table…] clean
 n8n-decanter test <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
-n8n-decanter simulate <workflow> [--execution <execution-id> | --scenario <slug>] [--network-none] [--json]
-n8n-decanter preflight [workflow…] [--quick|--full|--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]   # the whole ladder, scored (read-only)
+                                    # grades the INSTANCE's draft. bare = static check, nothing runs;
+                                    # --execution/--scenario = pinned run on the instance
 n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold]   # committed, gap-fillable pin-data set (offline; --scaffold needs MCP)
 n8n-decanter scenario check <workflow> ["<slug>"]                                    # structurally validate a scenario (offline)
 
@@ -65,9 +67,9 @@ first push seeds a node born empty.
 | --- | --- |
 | `<workflow>` / `[workflow…]` | a workflow: **id · name · unique name-prefix · folder name** |
 | `<node-file>` | a path to a node source file (`node run`) |
-| `<execution-id>` | an n8n execution id (numeric) — `simulate --execution`, `executions <execution-id>` |
-| `<slug>` | a scenario name — `scenario create`/`scenario check`, `simulate --scenario`/`test --scenario` (kebab-cased) |
-| `<ids>` | a comma list of [preflight](/docs/cli/preflight/) check ids — `preflight --require=layout,test` |
+| `<execution-id>` | an n8n execution id (numeric) — `preflight --execution`, `test --execution`, `executions <execution-id>` |
+| `<slug>` | a scenario name — `scenario create`/`scenario check`, `preflight --scenario`/`test --scenario` (kebab-cased) |
+| `<ids>` | a comma list of [preflight](/docs/cli/preflight/) check ids — `preflight --require=layout,simulate` |
 | `<backup>` | a backup: **timestamp (or a prefix, e.g. a bare date) · versionId (short or full)** — `backup restore` |
 
 ## Interactive picker
@@ -78,21 +80,47 @@ on a terminal opens a picker instead of printing usage: type to filter,
 workflow (green), `○` for a not-yet-pulled remote one (yellow), `⊘` for a
 remote workflow **not yet available in MCP** (red, sorted last) — so the state
 reads by shape, not color alone, and the ids line up in an aligned column.
-`Enter` on a pulled workflow offers status/pull/push/watch/check/preflight/executions/simulate;
+`Enter` on a pulled workflow offers `preflight` / `preflight --simulate` /
+`diff` / `pull` / `push` / `watch` / `executions` — a row may carry flags, and
+the `--simulate` row runs the browsable
+[`--viewer`](/docs/cli/preflight/#--viewer--browse-the-run-in-a-real-n8n) form.
 `Enter` on an unpulled one pulls it directly; `Enter` on a `⊘` row explains
 where to flip the "Available in MCP" switch in n8n. It stays in the workflow's verb
 menu between runs, `Esc` backs out to the list, `Esc` again quits. Piped
 output and dirs without a `decanter.config.json` keep printing usage — scripts
 and LLM harnesses never see the picker.
 
+**Pulled workflows are listed newest-synced first** — the one you last pulled
+or pushed is under the cursor when the picker opens, so the workflow you are
+actually working on doesn't have to be hunted for. Unpulled remote rows keep
+their place after the local ones. The order comes from each workflow folder's
+sync timestamp, which is *local activity* and not committed history: right
+after a fresh `git clone` everything looks equally recent, so the list falls
+back to alphabetical until your first pull or push. The scripted
+[`list`](/docs/cli/list/) output is unaffected — it stays alphabetical.
+
+**A drift failure offers a `--force` retry.** If a `push` from the picker
+aborts because the code changed in n8n since your last sync, the picker asks
+`retry with --force and overwrite the remote draft? [y/N]` instead of just
+printing the hint and dropping back to the menu. The default is **No** — a bare
+`Enter` (or anything other than `y`/`yes`) declines and returns to the menu,
+and answering `y` re-runs the same action with `--force`, which overwrites the
+n8n **draft** only. The offer appears *only* for failures `--force` can
+actually fix: a [layout-compliance](/docs/cli/preflight/) error never prompts,
+because forcing would not help. Non-interactive runs are unchanged — they never
+prompt, they print the `--force` hint and exit non-zero.
+
 **No-ref → picker.** A ref-taking verb given *no* workflow, on a terminal, opens
 the picker to choose one and then runs that verb on it (the verb menu is
-skipped). For `pull` the list includes **remote** workflows too (as in the bare
-picker), so a fresh setup with nothing pulled still gets a menu to pick from;
-the other verbs act on already-pulled workflows only. This includes the
-`backup …` and `scenario …` sub-verbs, whose first argument is a workflow ref.
-Piped/non-TTY runs keep the config-default / error path unchanged, so scripts
-and LLM harnesses never block.
+skipped). The same newest-synced-first ordering applies. For `pull` the list
+includes **remote** workflows too (as in the bare picker), so a fresh setup
+with nothing pulled still gets a menu to pick from; the other verbs act on
+already-pulled workflows only. This includes the `backup …` and `scenario …`
+sub-verbs, whose first argument is a workflow ref. Piped/non-TTY runs keep the
+config-default / error path unchanged, so scripts and LLM harnesses never
+block. The force-retry confirm belongs to the interactive picker *session*
+(bare `n8n-decanter`), so this single-select path prints the ordinary
+`--force` hint instead.
 
 ## Workflow refs
 
@@ -104,7 +132,7 @@ names against the server's workflow list. Without a workflow argument, all
 workflows from the config are processed (or the picker opens, on a terminal).
 
 **Verb-first grammar.** The verb is the first argument; everything after it is
-an argument. `n8n-decanter status push` runs `status` on the workflow named
+an argument. `n8n-decanter diff push` runs `diff` on the workflow named
 `push` — no "address it by id" caveat. Verb-last (`n8n-decanter wf123 push`)
 errors with *unknown verb*. Flags may still appear in any position.
 
@@ -112,11 +140,11 @@ errors with *unknown verb*. Flags may still appear in any position.
 
 | Verbs | Network |
 | --- | --- |
-| `check`, `node run`, `list`, `simulate`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
-| `status`, `list --remote`, `executions`, `data-tables`, `backup create`/`restore` | Read the remote (`backup restore` also writes a **new** workflow, never touching the source) |
+| `preflight --offline`, `node run`, `list`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `preflight --offline --simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
+| `diff`, `list --remote`, `executions`, `data-tables`, `backup create`/`restore` | Read the remote (`backup restore` also writes a **new** workflow, never touching the source) |
 | `backup list` | Fully offline — reads the local `backups/` store |
-| `test` | Runs the workflow's **draft** on the instance with pinned data (on a terminal it can push your local code to the draft first — it asks; non-interactive runs never write) |
-| `preflight` | Runs the whole verification ladder read-only — static + instance reads + a pinned draft `test`/`simulate` run; **never writes** (no push/publish/restore), in every profile |
+| `test` | Grades the workflow's **draft** on the instance — run it **after a push** so the draft holds your code. **Bare**: a static check (dangling `$('…')` references), nothing executes, no capture needed. **With `--execution`/`--scenario`**: a pinned run. There is no fallback to the newest capture — executing means saying so. On a terminal, when local differs: a **published** workflow gets a local-vs-draft prompt; an **unpublished** one is pushed without asking (a draft nobody runs). Non-interactive runs never write |
+| `preflight` | Verifies your **local** code as one scored gate — static + instance reads, plus an optional local-engine replay (`--simulate`); **never writes and never runs on the instance**, with any flag combination. `--offline` drops the instance reads entirely. Run it *before* `push`; `test` comes after |
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |
 | `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes; a forwarded structure edit also triggers a background `workflow.json` refresh (`liveMirror`, on by default) |
 

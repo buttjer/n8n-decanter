@@ -13,6 +13,15 @@ import type { Log } from "./types.mts";
 const GLOBAL_NAME = "__n8n_node";
 const SIZE_WARN_BYTES = 100_000;
 const BUILTINS = new Set(builtinModules);
+// esbuild labels every bundled module with a `// <path>` comment, so whatever
+// we call the stdin entry lands *inside* the compiled bytes — and therefore
+// inside the `@ts-n8n sha256:` marker. Using the node's own filename made a
+// pure remote rename change the artifact: `pull` renames `compute.ts` ->
+// `ümläut-nödé.ts`, the comment follows, and the node reads "push pending"
+// forever on a comment-only diff. A fixed name keeps the entry label stable
+// across renames; the surrounding dir still comes from `resolveDir`, which is
+// sticky (a workflow folder never follows a remote rename — Plan 27).
+const ENTRY_SOURCEFILE = "node.ts";
 
 export interface ScannedImports {
   /** Verbatim leading import block ("" when the file has none). */
@@ -127,7 +136,7 @@ function packageName(spec: string): string {
  * Offline import rules for a node file (plans/14): relative imports stay
  * inside the sync dir, bare specifiers need a `bundleDependencies` opt-in,
  * builtins can never be bundled. Shared by the compliance guard and the
- * compiler, so `check` and `push` disagree on nothing.
+ * compiler, so preflight's `layout` check and `push` disagree on nothing.
  */
 export function checkNodeImports(file: string, specifiers: string[], ctx: BundleContext): string[] {
   const problems: string[] = [];
@@ -197,7 +206,7 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
         contents: entry,
         loader: "ts",
         resolveDir: path.dirname(file),
-        sourcefile: path.basename(file),
+        sourcefile: ENTRY_SOURCEFILE,
       },
       bundle: true,
       format: "iife",

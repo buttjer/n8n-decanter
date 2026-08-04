@@ -110,7 +110,7 @@ The decisions behind the strings:
   established idiom, and a structural claim (built on n8n's first-party
   surface).
 - **Extension slots, by design:** "TypeScript" → "TypeScript & Python" when
-  [Plan 28](../open/28-python-code-nodes.md) lands; "preflights" was designed to
+  [Plan 28](../draft/28-python-code-nodes.md) lands; "preflights" was designed to
   absorb the `test` verb — Plan 33 shipped it 2026-07-22, so the card carries
   its full `check`/`simulate`/`test` form from day one; "code-level git
   versioning" is scope-honest (code, not whole-workflow — exactly the

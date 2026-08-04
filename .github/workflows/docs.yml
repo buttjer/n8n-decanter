@@ -3,9 +3,9 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths: ["website/**", ".github/workflows/docs.yml"]
+    paths: ["website/**", "docs/**", ".github/workflows/docs.yml"]
   pull_request:
-    paths: ["website/**", ".github/workflows/docs.yml"]
+    paths: ["website/**", "docs/**", ".github/workflows/docs.yml"]
   workflow_dispatch:
 
 env:
@@ -33,7 +33,7 @@ jobs:
       - run: npm run build
       - run: npm run check:links
       - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: website/dist
 
@@ -53,4 +53,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

@@ -2,9 +2,9 @@
 // MCP `test_workflow` — the recommended runtime check. The instance's real
 // engine (instance-exact version, community nodes included) executes the
 // DRAFT: trigger/credentialed/HTTP nodes are pinned from a local capture or
-// committed mock (the same classification `simulate` uses), logic nodes run
+// committed mock (the same classification the local-engine replay uses), logic nodes run
 // for real, and each pure node's output is diffed client-side against the
-// capture (exit 1 on divergence). `simulate` remains the offline/pre-push/
+// capture (exit 1 on divergence). `preflight --simulate` remains the offline/pre-push/
 // CI sibling — see docs/concepts for the taxonomy.
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -16,6 +16,7 @@ import { readState, writeState } from "./state.mts";
 import { diffItems, firstRunItems, isLoopDriver, isPureNode, type NodeDiff, type Provenance, type RunData, type RunItem, readCapture, scenarioIsSynthetic, scenarioProvenance, type SimSource } from "./simulate.mts";
 import type { DecanterConfig, Log, Workflow } from "./types.mts";
 import { isJsCodeNode, publicationState, sha256, splitMarker } from "./util.mts";
+import { type DanglingRef, danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
 
 /**
  * Crash-safe pre-test draft snapshot, written before a test-triggered push
@@ -65,7 +66,7 @@ export interface TestReport {
 /**
  * Build the pinData map for `test_workflow` from a capture: every non-pure,
  * non-loop-driver, enabled node with captured output gets pinned (the same
- * split `simulate` uses — triggers/network/credentialed nodes must not run
+ * split the local-engine replay uses — triggers/network/credentialed nodes must not run
  * for real). Nodes without captured data are GAPS and abort — an unpinned
  * network node would execute against the real world. Exported for tests.
  */
@@ -125,7 +126,8 @@ function snapshotOf(remote: Workflow): DraftSnapshot {
  * else fall back to writing the snapshot's jsCode back — but only onto a
  * draft that still matches what OUR push produced (re-checked here; a
  * concurrent edit wins and aborts the fallback). Either way the local state
- * re-baselines to the restored remote, so `status` reads "local changes
+ * re-baselines to the restored remote, so `diff` (and preflight's `parity`
+ * check) read "local changes
  * pending push", not a conflict.
  */
 async function restoreDraft(mcp: McpClient, dir: string, id: string, snapshot: DraftSnapshot, pushedHashes: Map<string, string>, log: Log): Promise<boolean> {
@@ -182,19 +184,55 @@ async function restoreDraft(mcp: McpClient, dir: string, id: string, snapshot: D
  * composition: `push` first). The live version is never affected either
  * way — `test_workflow` runs the draft.
  */
+/** What `test` reports when it runs nothing (Plan 64 task 3b). */
+export interface StaticReport {
+  id: string;
+  name: string;
+  /** Dangling `$('…')` refs on the instance's DRAFT — the thing publish would go live with. */
+  dangling: DanglingRef[];
+  ok: boolean;
+}
+
+/**
+ * `test <workflow>` with no `--scenario`/`--execution`: grade the instance's
+ * draft **statically** and execute nothing (Plan 64 task 3b).
+ *
+ * This is the cheap tier of what `test` already is. Plan 60 assigned the
+ * subjects — `preflight` grades local files, `test` grades the instance's draft
+ * — so the static check of a remote draft belongs here rather than in preflight.
+ * It is also what `publish` gates on, via the same `danglingNodeRefs` scan, so
+ * the two can never disagree.
+ *
+ * Deliberately NOT a fallback to "the latest capture": that made a bare `test`
+ * execute for real against the instance, steered by the contents of a gitignored
+ * directory. Executing now requires saying so.
+ */
+export async function runStaticTest(mcp: McpClient, id: string, log: Log): Promise<StaticReport> {
+  const remote = await getWorkflowDetails(mcp, id);
+  const dangling = danglingNodeRefs(remote.nodes);
+  const report: StaticReport = { id, name: remote.name, dangling, ok: dangling.length === 0 };
+  if (report.ok) {
+    log.ok(`"${remote.name}" (${id}) — draft is statically clean; nothing was executed`);
+    log.info(`pass --scenario <slug> or --execution <id> to actually run it on the instance`);
+  } else {
+    log.error(`"${remote.name}" (${id}) — ${dangling.length} dangling $('…') reference(s) on the DRAFT:`);
+    for (const line of describeDanglingRefs(dangling)) log.error(line);
+  }
+  return report;
+}
+
 export async function runTest(
   mcp: McpClient,
   config: DecanterConfig,
   dir: string,
   id: string,
-  { ref, source, trigger, neverMutate = false }: { ref: string; source: SimSource; trigger?: string; neverMutate?: boolean },
+  { ref, source, trigger }: { ref: string; source: SimSource; trigger?: string },
   log: Log,
 ): Promise<TestReport> {
-  // `neverMutate` (preflight's read-only gate) forces the non-interactive path:
-  // the draft tip is tested as-is, local code is never pushed first, and no
-  // keep/restore prompt can fire. Without it, an interactive TTY where local
-  // differs from the draft would offer to push local — a mutation a gate forbids.
-  const interactive = !neverMutate && process.stdin.isTTY === true && process.stdout.isTTY === true;
+  // Plan 60 removed `neverMutate`: preflight was its only caller, and preflight
+  // no longer runs `test` at all. `test` is now unambiguously a verb you run
+  // yourself, after `push` — a TTY gets the choice, a pipe/CI never mutates.
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const { exec, runData } = readCapture(dir, ref, source);
   // Provenance (Plan 37): a scenario with any authored/scaffolded node proves
   // executability only — the diff below asserts capture-provenance nodes
@@ -204,6 +242,14 @@ export async function runTest(
 
   // 1) pre-check read: publication state + the byte-exact draft snapshot
   let remote = await getWorkflowDetails(mcp, id);
+  // Never fire a real run at a draft we already know is broken (Plan 64): a
+  // dangling $('…') fails at run time anyway, and the run has real side effects.
+  const dangling = danglingNodeRefs(remote.nodes);
+  if (dangling.length > 0) {
+    throw new Error(
+      [`"${remote.name}" has ${dangling.length} dangling $('…') reference(s) on the draft — refusing to run it on the instance:`, ...describeDanglingRefs(dangling)].join("\n"),
+    );
+  }
   const snapshot = snapshotOf(remote);
   const differs = await localDiffersFromDraft(dir, remote, log);
 
@@ -308,7 +354,7 @@ export async function runTest(
   };
 }
 
-/** Human-readable report — mirrors `simulate`'s output style. */
+/** Human-readable report — mirrors the local-engine replay's output style. */
 export function printTestReport(r: TestReport, log: Log): void {
   if (r.status !== "success") {
     log.error(`instance test run failed: ${r.error ?? r.status}${r.executionId !== null ? ` (execution ${r.executionId})` : ""}`);

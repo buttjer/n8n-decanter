@@ -72,6 +72,12 @@ work already merged), close it out.
   - `**Class:**` *(optional)* — `Distinctive feature` for a capability that
     differentiates decanter from n8n itself and from generic "n8n-as-code"
     git-sync. These are tracked as their own class, kept visible.
+- **tl;dr** — the **first paragraph after the header block**, before the first
+  `##`. One to three sentences, no heading of its own: what this plan changes and
+  why it matters, written so a reader who stops there still knows whether to care.
+  **Every plan and draft has one** — a draft is often little more than its tl;dr
+  plus a few lines of scope. Keep it a *summary*, not a preamble: no "this plan
+  proposes…" throat-clearing, and don't restate the title.
 - **Sections** (fuller plans; drafts stay short and skip most of these):
   `## Why`, `## Source`, `## Tasks` (numbered, grounded in real files),
   `## Acceptance / verification`, `## Notes` (CHANGELOG/PLAN.md implications,

@@ -9,20 +9,22 @@ last one is bypassed by `--force`.
 
 ## 1. Typecheck gate
 
-The same wrapper-based typecheck as [check](/docs/cli/check/) — see
-[Type checking](/docs/concepts/type-checking/). Blocking; skip with
-`--no-typecheck` (auto-skipped when no `tsconfig.json` is found).
+The same wrapper-based typecheck as [preflight](/docs/cli/preflight/)'s
+`types` check — see [Type checking](/docs/concepts/type-checking/). Blocking;
+skip with `--no-typecheck` (auto-skipped when no `tsconfig.json` is found).
 
 ## 2. Compliance guard
 
 Layout violations are **hard errors that `--force` does not bypass** — they
-would corrupt sync state. The full list of checks is on the
-[check](/docs/cli/check/) page: placeholder integrity, connection integrity,
-duplicate names/ids, orphan files, dangling `$('…')` references, marker misuse,
-and a leftover retired `fixtures/` dir. Standalone: `n8n-decanter check`, no
-credentials needed. The guard also **warns without blocking** about an inline
-Python `pythonCode` node and a committed scenario that embeds inline Code-node
-source under `workflowData`.
+would corrupt sync state. The full list is on the preflight page, under
+[what the compliance guard catches](/docs/cli/preflight/#what-the-compliance-guard-catches):
+placeholder integrity, connection integrity, duplicate names/ids, orphan files,
+dangling `$('…')` references, marker misuse, and a leftover retired `fixtures/`
+dir. Standalone: `n8n-decanter preflight --offline` runs this guard plus the
+typecheck and nothing else — no credentials, no network, and every violation
+listed under the failing `layout` check. The guard also **warns without
+blocking** about an inline Python `pythonCode` node and a committed scenario
+that embeds inline Code-node source under `workflowData`.
 
 ## 3. Per-node drift guard
 
@@ -35,7 +37,9 @@ never pushed from here.
 
 The interplay with pull matters: **pulling records the remote code as the
 new sync base**, so after a warned pull the next push overwrites the surfaced
-remote edits by design — `status --diff` and git history are the safety net.
+remote edits by design — [diff](/docs/cli/diff/) and git history are the safety
+net. On the gate side the same situation shows up as preflight's `drift` check:
+a node changed both locally and remotely fails it as a `CONFLICT`.
 
 Per-node sync hashes are stored in
 [`.decanter.json`](/docs/concepts/sync-layout/); "last synced" means the last

@@ -9,7 +9,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { McpClient } from "../../lib/mcp.mts";
 import type { DecanterConfig, Log, Workflow } from "../../lib/types.mts";
-import { buildTestPins, runTest } from "../../lib/testrun.mts";
+import { buildTestPins, runStaticTest, runTest } from "../../lib/testrun.mts";
 
 const capturingLog = (): { log: Log; lines: string[] } => {
   const lines: string[] = [];
@@ -138,6 +138,20 @@ describe("runTest (non-TTY)", () => {
     assert.ok(!calls.includes("test_workflow"), "aborted before any run: " + calls.join(","));
   });
 
+  it("a dangling ref aborts BEFORE test_workflow runs — never fire a real run at a known-broken draft (Plan 64)", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-testrun-"));
+    const dir = seed(tmp);
+    const remote = wf();
+    remote.nodes = remote.nodes.map((n) => (n.id === "c" ? { ...n, parameters: { jsCode: "return $('Gone').all();\n" } } : n));
+    const { mcp, calls } = stub(remote, {});
+    const { log } = capturingLog();
+    await assert.rejects(
+      runTest(mcp, config(tmp), dir, "wf1", { ref: "301", source: "capture" }, log),
+      /refusing to run it on the instance/,
+    );
+    assert.ok(!calls.includes("test_workflow"), "aborted before any run: " + calls.join(","));
+  });
+
   it("surfaces an instance-side failure (e.g. the 5-min timeout)", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-testrun-"));
     const dir = seed(tmp);
@@ -146,5 +160,50 @@ describe("runTest (non-TTY)", () => {
     const report = await runTest(mcp, config(tmp), dir, "wf1", { ref: "301", source: "capture" }, log);
     assert.equal(report.ok, false);
     assert.equal(report.status, "error");
+  });
+});
+
+// --- Plan 64 task 3b: the static tier ----------------------------------------
+// A bare `test` grades the instance's DRAFT and executes nothing. The old
+// latest-capture fallback is gone: it made the bare verb run for real, steered
+// by a gitignored directory.
+describe("runStaticTest", () => {
+  const codeNode = (name: string, jsCode: string) => ({ id: `c-${name}`, name, type: "n8n-nodes-base.code", parameters: { jsCode } });
+  const staticStub = (nodes: unknown[]) => {
+    const calls: string[] = [];
+    const mcp = {
+      callTool: async (name: string) => {
+        calls.push(name);
+        if (name === "get_workflow_details") return { workflow: { id: "wf1", name: "Demo", nodes, connections: {} } };
+        throw new Error("unexpected tool " + name);
+      },
+    } as unknown as McpClient;
+    return { mcp, calls };
+  };
+  const capturing = () => {
+    const lines: string[] = [];
+    const push = (tag: string) => (m: string) => lines.push(`${tag} ${m}`);
+    return { log: { info: push("info"), ok: push("ok"), warn: push("warn"), error: push("error") } as Log, lines };
+  };
+
+  it("reports dangling refs on the draft and EXECUTES NOTHING", async () => {
+    const { mcp, calls } = staticStub([codeNode("Transform", "return $('Fetch').all();")]);
+    const { log, lines } = capturing();
+    const report = await runStaticTest(mcp, "wf1", log);
+    assert.equal(report.ok, false);
+    assert.equal(report.dangling.length, 1);
+    assert.deepEqual(calls, ["get_workflow_details"], "the static tier must not call test_workflow");
+    assert.match(lines.join("\n"), /dangling \$\('…'\) reference\(s\) on the DRAFT/);
+  });
+
+  it("says plainly that nothing ran, so a green result is not mistaken for a run", async () => {
+    const { mcp, calls } = staticStub([codeNode("Fetch", "return [];")]);
+    const { log, lines } = capturing();
+    const report = await runStaticTest(mcp, "wf1", log);
+    assert.equal(report.ok, true);
+    assert.deepEqual(calls, ["get_workflow_details"]);
+    const out = lines.join("\n");
+    assert.match(out, /nothing was executed/);
+    assert.match(out, /pass --scenario <slug> or --execution <id>/);
   });
 });

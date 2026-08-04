@@ -30,7 +30,7 @@ environment.
 | `commitOnPush` | `true` | Auto-commit the workflow folder after a successful push. |
 | `commitOnPull` | `true` | Same for pull. |
 | `requestTimeoutMs` | `30000` | Request timeout (MCP and API) — raise for slow instances. |
-| `n8nVersion` | unset | n8n version [`simulate`](/docs/cli/simulate/)'s engine-true runner pins to (e.g. `"2.31.4"`); `--n8n-version` overrides it per run. Unset falls back to the project's default with a hint. |
+| `n8nVersion` | unset | n8n version the local engine behind [`preflight --simulate`](/docs/cli/preflight/) pins to (e.g. `"2.31.4"`); `--n8n-version` overrides it per run. Unset falls back to the project's default with a hint. |
 | `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the API key needn't carry the data-table read scopes); `data-tables clean` still works. |
 | `liveMirror` | `true` | Refresh the read-only `workflow.json` snapshot in the background after an agent restructures a workflow through the [guard](/docs/cli/mcp-connect/) (a forwarded `update_workflow`). `false` disables the auto-refresh (CI / deterministic setups). |
 | `backupLimit` | `20` | Cap on the retained [`backups/`](/docs/cli/backup/) working set per workflow. Each `backup create` rolling-prunes the oldest beyond this; `0` keeps all (git holds the full history regardless). |
@@ -42,8 +42,9 @@ The sync rides n8n's **MCP server**; the public API key is an optional extra.
 In order of resolution:
 
 1. **`N8N_HOST`** — always required for online verbs (`.env` or environment).
-2. **MCP credentials** (the sync verbs — pull, push, watch, status, publish,
-   unpublish, test — and the `mcp connect`/`mcp serve` guard):
+2. **MCP credentials** (the sync verbs — pull, push, diff, watch, publish,
+   unpublish, test, and `preflight` without `--offline` — plus the
+   `mcp connect`/`mcp serve` guard):
    - `N8N_MCP_TOKEN` (`.env` or environment) — a rotatable token from n8n →
      Settings → MCP → API key. Takes precedence when set.
    - Otherwise `.decanter-auth.json` — the OAuth client id + refresh token
@@ -66,5 +67,6 @@ workflow needs its **"Available in MCP"** flag (workflow card ⋯ menu, or
 workflow settings) — [list --remote](/docs/cli/list/) and the picker show
 which workflows still need it.
 
-`check`, `node run`, `scenario check`, and plain `list` need no credentials at
-all (`scenario create --scaffold` is the exception — it needs MCP).
+`preflight --offline`, `node run`, `scenario check`, and plain `list` need no
+credentials at all (`scenario create --scaffold` is the exception — it needs
+MCP).

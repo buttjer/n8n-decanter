@@ -5,8 +5,8 @@
   "description": "n8n workflows decanted into git — see AGENTS.md",
   "type": "module",
   "scripts": {
-    "typecheck": "n8n-decanter check",
-    "check": "n8n-decanter check"
+    "typecheck": "n8n-decanter preflight --offline",
+    "check": "n8n-decanter preflight --offline"
   },
   "devDependencies": {
     "decanter-ts-plugin": "file:./decanter-ts-plugin",

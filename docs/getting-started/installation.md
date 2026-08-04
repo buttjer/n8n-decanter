@@ -17,7 +17,14 @@ Alternatives:
   installed bin is the compiled `dist/`), or invoke `node n8n-decanter.mts …`
   directly, no build needed.
 - **Per sync dir:** add `n8n-decanter` to the sync dir's `devDependencies`
-  instead of installing globally.
+  instead of installing globally. A local install lands in
+  `node_modules/.bin`, **not** on your `PATH`, so invoke it as
+  **`npx n8n-decanter <verb>`** (or via an `npm run` script — npm puts
+  `node_modules/.bin` on `PATH` itself). A bare `n8n-decanter <verb>` is the
+  one form that won't resolve. `npx n8n-decanter …` works under a global
+  install too, so it is the safe form to use in scripts and docs shared across
+  a team. The agent config `init` scaffolds allows **both** forms, and the
+  MCP guard it wires up uses `npx --no-install` for exactly this reason.
 
 ## Old Node fails with a `SyntaxError`
 

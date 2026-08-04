@@ -42,23 +42,15 @@ let testRunOutcome: { status: string; error?: string; executionId?: string | nul
 let testExecCount = 0;
 const mkid = () => Math.random().toString(16).slice(2, 14).padEnd(12, "0");
 
-/** Rewrite literal $('Old') / $("Old") refs in a string (the mock's stand-in
- * for n8n's server-side expression rewriting on rename). */
-const renameRefs = (text: string, oldName: string, newName: string): string =>
-  text.split(`$('${oldName}')`).join(`$('${newName}')`).split(`$("${oldName}")`).join(`$("${newName}")`);
-
-const renameRefsDeep = (value: any, oldName: string, newName: string): any => {
-  if (typeof value === "string") return renameRefs(value, oldName, newName);
-  if (Array.isArray(value)) return value.map((v) => renameRefsDeep(v, oldName, newName));
-  if (value && typeof value === "object") {
-    for (const k of Object.keys(value)) value[k] = renameRefsDeep(value[k], oldName, newName);
-  }
-  return value;
-};
-
 /** Apply an update_workflow op batch, mirroring the verified 2.30.7 semantics:
- * name-addressed, updateNodeParameters merges, renameNode keeps ids and
- * rewrites connections + expression refs, addNode re-mints the id. */
+ * name-addressed, updateNodeParameters merges, addNode re-mints the id, and
+ * renameNode keeps ids and rewrites CONNECTIONS ONLY.
+ *
+ * That last part used to be wrong here, and it mattered: the mock rewrote
+ * `$('…')` refs across every node's parameters too, so the suite affirmed a
+ * server behaviour n8n does not have and the rename step asserted a healed
+ * workflow. Verified live against n8n 2.30.7 and 2.33.3 (Plan 64) — the MCP op
+ * sets the name, re-keys the connections, and leaves every reference behind. */
 function applyOps(wf: any, operations: any[]): void {
   for (const [i, op] of operations.entries()) {
     if (op.type === "updateNodeParameters") {
@@ -80,7 +72,6 @@ function applyOps(wf: any, operations: any[]): void {
           }
         }
       }
-      for (const n of wf.nodes) renameRefsDeep(n.parameters, op.oldName, op.newName);
     } else if (op.type === "addNode") {
       // the server mints the node id — deliberately adversarial for the CLI's
       // by-name landing resolution
@@ -800,15 +791,15 @@ await step("push: a code edit lands on the DRAFT only; --publish takes it live",
   assert.equal(db.get("wf123").activeVersionId, db.get("wf123").versionId);
 });
 
-await step("pre-code/ layout migrates on pull; check flags it before", async () => {
+await step("pre-code/ layout migrates on pull; preflight --offline flags it before", async () => {
   // simulate the old flat layout for one node: file at the folder root
   renameSync(path.join(dir1, "code", "transform.js"), path.join(dir1, "Transform.js"));
   const s = state(dir1);
   s.nodes.n2.file = "Transform.js";
   writeFileSync(path.join(dir1, ".decanter.json"), JSON.stringify(s, null, 2) + "\n");
   writeFileSync(path.join(dir1, "workflow.json"), read(dir1, "workflow.json").replace("//@file:code/transform.js", "//@file:Transform.js"));
-  let r = await cli("check");
-  assert.equal(r.code, 1, "old layout must fail the compliance check: " + r.out);
+  let r = await cli("preflight", "--offline");
+  assert.equal(r.code, 1, "old layout must fail the static tier: " + r.out);
   assert.match(r.out, /sits outside code\//);
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
@@ -817,7 +808,7 @@ await step("pre-code/ layout migrates on pull; check flags it before", async () 
   assert.ok(!existsSync(path.join(dir1, "Transform.js")), "old flat file must be gone");
   assert.equal(state(dir1).nodes.n2.file, "code/transform.js");
   assert.match(read(dir1, "workflow.json"), /"\/\/@file:code\/transform\.js"/);
-  r = await cli("check");
+  r = await cli("preflight", "--offline");
   assert.equal(r.code, 0, r.out);
 });
 
@@ -870,7 +861,7 @@ await step("remote UI edit on ts node: push aborts on code drift; pull warns (no
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /edited in the n8n UI since last push/);
-  assert.match(r.out, /status --diff/);
+  assert.match(r.out, /n8n-decanter diff/);
   assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.remote.js")), "no conflict artifact since Plan 32");
   // after pull, push is allowed again and restores the TS-compiled version
   r = await cli("push");
@@ -903,36 +894,43 @@ await step("marker removed remotely (rewrite in UI): .ts never clobbered", async
   assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/, "marker re-registered");
 });
 
-await step("structure changed remotely: never blocks push; status hints; pull refreshes the snapshot", async () => {
+await step("structure changed remotely: never blocks push; preflight's snapshot check warns; pull refreshes it", async () => {
   const wf = db.get("wf123");
   wf.nodes.push({ id: "n4", name: "Set", type: "n8n-nodes-base.set", typeVersion: 3, position: [660, 0], parameters: {} });
-  // structure is n8n's job (Plan 32): status only hints, exit stays 0
-  let r = await cli("status");
+  // Structure is n8n's job (Plan 32): the fact survives Plan 59 as preflight's
+  // `snapshot` finding — a warn, never a fail, so the gate still exits 0.
+  let r = await cli("preflight");
   assert.equal(r.code, 0, "a structure-only remote change is not drift: " + r.out);
-  assert.match(r.out, /structure snapshot out of date — pull to refresh/);
+  assert.match(r.out, /snapshot\s+structure snapshot out of date — pull to refresh workflow\.json/);
   // push proceeds — it writes jsCode only, structure is untouched
   r = await cli("push");
   assert.equal(r.code, 0, "push must not block on remote structure changes: " + r.out);
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(read(dir1, "workflow.json"), /"n4"/);
-  r = await cli("status");
+  r = await cli("preflight");
   assert.equal(r.code, 0, r.out);
-  assert.ok(!r.out.includes("snapshot out of date"), "refreshed snapshot clears the hint: " + r.out);
+  assert.match(r.out, /snapshot\s+structure snapshot current/);
+  assert.ok(!r.out.includes("snapshot out of date"), "refreshed snapshot clears the warn: " + r.out);
 });
 
-await step("status: reports pending local edit, then in sync", async () => {
+await step("preflight parity: a pending local edit warns, then matches the draft after push", async () => {
   const js = path.join(dir1, "code", "transform.js");
   writeFileSync(js, read(dir1, "code", "transform.js") + "// local tweak\n");
-  let r = await cli("status");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /Order Sync \(wf123\).*published/);
-  assert.match(r.out, /Transform: local changes in code\/transform\.js — push pending/);
+  let r = await cli("preflight");
+  assert.equal(r.code, 0, "local-ahead is a caution, not a gate failure: " + r.out);
+  assert.match(r.out, /preflight: Order Sync · static \+ instance reads/);
+  // publication state is the `lifecycle` finding now (wf123 is published & in sync)
+  assert.match(r.out, /lifecycle\s+published — live matches the draft/);
+  assert.match(r.out, /parity\s+local code differs from the draft in 1 node\(s\) — push to make it the draft, then test/);
+  // the per-node roll-call `status` printed survives as the finding's details
+  assert.match(r.out, /^ +Transform: local changes in code\/transform\.js$/m);
   r = await cli("push");
   assert.equal(r.code, 0, r.out);
   assert.match(remoteNode("wf123", "n2").parameters.jsCode, /local tweak/);
-  r = await cli("status");
-  assert.match(r.out, /Transform: in sync/);
+  r = await cli("preflight");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /parity\s+local code matches the draft/);
 });
 
 await step("remote workflow rename: folder is sticky, name cached; node rename still renames the file", async () => {
@@ -1056,14 +1054,23 @@ await step("watch: workflow.json is a read-only snapshot — a save warns once, 
   }
 });
 
-await step("check: clean tree passes, typecheck skipped without tsconfig", async () => {
-  const r = await cli("check");
+await step("preflight --offline: clean tree passes; the whole instance tier and the engine are skipped", async () => {
+  const r = await cli("preflight", "--offline");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /Order Sync v2: OK/);
-  assert.match(r.out, /no tsconfig\.json found — skipping typecheck/);
+  // the scored card, not `check`'s "<name>: OK" line — the header names the
+  // resolved flags, and every finding is a glyph + check id + message
+  assert.match(r.out, /preflight: Order Sync v2 · --offline/);
+  assert.match(r.out, /✓ layout\s+layout compliant/);
+  assert.match(r.out, /⤷ types\s+no tsconfig\.json — typecheck skipped/);
+  // subtractive: no instance contact at all, and --simulate was not asked for
+  for (const id of ["connect", "access", "parity", "drift", "snapshot", "lifecycle", "history"]) {
+    assert.match(r.out, new RegExp(`skipped ${id}: --offline skips the instance tier`), `${id} must be skipped by --offline: ${r.out}`);
+  }
+  assert.match(r.out, /skipped simulate: the local-engine replay is opt-in/);
+  assert.match(r.out, /verdict: ready/);
 });
 
-await step("guard: inline code in workflow.json blocks push", async () => {
+await step("guard: inline code in workflow.json blocks push and preflight --offline", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJson = read(dir2, "workflow.json");
   writeFileSync(path.join(dir2, "workflow.json"), wfJson.replace('"//@file:code/transform-eu-us.js"', '"return 1;"'));
@@ -1071,7 +1078,7 @@ await step("guard: inline code in workflow.json blocks push", async () => {
   assert.equal(r.code, 1, "push must abort on inline code");
   assert.match(r.out, /inline code/);
   assert.match(r.out, /does not comply/);
-  r = await cli("check");
+  r = await cli("preflight", "--offline");
   assert.equal(r.code, 1);
   assert.match(r.out, /inline code/);
   writeFileSync(path.join(dir2, "workflow.json"), wfJson);
@@ -1101,7 +1108,7 @@ await step("guard: pre-Plan-32 .remote.js leftovers warn but don't block", async
 await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", async () => {
   writeFileSync(path.join(TMP, "n8n-globals.d.ts"), readFileSync(path.join(PROJECT, "n8n-globals.d.ts"), "utf8"));
   writeFileSync(path.join(TMP, "tsconfig.json"), JSON.stringify({
-    compilerOptions: { target: "ES2022", module: "CommonJS", moduleResolution: "Node", lib: ["ES2022"], allowJs: true, checkJs: true, noEmit: true, strict: true, skipLibCheck: true },
+    compilerOptions: { target: "ES2022", module: "preserve", moduleResolution: "bundler", lib: ["ES2022"], allowJs: true, checkJs: true, noEmit: true, strict: true, skipLibCheck: true },
     include: ["n8n-globals.d.ts", "workflows/**/*.ts", "workflows/**/*.js"],
     exclude: ["**/*.remote.js"],
   }, null, 2));
@@ -1120,8 +1127,8 @@ await step("guard: typecheck gate blocks type errors, --no-typecheck bypasses", 
   assert.match(r.out, /typecheck OK/);
 });
 
-await step("check <id>: scopes layout checks and typecheck to that workflow", async () => {
-  // a second, broken workflow that must stay invisible to a scoped check
+await step("preflight --offline <id>: scopes layout + typecheck to that workflow; details expand every violation", async () => {
+  // a second, broken workflow that must stay invisible to a scoped run
   const dirB = wfDir("Broken Neighbor");
   mkdirSync(path.join(dirB, "code"), { recursive: true });
   writeFileSync(path.join(dirB, ".decanter.json"), JSON.stringify({ workflowId: "wfBroken", nodes: { b1: { file: "code/bad.js" } } }));
@@ -1130,22 +1137,53 @@ await step("check <id>: scopes layout checks and typecheck to that workflow", as
     connections: {},
   }));
   writeFileSync(path.join(dirB, "code", "bad.js"), '// @ts-check\nconst bad = "x" * 2;\nreturn [{ json: { bad } }];\n');
-  let r = await cli("check");
-  assert.equal(r.code, 1, "unscoped check must fail on the broken neighbor: " + r.out);
-  assert.match(r.out, /bad\.js/);
-  r = await cli("check", "wf123");
-  assert.equal(r.code, 0, "scoped check must not see the broken neighbor: " + r.out);
-  assert.match(r.out, /Order Sync v2: OK/);
-  assert.match(r.out, /typecheck OK/);
+  // Unscoped, preflight grades the ids in decanter.config.json — so blank the
+  // list to exercise the fallback `check` used to have (Plan 59: no refs + no
+  // configured workflows = every PULLED workflow), which is what makes the
+  // broken neighbour part of an unscoped run at all.
+  const cfg = read(TMP, "decanter.config.json");
+  writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ ...JSON.parse(cfg), workflows: [] }, null, 2));
+  let r: Awaited<ReturnType<typeof cli>>;
+  try {
+    r = await cli("preflight", "--offline");
+    assert.equal(r.code, 1, "an unscoped run must reach the broken neighbor: " + r.out);
+    assert.match(r.out, /preflight: wfBroken/, "the pulled-workflow fallback covered it: " + r.out);
+    assert.match(r.out, /bad\.js/);
+  } finally {
+    writeFileSync(path.join(TMP, "decanter.config.json"), cfg);
+  }
+  r = await cli("preflight", "--offline", "wf123");
+  assert.equal(r.code, 0, "a scoped run must not see the broken neighbor: " + r.out);
+  assert.match(r.out, /preflight: Order Sync v2/);
+  assert.match(r.out, /✓ types\s+node files typecheck clean/);
   assert.ok(!r.out.includes("Broken Neighbor"), "unrelated workflow leaked into scoped output: " + r.out);
   assert.ok(!r.out.includes("bad.js"), "unrelated diagnostics leaked into scoped output: " + r.out);
+
+  // `details` (Plan 59): the one-line message names the FIRST violation, the
+  // indented expansion names them all — the full list `check` used to print is
+  // the only reason preflight can be the sole static view.
+  writeFileSync(path.join(dirB, "code", "orphan-a.js"), "return [];\n");
+  writeFileSync(path.join(dirB, "code", "orphan-b.js"), "return [];\n");
+  r = await cli("preflight", "--offline", "wfBroken", "--no-typecheck");
+  assert.equal(r.code, 1, r.out);
+  const layoutLine = r.out.split("\n").find((l) => /✗ layout/.test(l));
+  assert.ok(layoutLine !== undefined, "no layout finding: " + r.out);
+  assert.match(layoutLine, /2 layout violations: /, "the summary line counts them and names one: " + layoutLine);
+  assert.ok(!(layoutLine.includes("orphan-a.js") && layoutLine.includes("orphan-b.js")), "the summary line must stay a summary: " + layoutLine);
+  assert.match(r.out, /^ +orphan code file code\/orphan-a\.js — /m);
+  assert.match(r.out, /^ +orphan code file code\/orphan-b\.js — /m);
+  // …and --no-typecheck is the escape hatch `check` had
+  assert.match(r.out, /skipped types: --no-typecheck was passed/);
+  assert.ok(!r.out.includes("bad.js"), "--no-typecheck must not run tsc at all: " + r.out);
+
   // a type error in the scoped workflow itself must still surface
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const file = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(dir2, "code", "transform-eu-us.js");
   writeFileSync(file, '// @ts-check\nconst broken = "x" * 2;\nreturn [{ json: { broken } }];\n');
-  r = await cli("check", "wf123");
-  assert.equal(r.code, 1, "scoped check must still catch errors in its own workflow");
+  r = await cli("preflight", "--offline", "wf123");
+  assert.equal(r.code, 1, "a scoped run must still catch errors in its own workflow");
+  assert.match(r.out, /✗ types\s+typecheck failed:/);
   assert.match(r.out, /transform-eu-us\.js/);
   writeFileSync(file, original);
   rmSync(dirB, { recursive: true, force: true });
@@ -1198,27 +1236,48 @@ await step("commit-on-push: warns outside a repo, commits scoped inside one", as
   assert.equal(dirty.trim(), "", "rename-back pull must leave a clean tree");
 });
 
-await step("verb-first grammar: verb is positional[0]; verb-last errors; a workflow named like a verb resolves", async () => {
-  let r = await cli("status", "wf123");
+await step("verb-first grammar: verb is positional[0]; verb-last errors; removed verbs route; a workflow named like a verb resolves", async () => {
+  let r = await cli("diff", "wf123");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /: in sync/);
+  assert.match(r.out, /no differences — every tracked node matches the draft/);
   // flags may sit anywhere among the arguments
-  r = await cli("check", "--no-typecheck", "wf123");
+  r = await cli("preflight", "--offline", "--no-typecheck", "wf123");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /Order Sync v2: OK/);
+  assert.match(r.out, /preflight: Order Sync v2/);
   // verb-last is no longer accepted — slot 0 must be a known verb
-  r = await cli("wf123", "status");
+  r = await cli("wf123", "diff");
   assert.equal(r.code, 1);
   assert.match(r.out, /unknown verb: wf123/);
+  // Plan 59 acceptance criterion: the three retired verbs exit NON-ZERO naming
+  // their replacement — never a bare "unknown verb", never a silent alias.
+  const routes: Array<[string, RegExp]> = [
+    ["check", /preflight --offline/],
+    ["status", /`n8n-decanter preflight`; the per-node line diff is `n8n-decanter diff`/],
+    ["simulate", /preflight --simulate/],
+  ];
+  for (const [verb, replacement] of routes) {
+    r = await cli(verb, "wf123");
+    assert.equal(r.code, 1, `${verb} must be gone: ${r.out}`);
+    assert.match(r.out, new RegExp(`the \`${verb}\` verb was removed \\(Plan 59\\)`));
+    assert.match(r.out, replacement, `${verb} must name its replacement: ${r.out}`);
+    assert.ok(!r.out.includes(`unknown verb: ${verb}`), `${verb} must not fall through to the bare error: ${r.out}`);
+  }
+  // the old `status --diff` spelling routes too (the flag no longer exists)
+  r = await cli("status", "--diff", "wf123");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /n8n-decanter diff/);
   // a workflow literally named like a verb is just an argument now (no id-only caveat)
   db.set("wfPush", { ...structuredClone(db.get("wf123")), id: "wfPush", name: "push" });
   try {
     r = await cli("pull", "push"); // resolves the remote workflow named "push"
     assert.equal(r.code, 0, r.out);
     assert.ok(existsSync(wfDir("push")), "pulled the workflow named push: " + r.out);
-    r = await cli("status", "push"); // status on the workflow named push, not the verb
+    r = await cli("diff", "push"); // diff of the workflow named push, not the verb
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /: in sync/);
+    // the ref resolved to the workflow (header names it) rather than being eaten
+    // as a second verb. Its .ts node has no local source — pull never writes
+    // .ts — so this is deliberately not the "no differences" path.
+    assert.match(r.out, /^push \(wfPush\) {2}\[workflows\/push\]/m);
   } finally {
     rmSync(wfDir("push"), { recursive: true, force: true });
     db.delete("wfPush");
@@ -1226,17 +1285,17 @@ await step("verb-first grammar: verb is positional[0]; verb-last errors; a workf
 });
 
 await step("name refs: exact name and case-insensitive prefix resolve; unknown name lists candidates", async () => {
-  let r = await cli("status", "Order Sync v2");
+  let r = await cli("diff", "Order Sync v2");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /: in sync/);
-  r = await cli("check", "order sy", "--no-typecheck"); // unique case-insensitive prefix
+  assert.match(r.out, /no differences — every tracked node matches the draft/);
+  r = await cli("preflight", "--offline", "order sy", "--no-typecheck"); // unique case-insensitive prefix
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /Order Sync v2: OK/);
+  assert.match(r.out, /preflight: Order Sync v2/);
   r = await cli("push", "Order Sync v2", "--no-typecheck"); // name push ≡ id push
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /"Order Sync v2" \(wf123\): code already in sync/);
   // name-shaped ref with no match must error with the candidate list — no prompt
-  r = await cli("status", "No Such Flow");
+  r = await cli("diff", "No Such Flow");
   assert.equal(r.code, 1);
   assert.match(r.out, /no workflow matches "No Such Flow"/);
   assert.match(r.out, /"Order Sync v2"/);
@@ -1257,7 +1316,7 @@ await step("resolveRef: pull resolves an unpulled remote workflow by name (MCP s
   db.set("wfZ2", { ...structuredClone(db.get("wf123")), id: "wfZ2", name: "Zeta Flow Two" });
   try {
     // only `pull` falls back to the remote workflow list to resolve a name
-    // that isn't pulled locally yet (push/status don't — they'd need the
+    // that isn't pulled locally yet (push/diff don't — they'd need the
     // folder to already exist)
     let r = await cli("pull", "Zeta Flow One");
     assert.equal(r.code, 0, r.out);
@@ -1267,7 +1326,7 @@ await step("resolveRef: pull resolves an unpulled remote workflow by name (MCP s
     assert.ok(existsSync(wfDir("Zeta Flow Two")), r.out);
 
     // now that both are pulled locally, a shared name prefix is ambiguous — no prompt, just an error
-    r = await cli("status", "Zeta Flow");
+    r = await cli("diff", "Zeta Flow");
     assert.equal(r.code, 1);
     assert.match(r.out, /ambiguous workflow "Zeta Flow"/);
     assert.match(r.out, /"Zeta Flow One" \(wfZ1\)/);
@@ -1346,6 +1405,11 @@ await step("completion: prints shell scripts; __complete emits verbs, flags, nam
   for (const w of ["pull", "push", "watch", "list", "node", "create", "run", "connect", "serve", "--force", "--publish", "wf123", "Order Sync v2"]) {
     assert.ok(words.includes(w), `__complete must emit "${w}": ${r.out}`);
   }
+  // Plan 59's surface: the `diff` verb and preflight's two depth flags (plus
+  // --viewer, which only means anything alongside --simulate)
+  for (const w of ["preflight", "diff", "--simulate", "--offline", "--viewer", "--no-typecheck"]) {
+    assert.ok(words.includes(w), `__complete must emit the Plan 59 word "${w}": ${r.out}`);
+  }
   assert.ok(!words.includes("__complete"), "__complete must not advertise itself");
   // moved/removed surfaces must not linger in completion (Plan 27 + the
   // structure-verb retirement: rename/archive went to n8n's MCP)
@@ -1354,13 +1418,21 @@ await step("completion: prints shell scripts; __complete emits verbs, flags, nam
   assert.ok(!words.includes("rename"), "rename now goes through n8n's MCP");
   assert.ok(!words.includes("archive"), "archive now goes through n8n's MCP");
   assert.ok(!words.includes("--ts"), "--ts left with node create");
+  // Plan 59 removals. `check` is deliberately absent from this list: it lives on
+  // as the `scenario check` sub-verb, so the WORD is still legitimately emitted.
+  assert.ok(!words.includes("status"), "the status verb was removed (Plan 59)");
+  assert.ok(!words.includes("simulate"), "the simulate verb became preflight --simulate");
+  assert.ok(!words.includes("--diff"), "status --diff became the diff verb");
+  for (const flag of ["--full", "--quick", "--network-none"]) {
+    assert.ok(!words.includes(flag), `${flag} left with the profile model (Plan 59)`);
+  }
 });
 
 await step("mcp timeout: a hung instance aborts with a clear error", async () => {
   const cfg = read(TMP, "decanter.config.json");
   writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ ...JSON.parse(cfg), requestTimeoutMs: 300 }));
   try {
-    const r = await cli("status", "wf-hang");
+    const r = await cli("diff", "wf-hang");
     assert.equal(r.code, 1, "timeout must exit 1: " + r.out);
     assert.match(r.out, /timed out after 0\.3s/);
     assert.match(r.out, /requestTimeoutMs/);
@@ -1486,14 +1558,14 @@ await step("run: $env is empty by default, inherits process.env only with --allo
   assert.deepEqual(runOutput(r.out), [{ json: { key: "from-fixture" } }]);
 });
 
-await step("guard: dangling connection blocks check and push", async () => {
+await step("guard: dangling connection blocks preflight and push", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJson = read(dir2, "workflow.json");
   const wf = JSON.parse(wfJson);
   wf.connections.Ghost = { main: [[{ node: "Nowhere", type: "main", index: 0 }]] };
   writeFileSync(path.join(dir2, "workflow.json"), JSON.stringify(wf, null, 2));
-  let r = await cli("check", "--no-typecheck");
-  assert.equal(r.code, 1, "check must fail on dangling connections: " + r.out);
+  let r = await cli("preflight", "--offline", "--no-typecheck");
+  assert.equal(r.code, 1, "the layout check must fail on dangling connections: " + r.out);
   assert.match(r.out, /source "Ghost" is not a node/);
   assert.match(r.out, /targets missing node "Nowhere"/);
   r = await cli("push");
@@ -1502,7 +1574,7 @@ await step("guard: dangling connection blocks check and push", async () => {
   writeFileSync(path.join(dir2, "workflow.json"), wfJson);
 });
 
-await step("guard: duplicate node names/ids block check", async () => {
+await step("guard: duplicate node names/ids block preflight", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const wfJson = read(dir2, "workflow.json");
   const wf = JSON.parse(wfJson);
@@ -1510,8 +1582,8 @@ await step("guard: duplicate node names/ids block check", async () => {
   set.name = "Webhook";
   set.id = "n1";
   writeFileSync(path.join(dir2, "workflow.json"), JSON.stringify(wf, null, 2));
-  const r = await cli("check", "--no-typecheck");
-  assert.equal(r.code, 1, "check must fail on duplicates: " + r.out);
+  const r = await cli("preflight", "--offline", "--no-typecheck");
+  assert.equal(r.code, 1, "the layout check must fail on duplicates: " + r.out);
   assert.match(r.out, /duplicate node name "Webhook"/);
   assert.match(r.out, /duplicate node id "n1"/);
   writeFileSync(path.join(dir2, "workflow.json"), wfJson);
@@ -1527,8 +1599,8 @@ await step("guard: orphan code files error; reserved subdirs and .d.ts ignored",
   mkdirSync(path.join(dir2, "scenarios"), { recursive: true });
   writeFileSync(path.join(dir2, "scenarios", "also-not-code.js"), "// scenario\n");
   writeFileSync(path.join(dir2, "code", "types.d.ts"), "type Row = { id: number };\n");
-  const r = await cli("check", "--no-typecheck");
-  assert.equal(r.code, 1, "check must fail on orphans: " + r.out);
+  const r = await cli("preflight", "--offline", "--no-typecheck");
+  assert.equal(r.code, 1, "the layout check must fail on orphans: " + r.out);
   assert.match(r.out, /orphan code file code\/orphan\.js/);
   assert.match(r.out, /orphan code file stray\.ts/);
   assert.ok(!r.out.includes("not-code.js"), "files under executions/ must be ignored: " + r.out);
@@ -1539,11 +1611,11 @@ await step("guard: orphan code files error; reserved subdirs and .d.ts ignored",
   unlinkSync(path.join(dir2, "code", "types.d.ts"));
   rmSync(path.join(dir2, "executions"), { recursive: true });
   rmSync(path.join(dir2, "scenarios"), { recursive: true });
-  const r2 = await cli("check", "--no-typecheck");
+  const r2 = await cli("preflight", "--offline", "--no-typecheck");
   assert.equal(r2.code, 0, r2.out);
 });
 
-await step("guard: dangling $('…') in code and parameters blocks check", async () => {
+await step("guard: dangling $('…') in code and parameters blocks preflight", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
   const codeFile = path.join(dir2, "code", "transform-eu-us.js");
   const original = read(dir2, "code", "transform-eu-us.js");
@@ -1552,8 +1624,8 @@ await step("guard: dangling $('…') in code and parameters blocks check", async
   const wf = JSON.parse(wfJson);
   wf.nodes.find((n: any) => n.id === "n4").parameters = { value: "={{ $('Also Gone').first().json.x }}" };
   writeFileSync(path.join(dir2, "workflow.json"), JSON.stringify(wf, null, 2));
-  const r = await cli("check", "--no-typecheck");
-  assert.equal(r.code, 1, "check must fail on dangling refs: " + r.out);
+  const r = await cli("preflight", "--offline", "--no-typecheck");
+  assert.equal(r.code, 1, "the layout check must fail on dangling refs: " + r.out);
   assert.match(r.out, /transform-eu-us\.js references \$\('Deleted Node'\) — no node by that name/);
   assert.match(r.out, /node "Set": a parameter references \$\('Also Gone'\)/);
   assert.ok(!r.out.includes("someVar"), "non-literal $(…) must be skipped: " + r.out);
@@ -1561,11 +1633,12 @@ await step("guard: dangling $('…') in code and parameters blocks check", async
   writeFileSync(path.join(dir2, "workflow.json"), wfJson);
 });
 
-await step("node rename over raw MCP (the agent path): refs rewritten server-side, pull makes files follow", async () => {
+await step("node rename over raw MCP (the agent path): connections follow, refs DANGLE, and the documented repair order clears it", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
-  // remote-side wiring that must follow the rename: a connection targeting the
-  // node, a $('…') ref in another node's code, and an expression parameter —
-  // all rewritten SERVER-side (n8n's renameNode contract), mirrored by the mock
+  // Three things point at the node about to be renamed: a connection, a $('…')
+  // ref in ANOTHER node's code, and an expression parameter. n8n's MCP rename
+  // moves the first and abandons the other two — this step is the regression
+  // test for that, and for the repair sequence the docs prescribe.
   const wf = db.get("wf123");
   wf.connections["Transform: EU/US"] = { main: [[{ node: "Amazon Feed", type: "main", index: 0 }]] };
   wf.nodes.find((n: any) => n.id === "n4").parameters = { value: "={{ $('Amazon Feed').first().json.sku }}" };
@@ -1576,22 +1649,47 @@ await step("node rename over raw MCP (the agent path): refs rewritten server-sid
   // The rename verbs are retired — an agent (or skill) renames the node over
   // n8n's MCP; decanter's job is the reconcile on the next pull.
   await (await mcpClient()).callTool("update_workflow", { workflowId: "wf123", operations: [{ type: "renameNode", oldName: "Amazon Feed", newName: "Amazon Export" }] });
-  // remote followed (name, connections, expression params, code refs) — and the id survived
   assert.ok(wf.nodes.some((n: any) => n.name === "Amazon Export" && n.id === "n3"), "node renamed remotely, id stable");
-  assert.equal(wf.connections["Transform: EU/US"].main[0][0].node, "Amazon Export", "connection target follows");
-  assert.equal(wf.nodes.find((n: any) => n.id === "n4").parameters.value, "={{ $('Amazon Export').first().json.sku }}", "expression parameter follows");
-  // local follows via pull: file renamed, refs arrive rewritten
+  assert.equal(wf.connections["Transform: EU/US"].main[0][0].node, "Amazon Export", "connection target follows — this half n8n does do");
+  assert.equal(wf.nodes.find((n: any) => n.id === "n4").parameters.value, "={{ $('Amazon Feed').first().json.sku }}", "expression parameter is LEFT BEHIND");
+  assert.match(wf.nodes.find((n: any) => n.id === "n2").parameters.jsCode, /\$\('Amazon Feed'\)/, "code ref is LEFT BEHIND");
+
+  // pull reconciles what it can — file move, placeholder, id-keyed map — and
+  // faithfully mirrors the refs n8n broke. It is a mirror, not a repairer.
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  assert.match(read(dir2, "code", "transform-eu-us.js"), /\$\('Amazon Export'\)/);
   assert.ok(existsSync(path.join(dir2, "code", "amazon-export.ts")), "file renamed");
   assert.ok(!existsSync(path.join(dir2, "code", "amazon-feed.ts")), "old file gone");
   assert.equal(state(dir2).nodes.n3.file, "code/amazon-export.ts");
   assert.match(read(dir2, "workflow.json"), /"\/\/@file:code\/amazon-export\.ts"/);
+  assert.match(read(dir2, "code", "transform-eu-us.js"), /\$\('Amazon Feed'\)/, "the stale ref came down with the pull");
 
-  const rCheck = await cli("check", "--no-typecheck");
+  // Both halves now hard-error, and each says where it is repaired.
+  const rBroken = await cli("preflight", "--offline", "--no-typecheck");
+  assert.equal(rBroken.code, 1, rBroken.out);
+  assert.match(rBroken.out, /transform-eu-us\.js references \$\('Amazon Feed'\).*edit .* to the new name, then push/s);
+  assert.match(rBroken.out, /a parameter references \$\('Amazon Feed'\).*fix it in n8n/s);
+  // …and push refuses the whole workflow until both are clean — not forceable.
+  const rPush = await cli("push", "order-sync");
+  assert.equal(rPush.code, 1, rPush.out);
+  assert.match(rPush.out, /does not comply with the decanter layout \(2 problems\)/);
+
+  // The documented repair order: expression parameters over MCP FIRST (they are
+  // structure — nothing here can push them), then the code file, then push.
+  await (await mcpClient()).callTool("update_workflow", {
+    workflowId: "wf123",
+    operations: [{ type: "updateNodeParameters", nodeName: "Set", parameters: { value: "={{ $('Amazon Export').first().json.sku }}" } }],
+  });
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  const codeFile2 = path.join(dir2, "code", "transform-eu-us.js");
+  writeFileSync(codeFile2, read(dir2, "code", "transform-eu-us.js").replace("$('Amazon Feed')", "$('Amazon Export')"));
+  r = await cli("push", "order-sync");
+  assert.equal(r.code, 0, r.out);
+
+  const rCheck = await cli("preflight", "--offline", "--no-typecheck");
   assert.equal(rCheck.code, 0, rCheck.out);
-  // the rewritten code still runs, with fixture data keyed by the NEW name
+  // the repaired code still runs, with fixture data keyed by the NEW name
   writeFileSync(path.join(TMP, "fx-rename.json"), JSON.stringify({ nodes: { "Amazon Export": [{ json: { sku: "a-1" } }] } }));
   const rRun = await cli("node", "run", path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-rename.json");
   assert.equal(rRun.code, 0, rRun.out);
@@ -1619,7 +1717,7 @@ await step("ts conflict: both sides changed → warned (no .remote.js), .ts kept
   const r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /CONFLICT — both code\/amazon-export\.ts and the remote code changed since last sync/);
-  assert.match(r.out, /status --diff/);
+  assert.match(r.out, /`n8n-decanter diff`/, "the conflict hint names the diff verb, not the retired `status --diff`: " + r.out);
   assert.ok(!existsSync(path.join(dirF, "code", "amazon-export.remote.js")), "no conflict artifact since Plan 32");
   assert.match(read(dirF, "code", "amazon-export.ts"), /const extra = 1/); // .ts never clobbered
   // pull re-baselined lastPushedHash: the next push overwrites the remote edit by design
@@ -1652,10 +1750,10 @@ await step("bundle: shared/ value import inlines on push, drifts on shared edit,
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
   assert.ok(!r.out.includes("CONFLICT"), "in sync after push: " + r.out);
-  // shared edit → importing node drifts as push-pending; --diff shows the inlined change
+  // shared edit → importing node drifts as push-pending; `diff` shows the inlined change
   writeFileSync(path.join(TMP, "shared", "money.ts"),
     read(TMP, "shared", "money.ts").replace("s + l.qty * l.price", "s + l.qty * l.price + 1"));
-  r = await cli("status", "--diff");
+  r = await cli("diff");
   assert.equal(r.code, 0, "shared edit is local-only drift: " + r.out);
   assert.match(r.out, /Amazon Export: local changes in code\/amazon-export\.ts — push pending/);
   assert.match(r.out, /\+.*l\.price \+ 1/, "diff shows the inlined shared change");
@@ -1681,14 +1779,14 @@ await step("bundle: builtins and unlisted npm packages error; bundleDependencies
   try {
     // Node builtin → compliance guard refuses offline, push refuses too
     writeFileSync(tsFile, 'import { createHash } from "node:crypto";\nreturn [{ json: { h: String(createHash) } }];\n');
-    let r = await cli("check", "--no-typecheck");
-    assert.equal(r.code, 1, "check must flag a builtin import: " + r.out);
+    let r = await cli("preflight", "--offline", "--no-typecheck");
+    assert.equal(r.code, 1, "the layout check must flag a builtin import: " + r.out);
     assert.match(r.out, /Node builtin "node:crypto"/);
     r = await cli("push", "--no-typecheck");
     assert.equal(r.code, 1, "push must refuse a builtin import");
     // unlisted npm package → error names the opt-in key
     writeFileSync(tsFile, 'import { add } from "tiny-add";\nreturn [{ json: { n: add(1, 2) } }];\n');
-    r = await cli("check", "--no-typecheck");
+    r = await cli("preflight", "--offline", "--no-typecheck");
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /bundleDependencies/);
     // opt in (config) + install (fake node_modules) → bundles and runs
@@ -1709,58 +1807,73 @@ await step("bundle: builtins and unlisted npm packages error; bundleDependencies
   assert.equal(r.code, 0, r.out);
 });
 
-await step("status: remote-drift, CONFLICT, and missing-file branches", async () => {
+// Plan 59: the summary half of the retired `status` verb is preflight's sync
+// tier. The state machine is unchanged — what moved is the grading: remote
+// drift is a `drift` WARN (caution, exit 0 unless --fail-on=warn) where
+// `status` exited 1 outright, and a CONFLICT is a `drift` FAIL (exit 1).
+await step("preflight sync tier: remote-drift, CONFLICT, and missing-file branches", async () => {
   const js = path.join(dirF, "code", "transform-eu-us.js");
   const original = read(dirF, "code", "transform-eu-us.js");
   const node = remoteNode("wf123", "n2");
   const remoteOriginal = node.parameters.jsCode;
-  // remote-only edit → pull hint, and remote drift exits 1
+  // remote-only edit → drift warns and points at pull; the gate only fails
+  // when the caller asks for warn-level teeth (what CI migrating off `status`
+  // passes to keep the old exit-1 behaviour).
   node.parameters.jsCode = remoteOriginal + "// remote edit\n";
-  let r = await cli("status");
-  assert.equal(r.code, 1, "remote drift must exit 1: " + r.out);
-  assert.match(r.out, /Transform: EU\/US: changed remotely — pull/);
-  // both sides changed → CONFLICT, exits 1
+  let r = await cli("preflight", "--no-typecheck");
+  assert.equal(r.code, 0, "remote drift is a caution, not a hard fail: " + r.out);
+  assert.match(r.out, /1 node\(s\) changed remotely — pull before publishing/);
+  assert.match(r.out, /Transform: EU\/US: changed remotely/);
+  r = await cli("preflight", "--no-typecheck", "--fail-on=warn");
+  assert.equal(r.code, 1, "--fail-on=warn restores the old status exit code: " + r.out);
+  // both sides changed → CONFLICT is a hard fail, exits 1 on its own
   writeFileSync(js, original + "// local edit\n");
-  r = await cli("status");
+  r = await cli("preflight", "--no-typecheck");
   assert.equal(r.code, 1, "CONFLICT must exit 1: " + r.out);
-  assert.match(r.out, /Transform: EU\/US: CONFLICT — changed both locally and remotely/);
-  // local file missing → warning (a local problem, not remote drift)
+  assert.match(r.out, /CONFLICT — 1 node\(s\) changed both locally and remotely/);
+  assert.match(r.out, /Transform: EU\/US \(code\/transform-eu-us\.js\)/);
+  // local file missing → a parity warn (a local problem, not remote drift)
   renameSync(js, js + ".away");
-  r = await cli("status");
+  r = await cli("preflight", "--no-typecheck");
   assert.match(r.out, /Transform: EU\/US: local file code\/transform-eu-us\.js missing/);
   renameSync(js + ".away", js);
   // restore both sides to the synced state
   writeFileSync(js, original);
   node.parameters.jsCode = remoteOriginal;
-  r = await cli("status");
+  r = await cli("preflight", "--no-typecheck");
   assert.equal(r.code, 0, "in sync must exit 0: " + r.out);
-  assert.match(r.out, /Transform: EU\/US: in sync/);
+  assert.match(r.out, /✓ drift\s+no remote code drift/);
 });
 
-await step("status --diff: line diffs for drifted nodes only", async () => {
+// The `git diff` half of the retired `status --diff`: same renderer, its own
+// verb, and — the one behaviour change — ALWAYS exit 0. It shows, it doesn't grade.
+await step("diff: line diffs for drifted nodes only, never a gate", async () => {
   const js = path.join(dirF, "code", "transform-eu-us.js");
   const original = read(dirF, "code", "transform-eu-us.js");
   const node = remoteNode("wf123", "n2");
   const remoteOriginal = node.parameters.jsCode;
-  // local-only edit → "+" lines under the push-pending node, exit stays 0
+  // local-only edit → "+" lines under the push-pending node
   writeFileSync(js, original + "// diff me\n");
-  let r = await cli("status", "--diff");
+  let r = await cli("diff");
   assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Transform: EU\/US: local changes in code\/transform-eu-us\.js — push pending/);
   assert.match(r.out, /--- remote \(n8n\)/);
   assert.match(r.out, /\+\+\+ local \(code\/transform-eu-us\.js\)/);
   assert.match(r.out, /@@ /);
   assert.match(r.out, /^\s+\+\/\/ diff me$/m);
   writeFileSync(js, original);
-  // remote-only edit → "-" lines, and the drift still exits 1
+  // remote-only edit → "-" lines, and — unlike `status --diff` — still exit 0
   node.parameters.jsCode = remoteOriginal + "// remote extra\n";
-  r = await cli("status", "--diff");
-  assert.equal(r.code, 1, r.out);
+  r = await cli("diff");
+  assert.equal(r.code, 0, "diff mirrors `git diff`: an inspection view never gates: " + r.out);
+  assert.match(r.out, /Transform: EU\/US: changed remotely — pull/);
   assert.match(r.out, /^\s+-\/\/ remote extra$/m);
   node.parameters.jsCode = remoteOriginal;
   // in sync again → no diff blocks at all
-  r = await cli("status", "--diff");
+  r = await cli("diff");
   assert.equal(r.code, 0, r.out);
   assert.ok(!r.out.includes("--- remote"), "no diff for in-sync nodes: " + r.out);
+  assert.match(r.out, /no differences — every tracked node matches the draft/);
 });
 
 await step("push: an untracked remote Code node is an info line, not an abort (pull extracts it)", async () => {
@@ -1799,10 +1912,10 @@ await step("remote node rename → pull: kebab collision falls back to -<id8>; f
   assert.ok(!existsSync(path.join(dirF, "code", "report-n6collid.js")), "suffixed file renamed away");
 });
 
-await step("node deleted remotely: status warns, pull drops state, file kept", async () => {
+await step("node deleted remotely: preflight warns, pull drops state, file kept", async () => {
   const wf = db.get("wf123");
   wf.nodes = wf.nodes.filter((n: any) => n.id !== "n6collide");
-  let r = await cli("status");
+  let r = await cli("preflight", "--no-typecheck", "--fail-on=warn");
   assert.equal(r.code, 1, "remotely deleted node counts as remote drift: " + r.out);
   assert.match(r.out, /code\/report\.js: node n6collide deleted remotely/);
   r = await cli("pull");
@@ -1811,7 +1924,7 @@ await step("node deleted remotely: status warns, pull drops state, file kept", a
   assert.ok(existsSync(path.join(dirF, "code", "report.js")), "file kept — git is the safety net");
   assert.equal(state(dirF).nodes.n6collide, undefined);
   // the kept file is an orphan now; the guard flags it until it's removed
-  r = await cli("check", "--no-typecheck");
+  r = await cli("preflight", "--offline", "--no-typecheck");
   assert.equal(r.code, 1);
   assert.match(r.out, /orphan code file code\/report\.js/);
   unlinkSync(path.join(dirF, "code", "report.js"));
@@ -1828,10 +1941,10 @@ await step("pull: two new workflows kebabbing to the same slug get <slug> and <s
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /already taken — using "sync-report-wfC2\//, "collision warned: " + r.out);
     assert.ok(existsSync(path.join(ROOT, "sync-report-wfC2")), "second gets the -<id8> suffix");
-    // both still resolve as refs
-    r = await cli("status", "wfC2");
+    // both still resolve as refs — the suffixed folder is what the id resolves to
+    r = await cli("diff", "wfC2");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /: in sync/);
+    assert.match(r.out, /^Sync: Report! \(wfC2\) {2}\[workflows\/sync-report-wfC2\]/m);
   } finally {
     rmSync(path.join(ROOT, "sync-report"), { recursive: true, force: true });
     rmSync(path.join(ROOT, "sync-report-wfC2"), { recursive: true, force: true });
@@ -1845,27 +1958,30 @@ await step("corrupt .decanter.json: scoped guard error, other workflows unaffect
   mkdirSync(path.join(dirC, "code"), { recursive: true });
   writeFileSync(path.join(dirC, ".decanter.json"), "{ definitely not json");
   writeFileSync(path.join(dirC, "workflow.json"), JSON.stringify({ nodes: [], connections: {} }));
-  // check: a scoped error for the broken folder; the healthy workflow still passes
-  let r = await cli("check", "--no-typecheck");
-  assert.equal(r.code, 1, "check must fail on the corrupt state file: " + r.out);
-  // corrupt state → check falls back to the folder basename for the label
-  assert.match(r.out, /corrupted: corrupt \.decanter\.json \(/);
-  assert.match(r.out, /Order Sync Final: OK/);
-  // status/pull/push of the healthy workflow keep working
-  r = await cli("status");
-  assert.equal(r.code, 0, "status must survive a corrupt neighbor: " + r.out);
+  // Plan 59 behaviour change: `check` hard-errored on a corrupt state file
+  // because it scanned FOLDERS. preflight grades resolved WORKFLOWS, and an
+  // unparseable .decanter.json can't resolve to one — so the folder is named
+  // in a warning and skipped, and a corrupt neighbour no longer fails your
+  // gate. The fact is reported, not lost.
+  let r = await cli("preflight", "--offline", "--no-typecheck");
+  assert.equal(r.code, 0, "a corrupt neighbour must not fail the gate: " + r.out);
+  assert.match(r.out, /corrupted: corrupt \.decanter\.json \(.*\) — skipping this folder/);
+  assert.match(r.out, /preflight: Order Sync Final/, "the healthy workflow is still graded: " + r.out);
+  // preflight/pull/push of the healthy workflow keep working
+  r = await cli("preflight", "--no-typecheck");
+  assert.equal(r.code, 0, "preflight must survive a corrupt neighbor: " + r.out);
   assert.match(r.out, /skipping this folder/);
   r = await cli("pull");
   assert.equal(r.code, 0, "pull must survive a corrupt neighbor: " + r.out);
   r = await cli("push");
   assert.equal(r.code, 0, "push must survive a corrupt neighbor: " + r.out);
-  // a scoped check of the healthy workflow warns about the skipped folder but
-  // reports no guard error ("x …" line) for it and stays green
-  r = await cli("check", "wf123", "--no-typecheck");
+  // a scoped run of the healthy workflow warns about the skipped folder but
+  // never fails a check over it and stays green
+  r = await cli("preflight", "--offline", "wf123", "--no-typecheck");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /skipping this folder/);
-  const errorLines = r.out.split("\n").filter((l) => l.startsWith("✗ "));
-  assert.deepEqual(errorLines, [], "corrupt neighbor's guard error leaked into scoped output: " + r.out);
+  assert.match(r.out, /✓ layout/, "the scoped workflow's own layout is clean: " + r.out);
+  assert.doesNotMatch(r.out, /✗ /, "corrupt neighbor's guard error leaked into scoped output: " + r.out);
   rmSync(dirC, { recursive: true, force: true });
 });
 
@@ -1991,10 +2107,11 @@ await step("scenario migration + mock/--mock hard errors", async () => {
     let r = await cli("mock", "create", "wf123");
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /renamed to `scenario`/);
-    // `--mock` hard-errors naming `--scenario`
-    r = await cli("simulate", "wf123", "--mock", "x");
+    // `--mock` hard-errors naming `--scenario` (parsed before dispatch, so any verb shows it)
+    r = await cli("preflight", "wf123", "--mock", "x");
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /--mock.*were removed/);
+    assert.match(r.out, /preflight --simulate --scenario <slug>/, "the migration names the folded-in flag: " + r.out);
     // a legacy mocks/ dir auto-migrates to scenarios/ on a scenario verb
     mkdirSync(legacyDir, { recursive: true });
     writeFileSync(path.join(legacyDir, "legacy.json"), JSON.stringify({ _decanterMock: { fill: [] }, data: { resultData: { runData: {} } } }));
@@ -2006,7 +2123,7 @@ await step("scenario migration + mock/--mock hard errors", async () => {
     const fxDir = path.join(dirF, "fixtures");
     mkdirSync(fxDir, { recursive: true });
     writeFileSync(path.join(fxDir, "fetch.json"), "{}");
-    r = await cli("simulate", "wf123", "--execution", "201");
+    r = await cli("preflight", "--offline", "--no-typecheck", "wf123");
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /fixtures\/.*removed \(Plan 37\)/);
     rmSync(fxDir, { recursive: true, force: true });
@@ -2049,7 +2166,7 @@ await step("requireApiKey at the CLI surface: an API-only verb without N8N_API_K
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /`data-tables` uses the n8n public REST API/);
     // the MCP-only path is untouched by the missing key
-    r = await cli("status", "wf123");
+    r = await cli("diff", "wf123");
     assert.equal(r.code, 0, "MCP verbs run without an API key: " + r.out);
   } finally {
     env = savedEnv;
@@ -2230,18 +2347,20 @@ await step("publish: a diverged draft publishes (not a no-op); the gate error su
   }
 });
 
-await step("status: version-aware — a live version older than the draft prints the lag note", async () => {
+// Plan 59: the publication facts `status` printed survive as preflight's
+// `lifecycle` check — nothing was lost when the verb went away.
+await step("preflight lifecycle: a live version older than the draft prints the lag note", async () => {
   const created = [...db.values()].find((w) => w.name === "Fresh Flow")!;
   const prevVersion = created.versionId;
   created.versionId = "draft-ahead"; // simulate a UI draft edit the live version now lags
   try {
-    let r = await cli("status", created.id);
+    let r = await cli("preflight", "--no-typecheck", created.id);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /published — live version is older than the draft \("publish" to go live\)/);
+    assert.match(r.out, /lifecycle\s+published — the live version is older than the draft \(publish to go live\)/);
     // an in-sync published workflow stays plain (wf123: activeVersionId == versionId)
-    r = await cli("status", "wf123");
+    r = await cli("preflight", "--no-typecheck", "wf123");
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /\] {2}published/);
+    assert.match(r.out, /lifecycle\s+published — live matches the draft/);
     assert.ok(!r.out.includes("older than the draft"), "in-sync published stays plain: " + r.out);
   } finally {
     created.versionId = prevVersion;
@@ -2292,12 +2411,23 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   r = await cli("executions", "wfT1");
   assert.equal(r.code, 0, r.out);
 
-  // in-sync, non-TTY: pins the trigger, runs, diffs clean, never mutates
-  const updatesBefore = updateCount;
-  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+  // Plan 64: a BARE `test` is the static tier — it grades the instance's draft
+  // and runs nothing, even though capture 301 is sitting right there and used to
+  // be picked up and executed. That silent fallback is gone for good.
+  lastTestCall = undefined;
   r = await cli("test", "wfT1");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /no --execution\/--scenario given; using the latest capture 301/);
+  assert.match(r.out, /statically clean/);
+  assert.match(r.out, /nothing was executed/);
+  assert.match(r.out, /pass --scenario <slug> or --execution <id>/);
+  assert.doesNotMatch(r.out, /pinned from capture/, "bare test must not pin");
+  assert.equal(lastTestCall, undefined, "bare test must not call test_workflow");
+
+  // in-sync, non-TTY, EXPLICIT capture: pins the trigger, runs, diffs clean, never mutates
+  const updatesBefore = updateCount;
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+  r = await cli("test", "wfT1", "--execution=301");
+  assert.equal(r.code, 0, r.out);
   assert.match(r.out, /1 node\(s\) pinned from capture 301/);
   assert.match(r.out, /Compute: matches capture/);
   assert.match(r.out, /instance test matches the capture/);
@@ -2309,7 +2439,7 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   const computeFile = path.join(wfDir("Instance Test Flow"), "code", "compute.js");
   const originalCompute = read(wfDir("Instance Test Flow"), "code", "compute.js");
   writeFileSync(computeFile, "return [{ json: { doubled: 3 } }];\n");
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /local code differs from the draft — this tested the draft, NOT your local code; run `n8n-decanter push` first/);
   assert.equal(updateCount, updatesBefore, "still no mutation with local edits pending");
@@ -2317,85 +2447,102 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
 
   // divergence → exit 1 with the per-node diff
   testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 999 } }]] } }] };
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 1);
   assert.match(r.out, /Compute: diverged from capture/);
   assert.match(r.out, /instance test diverged: Compute/);
 
   // instance-side failure (the 5-min timeout wording) surfaces verbatim
   testRunOutcome = { status: "error", error: "Workflow execution timed out after 300 seconds", executionId: null };
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 1);
   assert.match(r.out, /instance test run failed: Workflow execution timed out after 300 seconds/);
   testRunOutcome = { status: "success" };
 
   // gap: a network node with no captured output must abort BEFORE anything runs
   db.get("wfT1").nodes.push({ id: "t3", name: "Fetch Prices", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [440, 0], parameters: { url: "http://x" } });
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 1);
   assert.match(r.out, /cannot pin "Fetch Prices"[\s\S]*scenario create/);
   db.get("wfT1").nodes.pop();
 });
 
-await step("preflight: one scored, read-only gate over the whole ladder (Plan 36)", async () => {
+await step("preflight: one scored, local-code gate that never writes and never runs on the instance (Plans 36, 58)", async () => {
   testRunOutcome = { status: "success" };
   testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] }; // matches capture 301
 
-  // default profile: static + sync + test; passes; NEVER mutates the draft
+  // default profile: static + sync; passes; NEVER mutates and NEVER executes
   const updatesBefore = updateCount;
+  const execsBefore = testExecCount;
   let r = await cli("preflight", "wfT1");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /preflight: Instance Test Flow/);
   assert.match(r.out, /layout/);
   assert.match(r.out, /connect/);
-  assert.match(r.out, /\btest\b/);
   assert.match(r.out, /score \d+\/100/);
   assert.match(r.out, /verdict: (ready|caution)/);
   assert.equal(updateCount, updatesBefore, "preflight is read-only — no update_workflow");
+  assert.equal(testExecCount, execsBefore, "Plan 58: preflight never runs test_workflow");
 
   // --json: one document with stable ids, score, verdict, coverage, subject
   r = await cli("preflight", "wfT1", "--json");
   assert.equal(r.code, 0, r.out);
   const report = JSON.parse(r.out.slice(r.out.indexOf("{")));
-  assert.equal(report.profile, "default");
-  assert.ok(Array.isArray(report.checks) && report.checks.some((c: any) => c.id === "test"), "checks[] carries stable ids");
+  // Plan 59: `profile` (a string) is gone — the resolved flags take its place
+  assert.equal(report.profile, undefined, "the profile field is retired");
+  assert.deepEqual(report.flags, { simulate: false, offline: false }, "a bare preflight resolves both flags false");
+  assert.ok(Array.isArray(report.checks) && report.checks.some((c: any) => c.id === "layout"), "checks[] carries stable ids");
+  assert.ok(!report.checks.some((c: any) => c.id === "test"), "the test check id is retired");
+  assert.ok(!report.coverage.ran.includes("test") && !report.coverage.skipped.some((s: any) => s.id === "test"), "and is absent from coverage too");
   assert.equal(typeof report.score, "number");
   assert.ok(["ready", "caution", "not ready"].includes(report.verdict));
   assert.ok(Array.isArray(report.coverage.ran));
   assert.ok(report.checks.every((c: any) => typeof c.durationMs === "number"));
 
-  // --quick: static + sync only; the runtime tier is skipped with an unlock
-  r = await cli("preflight", "wfT1", "--quick", "--json");
-  assert.equal(r.code, 0, r.out);
-  const quick = JSON.parse(r.out.slice(r.out.indexOf("{")));
-  assert.equal(quick.profile, "quick");
-  assert.ok(quick.coverage.skipped.some((s: any) => s.id === "test"), "test skipped under --quick");
-  assert.ok(quick.checks.find((c: any) => c.id === "connect").status === "pass");
-
   // --require turns a skipped runtime check into a hard fail (the CI teeth)
-  r = await cli("preflight", "wfT1", "--quick", "--require=test");
+  r = await cli("preflight", "wfT1", "--require=simulate");
   assert.equal(r.code, 1, "a required-but-skipped check fails the gate");
   assert.match(r.out, /verdict: not ready/);
 
-  // divergence on the instance → not ready, exit 1
-  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 999 } }]] } }] };
-  r = await cli("preflight", "wfT1");
+  // --require=test is a retired id: rejected with the flow, not "unknown check"
+  r = await cli("preflight", "wfT1", "--require=test");
   assert.equal(r.code, 1);
-  assert.match(r.out, /verdict: not ready/);
-  assert.match(r.out, /diverged/);
-  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+  assert.match(r.out, /no longer a preflight check/);
+  assert.match(r.out, /after pushing/);
 
-  // --fail-on=warn promotes a caution (local ahead of the draft → parity warn) to exit 1
+  // local ahead of the draft: parity warns and points at the flow — and the
+  // stale draft is NOT run on the instance to produce a misleading verdict
   const computeFile = path.join(wfDir("Instance Test Flow"), "code", "compute.js");
   const original = read(wfDir("Instance Test Flow"), "code", "compute.js");
-  writeFileSync(computeFile, "return [{ json: { doubled: 7 } }];\n"); // local ahead of the draft
-  r = await cli("preflight", "wfT1", "--quick");
+  writeFileSync(computeFile, "return [{ json: { doubled: 7 } }];\n");
+  r = await cli("preflight", "wfT1");
   assert.equal(r.code, 0, "a warn alone is a caution (exit 0)");
   assert.match(r.out, /verdict: caution/);
-  r = await cli("preflight", "wfT1", "--quick", "--fail-on=warn");
+  assert.match(r.out, /push to make it the draft, then test/);
+  assert.equal(testExecCount, execsBefore, "no instance run of a draft that isn't the local code");
+  r = await cli("preflight", "wfT1", "--fail-on=warn");
   assert.equal(r.code, 1, "--fail-on=warn promotes caution to exit 1");
-  writeFileSync(computeFile, original);
   assert.equal(updateCount, updatesBefore, "the whole preflight run mutated nothing");
+
+  // …then COMPLETE the flow the hint names — preflight → push → test — instead
+  // of abandoning the edit. This is the PR's central ordering, end-to-end: the
+  // push clears parity, and only THEN does an instance run happen (and it's the
+  // test verb that runs it, never preflight).
+  r = await cli("push", "wfT1");
+  assert.equal(r.code, 0, "push makes the local edit the draft");
+  r = await cli("preflight", "wfT1");
+  assert.equal(r.code, 0, "after the push the gate is clean");
+  assert.doesNotMatch(r.out, /push to make it the draft/, "parity warn gone once local IS the draft");
+  const execsBeforePostPushTest = testExecCount;
+  r = await cli("test", "wfT1", "--execution=301");
+  assert.equal(testExecCount, execsBeforePostPushTest + 1, "the instance run happens AFTER the push, via the test verb");
+  // (divergence-vs-capture verdicts are the dedicated test-verb step's business;
+  // this step pins the ORDER: preflight never ran it, push-then-test did)
+
+  // leave the sequential scenario as we found it: original code back on the draft
+  writeFileSync(computeFile, original);
+  r = await cli("push", "wfT1");
+  assert.equal(r.code, 0, "restore push returns the draft to the original");
 });
 
 await step("archive over raw MCP: server semantics (unpublish + archived-first gate); decanter's pull refuses, folder kept", async () => {
@@ -2444,9 +2591,10 @@ await step("guarded authoring loop: addNode WITHOUT jsCode over raw MCP → pull
   assert.equal(state(dir).nodes[remote.id].file, "code/parse-order.js", "registered in state under the server id");
   assert.ok(!wf.connections["Parse Order"], "lands disconnected");
 
-  r = await cli("check", id);
+  r = await cli("preflight", "--offline", id);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /Authoring Demo: OK/);
+  assert.match(r.out, /preflight: Authoring Demo/);
+  assert.match(r.out, /✓ layout/);
 
   // the code itself rides the file + push flow
   writeFileSync(path.join(dir, "code", "parse-order.js"), "return $input.all();\n");
@@ -2492,7 +2640,7 @@ await step("convert a .ts node back to .js: re-point + body-equal push clears th
   assert.equal(r.code, 0, r.out);
   assert.ok(existsSync(path.join(dir, "code", "typed-step.js")), ".js survives the pull");
   assert.ok(!existsSync(path.join(dir, "code", "typed-step.ts")), "no .ts resurrected");
-  r = await cli("check", id);
+  r = await cli("preflight", "--offline", id);
   assert.equal(r.code, 0, "converted layout stays compliant: " + r.out);
 });
 

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { DecanterState, Log, Workflow } from "./types.mts";
 import { CODE_DIR, isJsCodeNode, placeholderFile, sha256 } from "./util.mts";
@@ -134,6 +134,17 @@ export interface WorkflowRef {
   name: string;
   /** Every name the ref answers to (workflow name + folder basename), deduped. */
   names: string[];
+  /**
+   * Last local sync (pull **or** push), as `.decanter.json`'s mtime in ms —
+   * the picker's recency order (Plan 29). Deliberately *not* a stored field:
+   * every sync rewrites this file unconditionally, but a no-op sync rewrites it
+   * byte-identically, so git sees no diff and the auto-commit stays a real
+   * no-op. A committed `lastSyncedAt` would change on every sync and turn
+   * no-op syncs into churn. Known limitation: a fresh clone stamps every state
+   * file with the checkout time, so ordering degrades to the name tie-break
+   * until the first local sync — fine, since this is a *local-activity* signal.
+   */
+  syncedAt: number;
 }
 
 /**
@@ -164,7 +175,15 @@ export function listWorkflowRefs(root: string, log?: Log): WorkflowRef[] {
       }
     }
     const names = [...new Set([wfName, folderName].filter((n): n is string => typeof n === "string" && n !== ""))];
-    refs.push({ id: state.workflowId, dir, name: wfName ?? folderName, names });
+    // The state file is known to exist (listWorkflowDirs found it, readState
+    // parsed it); a racing delete still shouldn't take the listing down.
+    let syncedAt = 0;
+    try {
+      syncedAt = statSync(path.join(dir, STATE_FILE)).mtimeMs;
+    } catch {
+      // unreadable mtime only costs this ref its recency rank
+    }
+    refs.push({ id: state.workflowId, dir, name: wfName ?? folderName, names, syncedAt });
   }
   return refs;
 }

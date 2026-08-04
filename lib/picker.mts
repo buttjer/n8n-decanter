@@ -8,7 +8,10 @@
 // drive it without a real pty. Exists only behind a TTY gate at the CLI, so
 // piped output never sees any of this.
 import { emitKeypressEvents } from "node:readline";
+import { ForceableError } from "./errors.mts";
+import { createPrompt, type PromptStreams } from "./prompt.mts";
 import { style } from "./style.mts";
+import type { Log } from "./types.mts";
 
 /** Sentinel "verb" for picking an MCP-unavailable workflow: the CLI prints
  * enable-MCP guidance instead of dispatching (Plan 32). */
@@ -24,6 +27,12 @@ export interface PickerEntry {
    * guidance instead of pulling. Pulled/local entries are always true.
    */
   available: boolean;
+  /**
+   * Last local sync as an mtime in ms (Plan 29) — `WorkflowRef.syncedAt`, fed
+   * through by the CLI's picker builders. Absent on remote/unpulled entries,
+   * which have never been synced locally: `sortByRecency` puts those last.
+   */
+  syncedAt?: number;
 }
 
 /** The subset of readline's keypress event the reducer cares about. */
@@ -34,11 +43,17 @@ export interface PickerKey {
   sequence?: string;
 }
 
-// Verb menu for a *pulled workflow*, in display order. `data-tables` is
+// Action menu for a *pulled workflow*, in display order. `data-tables` is
 // deliberately absent (deviation from how `executions` was added, Plan 25):
 // data tables are project-scoped, not owned by a workflow, so they have no
 // place in a per-workflow menu.
-export const PICKER_VERBS = ["status", "pull", "push", "watch", "check", "preflight", "executions", "simulate"] as const;
+//
+// Plan 59 collapsed `status`/`check`/`simulate` into `preflight` + `diff`, so
+// most rows are now bare verbs again — except `preflight --simulate`, which
+// carries flags (see `PICKER_ACTIONS` in the CLI: a row's label is dispatched
+// as a verb plus a flag set, which is how the browsable local-engine run
+// survives the fold). `preflight` leads because it is the read-only gate.
+export const PICKER_VERBS = ["preflight", "preflight --simulate", "diff", "pull", "push", "watch", "executions"] as const;
 
 export interface PickerState {
   stage: "workflow" | "verb";
@@ -89,6 +104,27 @@ export function filterEntries(entries: PickerEntry[], query: string): PickerEntr
   const q = query.toLowerCase();
   if (q === "") return entries;
   return entries.filter((e) => e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q));
+}
+
+/**
+ * Newest-synced first (Plan 29): the workflow you last pulled or pushed tops
+ * the list, instead of the folder's alphabetical order. Entries without a
+ * `syncedAt` (remote/unpulled — never synced locally) sort last, and **name
+ * ascending** is the tie-break, so a fresh clone (every state file stamped with
+ * the checkout time) still lists deterministically.
+ *
+ * Applied by the CLI to the **local** list only, *before* `mergeRemote` — which
+ * appends available-then-unavailable remotes — so the three-group order
+ * (pulled → available remote → unavailable remote) survives untouched.
+ * Pure, so it sorts a copy.
+ */
+export function sortByRecency(entries: PickerEntry[]): PickerEntry[] {
+  return [...entries].sort((a, b) => {
+    // `?? -1` and not `-Infinity`: two unsynced entries would subtract to NaN,
+    // which silently makes a comparator meaningless. mtimes are never negative.
+    const byRecency = (b.syncedAt ?? -1) - (a.syncedAt ?? -1);
+    return byRecency !== 0 ? byRecency : a.name.localeCompare(b.name);
+  });
 }
 
 /** Append remote workflows not already present locally, marked unpulled —
@@ -326,5 +362,74 @@ export async function runPicker(
     restore();
     process.removeListener("exit", restore);
     input.pause();
+  }
+}
+
+// ---------- force-retry confirm (Plan 29) ----------
+
+/**
+ * The confirm offered after a *forceable* failure in the picker session. The
+ * wording is deliberate: since Plan 32 a forced push overwrites the **draft**
+ * only (the published version is untouched), and this line follows straight
+ * after the drift error's own "…repeat with `--force` to overwrite the draft".
+ */
+export const FORCE_RETRY_PROMPT = "retry with --force and overwrite the remote draft? [y/N] ";
+
+/**
+ * Default **No**: only an explicit `y`/`yes` forces. A bare Enter, anything
+ * else, and EOF (a closed stdin, which `createPrompt` answers with "") all
+ * decline — forcing overwrites someone's n8n edit, so it never happens by
+ * accident or by timeout.
+ */
+export function isForceRetryYes(answer: string): boolean {
+  const a = answer.trim().toLowerCase();
+  return a === "y" || a === "yes";
+}
+
+/**
+ * Ask it. Safe to call from the picker loop because `runPicker`'s `finally`
+ * already restored the terminal (raw mode off, stdin paused) — and it `close()`s
+ * the readline interface before returning, or `runPicker` could not re-attach
+ * raw-mode/keypress cleanly on the next round.
+ */
+export async function confirmForceRetry(io: PromptStreams = {}): Promise<boolean> {
+  const rl = createPrompt(io);
+  try {
+    return isForceRetryYes(await rl.question(style.yellow(FORCE_RETRY_PROMPT)));
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Run a picker-chosen verb, offering the force-retry when — and only when — the
+ * failure is one `--force` can actually fix: a `ForceableError`, today just the
+ * push drift guard. A compliance failure is a plain `Error` and so never
+ * prompts; offering `--force` for a layout violation would be a lie.
+ *
+ * Returns whether the verb ultimately succeeded (the caller sets the exit code
+ * from it); every failure is logged exactly once, retry included. Lives here
+ * rather than inline in the CLI's picker loop so the whole decision is testable
+ * over injected streams instead of needing a pty.
+ */
+export async function runVerbWithForceRetry(
+  run: (force: boolean) => Promise<void>,
+  log: Log,
+  confirm: () => Promise<boolean> = () => confirmForceRetry(),
+): Promise<boolean> {
+  try {
+    await run(false);
+    return true;
+  } catch (err) {
+    log.error((err as Error).message);
+    if (!(err instanceof ForceableError)) return false;
+    if (!(await confirm())) return false;
+    try {
+      await run(true);
+      return true;
+    } catch (retryErr) {
+      log.error((retryErr as Error).message);
+      return false;
+    }
   }
 }

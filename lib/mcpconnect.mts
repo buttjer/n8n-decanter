@@ -1,7 +1,9 @@
 // The stdio MCP guard (`mcp connect`): the same Code-node boundary as the
 // HTTP guard-proxy (`mcp serve`), but as a stdio MCP server an agent spawns
 // itself — which is what lets `init` scaffold a static, secret-free
-// `.mcp.json` entry ({"command":"n8n-decanter","args":["mcp","connect"]}).
+// `.mcp.json` entry ({"command":"npx","args":["--no-install","n8n-decanter","mcp","connect"]};
+// the `npx --no-install` prefix resolves the command under a local install
+// too, where a bare `n8n-decanter` is off the agent's PATH — Plan 58).
 // Decanter reads its own credentials (.env / .decanter-auth.json) in this
 // process; the agent only ever sees JSON-RPC over the process pipes, so no
 // session secret exists at all.
@@ -17,7 +19,7 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { MCP_PATH, type McpClient } from "./mcp.mts";
-import { guardMessage, mirrorTargetId } from "./mcpserve.mts";
+import { guardMessage, guardPublish, logToolCall, mirrorTargetId } from "./mcpserve.mts";
 import type { Mirror } from "./mirror.mts";
 import type { Log } from "./types.mts";
 
@@ -57,6 +59,13 @@ function rpcError(id: unknown, code: number, text: string): Record<string, unkno
 export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input = process.stdin, output = process.stdout }: StdioGuardOptions): Promise<void> {
   const upstream = host + MCP_PATH;
   let sessionId: string | undefined;
+
+  // Say we are alive BEFORE any traffic. A guard that only ever speaks to
+  // report a block leaves an empty log meaning two opposite things — "ran,
+  // blocked nothing" and "never started" — and they are indistinguishable
+  // exactly when it matters. (A Plan 35 harness bug left the guard dead for
+  // three committed field-test rounds; the silence read as innocence.)
+  log.info(`guard: connected to ${host} — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow`);
 
   /** One protocol message (or batch) out — a single output line. */
   const emit = (message: unknown): void => {
@@ -163,6 +172,17 @@ export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input =
         log.warn("blocked a jsCode write (update_workflow) — pointed the agent at the file + push flow");
         return emit(Array.isArray(parsed) ? [blocked] : blocked);
       }
+      // Second gate (Plan 64 task 3c): a publish only forwards when the draft it
+      // would take live is clean. Async — it needs a read — which is why it is
+      // separate from the synchronous `guardMessage`, and shared with `mcp serve`
+      // for the same reason that one is: the transports must not drift.
+      const publishBlocked = await guardPublish(record, mcp, log);
+      if (publishBlocked !== null) return emit(Array.isArray(parsed) ? [publishBlocked] : publishBlocked);
+      // Audit trail: one line per tool call the guard lets through. NAME ONLY —
+      // arguments carry workflow content and would make this log a PII/secret
+      // surface. Every n8n MCP call an agent makes passes through here, so this
+      // is the one place that can answer "what did the agent do to my instance?"
+      logToolCall(record, log);
       if (record.id !== undefined) ids.push(record.id);
       // Live mirror (Plan 51 Part A): a forwardable structure edit — refresh the
       // local snapshot after it lands (none reach here blocked; a block returns).

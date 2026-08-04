@@ -4,19 +4,15 @@
       "mcp__n8n-docs",
       "Edit(workflows/**)",
       "Edit(shared/**)",
-      "Bash(n8n-decanter check)",
-      "Bash(n8n-decanter check:*)",
+      "Bash(n8n-decanter diff)",
+      "Bash(n8n-decanter diff:*)",
       "Bash(n8n-decanter node:*)",
       "Bash(n8n-decanter pull)",
       "Bash(n8n-decanter pull:*)",
-      "Bash(n8n-decanter simulate)",
-      "Bash(n8n-decanter simulate:*)",
       "Bash(n8n-decanter preflight)",
       "Bash(n8n-decanter preflight:*)",
       "Bash(n8n-decanter scenario)",
       "Bash(n8n-decanter scenario:*)",
-      "Bash(n8n-decanter status)",
-      "Bash(n8n-decanter status:*)",
       "Bash(n8n-decanter list)",
       "Bash(n8n-decanter list:*)",
       "Bash(n8n-decanter executions)",
@@ -25,6 +21,23 @@
       "Bash(n8n-decanter data-tables:*)",
       "Bash(n8n-decanter completion:*)",
       "Bash(n8n-decanter help)",
+      "Bash(npx n8n-decanter diff)",
+      "Bash(npx n8n-decanter diff:*)",
+      "Bash(npx n8n-decanter node:*)",
+      "Bash(npx n8n-decanter pull)",
+      "Bash(npx n8n-decanter pull:*)",
+      "Bash(npx n8n-decanter preflight)",
+      "Bash(npx n8n-decanter preflight:*)",
+      "Bash(npx n8n-decanter scenario)",
+      "Bash(npx n8n-decanter scenario:*)",
+      "Bash(npx n8n-decanter list)",
+      "Bash(npx n8n-decanter list:*)",
+      "Bash(npx n8n-decanter executions)",
+      "Bash(npx n8n-decanter executions:*)",
+      "Bash(npx n8n-decanter data-tables)",
+      "Bash(npx n8n-decanter data-tables:*)",
+      "Bash(npx n8n-decanter completion:*)",
+      "Bash(npx n8n-decanter help)",
       "Bash(npm run typecheck)",
       "Bash(npm run check)"
     ],
@@ -35,7 +48,11 @@
       "Bash(n8n-decanter push --force)",
       "Bash(n8n-decanter push --force:*)",
       "Bash(node n8n-decanter.mts push --force)",
-      "Bash(node n8n-decanter.mts push --force:*)"
+      "Bash(node n8n-decanter.mts push --force:*)",
+      "Bash(npx n8n-decanter push --force)",
+      "Bash(npx n8n-decanter push --force:*)",
+      "Bash(npx --no-install n8n-decanter push --force)",
+      "Bash(npx --no-install n8n-decanter push --force:*)"
     ]
   },
   "hooks": {
@@ -44,6 +61,12 @@
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           { "type": "command", "command": "node .claude/hooks/verify.mjs" }
+        ]
+      },
+      {
+        "matcher": "mcp__n8n-instance__update_workflow",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/rename-refs.mjs" }
         ]
       }
     ],

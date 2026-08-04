@@ -287,22 +287,25 @@ try {
     assert.match(read(wfDir, "code", "compute.js"), /doubled: n \* 2/);
   });
 
-  await step("no false drift: pull→push→status stays in sync against the real MCP round-trip", async () => {
+  await step("no false drift: pull→push→diff stays in sync against the real MCP round-trip", async () => {
     let r = await cli("push");
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /code already in sync — nothing to push/, "fresh pull must be a no-op push: " + r.out);
-    r = await cli("status");
-    assert.equal(r.code, 0, "status must be in sync after pull: " + r.out);
-    assert.match(r.out, /Compute: in sync/);
+    // Plan 59: `diff` replaced `status` here. It always exits 0, so the
+    // in-sync claim rides on the output line, not the exit code — an in-sync
+    // node prints nothing at all, only the "no differences" summary.
+    r = await cli("diff");
+    assert.equal(r.code, 0, "diff must not error after pull: " + r.out);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after pull: " + r.out);
     assert.ok(!r.out.includes("push pending"), "no false local drift: " + r.out);
     // a real edit round-trips byte-exact (the Plan 32 invariant)
     writeFileSync(path.join(wfDir, "code", "compute.js"),
       read(wfDir, "code", "compute.js").replace("n * 2", "n * 2 + 0"));
     r = await cli("push");
     assert.equal(r.code, 0, r.out);
-    r = await cli("status");
-    assert.equal(r.code, 0, "in sync after push: " + r.out);
-    assert.match(r.out, /Compute: in sync/);
+    r = await cli("diff");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after push: " + r.out);
     r = await cli("pull");
     assert.equal(r.code, 0, r.out);
     assert.match(read(wfDir, "code", "compute.js"), /n \* 2 \+ 0/, "byte-exact round-trip");
@@ -432,8 +435,8 @@ try {
     assert.equal(r.code, 0, "--force must override the per-node drift guard: " + r.out);
     r = await cli("pull", wfId);
     assert.equal(r.code, 0, r.out);
-    r = await cli("status", wfId);
-    assert.equal(r.code, 0, "in sync after force push + pull: " + r.out);
+    r = await cli("diff", wfId);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after force push + pull: " + r.out);
     const out = await webhook({ n: 2 });
     assert.deepEqual(out, [{ doubled: 4, mode: "forced" }], JSON.stringify(out));
   });
@@ -459,8 +462,71 @@ try {
     assert.equal(r.code, 0, r.out);
     const out = await webhook({ n: 3 });
     assert.deepEqual(out, [{ doubled: 6, mode: "forced" }], "workflow still executes after rename: " + JSON.stringify(out));
-    r = await cli("status", wfId);
-    assert.equal(r.code, 0, "in sync after rename round-trip: " + r.out);
+    r = await cli("diff", wfId);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after rename round-trip: " + r.out);
+  });
+
+  // Plan 64. The one claim this whole plan rests on is about SOMEONE ELSE'S
+  // software: n8n's MCP renameNode rewrites the node name and the connections
+  // and abandons every $('…') reference. Unit and e2e tests can only assert it
+  // against our own mock — this step is the only place that measures the real
+  // thing, so if n8n ever fixes it (the handler is under active refactor
+  // upstream), THIS is what fails, and that failure is the signal to revisit
+  // the plan, not a bug.
+  //
+  // Deliberately on a throwaway workflow: it is left broken on purpose, and the
+  // publish gates now refuse broken drafts, so reusing the suite's main
+  // workflow would poison every later step.
+  let refWfId = "";
+  await step("MCP rename against the REAL instance: connections follow, $('…') refs are abandoned — and the go-live gates refuse the result", async () => {
+    const made = await api("POST", "/api/v1/workflows", {
+      name: "smoke rename refs",
+      settings: {},
+      nodes: [
+        { id: "r1", name: "Start", type: "n8n-nodes-base.manualTrigger", typeVersion: 1, position: [0, 0], parameters: {} },
+        { id: "r2", name: "Fetch", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { jsCode: "return [{ json: { sku: 'a-1' } }];" } },
+        // a Code node referencing another BY NAME, and a non-Code node with an
+        // `=`-prefixed expression parameter — the two halves the field report saw
+        { id: "r3", name: "Transform", type: "n8n-nodes-base.code", typeVersion: 2, position: [440, 0], parameters: { jsCode: "return $('Fetch').all();" } },
+        { id: "r4", name: "Label", type: "n8n-nodes-base.set", typeVersion: 3.4, position: [660, 0],
+          parameters: { mode: "manual", assignments: { assignments: [{ id: "a1", name: "sku", type: "string", value: "={{ $('Fetch').first().json.sku }}" }] } } },
+      ],
+      connections: {
+        Start: { main: [[{ node: "Fetch", type: "main", index: 0 }]] },
+        Fetch: { main: [[{ node: "Transform", type: "main", index: 0 }]] },
+        Transform: { main: [[{ node: "Label", type: "main", index: 0 }]] },
+      },
+    });
+    refWfId = made.id;
+    await enableMcpAccess(refWfId);
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpRef = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    await mcpRef.callTool("update_workflow", { workflowId: refWfId, operations: [{ type: "renameNode", oldName: "Fetch", newName: "Fetched" }] });
+
+    const after = await api("GET", `/api/v1/workflows/${refWfId}`);
+    const node = (id: string) => after.nodes.find((n: any) => n.id === id);
+    assert.equal(node("r2").name, "Fetched", `real n8n accepted the rename (${IMAGE})`);
+    assert.ok(after.connections.Fetched, "connections were rewritten — this half n8n DOES do");
+    // The load-bearing pair. If either flips, n8n changed and Plan 64's whole
+    // contract (docs, hook, gates) has to be revisited.
+    assert.match(node("r3").parameters.jsCode, /\$\('Fetch'\)/, `n8n left the Code-node ref stale (${IMAGE}) — if this fails, n8n now rewrites refs and Plan 64 needs revisiting`);
+    assert.match(node("r4").parameters.assignments.assignments[0].value, /\$\('Fetch'\)/, `n8n left the expression parameter stale (${IMAGE}) — same signal`);
+
+    // The gates that exist because of the above, against the real instance.
+    // Pull first — the verbs resolve a ref through the local mirror, and an
+    // agent would have it pulled anyway. Pull is a mirror: it faithfully brings
+    // the broken refs down rather than repairing them.
+    const rPull = await cli("pull", refWfId);
+    assert.equal(rPull.code, 0, rPull.out);
+    const rPub = await cli("publish", refWfId);
+    assert.equal(rPub.code, 1, "publish must refuse a draft whose refs dangle: " + rPub.out);
+    assert.match(rPub.out, /dangling \$\('…'\) reference\(s\) on the draft would go live/, rPub.out);
+    const live = await api("GET", `/api/v1/workflows/${refWfId}`);
+    assert.notEqual(live.active, true, "nothing went live");
+
+    const rTest = await cli("test", refWfId);
+    assert.equal(rTest.code, 1, "bare test grades the draft statically: " + rTest.out);
+    assert.match(rTest.out, /node "Transform" references \$\('Fetch'\)/, rTest.out);
   });
 
   await step("tags survive an untouched pull→push round-trip", async () => {
@@ -555,14 +621,17 @@ try {
     writeFileSync(srcFile, original);
     let r = await cli("push", wfId, "--publish");
     assert.equal(r.code, 0, r.out);
-    r = await cli("status", wfId);
-    assert.equal(r.code, 0, "in sync after watch session: " + r.out);
+    r = await cli("diff", wfId);
+    assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after watch session: " + r.out);
   });
 
   await step("error surfaces: bad MCP token -> clean 401 guidance, unknown id -> clean not-found", async () => {
     const badEnv = { ...env, N8N_MCP_TOKEN: "definitely-wrong" };
+    // `diff` (Plan 59's replacement for `status`) is the cheapest instance read
+    // there is: never a gate, but a *thrown* error still exits 1 — which is
+    // exactly the failure surface under test here.
     try {
-      await execFile(process.execPath, [CLI, "status", wfId], { cwd: TMP, env: badEnv, encoding: "utf8" });
+      await execFile(process.execPath, [CLI, "diff", wfId], { cwd: TMP, env: badEnv, encoding: "utf8" });
       assert.fail("must exit non-zero with a bad MCP token");
     } catch (err) {
       const e = err as { stdout?: string; stderr?: string };
@@ -570,7 +639,7 @@ try {
       assert.match(out, /MCP token was rejected \(401\)/, "401 guidance surfaced: " + out);
       assert.ok(!out.includes("    at "), "no stack trace without DEBUG: " + out);
     }
-    const r = await cli("status", "aaaaaaaaaaaaaaaa");
+    const r = await cli("diff", "aaaaaaaaaaaaaaaa");
     assert.equal(r.code, 1);
     assert.match(r.out, /not found|permission/i, r.out);
   });
@@ -663,6 +732,18 @@ try {
       // the local .ts source references the old name — refresh the snapshot/state
       let r = await cli("pull", wfId);
       assert.equal(r.code, 0, r.out);
+      // Plan 64 task 3c: a raw publish_workflow through the guard is refused
+      // when the draft would go live broken — the bypass around the `publish`
+      // verb. Uses the throwaway workflow the rename step deliberately broke.
+      const badPublish = await rpc({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "publish_workflow", arguments: { workflowId: refWfId } } }, session);
+      const badMsg = parseResult(badPublish.text);
+      assert.equal(badMsg.result?.isError, true, "guard must refuse a publish that would go live broken: " + badPublish.text);
+      assert.match(JSON.parse(badMsg.result.content[0].text).error, /dangling reference\(s\) on the draft of .* would go live/);
+      assert.notEqual((await api("GET", `/api/v1/workflows/${refWfId}`)).active, true, "the instance never published it");
+      // …and a clean one still passes through, so the gate is not a blanket block
+      const okPublish = await rpc({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "publish_workflow", arguments: { workflowId: wfId } } }, session);
+      assert.notEqual(parseResult(okPublish.text).result?.isError, true, "a clean draft still publishes through the guard: " + okPublish.text);
+
       // the two renames bumped the DRAFT versionId; re-publish so the suite's
       // "published & in sync" precondition holds for the steps after this one
       r = await cli("publish", wfId);
@@ -692,6 +773,73 @@ try {
     assert.ok("activeVersionId" in remote, "2.x GET carries activeVersionId");
     assert.equal(remote.active, true, "wfId is published from earlier steps");
     assert.equal(remote.activeVersionId, remote.versionId, "published & in sync: live version == draft");
+  });
+
+  await step("MCP read semantics: draft, published, AND superseded versions are all readable over MCP", async () => {
+    // Corrects the retired claim that "get_workflow_version returns metadata
+    // without node params, so published content can't be read back over MCP".
+    // Timeline on a dedicated workflow: V1→publish→V2→publish→V3-draft, then
+    // read every version back and assert the jsCode each returns. get_workflow_
+    // history is the index (metadata only); get_workflow_version is the content.
+    const { McpClient, getWorkflowDetails, updateWorkflow, publishWorkflowMcp } = await import(
+      pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href
+    );
+    const rs = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    const JS = (v: number) => `// READSEM_V${v}\nreturn [{ json: { v: ${v} } }];\n`;
+    // deno-lint style: pull the code-node jsCode tag out of whichever shape
+    // (details = {nodes}, version = {nodes}, activeVersion = {nodes})
+    const tagOf = (wf: any): string => {
+      const nodes = wf?.nodes ?? wf?.workflow?.nodes ?? [];
+      const code = nodes.find((n: any) => n?.type === "n8n-nodes-base.code")?.parameters?.jsCode;
+      const m = typeof code === "string" ? code.match(/READSEM_V\d/) : null;
+      return m ? m[0].replace("READSEM_", "") : "<none>";
+    };
+
+    // webhook trigger so it can ACTIVATE (a manual-only trigger can't publish,
+    // so there'd be no activeVersionId and no draft/published split to test)
+    const created = await api("POST", "/api/v1/workflows", {
+      name: "Smoke ReadSemantics",
+      nodes: [
+        { id: "rw", name: "Hook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { httpMethod: "POST", path: "smoke-readsem-hook", responseMode: "responseNode" } },
+        { id: "rc", name: "Compute", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { jsCode: JS(1) } },
+        { id: "rr", name: "Respond", type: "n8n-nodes-base.respondToWebhook", typeVersion: 1.1, position: [440, 0], parameters: { respondWith: "allIncomingItems" } },
+      ],
+      connections: { Hook: { main: [[{ node: "Compute", type: "main", index: 0 }]] }, Compute: { main: [[{ node: "Respond", type: "main", index: 0 }]] } },
+      settings: { executionOrder: "v1" },
+    });
+    const rsId: string = created.id;
+    await enableMcpAccess(rsId);
+
+    // V1 → publish → verA (becomes SUPERSEDED after the next publish)
+    await publishWorkflowMcp(rs, rsId);
+    const verA = ((await getWorkflowDetails(rs, rsId)) as any).activeVersionId as string;
+    // V2 → publish → verB (the ACTIVE/published version)
+    await updateWorkflow(rs, rsId, [{ type: "updateNodeParameters", nodeName: "Compute", parameters: { jsCode: JS(2) } }]);
+    await publishWorkflowMcp(rs, rsId);
+    const verB = ((await getWorkflowDetails(rs, rsId)) as any).activeVersionId as string;
+    // V3 → leave unpublished → verC (the DRAFT tip)
+    await updateWorkflow(rs, rsId, [{ type: "updateNodeParameters", nodeName: "Compute", parameters: { jsCode: JS(3) } }]);
+    const details: any = await getWorkflowDetails(rs, rsId);
+    const verC = details.versionId as string;
+    assert.equal(new Set([verA, verB, verC]).size, 3, `three distinct version ids: ${verA}/${verB}/${verC}`);
+
+    // ONE get_workflow_details carries BOTH the draft tip and the published version
+    assert.equal(tagOf(details), "V3", "get_workflow_details.nodes is the draft tip (V3)");
+    assert.equal(tagOf(details.activeVersion), "V2", "get_workflow_details.activeVersion is the published version (V2)");
+
+    // get_workflow_version returns full node params for ANY version — incl. the superseded one
+    const readVer = (versionId: string) => rs.callTool("get_workflow_version", { workflowId: rsId, versionId });
+    assert.equal(tagOf(await readVer(verA)), "V1", "SUPERSEDED published version is readable over MCP (V1)");
+    assert.equal(tagOf(await readVer(verB)), "V2", "active published version readable over MCP (V2)");
+    assert.equal(tagOf(await readVer(verC)), "V3", "draft tip readable by version id (V3)");
+
+    // get_workflow_history is the INDEX: it lists versions but carries NO node params
+    const hist: any = await rs.callTool("get_workflow_history", { workflowId: rsId });
+    const versions: any[] = hist.versions ?? hist.data ?? [];
+    assert.ok(versions.length >= 3, `get_workflow_history lists every version (>=3): got ${versions.length}`);
+    assert.ok(!JSON.stringify(hist).includes("READSEM_V"), "get_workflow_history is metadata-only (no node params)");
+
+    await api("DELETE", `/api/v1/workflows/${rsId}`); // tidy up
   });
 
   await step("lifecycle: workflow born over raw MCP → pull → publish → unpublish → archive round-trip", async () => {
@@ -813,8 +961,11 @@ try {
     });
     r = await cli("pull", authId);
     assert.equal(r.code, 0, r.out);
-    r = await cli("check", authId);
+    // Plan 59: the compliance guard's own view is `preflight --offline` — the
+    // static tier alone (layout + types), no instance contact, no engine.
+    r = await cli("preflight", authId, "--offline");
     assert.equal(r.code, 0, "wired scaffold must stay compliant: " + r.out);
+    assert.match(r.out, /layout compliant/, "the layout check is what passed: " + r.out);
 
     // the code itself rides the file + push flow (seeding the born-empty node)
     writeFileSync(path.join(authDir, "code", "enrich.js"), "for (const item of $input.all()) {\n  item.json.myNewField = 1;\n}\nreturn $input.all();\n");
@@ -1022,12 +1173,26 @@ try {
     assert.match(r.out, new RegExp(`"doubled":\\s*${n * 2}\\b`), `offline run reproduces the live output: ${r.out}`);
   });
 
-  await step("test verb: pinned run on the REAL instance — draft tested, pure node diffed clean (Plan 33)", async () => {
+  await step("test verb: bare is static, --execution runs pinned on the REAL instance (Plan 33 + Plan 64)", async () => {
     // captures from the previous steps are still on disk; local == draft ==
     // published, so the non-TTY run tests the draft as-is and the
     // deterministic Code node must reproduce its captured output exactly
     const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
-    const r = await cli("test", wfId);
+    // Plan 64: bare `test` grades the draft statically and runs NOTHING — even
+    // with usable captures sitting right there, which is what it used to pick up.
+    const rStatic = await cli("test", wfId);
+    assert.equal(rStatic.code, 0, rStatic.out);
+    assert.match(rStatic.out, /statically clean/, rStatic.out);
+    assert.match(rStatic.out, /nothing was executed/, rStatic.out);
+    assert.doesNotMatch(rStatic.out, /pinned from capture/, "bare test must not pin: " + rStatic.out);
+
+    // newest capture on disk — the id the removed fallback used to pick silently
+    const execId = readdirSync(path.join(wfDir, "executions"))
+      .filter((f) => /^\d+\.json$/.test(f))
+      .map((f) => Number(f.replace(".json", "")))
+      .sort((a, b) => b - a)[0];
+    assert.ok(execId, "a capture is on disk to pin from");
+    const r = await cli("test", wfId, `--execution=${execId}`);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /pinned from capture/, "pins sourced from the newest capture: " + r.out);
     assert.match(r.out, /Ümläut Nödé: matches capture/, "the real instance rerun matches the capture: " + r.out);
@@ -1058,17 +1223,28 @@ try {
       assert.ok("startedAt" in row && "stoppedAt" in row, "rows carry startedAt/stoppedAt timing");
     }
 
-    // the verb itself: default profile (static + sync + test) against the real
+    // the verb itself: default depth (static + instance reads) against the real
     // instance, as JSON. Read-only — the draft version must not move.
+    // Plan 60 (#162) removed the instance `test` stage from preflight: it graded
+    // the DRAFT while every other stage graded local files, so one score
+    // described two different versions. The order is now
+    // preflight -> push -> test -> publish.
     const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
     const r = await cli("preflight", wfId, "--json");
     assert.equal(r.code, 0, r.out);
     const report = JSON.parse(r.out.slice(r.out.indexOf("{")));
-    assert.equal(report.profile, "default");
+    // Plan 59 replaced the `profile` string with the two resolved depth flags —
+    // the breaking half of the --json contract agents key on.
+    assert.deepEqual(report.flags, { simulate: false, offline: false }, "bare preflight resolves to both flags off: " + JSON.stringify(report.flags));
+    assert.ok(!("profile" in report), "the retired profile field is gone, not merely unused");
     assert.ok(["ready", "caution"].includes(report.verdict), "a healthy in-sync workflow is ready/caution: " + report.verdict);
-    for (const id of ["connect", "access", "parity", "test"]) {
+    for (const id of ["connect", "access", "parity"]) {
       assert.ok(report.checks.find((c: any) => c.id === id && c.status === "pass"), `${id} passed: ` + JSON.stringify(report.checks.find((c: any) => c.id === id)));
     }
+    // and the stage is GONE, not merely skipped — against a real instance this
+    // is the assertion that would catch it creeping back in
+    assert.ok(!report.checks.some((c: any) => c.id === "test"), "the instance test stage is not a preflight check");
+    assert.ok(!report.coverage.ran.includes("test") && !report.coverage.skipped.some((s: any) => s.id === "test"), "and is absent from coverage");
     assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "preflight mutated nothing");
   });
 

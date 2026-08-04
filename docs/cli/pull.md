@@ -15,7 +15,9 @@ placeholder — see [Sync layout](/docs/concepts/sync-layout/).
 
 **Without a ref**, on a terminal `pull` opens an interactive picker listing
 your workflows — local *and* remote (over MCP) — so you can pick one without
-knowing its id; picking a not-yet-local one pulls it fresh. Piped or
+knowing its id; picking a not-yet-local one pulls it fresh. Already-pulled
+workflows are listed **newest-synced first** (the one you last pulled or pushed
+is under the cursor), with remote-only rows after them. Piped or
 non-interactive, it instead pulls the workflows listed in
 [config](/docs/concepts/configuration/). `pull` also resolves a name/id it
 doesn't know locally against the server's workflow list, so you can pull a new
@@ -35,14 +37,14 @@ After a successful pull the folder is git-committed automatically
 
 `.ts` node sources are one-way — pull never modifies them. Remote changes to
 a TS-managed node (for example a UI edit) are **warned about**, not merged:
-inspect them with `status --diff` and port what you want to keep into the
-`.ts` by hand. See [TypeScript nodes](/docs/concepts/typescript-nodes/).
+inspect them with [`diff`](/docs/cli/diff/) and port what you want to keep into
+the `.ts` by hand. See [TypeScript nodes](/docs/concepts/typescript-nodes/).
 
 ## Pull re-baselines the sync state
 
 Pulling records the remote code as the new sync base — **after a warned
 pull, the next push overwrites the surfaced remote edits by design**, with
-`status --diff` and git history as the safety net. `.js` files are
+[`diff`](/docs/cli/diff/) and git history as the safety net. `.js` files are
 overwritten with the remote body (pull warns when that clobbers unpushed
 local edits — recover via git).
 
@@ -53,3 +55,17 @@ MCP), and the id-keyed state maps each node to its file:
 pull follows renames by moving the local file to the new kebab-case name.
 Layouts from older versions (node files at the folder root) migrate
 automatically on the next pull.
+
+**A rename over MCP leaves `$('…')` references behind, and pull cannot fix
+them.** The n8n editor rewrites every `$('Old Name')` reference when you rename
+(in the browser, before it saves). n8n's `renameNode` MCP op does not — it
+rewrites the node name and the connections, reports success, and leaves the
+references dangling in Code-node source *and* in other nodes' expression
+parameters. Pull mirrors what n8n stored, so it copies the dangling references
+down; the compliance guard then blocks `push` until they are repaired
+(`preflight --offline` names each one).
+
+Repair them **in this order**: other nodes' expression parameters first, in n8n
+(`updateNodeParameters` over MCP, or the editor) — then the local code files,
+then `push`. The other order loses the code fix: an MCP write triggers a
+background snapshot refresh whose pull overwrites unpushed `.js` edits.

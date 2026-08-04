@@ -375,6 +375,11 @@ unreachable macOS keychain:
 ```sh
 npm test              # unit tests (node:test, test/unit/) + e2e suite
                       #   (test/e2e.mts) + guard-proxy suite (test/guardproxy.mts) +
+                      #   mcp-spawn suite (test/mcpspawn.mts — spawns the
+                      #   SCAFFOLDED .mcp.json command as a child process on an
+                      #   unassisted PATH, local + global install shapes; Plan 58
+                      #   Task 3. guardproxy tests the guard in-process, so this
+                      #   is the only suite proving the command actually STARTS) +
                       #   interactive picker suite (test/interactive.mts,
                       #   PassThrough streams — no pty); e2e and guard-proxy bind
                       #   localhost ports, and one e2e step uses fs.watch
@@ -411,6 +416,20 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   probes; `field-test:verify <manifest>` runs the scripted
                       #   invariant checks; `field-test:report <manifest>` renders
                       #   a self-contained HTML timeline of the agentic sessions.
+                      #   Host mode prepends the workDir's node_modules/.bin to
+                      #   the blind session's PATH — a deliberate SIMULATION of
+                      #   the global install most users have (the guard itself no
+                      #   longer needs it; `npx --no-install` resolves it). Each
+                      #   run prints its `PATH policy`; FIELD_NO_PATH_HELP=1 drops
+                      #   the prepend to measure a genuinely unassisted PATH.
+                      #   FIELD_NO_CLI=1 stages the Plan 57 DISCOVERABILITY
+                      #   condition (scenario S6): full committed project
+                      #   evidence, but node_modules removed — a fresh clone.
+                      #   The run then shadows any ambient n8n-decanter off PATH
+                      #   and points npm at an empty prefix, so a maintainer's
+                      #   global install can't silently satisfy the round; node/
+                      #   npm/npx/git survive and `npm install` still recovers.
+                      #   Host mode only (the container bakes the CLI globally).
                       #   The stage packs + locally installs OUR built CLI (no
                       #   global link) + pre-seeds a correct
                       #   .env. Never part of npm test; grading is a separate pass.
@@ -423,7 +442,7 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   from the raw: `field-test:report -- --from <raw.tgz>`.
                       #   Teardown: `field-test:stage --down <manifest>`.
 
-node n8n-decanter.mts <init|pull|push|status|check|watch> …
+node n8n-decanter.mts <init|pull|push|preflight|diff|watch> …
 ```
 
 The e2e suite is one sequential, stateful scenario (each step builds on the
@@ -451,8 +470,8 @@ mock server.
   files follow renames; a Code node added over MCP without `jsCode` (the
   guard blocks code in `addNode`) lands as an **empty file** whose first push
   seeds the source (normalized in `getWorkflowDetails`).
-- **Backends (Plan 32):** the workflow code path (pull/push/watch/status/
-  publish/unpublish) rides `lib/mcp.mts` — a hand-rolled JSON-RPC client for
+- **Backends (Plan 32):** the workflow code path (pull/push/watch/preflight/
+  diff/publish/unpublish) rides `lib/mcp.mts` — a hand-rolled JSON-RPC client for
   n8n's `POST /mcp-server/http` (initialize handshake, SSE parsing, bearer or
   OAuth auth with rotate-persist refresh, 429 backoff). `lib/api.mts` (public
   REST, `N8N_API_KEY` optional) serves only what MCP can't: executions and
@@ -481,23 +500,28 @@ mock server.
   - `.decanter-auth.json` (sync-dir root) — MCP OAuth credentials minted by
     init; refresh tokens are single-use (rotated + persisted on every use).
   - `.js` node files are lossless (byte-identical round-trip). `.ts` files
-    are one-way: push compiles via esbuild (`bundle: false`) and appends a
-    `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker presence
-    is what identifies a TS-managed node on pull.
+    are one-way: push compiles via esbuild (`bundle: true` — shared `shared/*`
+    helpers and opted-in npm deps are inlined into each importing node) and
+    appends a `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker
+    presence is what identifies a TS-managed node on pull. Because a bundler
+    really does resolve those specifiers, the node-file tsconfig uses
+    `moduleResolution: "bundler"`; `node16`/`nodenext` would reject the
+    extensionless relative imports the template documents (TS2835).
 - Push runs two independent gates, in order:
-  1. Compliance guard (`lib/validate.mts`, shared with `check` and watch):
-     layout violations are hard errors that `--force` does NOT bypass.
+  1. Compliance guard (`lib/validate.mts`, shared with preflight's `layout`
+     check and watch): layout violations are hard errors that `--force` does
+     NOT bypass.
   2. Per-node drift guard: a node's remote CODE moved off the last-sync hash
      (and differs from the local payload) → abort; only this one is bypassed
-     by `--force`. Remote structure changes never block (status prints an
-     informational snapshot-stale hint instead).
+     by `--force`. Remote structure changes never block (preflight's `snapshot`
+     check reports an informational stale hint instead).
 - Pushes land on the workflow's **draft** (one atomic `update_workflow`
   batch of `{jsCode}`-only merge writes); `publish` / `push --publish` is the
   go-live step. Pull reads the **tip** (draft if one exists). A workflow must
   be `availableInMCP` (per-workflow n8n-side switch) — the picker shows
   unavailable ones as a red third state with guidance.
 - Pull never touches `.ts` sources; remote edits to TS-managed nodes are
-  warned about (`status --diff` to inspect — no `.remote.js` artifacts since
+  warned about (`diff` to inspect — no `.remote.js` artifacts since
   Plan 32). Pull re-baselines `lastPushedHash` even on conflict — meaning the
   next push overwrites remote edits by design. Pull's rename machinery also
   migrates pre-`code/` flat layouts.
@@ -619,12 +643,19 @@ the same traps:
   API-inaccessible draft-first capability.
 - **More verified write/read semantics (2.30.7):** `updateNodeParameters`
   **merges** into existing params (a `{jsCode}`-only write preserves `mode`/
-  `language`); **node ids survive `renameNode`**; reads are **draft-only** —
-  `get_workflow_version` returns metadata without node params, so published
-  content can't be read back over MCP (`restore_workflow_version` is the only
-  path to it). Data-table tools are **add-only** (create/rename/add rows+columns;
-  `search_data_tables` returns schema, never row values); `create_data_table`
-  requires a `projectId` (get it from `search_projects`).
+  `language`); **node ids survive `renameNode`**. Reads are **NOT draft-only**
+  (corrected 2026-07-25, reproduced against real n8n — see the smoke suite's
+  "MCP read semantics" step): one `get_workflow_details` returns the draft tip
+  (`nodes`) **and** the published version (`activeVersion.nodes`) plus
+  `activeVersionId`, and `get_workflow_version(versionId)` returns **full node
+  params (`jsCode` byte-exact) for ANY version — draft, active, or a superseded
+  one**. `get_workflow_history` is the *index* (version list — **metadata only,
+  no node params**); it was the tool the old "returns metadata without node
+  params" claim conflated with `get_workflow_version`. (All these reads are
+  still credential-sanitized per the fidelity note above — node credential refs
+  stripped, params intact.) Data-table tools are **add-only** (create/rename/add
+  rows+columns; `search_data_tables` returns schema, never row values);
+  `create_data_table` requires a `projectId` (get it from `search_projects`).
 - **The docs-site tool reference is NOT exhaustive** (it lists ~33 of the 41+
   tools on 2.30.7) — n8n-io/skills' SKILL.md and a live `tools/list` are better
   inventories. Undocumented-but-real (re-verified 2026-07-22, from the n8n
@@ -708,9 +739,11 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    sections left by sandboxed deletes (see "Sandboxed shells" above). **Never
    `git clean -fdx` from the repo root** — it nukes both worktree dirs.
 5. **Dependency PR triage** — review open Dependabot PRs; merge the safe ones
-   (green CI, minor/patch). For majors, record the decision in the backlog
-   (e.g. TypeScript 7.x → [`plans/draft/49-typescript-7-native-major.md`](plans/draft/49-typescript-7-native-major.md))
-   rather than silently merging.
+   (green CI, minor/patch). For majors, record the decision rather than silently
+   merging. **Standing decision — do NOT adopt TypeScript 7 (native/Go) until a
+   stable release exposes the programmatic compiler API**: `scripts/typecheck.mts`
+   drives a custom `CompilerHost` and the ts-plugin tests need that JS API, so a
+   green-looking bump would silently break node-file typechecking. TS 6.x is fine.
 6. **CI & tests green** — main's required checks are green, `npm test` and
    `npm run typecheck` pass locally, and no open PR is red.
 7. **Drift audits** — `template/*.example` still match their repo counterparts;

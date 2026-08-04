@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "n8n-instance": {
-      "command": "n8n-decanter",
-      "args": ["mcp", "connect"]
+      "command": "npx",
+      "args": ["--no-install", "n8n-decanter", "mcp", "connect"]
     },
     "n8n-docs": {
       "type": "http",

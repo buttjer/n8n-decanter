@@ -8,19 +8,23 @@ The contract above (from `AGENTS.md`) is authoritative. A few Claude-only notes:
   permission deny-list blocks edits to `.decanter.json` and `*.remote.js`, reads/edits
   of `.env`, and `push --force`. If an `Edit`/`Write` is blocked, it broke a hard rule —
   fix the edit, don't route around the guard. The content-level invariants (jsCode
-  placeholder integrity, the `@ts-n8n` marker) are the CLI's wall at `push`/`check`.
+  placeholder integrity, the `@ts-n8n` marker) are the CLI's wall at `push`/`preflight`.
   That file is **project policy, committed and shared**; `.claude/settings.local.json`
   stays yours for machine-specific rules. Permission lists merge across the two and
   a `deny` beats an `allow`, so a local file adds to the policy — it can't unblock
   what the project denies.
 - **After editing a node source (`.ts`/`.js`), a PostToolUse hook runs
-  `n8n-decanter check`** (layout compliance + typecheck) via `.claude/hooks/verify.mjs`
+  `n8n-decanter preflight --offline`** (layout compliance + typecheck, no network,
+  no engine) via `.claude/hooks/verify.mjs`
   and feeds any failure back to you. Treat a failure as a blocker to finishing the task.
   The hook is a quiet no-op until the CLI is on your PATH (install it globally or
-  `npm link` it) — until then run `n8n-decanter check` / `n8n-decanter node run` yourself.
-- **Renames happen in n8n, then `pull` reconciles** (see "Renaming a node" in
-  AGENTS.md). For multi-node renames, pull after each MCP rename so nothing is
-  left half-updated — and remember `.ts` sources keep their `$('…')` refs
-  until you update them by hand.
+  `npm link` it) — until then run `n8n-decanter preflight --offline` /
+  `n8n-decanter node run` yourself.
+- **Renames happen in n8n — and an MCP rename strands every `$('…')` ref**
+  (see "Renaming a node" in AGENTS.md). The n8n editor rewrites them for you;
+  the `renameNode` MCP op rewrites the connections only, then reports success.
+  No amount of pulling fixes this — `pull` mirrors whatever n8n stored. Repair
+  both halves, **expression parameters over MCP first, then local code, then
+  `push`**; the other order loses your code fix to the background refresh.
 - **`push --force` is blocked from the agent by design.** It overrides the drift guard;
   if it is genuinely needed, ask the user to run it themselves in the terminal.

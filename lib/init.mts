@@ -78,7 +78,8 @@ export function cliVersion(): string {
 
 // Wordmark in the 2×2 quadrant-block minifont (Block Elements). The top row's
 // leading offset is load-bearing (ascenders of 8/d/t) — keep it verbatim.
-// Columns 0-5 are the "n8n" part (brand red on a TTY), the rest "decanter".
+// Columns 0-5 are the "n8n" part (brand orange on a TTY — the website's accent,
+// see style.brand), the rest "decanter".
 const LOGO_ROWS = [
   "  ▄▖     ▌        ▗",
   "▛▌▙▌▛▌  ▛▌█▌▛▘▀▌▛▌▜▘█▌▛▘",
@@ -92,7 +93,7 @@ export function printBanner(log: Log): void {
     log.info(`n8n-decanter v${version}`);
     return;
   }
-  for (const row of LOGO_ROWS) console.log(style.red(row.slice(0, 6)) + style.bold(row.slice(6)));
+  for (const row of LOGO_ROWS) console.log(style.brand(row.slice(0, 6)) + style.bold(row.slice(6)));
   console.log(style.dim(`n8n workflows ⇄ agentic code · v${version}`));
 }
 

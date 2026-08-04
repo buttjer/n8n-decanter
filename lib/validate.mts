@@ -6,8 +6,8 @@ import { promisify } from "node:util";
 import { checkNodeImports, findBundleContext, scanNodeImports } from "./compile.mts";
 import { LEGACY_FIXTURES_DIR, SCENARIOS_DIR } from "./executions.mts";
 import { readState } from "./state.mts";
-import type { Log, Workflow } from "./types.mts";
-import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, forEachConnectionTarget, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
+import type { Log, Workflow, WorkflowNode } from "./types.mts";
+import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, forEachConnectionTarget, isJsCodeNode, type NodeRef, placeholderFile, splitMarker } from "./util.mts";
 
 const execFile = promisify(execFileCb);
 
@@ -67,9 +67,82 @@ export function validateNodeFile(dir: string, file: string, label: string = file
   return { errors, warnings };
 }
 
-/** Dangling literal `$('…')` references in one string of source/expression text. */
-function danglingRefs(text: string, nodeNames: Set<string>): string[] {
-  return findNodeRefs(text).filter((name) => !nodeNames.has(name));
+/** Dangling node references in one string of source/expression text. */
+function danglingRefs(text: string, nodeNames: Set<string>): NodeRef[] {
+  return findNodeRefs(text).filter((r) => !nodeNames.has(r.name));
+}
+
+/** De-dupe by the name AND the form it was written in — both are worth reporting. */
+const uniqueRefs = (refs: NodeRef[]): NodeRef[] => [...new Map(refs.map((r) => [r.ref, r])).values()];
+
+/**
+ * One dangling node reference, and which half of the repair it belongs to
+ * (Plan 64): `code` is ours — edit the file and push; `parameter` is n8n's
+ * structure — only an MCP write or the editor can fix it.
+ */
+export interface DanglingRef {
+  node: string;
+  name: string;
+  /** As written — `$('X')`, `$node["X"]`, `$node.X`, `$items('X')`. */
+  ref: string;
+  where: "code" | "parameter";
+}
+
+/**
+ * Scan a workflow's nodes for dangling `$('…')` references — **source-agnostic**
+ * (Plan 64 task 3b). The local mirror and the instance's draft carry the same
+ * workflow in two shapes: locally a Code node's `jsCode` is a `//@file:`
+ * placeholder with the real source in a file, remotely it is inline on the node.
+ * This takes whatever nodes it is handed, so `test`/`publish` can grade the
+ * instance's draft with the exact rule `validateWorkflowDir` applies to the repo.
+ *
+ * Placeholders are skipped, not scanned: locally the source lives in the file,
+ * which `validateWorkflowDir` reads separately.
+ */
+export function danglingNodeRefs(nodes: WorkflowNode[]): DanglingRef[] {
+  const nodeNames = new Set(nodes.map((n) => n.name));
+  const out: DanglingRef[] = [];
+  for (const node of nodes) {
+    const jsCode = node.parameters?.jsCode;
+    if (typeof jsCode === "string" && !jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) {
+      for (const r of uniqueRefs(danglingRefs(jsCode, nodeNames))) out.push({ node: node.name, name: r.name, ref: r.ref, where: "code" });
+    }
+    const texts = parameterStrings(node.parameters, "jsCode");
+    for (const r of uniqueRefs(texts.flatMap((t) => danglingRefs(t, nodeNames)))) {
+      out.push({ node: node.name, name: r.name, ref: r.ref, where: "parameter" });
+    }
+  }
+  return out;
+}
+
+/**
+ * Shared wording for dangling refs found on the INSTANCE's draft — used by
+ * `test`'s static tier and by `publish`'s gate so both say the same thing.
+ *
+ * The order is load-bearing, not cosmetic: fixing the code half first and the
+ * parameter half second loses the code edit, because the MCP write that fixes a
+ * parameter schedules a background pull that overwrites unpushed `.js` files.
+ */
+export function describeDanglingRefs(refs: DanglingRef[]): string[] {
+  const params = refs.filter((r) => r.where === "parameter");
+  const code = refs.filter((r) => r.where === "code");
+  const lines: string[] = [];
+  if (params.length > 0) {
+    lines.push("expression parameters (structure — fix in n8n, not in workflow.json):");
+    for (const r of params) lines.push(`  node "${r.node}" references ${r.ref}`);
+  }
+  if (code.length > 0) {
+    lines.push("Code-node source (yours — edit the file here, then push):");
+    for (const r of code) lines.push(`  node "${r.node}" references ${r.ref}`);
+  }
+  lines.push(
+    params.length > 0 && code.length > 0
+      ? "fix the expression parameters FIRST (update_workflow / updateNodeParameters, or the editor), then the code files, then push — the other order loses the code edit to the background snapshot refresh"
+      : params.length > 0
+        ? "fix them in n8n (update_workflow / updateNodeParameters, or the editor) — editing workflow.json changes nothing on the instance"
+        : "edit the file(s) here, then `n8n-decanter push`",
+  );
+  return lines;
 }
 
 /** Every string inside a node's parameters, skipping the jsCode placeholder. */
@@ -152,10 +225,16 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     coveredRemoteFiles.add(file.replace(/\.(ts|js)$/, ".remote.js"));
 
     // Dangling $('…') in the node's source (marker line can't contain a ref).
+    // Usually the fallout of a rename: n8n's `renameNode` MCP op rewrites the
+    // node name and connections ONLY (verified live on 2.30.7/2.33.3), so refs
+    // are the caller's to repair. This half is ours — edit the file and push.
     const filePath = path.join(dir, file);
     if (existsSync(filePath)) {
-      for (const name of danglingRefs(readFileSync(filePath, "utf8"), nodeNames)) {
-        errors.push(`node "${node.name}": ${file} references $('${name}') — no node by that name`);
+      for (const r of uniqueRefs(danglingRefs(readFileSync(filePath, "utf8"), nodeNames))) {
+        errors.push(
+          `node "${node.name}": ${file} references ${r.ref} — no node by that name` +
+            ` (renamed? edit ${file} to the new name, then push)`,
+        );
       }
     }
   }
@@ -172,7 +251,7 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   // This MUST stay a warning. `push` runs this guard (assertCompliant, which
   // throws on errors) BEFORE it reconciles the map, so making this an error
   // would refuse the exact command that heals it. A field-test agent hit this
-  // state, read `check`'s green line as "done", and never pushed (Plan 35).
+  // state, read the green offline line as "done", and never pushed (Plan 35).
   try {
     const state = readState(dir);
     if (state) {
@@ -192,13 +271,20 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     // corrupt state already reported above
   }
 
-  // Dangling $('…') inside expression parameters of any node (the n8n UI
-  // rewrites these on rename; a dangling one breaks at run time).
+  // Dangling $('…') inside expression parameters of any node. The n8n EDITOR
+  // rewrites these on rename (client-side, before it saves); the `renameNode`
+  // MCP op does NOT — verified live on 2.30.7/2.33.3. A dangling one breaks at
+  // run time. Unlike the source half above this is STRUCTURE: it lives in the
+  // read-only workflow.json and push never sends it, so the message must route
+  // the fix to the instance — hand-editing workflow.json turns this check green
+  // while n8n stays broken, and the next pull reverts it.
   for (const node of nodes) {
     const texts = parameterStrings(node.parameters, "jsCode");
-    const dangling = new Set(texts.flatMap((t) => danglingRefs(t, nodeNames)));
-    for (const name of dangling) {
-      errors.push(`node "${node.name}": a parameter references $('${name}') — no node by that name`);
+    for (const r of uniqueRefs(texts.flatMap((t) => danglingRefs(t, nodeNames)))) {
+      errors.push(
+        `node "${node.name}": a parameter references ${r.ref} — no node by that name` +
+          ` (renamed? this is structure — fix it in n8n (updateNodeParameters over MCP, or the editor), not in workflow.json)`,
+      );
     }
   }
 
@@ -255,7 +341,7 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   // naming the replacement — no deprecation read-path.
   const fixturesDir = path.join(dir, LEGACY_FIXTURES_DIR);
   if (existsSync(fixturesDir) && readdirSync(fixturesDir).some((e) => e.endsWith(".json"))) {
-    errors.push(`${LEGACY_FIXTURES_DIR}/ dir is retired — per-node fixtures and \`simulate --pin\` were removed (Plan 37); recreate the data as a scenario (\`scenario create --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/`);
+    errors.push(`${LEGACY_FIXTURES_DIR}/ dir is retired — per-node fixtures and the old \`--pin\` flag were removed (Plan 37); recreate the data as a scenario (\`scenario create --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/`);
   }
   return { errors, warnings };
 }
@@ -267,26 +353,64 @@ export interface TypecheckResult {
   output?: string;
 }
 
+/** Nearest tsconfig.json at or above `startDir` — the typecheck's project root. */
+function findTsconfigDir(startDir: string): string | null {
+  let dir = path.resolve(startDir);
+  for (;;) {
+    if (existsSync(path.join(dir, "tsconfig.json"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * ONE typecheck for a whole multi-workflow run, attributed back to each dir
+ * (Plan 59). `scripts/typecheck.mts` compiles the entire project every time and
+ * only *filters* which diagnostics it reports, so preflight's old per-workflow
+ * call recompiled the project once per workflow — measured at 3× the cost of
+ * the retired `check` verb on a 3-workflow dir, and linear from there. Running
+ * it once and splitting the output by path prefix restores parity.
+ *
+ * A diagnostic with no file (a broken tsconfig, a global error) belongs to
+ * every workflow — it blocks all of them — so it is attributed to each.
+ */
+export async function runTypecheckPerDir(startDir: string, dirs: string[]): Promise<Map<string, TypecheckResult>> {
+  const result = await runTypecheckResult(startDir, dirs);
+  const out = new Map<string, TypecheckResult>();
+  if (result.status !== "failed") {
+    for (const d of dirs) out.set(d, result);
+    return out;
+  }
+  const tsconfigDir = findTsconfigDir(startDir)!;
+  const lines = (result.output ?? "").split("\n");
+  // `<rel/path>(line,col): error TS…` — everything else (file-less diagnostics,
+  // the "N error(s)" tally) has no path to attribute and goes to everyone.
+  const owner = (line: string): string | undefined => {
+    const m = line.match(/^(.+?)\(\d+,\d+\): /);
+    if (!m) return undefined;
+    const abs = path.resolve(tsconfigDir, m[1]);
+    return dirs.find((d) => abs === d || abs.startsWith(path.resolve(d) + path.sep));
+  };
+  const shared = lines.filter((l) => l.trim() !== "" && !/^(.+?)\(\d+,\d+\): /.test(l) && !/^\d+ error\(s\)$/.test(l.trim()));
+  for (const d of dirs) {
+    const mine = lines.filter((l) => owner(l) === path.resolve(d));
+    const all = [...mine, ...shared];
+    out.set(d, all.length > 0 ? { status: "failed", output: all.join("\n") } : { status: "ok" });
+  }
+  return out;
+}
+
 /**
  * Run scripts/typecheck.mts against the nearest tsconfig.json at or above
  * startDir and RETURN the outcome instead of logging/throwing. Missing tsconfig
  * (e.g. an init'ed sync dir without one) is a `skipped` result. `scopeDirs`
  * limits which files' diagnostics are reported (the whole project still
  * compiles). This is the quiet fact seam `preflight` consumes; `runTypecheck`
- * below wraps it to keep `check`/`push`'s console behavior byte-identical.
+ * below wraps it to keep `push`'s console behavior byte-identical.
  */
 export async function runTypecheckResult(startDir: string, scopeDirs?: string[]): Promise<TypecheckResult> {
-  let dir = path.resolve(startDir);
-  let tsconfigDir: string | null = null;
-  for (;;) {
-    if (existsSync(path.join(dir, "tsconfig.json"))) {
-      tsconfigDir = dir;
-      break;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
+  const tsconfigDir = findTsconfigDir(startDir);
   if (!tsconfigDir) return { status: "skipped", output: "no tsconfig.json found" };
   // dev runs the .mts sources directly; the published package ships compiled
   // .mjs (Node won't type-strip under node_modules), so mirror our own extension
@@ -307,7 +431,7 @@ export async function runTypecheckResult(startDir: string, scopeDirs?: string[])
 /**
  * Thin logging/throwing wrapper over `runTypecheckResult`: missing tsconfig is
  * an info-level skip, a pass logs `typecheck OK`, and type errors throw. Used by
- * `check`/`push`; behavior is unchanged from before the seam extraction.
+ * `push`; behavior is unchanged from before the seam extraction.
  */
 export async function runTypecheck(startDir: string, log: Log, scopeDirs?: string[]): Promise<void> {
   const result = await runTypecheckResult(startDir, scopeDirs);

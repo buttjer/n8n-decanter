@@ -15,12 +15,17 @@ instance's MCP server. You never run it by hand: the scaffolded `.mcp.json`
 ```json
 {
   "mcpServers": {
-    "n8n-instance": { "command": "n8n-decanter", "args": ["mcp", "connect"] }
+    "n8n-instance": { "command": "npx", "args": ["--no-install", "n8n-decanter", "mcp", "connect"] }
   }
 }
 ```
 
-and the agent spawns it per session. It speaks MCP over stdio to the agent and
+and the agent spawns it per session. (It runs through `npx --no-install` so the
+command resolves whether decanter is installed **globally** or as a **local**
+project dependency — a bare `n8n-decanter` would only resolve on the agent's
+`PATH`, i.e. a global install, and fail silently otherwise. `--no-install` keeps
+it strictly local: it never downloads from npm, so a missing install fails
+loudly instead.) It speaks MCP over stdio to the agent and
 forwards each call to your instance's `/mcp-server/http` with **decanter's own
 credentials** (from `.env` / `.decanter-auth.json`) — the agent never holds an
 n8n credential, and because stdio pipes are private to the two processes,
@@ -31,9 +36,14 @@ The guard is the same one [mcp serve](/docs/cli/mcp-serve/) enforces over HTTP:
 - **Blocked:** `update_workflow` calls that write Code-node source
   (`jsCode`) — the caller gets an instructive tool error pointing at the file
   \+ [push](/docs/cli/push/) flow.
+- **Blocked:** `publish_workflow` when the draft it would take live carries a
+  dangling `$('…')` reference — the same check [`test`](/docs/cli/test/) and
+  [`publish`](/docs/cli/publish/) run, so an agent cannot go live around the
+  verb. **Fail-closed**: if the check itself cannot run, the publish is refused
+  too, and the message says the *check* failed rather than blaming the workflow.
 - **Everything else forwards untouched**: reads, structure edits (`addNode`,
-  `renameNode`, wiring), publishing, archiving — the whole n8n MCP surface,
-  SSE responses included.
+  `renameNode`, wiring), archiving — the whole n8n MCP surface, SSE responses
+  included.
 
 That combination is what powers the guarded authoring loop: an agent builds
 and wires structure over MCP (adding Code nodes **without** `jsCode` — the
@@ -55,6 +65,31 @@ Failure posture matches the HTTP guard: unparseable input is refused
 JSON-RPC error naming the host instead of hanging. Logs go to stderr; stdout
 carries only protocol messages. The process ends when the agent closes the
 session.
+
+## What the guard logs
+
+On stderr, so it never touches the protocol stream:
+
+```
+guard: connected to https://n8n.example.com — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: forwarded search_workflows
+guard: forwarded get_workflow_details
+blocked a jsCode write (update_workflow) — pointed the agent at the file + push flow
+```
+
+- **The startup line means the guard is alive.** Without it, an empty log is
+  ambiguous — "ran and blocked nothing" and "never started" look identical, and
+  they are opposites. If you see no startup line, the guard did not spawn; check
+  the command in your `.mcp.json`.
+- **One line per forwarded tool call** — every n8n MCP call an agent makes goes
+  through the guard, so this is the one place that answers *what did the agent
+  do to my instance?*
+- **Tool names only, never arguments.** Arguments carry workflow content and
+  pinned run data; keeping them out means the log is not a secret surface and is
+  safe to attach to a bug report.
+
+`mcp serve` logs the identical lines — the two transports share this, the same
+way they share the guard rule itself.
 
 Prefer `mcp connect` wherever the agent's MCP config can spawn a command.
 For harnesses that only accept an MCP **URL**, use

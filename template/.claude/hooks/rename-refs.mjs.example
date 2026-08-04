@@ -1,0 +1,126 @@
+#!/usr/bin/env node
+// PostToolUse hook for MCP `update_workflow` calls carrying a `renameNode` op.
+//
+// WHY THIS EXISTS: n8n's `renameNode` op rewrites the node name and the
+// CONNECTIONS only — verified live against n8n 2.30.7 and 2.33.3. Every
+// `$('Old Name')` reference is left behind, in Code-node source AND in other
+// nodes' expression parameters, and the op returns success with no warning. The
+// breakage otherwise surfaces at the next `push`, arbitrarily far from the
+// rename that caused it.
+//
+// WHY IT SCANS INSTEAD OF RUNNING PREFLIGHT: this hook fires the moment the tool
+// returns, and the local snapshot refresh is debounced and asynchronous. Right
+// now `workflow.json` still carries the OLD name, so every `$('Old Name')` ref
+// still resolves and `preflight` would report GREEN. Scanning for the old name
+// is race-free and needs no pull — and it is precisely the set that will dangle
+// once the refresh lands.
+//
+// Exit 2 feeds the output back to the agent. Silent no-op when the batch has no
+// rename, when the workflow isn't tracked here, or when nothing references the
+// old name.
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import path from "node:path";
+
+let payload = {};
+try {
+  payload = JSON.parse(readFileSync(0, "utf8") || "{}");
+} catch {
+  process.exit(0);
+}
+
+const input = payload.tool_input ?? {};
+const renames = (Array.isArray(input.operations) ? input.operations : [])
+  .filter((op) => op?.type === "renameNode" && typeof op.oldName === "string" && op.oldName !== op.newName)
+  .map((op) => ({ oldName: op.oldName, newName: op.newName }));
+if (renames.length === 0) process.exit(0);
+
+// Locate the workflow folder by id — the folder name is a sticky local slug and
+// never follows a remote rename, so it is not a reliable key.
+const root = (() => {
+  try {
+    const cfg = JSON.parse(readFileSync("decanter.config.json", "utf8"));
+    return typeof cfg.root === "string" ? cfg.root : "./workflows";
+  } catch {
+    return "./workflows";
+  }
+})();
+const dir = (() => {
+  if (typeof input.workflowId !== "string" || !existsSync(root)) return null;
+  for (const entry of readdirSync(root)) {
+    const state = path.join(root, entry, ".decanter.json");
+    if (!existsSync(state)) continue;
+    try {
+      if (JSON.parse(readFileSync(state, "utf8")).workflowId === input.workflowId) return path.join(root, entry);
+    } catch {}
+  }
+  return null;
+})();
+if (!dir) process.exit(0); // not tracked here (yet) — nothing to say
+
+/**
+ * The reference forms a rename strands — the same four n8n's own
+ * `applyAccessPatterns` rewrites, and the same four the CLI's `findNodeRefs`
+ * detects. This file cannot import from the CLI, so a unit test feeds both
+ * implementations one corpus and asserts they agree; keep them in step.
+ */
+const refRe = (name) => {
+  const n = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const dot = /^[A-Za-z_$][\w$]*$/.test(name) ? `|\\$node\\.${n}(?![\\w$])` : "";
+  return new RegExp(
+    `\\$\\(\\s*(['"\`])${n}\\1\\s*\\)` +
+      `|\\$node\\[\\s*(['"\`])${n}\\2\\s*\\]` +
+      `|\\$items\\(\\s*(['"\`])${n}\\3\\s*[,)]` +
+      dot,
+  );
+};
+
+const walk = (d) => (existsSync(d) ? readdirSync(d).flatMap((e) => {
+  const p = path.join(d, e);
+  return statSync(p).isDirectory() ? walk(p) : [p];
+}) : []);
+
+// Two buckets, because they are repaired in different places and in a specific
+// order: workflow.json holds OTHER nodes' expression parameters (structure —
+// only n8n can fix them), code/ holds ours.
+const structure = [];
+const code = [];
+for (const { oldName } of renames) {
+  const re = refRe(oldName);
+  const snapshot = path.join(dir, "workflow.json");
+  if (existsSync(snapshot) && re.test(readFileSync(snapshot, "utf8"))) structure.push(oldName);
+  for (const file of walk(path.join(dir, "code"))) {
+    if (file.endsWith(".remote.js")) continue;
+    const text = readFileSync(file, "utf8");
+    text.split("\n").forEach((line, i) => {
+      if (re.test(line)) code.push(`${path.relative(".", file)}:${i + 1}  ${line.trim().slice(0, 100)}`);
+    });
+  }
+}
+if (structure.length === 0 && code.length === 0) process.exit(0);
+
+const renamed = renames.map((r) => `"${r.oldName}" → "${r.newName}"`).join(", ");
+const lines = [
+  `n8n-decanter: renamed ${renamed} on the instance — but n8n's renameNode op rewrites the node name and connections ONLY.`,
+  `References to the old name are still in place and will break as soon as the local snapshot refreshes.`,
+  "",
+];
+if (structure.length > 0) {
+  lines.push(
+    `EXPRESSION PARAMETERS of other nodes still reference ${structure.map((n) => `$('${n}')`).join(", ")}.`,
+    `  These are structure — fix them IN n8n (update_workflow / updateNodeParameters, no jsCode),`,
+    `  not by editing workflow.json: that changes nothing on the instance and the next pull reverts it.`,
+    "",
+  );
+}
+if (code.length > 0) {
+  lines.push("CODE FILES still reference the old name:", ...code.map((l) => `  ${l}`), "");
+}
+lines.push(
+  structure.length > 0 && code.length > 0
+    ? "Repair EXPRESSION PARAMETERS FIRST, then the code files, then `n8n-decanter push`. The other order loses your code edit: an MCP write triggers a background snapshot refresh whose pull overwrites unpushed .js edits."
+    : code.length > 0
+      ? "Fix the code files here, then `n8n-decanter push`."
+      : "Fix them in n8n, then `n8n-decanter pull` to refresh the snapshot.",
+);
+console.error(lines.join("\n"));
+process.exit(2);

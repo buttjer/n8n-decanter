@@ -7,6 +7,414 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The agent guard now refuses a `publish_workflow` that would take a broken
+  draft live.** `publish` already checked, but the raw MCP tool went straight
+  through the guard — so an agent could go live around the verb and ship exactly
+  the breakage the check exists to catch. Both transports (`mcp connect` and
+  `mcp serve`) run the same check on the same shared code.
+
+  **Fail-closed:** if the check itself cannot run — n8n unreachable — the publish
+  is refused too, and the message says the *check* failed rather than claiming
+  the workflow is broken. A read that fails almost certainly means the publish
+  would have failed anyway, and "couldn't verify, so we shipped it" is not a gate.
+
+- **Dangling-reference checks now cover all four forms n8n rewrites on a rename**
+  — `` $('X') `` (as before) plus `$node["X"]`, `$node.X` and `$items('X')`.
+  Previously only the first was detected, so a rename could strand a `$node[…]`
+  call site that nothing reported: `preflight`, `push`, `test` and `publish` all
+  passed it, and it failed at run time instead. The rule is n8n's own — its
+  rewriter handles exactly these four — so if n8n treats it as a reference, the
+  guard now does too.
+
+  **This can surface errors in workflows that passed before.** A `$node["Old"]`
+  reference to a node that no longer exists is a hard compliance error, which
+  `--force` does not bypass. The message quotes the reference **as written**, so
+  it is clear which form triggered it. Computed references (`$(someVar)`, a
+  template literal with `${…}`) are still left alone — a regex cannot resolve
+  them, and n8n has the same limit.
+
+- **Breaking: `n8n-decanter test <workflow>` no longer executes.** It used to
+  fall back to the newest capture under `executions/` and run the workflow for
+  real on your instance — a directory that is gitignored, so the same commit
+  behaved differently for different people, and a bare verb had real side
+  effects. Bare `test` is now a **static tier**: it reads the instance's draft,
+  reports dangling `$('…')` references, and runs nothing. Pass
+  `--execution <id>` or `--scenario <slug>` for the pinned run, which is
+  otherwise unchanged. There is no deprecation shim — a `test` that still
+  executed *sometimes* would keep exactly the ambiguity this removes.
+
+  The pinned run now also does the static check first, so a draft already known
+  to be broken is never fired at the instance.
+- **`publish` refuses a draft carrying a dangling `$('…')` reference.**
+  Previously nothing checked: the compliance guard runs on `push`, `preflight`
+  and `backup` — not `publish` — so a task that only renamed nodes never hit a
+  gate and the break went live. The check reads **the draft on the instance**
+  (the read `publish` already makes), not your local folder: `workflow.json` is
+  a snapshot, so grading it would pass a broken workflow on a stale mirror and
+  block a legitimate publish from a fresh clone.
+
+### Added
+
+- **`init` now scaffolds a hook that catches stranded `$('…')` references right
+  after a rename.** n8n's `renameNode` MCP op rewrites the node name and the
+  connections only, so the references it leaves behind used to surface at the
+  next `push` — arbitrarily far from the rename that caused them. On Claude Code
+  a PostToolUse hook on `update_workflow` now reports them immediately, split
+  into the two halves and in the order they must be repaired: other nodes'
+  expression parameters in n8n first, then the code files here, then `push`.
+
+  It scans for the old name instead of running `preflight`, deliberately: the
+  hook fires before the background snapshot refresh, and until that lands the
+  snapshot still carries the old name, so every reference still resolves and
+  `preflight` would report clean. Silent when nothing references the renamed
+  node. The checklist in the scaffolded `AGENTS.md` remains the contract for
+  every agent — the hook is a reminder, not a replacement.
+
+### Fixed
+
+- **Corrected the rename guidance: n8n's `renameNode` MCP op does NOT rewrite
+  `$('…')` references.** The scaffolded agent guide (and the 0.6.0 notes below)
+  claimed n8n rewrites connections *and* `$('…')` references server-side on a
+  rename. Verified against real n8n 2.30.7 and 2.33.3: the MCP op rewrites the
+  node name and the **connections only**, then reports success with
+  `validationWarnings: []` — every `$('Old Name')` ref is left dangling, both in
+  Code-node source and in other nodes' expression parameters. The n8n *editor*
+  does rewrite them, but in the browser before it saves, so "server-side" was
+  wrong for that path too. No amount of pulling repairs this; `pull` faithfully
+  mirrors what n8n stored.
+
+  `init`'s `AGENTS.md`/`CLAUDE.md` now describe the real contract, including the
+  repair order that matters: **fix other nodes' expression parameters over MCP
+  first, then local code, then `push`.** The other order loses the code fix,
+  because a forwarded MCP write schedules a background snapshot refresh whose
+  pull overwrites unpushed `.js` edits.
+- **A dangling-reference error now says which half it is and where to fix it.**
+  The two compliance errors were near-identical and neither mentioned a rename,
+  which led to `workflow.json` being hand-edited — turning the check green while
+  n8n stayed broken.
+
+## [0.8.0] - 2026-07-27
+
+### Added
+
+- **The interactive picker offers a `--force` retry when a `push` hits the drift
+  guard.** Previously the error was printed and you were dropped back at the
+  menu, having to leave the picker and re-run `push --force` by hand — even
+  though the CLI had just told you `--force` would fix it. Now it asks:
+
+  ```
+  ✗ remote code changed since last sync — pull first (or repeat with --force to overwrite the draft)
+  retry with --force and overwrite the remote draft? [y/N]
+  ```
+
+  The default is **No**: a bare `Enter`, or anything other than `y`/`yes`,
+  returns to the menu exactly as before. Answering `y` re-runs the same menu row
+  (flags included) with `--force`, overwriting the n8n **draft** only — the
+  published version is untouched.
+
+  **It only appears for failures `--force` can actually fix.** A layout
+  compliance error never prompts, because forcing does not bypass it. And this
+  is the interactive picker session only: piped and non-interactive runs never
+  prompt — they print the `--force` hint and exit non-zero, unchanged.
+
+- **`diff` — the new verb for "show me the actual changed lines".** It is the
+  promoted half of `status --diff`: per-node unified line diffs of your local
+  code against the n8n draft, `.ts` compiled first (bundling `shared/*`, so a
+  helper edit shows every importing node). Nodes that are in sync are omitted
+  entirely, and a clean tree says so in one line. Multi-ref like `pull`/`push`;
+  no workflow on a terminal opens the picker.
+
+  **It always exits 0.** `diff` is an inspection view, like `git diff` — the
+  gate is `preflight`. See the migration note under Removed.
+
+- **`preflight --viewer`** (with `--simulate`): leaves a browsable throwaway
+  n8n running so you can open the replayed run in the UI — the interactive half
+  of the old `simulate` verb, now explicit instead of implied by a TTY. It does
+  **not** relax preflight's safety contract: the graded run stays headless with
+  `--network-none`, and the viewer is a second, separate container. A workflow
+  with a multi-batch loop reports `simulate` as **skipped** under `--viewer`
+  ("a preview, not a pass/fail check"), never as a pass.
+
+- **`preflight --no-typecheck`** skips the `types` check — the escape hatch the
+  retired `check` verb had.
+
+- **The agent guard now logs a startup line and an audit trail** (`mcp connect`
+  and `mcp serve` alike, on stderr):
+
+  ```
+  guard: connected to <host> — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+  guard: forwarded search_workflows
+  ```
+
+  Previously the guard spoke **only** when it blocked something, so an empty log
+  meant either "ran, blocked nothing" or "never started" — indistinguishable,
+  and opposite in meaning. The startup line settles that; the per-call lines
+  make the guard the one place that can answer *what did an agent actually do
+  to my n8n instance?*, since every MCP call passes through it.
+
+  **Tool names only — arguments are never logged**, so the log stays safe to
+  attach to a bug report.
+
+- **Every `preflight` finding can now carry `details[]`** — the full list behind
+  the one-line message: *every* layout violation, *every* `tsc` error, the
+  drifted node names, the viewer URL. Printed indented under the check line,
+  and present in `--json`. This is how the information `check` printed in full
+  survives its removal; without it, folding `check` into `preflight` would have
+  truncated a 12-violation layout failure to its first line.
+
+### Changed
+
+- **The picker lists pulled workflows newest-synced first**, instead of the
+  folder's alphabetical order — the workflow you last pulled or pushed is under
+  the cursor when the picker opens. Unpulled remote rows keep their place after
+  the local ones. The signal is each workflow folder's sync timestamp, so it is
+  *local activity*, not committed history: right after a fresh `git clone`
+  everything looks equally recent and the list falls back to alphabetical until
+  your first pull or push. Scripted `list` output is deliberately unchanged.
+
+- **The CLI banner's `n8n` wordmark now uses the brand orange, matching the
+  website** (`#E18528`, derived from the site's accent color) rather than ANSI
+  red. It degrades gracefully — a 256-color terminal gets the nearest orange, a
+  16-color one keeps the old red — and piped output and `NO_COLOR` stay plain,
+  exactly as before.
+
+- **Breaking: `preflight`'s profiles are replaced by two orthogonal flags.**
+  `--full` and the `Profile` model are gone. Depth is now `--simulate`
+  (**additive** — appends the local-engine run of your code) and `--offline`
+  (**subtractive** — drops the instance-reads tier), and they compose:
+
+  ```
+  preflight                       static + instance reads            (the default gate)
+  preflight --simulate            + a local-engine run of your code
+  preflight --offline             static only — no instance contact
+  preflight --offline --simulate  static + local engine, no instance
+  ```
+
+  **Migration:** `--full` → `--simulate`. And read the next entry carefully —
+  `--offline` still exists but means something narrower.
+
+- **Breaking: `preflight --offline` no longer runs the local-engine replay.**
+  It used to mean "static + engine, no instance"; it now means "static only".
+  The flag name is unchanged, so **nothing will error** — an air-gapped CI job
+  on `preflight --offline` simply stops running the engine and quietly loses
+  that coverage. **Migration:** `preflight --offline --simulate` is the old
+  `--offline`. (This narrowing is also what makes `--offline` fast enough for
+  the per-edit hook: it now spawns no Docker container.)
+
+- **Breaking: `preflight --json` replaces `profile` with `flags`.** Where the
+  report carried `"profile": "default" | "full" | "offline"` it now carries
+  `"flags": {"simulate": false, "offline": false}`. Agents key on this. Every
+  other field is unchanged, and each entry in `checks[]` gains an optional
+  `details: string[]`.
+
+- **`preflight` with no workflow and an empty `"workflows"` config now checks
+  every *pulled* workflow** instead of erroring with "no workflow ids" — the
+  behaviour the `check` verb had, kept now that `preflight` absorbs it.
+
+- **A workflow folder with an unreadable `.decanter.json` no longer fails your
+  gate.** `check` scanned *folders*, so a corrupt state file anywhere under
+  `workflows/` was a hard error for the whole run. `preflight` grades resolved
+  *workflows*, and a folder whose state won't parse can't resolve to one — so
+  it is named in a warning (`corrupt .decanter.json (…) — skipping this
+  folder`) and skipped, while every healthy workflow is still graded. The fact
+  is still reported; it just no longer blocks work on unrelated workflows.
+
+- **`preflight --simulate` accepts multiple workflows.** The old `simulate`
+  verb took exactly one; preflight loops, so a multi-ref run spins one engine
+  container per workflow, serially.
+
+- **The scaffolded template now runs `preflight --offline` where it ran
+  `check`** — the PostToolUse verify hook, both `package.json` scripts, and the
+  agent-facing prose in `AGENTS.md` / `CLAUDE.md`. *Existing sync dirs keep
+  their files*: re-run `n8n-decanter init` to be offered the refresh, and note
+  that init leaves locally-modified files alone, so a hand-edited hook or
+  `package.json` still invokes a removed verb until you update it yourself.
+
+- The scaffolded agent permission allowlist swaps its `check`/`status`/
+  `simulate` rules for a `diff` pair (both the bare and `npx` shapes);
+  `preflight --simulate` is already covered by the existing `preflight:*` rule.
+
+- The interactive picker's action menu is now `preflight`, `preflight
+  --simulate`, `diff`, `pull`, `push`, `watch`, `executions` — a menu row may
+  carry flags, which is how the browsable local-engine run survives the fold.
+
+- **The scaffolded agent contract now treats `push` as part of finishing the
+  work, and reserves "ask the user first" for `publish`.** A push lands on the
+  workflow's **draft** and never changes what is running; only `publish` /
+  `push --publish` / `unpublish` do. The old rule gated both behind "only when
+  the user asks", so an agent handed "build me an hourly job that tags orders"
+  would build the structure in n8n, write and verify all the Code, and then
+  **stop** — leaving every Code node empty on the instance and the real code in
+  the repo, reporting "ready to push". Correct by the old rule, and not what
+  anybody asked for. Agents are now told to push once offline checks pass, to
+  say what landed, and to still ask first when the workflow is published/active
+  or a teammate is editing it. Going live remains a deliberate, user-requested
+  step. Affects `template/AGENTS.md.example` (copied into new sync dirs by
+  `init`) and the `/docs/agents` surfaces. *(Surfaced by the Plan 35 blind field
+  test, where the "failing" agent was following the old contract exactly.)*
+
+- **The scaffolded agent contract now follows the `preflight → push → test →
+  publish` flow.** `preflight` is local-only (it no longer runs on the instance),
+  so `test` — which runs the workflow's **draft** — is only meaningful *after* a
+  push. The old contract framed `test` as a pre-push runtime check and ended its
+  loop at `preflight → push`; both are now reconciled to the new order. Affects
+  `template/AGENTS.md.example` and the `/docs/agents` surfaces. *(Same surface
+  the Plan 60 verb reorder changed — kept in lockstep so the blind field test
+  grades agents against a contract that matches the tool.)*
+
+- **Breaking: `preflight` no longer runs the instance-side `test` stage.** It
+  ran `test_workflow` against n8n's **draft**, while every other stage graded
+  your **local files** — so whenever a push was pending, one score described
+  two different versions of the workflow, flagged only by a `-10` parity warn.
+  A report could read *caution, 90/100* while its runtime evidence was about
+  code you weren't shipping. `preflight` now grades local code only; the
+  instance is read for sync facts and never executed.
+
+  The documented flow is **`preflight` → `push` → `test` → `publish`**: verify
+  local code, make it the draft, run what you actually pushed, then go live.
+  Nothing was removed from the toolbox — the instance run moved to where it
+  means something.
+
+  **Migration:** a CI job that gates on a plain `preflight` no
+  longer gets an instance run inside that gate — the draft is never executed by
+  preflight. To keep instance-run coverage, add `n8n-decanter test` as its own
+  step **after** your push step (`--require=test` users get a hard error with
+  this guidance; default-profile users get this note).
+
+- **Breaking: `preflight --require=test` is rejected**, with a message pointing
+  at the new flow rather than a bare "unknown check". The `test` id is gone
+  from `--require`, from `--json` `checks[]`, and from `coverage`.
+
+- **`preflight` auto-fetches a capture only under `--simulate`** — the flag
+  that adds the one stage which consumes a capture. Without it there is no
+  runtime stage, so preflight no longer fetches, and a missing or stale capture
+  is reported as `info` rather than `warn` — nothing would consume one
+  (`--offline` never reaches the instance to fetch either way).
+
+- The `parity` warn is reworded. It was a caveat about the runtime tier
+  grading the wrong artifact; that's no longer possible, so it is now the plain
+  next step: *"local code differs from the draft in N node(s) — push to make it
+  the draft, then test"*.
+
+- **The local-engine replay is the sole runtime stage** (`preflight --simulate`)
+  and needs Docker. For runtime evidence without Docker, push and then run
+  `test`.
+
+- **Node-file type checking moved off TypeScript's legacy `node10` module
+  resolution** to `moduleResolution: "bundler"` (with `module: "preserve"`), in
+  the scaffolded `tsconfig.json`. This matches what push actually does — `.ts`
+  nodes are compiled with esbuild in bundling mode — and keeps the documented
+  extensionless import style working (`import { total } from
+  "../../shared/money"`). It also unblocks TypeScript 6, which turns `node10`
+  into a hard error (`TS5107`), and TypeScript 7, which removes it outright.
+  `node16`/`nodenext` were **not** chosen: they reject extensionless relative
+  imports (`TS2835`) and would force every node file to be rewritten with `.js`
+  extensions. No change to which Node.js versions are supported. *Existing sync
+  dirs keep their current `tsconfig.json`* — re-run `n8n-decanter init` to be
+  offered the refresh; if you have hand-edited yours (or created it before
+  template baselines existed), init reports it and leaves it alone, so apply
+  the two-line change yourself when you move to TypeScript 6+.
+
+### Removed
+
+- **Breaking: the `check`, `status`, and `simulate` verbs.** All three were
+  variations on "check my thing", and telling them apart was the single most
+  confusing part of the surface. They fold into two:
+
+  | You used to run | Now run |
+  | --- | --- |
+  | `check [workflow…]` | `preflight --offline [workflow…]` |
+  | `check --no-typecheck` | `preflight --offline --no-typecheck` |
+  | `status [workflow…]` | `preflight [workflow…]` (the scored summary) |
+  | `status --diff` | `diff [workflow…]` (the changed lines) |
+  | `simulate <workflow>` | `preflight <workflow> --offline --simulate` |
+  | `simulate --network-none` | `preflight --simulate` (always network-none) |
+
+  Each removed verb exits non-zero naming its replacement, so a stale script
+  fails loudly rather than silently. **Note the `simulate` row:** the verb
+  needed no credentials, and a bare `preflight --simulate` still runs the
+  instance tier — add `--offline` for the credential-free equivalent.
+
+  Nothing was lost with the verbs. The compliance guard still gates every push
+  and watch save (only the standalone *view* is gone, and preflight's `layout`
+  finding now lists every violation); the publish state, live-lags-draft note
+  and snapshot-stale hint are preflight's `lifecycle` and `snapshot` findings.
+
+- **Breaking: `status`'s CI exit codes.** `status` exited 1 on a code conflict
+  or remote drift, and pipelines gated on that. `diff` always exits 0.
+  **Migration:** gate on `preflight`, whose `drift` check **fails** on a
+  CONFLICT and warns on remote drift (add `--fail-on=warn` to gate on the warn
+  too).
+
+- **`simulate --network-none`.** `preflight` always runs the graded engine
+  replay with no network, so the flag had nothing left to turn off.
+
+- **Breaking: the `preflight --quick` profile.** With the `test` stage gone it
+  was byte-identical to the default profile, and rather than redefine it into a
+  meaning users would have to learn and then unlearn, it is gone. Static-only
+  checking is now `preflight --offline`; the local-engine replay is
+  `preflight --simulate` (see the profile→flags entry above, which retired
+  `--full` and the whole profile vocabulary in the same release).
+
+  **Neither `--quick` nor `--full` is recognized any more — they are simply
+  gone, not rejected with a migration.** The CLI ignores flags it does not
+  know, so `preflight --full` now runs the *default* gate (no engine) and
+  `preflight --quick` runs it too, both exiting 0. **If you have either in a CI
+  job, update it in the same step as this upgrade** — nothing will tell you at
+  runtime. `--full` → `--simulate`; `--quick` → `--offline`.
+- **Breaking: `preflight --trigger <node>`.** It existed only to feed the
+  removed instance `test` stage; since that stage's removal it parsed and did
+  nothing. `test --trigger <node>` (the post-push instance run) keeps the flag
+  — that is where trigger selection acts.
+
+### Fixed
+
+- **Renaming a `.ts` node in n8n no longer leaves it stuck on "push pending".**
+  A `.ts` node that imports from `shared/` (or an opted-in npm package) is
+  compiled with esbuild's bundler, and esbuild labels every bundled module with
+  a `// <path>` comment. That label used the node's **own filename**, so it
+  landed inside the compiled bytes — and inside the `@ts-n8n sha256:` marker.
+  Rename the node in n8n, `pull` renames `compute.ts` → `ümläut-nödé.ts`, and
+  the artifact changed even though **not one line of your source did**: `diff`
+  reported a difference that was purely the comment line, and the node read
+  "local changes — push pending" until you pushed a no-op. The entry label is
+  now a fixed name, so a pure rename round-trip is byte-stable and comes back
+  clean.
+
+  **One-time effect when you upgrade:** because the compiled bytes changed, the
+  first `diff`/`pull` after upgrading reports **"modified, not yet pushed"** for
+  every `.ts` node **that has imports** — a comment-line difference only. One
+  `push` per workflow clears it, and it is a plain push, not a conflict: the
+  remote code is untouched, so the drift guard does not trip and `--force` is
+  not needed. `.ts` nodes **without** imports compile through a different path
+  that never embedded the name, and `.js` nodes are unaffected.
+
+- **The scaffolded MCP guard now starts under a *local* install, not only a
+  global one.** `init`'s `.mcp.json` / `opencode.json` spawned the guard as a
+  bare `n8n-decanter mcp connect`, which only resolves when the CLI is on the
+  agent's `PATH` — i.e. a **global** install. With decanter installed as a
+  **local** project dependency the command silently failed to start, so the
+  agent got no guarded route and fell back to whatever other n8n MCP it had,
+  unguarded. The scaffolded command is now `npx --no-install n8n-decanter mcp
+  connect`, which resolves the local `node_modules` bin **and** a global
+  install; `--no-install` never downloads from npm, so a genuinely missing
+  install fails loudly instead of silently. (Plan 58.)
+
+- **The scaffolded agent permissions now cover `npx n8n-decanter …` — including
+  the `push --force` denial.** The same local-install gap applies to the CLI
+  calls an agent makes in a shell: under a local (devDependency) install a bare
+  `n8n-decanter <verb>` is not on `PATH`, so the working form is
+  `npx n8n-decanter <verb>`. The permission matcher keys on the command prefix,
+  so that form previously matched **neither** the allow rules (every safe call
+  would stop to ask) **nor the `push --force` deny rule** — meaning the
+  force-push guard rail could be sidestepped simply by invoking through `npx`.
+  Both lists now carry the `npx` forms (Claude Code `settings.json` and
+  opencode), and the scaffolded `AGENTS.md` tells agents to add the prefix when
+  the bare command is not found. Installing globally is **not** required — a
+  per-sync-dir devDependency remains fully supported. (Plan 58.)
+
 ## [0.7.0] - 2026-07-24
 
 ### Added

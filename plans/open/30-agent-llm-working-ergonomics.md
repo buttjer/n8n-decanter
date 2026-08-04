@@ -7,7 +7,12 @@ tuning), which carry design decisions.
 **Status:** Partially landed via PR #107/#114 (Task 8a skills docs + install
 commands, Task 8c core n8n-docs scaffold, most of Task 10's allow additions);
 **Themes A / B / D and Tasks 5–7 remain open.**
-**Snapshot:** 2026-07-23T06:57Z @ 710d3f1
+**Snapshot:** 2026-07-25T21:30Z @ 83e61e9 *(reworked for the 2026-07-24/25
+decisions: #163 made `pull`/`push` part of the work — the "Design tension"
+centerpiece is resolved from the outside, Task 1's cold-start and Task 9's loop
+now end at push → test; #162/Plan 60 made `preflight` local-only — Task 7's
+ladder and Task 9's gate description no longer include an instance `test` rung.
+Original passages preserved inline where superseded.)*
 **Theme:** Make an LLM coding agent measurably more effective *and* safer the
 moment it lands in a synced dir — codify session-start orientation ("check
 `status` before you edit; pull-first when it drifted"), sharpen the offline loop,
@@ -136,6 +141,27 @@ invests in it deliberately.
 
 ## Design tension to resolve first — "pull before working" vs. "pull is user-gated"
 
+**RESOLVED FROM THE OUTSIDE (maintainer, 2026-07-24 — PR #163): the tension no
+longer exists.** This section proposed threading a needle between "pull before
+working" and the then-settled policy that `pull`/`push` happen *only when the
+user asks*. #163 dissolved the needle: the scaffolded contract now treats
+**`pull`/`push` (draft-only, reversible) as part of doing the work**, and
+reserves "only when the user asks" for what changes the **live** instance
+(`publish`/`unpublish`, archiving existing workflows). Driven by the Plan 35
+field-test evidence — three blind sessions finished all the work locally,
+reported "ready to push", and left every Code node empty in n8n, each one
+correctly obeying the old policy.
+
+What survives of the original resolution is the part that was always right:
+**orient before you edit.** The read-only `status` is still the recommended
+cold-start check — not as a way to *avoid* pulling, but because editing on top
+of unknown drift is the mistake to prevent. On drift, the agent now simply
+**pulls and continues** (pull is part of the work); a *conflict* — local edits
+vs. remote edits on the same node — is still surfaced to the user before
+overwriting either side.
+
+<details><summary>Original section (pre-#163), kept for the record</summary>
+
 The maintainer's instinct ("pull before starting is recommended") collides with
 the settled policy that **`pull` is a live-instance op the agent runs only when
 the user asks** (it writes local files and re-baselines drift). The resolution
@@ -150,6 +176,8 @@ This keeps the existing safety gate intact while giving the agent the safety of
 "knowing the remote state before editing." Keep the "pull only when the user
 asks" policy unchanged.
 
+</details>
+
 ## Tasks
 
 Grouped by theme; each theme is independently shippable (split the PRs by theme).
@@ -159,16 +187,20 @@ Grouped by theme; each theme is independently shippable (split the PRs by theme)
 1. **Add a "Before you start a workflow task" section to
    [template/AGENTS.md.example](../../template/AGENTS.md.example)** (near the top,
    before "How this differs…"): the recommended cold-start sequence —
+   *(reworked 2026-07-25 for #163/#162: pull is part of the work, and the loop
+   ends at push → test, not at "ready to push")*
    - Run `n8n-decanter status <workflow>` (or bare `status` for all) **first** —
      read-only, contacts the instance, reports drift / conflict / push-pending.
-   - **Drift or a conflict warning?** (Post-Plan-32 there are no `.remote.js`
-     artifacts — drift/CONFLICT surfaces as `status` warnings, plus the
-     informational snapshot-stale hint for structure.) Surface it and
-     **recommend a `pull` before editing** (agent asks; does not auto-pull).
-     Editing on top of known drift is the mistake this prevents.
-   - **Clean?** Edit freely, verify offline, report ready-to-push.
-   - State the framing explicitly: *the read-only `status` is the "pull-first"
-     check.*
+   - **Drift?** (Post-Plan-32 there are no `.remote.js` artifacts —
+     drift/CONFLICT surfaces as `status` warnings, plus the informational
+     snapshot-stale hint for structure.) **Pull and continue** — pull is part of
+     doing the work (#163). Editing on top of known drift is the mistake this
+     prevents. A **conflict** (local *and* remote edits on the same node) is the
+     one case to surface to the user before overwriting either side.
+   - **Clean?** Edit, verify locally (`preflight`), **push**, then `test` — and
+     say what landed. Going live (`publish`) stays the user's call.
+   - State the framing explicitly: *orient before you edit; the read-only
+     `status` is how you know.*
 2. **Mirror it into the docs surfaces** — prepend the orient step to "The default
    loop" in [docs/agents/overview.md](../../docs/agents/overview.md) and add a "Start
    of a task" subsection to [docs/agents/offline-loop.md](../../docs/agents/offline-loop.md);
@@ -407,12 +439,14 @@ framing error in the first draft is **corrected (F4)**.
      4. **instance version → the `n8n-docs` MCP (F5, default-scaffolded)** (or
         `WebFetch docs.n8n.io` if not scaffolded; single-latest, heed "available
         from vX") **+ release-notes page** for version behavior (Task 5, F4).
-     5. **`preflight`** — the single scored, read-only pre-push gate that runs
-        the whole ladder (static → instance reads → a pinned `test`, `--full`
-        adds `simulate`); its rungs **`test`** (instance-side pinned run) and
-        **`simulate`/`scenario`** stay reachable individually for a focused
-        check. *(Plan 36 merged, #117 — `preflight` is the shipped
-        consolidation of rungs 1–5 into one verdict.)*
+     5. **`preflight`** — the single scored, read-only pre-push gate over
+        **local code** (static → instance reads for sync facts; `--full` adds a
+        local-engine `simulate` run — it never executes on the instance, in any
+        profile). **`test` is not a preflight rung** (Plan 60, #162): it runs
+        the *draft* on the instance and belongs **after** the push, once the
+        draft holds your code. `simulate`/`scenario` stay reachable
+        individually for a focused check. *(Plan 36 shipped preflight, #117;
+        Plan 60 moved the instance run out of it.)*
    - **The precedence override — LANDED as "This AGENTS.md wins…" (#107); do not
      re-add.** The template boundary contract shipped and the guard technically
      enforces the one carve-out (`jsCode` writes blocked). Task 7 ships only the
@@ -533,25 +567,29 @@ framing error in the first draft is **corrected (F4)**.
 ### D. Loop clarity & guardrail polish (P2)
 
 9. **A canonical "recommended agent loop" picture** in
-   [docs/agents/overview.md](../../docs/agents/overview.md): *orient (`status`) →
+   [docs/agents/overview.md](../../docs/agents/overview.md) *(loop reworked
+   2026-07-25 for #163/#162 — the old version gated `test` inside preflight and
+   ended at "report ready-to-push", both retired)*: *orient (`status`) →
    research (the guarded `n8n-instance` MCP / `executions` / `data-tables` /
-   version-aware `n8n-docs` MCP) → edit → verify offline (`node run` / `check`)
-   → **gate (`preflight` — the single scored, read-only pre-push gate: static +
-   instance reads + a pinned `test`/`simulate` run)** → report ready-to-push.*
-   One diagram agents and humans share (plain Markdown / a mermaid fence — no
-   bespoke MDX). **Plan 36 merged (#117):** `preflight` is the shipped
-   consolidation of the verify ladder — feature it as the gate step rather than
-   listing `check`/`test`/`simulate` loose (they remain the individual rungs it
-   orchestrates). **Fix in passing:** `overview.md` still names "the `mcp serve`
-   guard-proxy" where `mcp connect` is the scaffolded default, and its loop is a
-   single sentence with no orient step.
+   version-aware `n8n-docs` MCP) → edit → **gate (`preflight` — the single
+   scored, read-only check of your local code)** → **`push`** (local becomes
+   the draft — part of finishing the work) → **`test`** (run what you actually
+   pushed) → say what landed; `publish` only when the user asks.* One diagram
+   agents and humans share (plain Markdown / a mermaid fence — no bespoke MDX).
+   Feature `preflight` as the pre-push gate rather than listing
+   `check`/`simulate` loose (they remain the rungs it orchestrates); `test` is
+   deliberately *outside* it, after the push (Plan 60). **Fix in passing:**
+   `overview.md` still names "the `mcp serve` guard-proxy" where `mcp connect`
+   is the scaffolded default, and its loop is a single sentence with no orient
+   step.
 10. **Audit + trim the scaffolded permission allowlist** — mostly landed
-    ([settings.local.json.example](../../template/.claude/settings.local.json.example)
+    ([settings.json.example](../../template/.claude/settings.json.example) —
+    renamed from `settings.local.json.example` in #149/Plan 56 —
     already pre-allows `check`/`node`/`pull`/`simulate`/`scenario`/`status`/
     `list`/`executions`/`data-tables`/`completion` + `mcp__n8n-docs`). Remaining
     work is a **trim pass**: the `delete` verb is gone (#107) so drop any
     "delete denied" mention; the deny list still carries dead `Edit(**/*.remote.js)`
-    entries (both `settings.local.json.example` **and** `opencode.json.example`,
+    entries (both `settings.json.example` **and** `opencode.json.example`,
     plus opencode's stale "two file-level invariants … `*.remote.js`" comment) —
     `.remote.js` artifacts were removed in Plan 32, so trim them. Note plain
     `push` is **prompt-gated by omission**, not denied. Add any genuine gap;
@@ -581,9 +619,12 @@ framing error in the first draft is **corrected (F4)**.
 
 ## Notes
 
-- **Keep the "pull only when the user asks" policy.** The session-start
-  recommendation is *read-only `status` first + ask before pulling* — it does
-  **not** loosen the live-instance gate (see "Design tension" above).
+- ~~**Keep the "pull only when the user asks" policy.**~~ **Superseded by #163
+  (2026-07-24):** the only-when-asked gate now covers `publish`/`unpublish` and
+  archiving existing workflows — **not** `pull`/`push`, which are part of doing
+  the work (a push lands on the draft and never changes what runs). The
+  session-start recommendation is *read-only `status` first; on drift, pull and
+  continue; surface only conflicts* (see the resolved "Design tension" above).
 - **CHANGELOG/PLAN implications:** Theme A → docs only, no PLAN flow change.
   Task 8's staged-`init` wiring is superseded (see the banner) — and note
   `N8N_MCP_TOKEN` *does* exist now, landed in Plan 32 as decanter's **own**

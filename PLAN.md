@@ -26,15 +26,17 @@ n8n-decanter/
   .decanter-auth.json     # MCP OAuth credentials (gitignored; minted by init)
   decanter.config.json
   n8n-decanter.mts        # CLI entry (verb-first: `n8n-decanter <verb> …`):
-                          #   init | pull | push | status | check | watch |
+                          #   init | pull | push | diff | preflight | watch |
                           #   publish | unpublish | list | executions |
-                          #   data-tables | test | simulate | completion +
+                          #   data-tables | test | completion +
                           #   namespaces: node (run), scenario (create|check),
-                          #   mcp (connect|serve)
+                          #   backup (create|restore|list), mcp (connect|serve)
   lib/                    # implementation: api, compile, config, datatables,
-                          #   diff, engine, executions, git, init, lifecycle,
+                          #   diff, engine, errors, executions, git, init,
+                          #   lifecycle,
                           #   mcp, mcpconnect, mcpserve, picker, prompt,
-                          #   pull, push, run, simulate, state, status, style,
+                          #   mirror, preflight, pull, push, run, simulate,
+                          #   state, status, style, skills,
                           #   template, testrun, util, validate, watch (one
                           #   .mts each) + types.mts (shared data-model shapes)
   data-tables/            # optional: fetched data-table schema + rows (plans/25)
@@ -72,8 +74,10 @@ n8n-decanter/
   jsCode-less JS Code node to `""` at the read choke point so every verb sees
   it; (b) the scaffolded **`.mcp.json`/`opencode.json` wire the guard by
   default** (see "MCP guard" below). Losses accepted: no client-side `$('…')`
-  rewrite in local `.ts` sources on rename (n8n never sees `.ts`; documented
-  as a by-hand step), and `create`'s enforced validate-before-create is now
+  rewrite on rename — this was scoped at the time as "`.ts` sources only,
+  since n8n rewrites the rest", which **Plan 64 falsified**: the MCP op
+  rewrites no refs at all, so the by-hand step covers every source and every
+  expression parameter. And `create`'s enforced validate-before-create is now
   the skills'/agent's discipline.
 - **Plan 32 (2026-07-22): the workflow code path rides n8n's MCP server; the
   public API stays only where MCP has no equivalent.** The invariant that
@@ -130,18 +134,20 @@ n8n-decanter/
   reads the **draft tip**, shows no write/read race, and **`GET → POST`
   round-trips losslessly** (node ids, credential refs, pinData, webhookId all
   preserved). Hence `backup` sources from REST and redeploys via REST
-  (`lib/backup.mts`, `lib/api.mts` `getWorkflow`/`createWorkflow`). Since both
-  MCP and REST expose only the current tip and can't export a *past* version's
-  content, **git is the only place a redeployable version history can live** —
-  a committed, redeployable backup makes git a real second versioning + DR
-  layer outside n8n. `restore` creates a **new** workflow (new workflow id,
+  (`lib/backup.mts`, `lib/api.mts` `getWorkflow`/`createWorkflow`). REST exposes
+  only the current tip; MCP `get_workflow_version(versionId)` *can* read a *past*
+  version's code (verified 2026-07-25), but only **lossily** — credential refs +
+  `settings` stripped, as above — so neither backend can export a *lossless,
+  redeployable* past version. **git is the only place a redeployable version
+  history can live** — a committed, redeployable backup makes git a real second
+  versioning + DR layer outside n8n. `restore` creates a **new** workflow (new workflow id,
   node ids preserved), landing unpublished — it never reconciles an existing
   one; structure ownership stays with n8n. Consequence: the API-only surface
   is `executions` + `data-tables` + `backup`.
 - **esbuild** compiles `.ts` node files (`bundle: false`, `format: "cjs"`,
   `target: node18`). Comments are stripped and lines shift — accepted.
   Consequence: instance-side edits on TS nodes can't be auto-merged back into
-  the `.ts`; they are *detected* and warned about (`status --diff` to
+  the `.ts`; they are *detected* and warned about (the `diff` verb to
   inspect; the `.remote.js` artifact files died with Plan 32).
 - **`.js` nodes are the lossless default**: pushed/pulled verbatim, byte-identical
   round-trip. Type-check via JSDoc + `checkJs`. Git merges them like any file.
@@ -157,6 +163,25 @@ n8n-decanter/
   Pull strips the marker line before hashing/comparing. Push also sends a
   body-equal node when the remote lacks the marker (so a freshly converted
   `.ts` node gets marked on its first push instead of warning forever).
+- **The compiled artifact must depend only on the SOURCE, never on the node's
+  filename** (decided 2026-07-27, after a real smoke failure). esbuild labels
+  each bundled module with a `// <path>` comment, so anything we name the stdin
+  entry lands inside the compiled bytes — and therefore inside the marker hash.
+  Labelling it with the node's own filename made a *pure remote rename* change
+  the artifact: `pull` renames the local `.ts`, the comment follows, and the
+  node reads "push pending" on a comment-only diff forever. The entry is now
+  labelled with a fixed name (`ENTRY_SOURCEFILE` in `lib/compile.mts`), so a
+  rename round-trip is byte-stable. Two related invariants already held and
+  must keep holding: module labels are **sync-root-relative** (machine-
+  independent hashes, via `absWorkingDir`), and the workflow folder is
+  **sticky** (never follows a remote rename — Plan 27), which is what keeps the
+  surrounding `resolveDir` portion of the label stable too.
+
+  *Why it hid for so long:* the smoke step asserted only `status`'s **exit
+  code**, and `status` exited 0 for "push pending" (it reserved 1 for
+  conflicts). Plan 59 replaced it with a `diff` **content** match, which is what
+  finally surfaced it. The lesson is in the test shape, not the code: assert the
+  reported state, not just the exit code.
 - **Git workflow (decided 2026-07-19; releases decoupled 2026-07-21):
   protected main, releases via a dedicated release PR.** No direct commits to
   main; short-lived branches, squash-merged via PR (linear main, one commit per
@@ -213,8 +238,8 @@ workflows/
   same rename machinery migrates pre-`code/` flat layouts.
 - **`workflow.json` is a read-only snapshot** (Plan 32 Task 6, promoted from
   nice-to-have to core since so much offline tooling reads it): pull rewrites
-  it from the workflow *tip*; nothing pushes it; `status` prints an
-  informational stale hint when the remote structure moved. Pretty-printed
+  it from the workflow *tip*; nothing pushes it; `preflight`+s `snapshot`
+  check reports an informational stale finding when the remote structure moved. Pretty-printed
   with stable key order → clean review diffs of structure changes made in
   n8n. The one meaningful local edit is re-pointing a `//@file:` placeholder
   (the human-visible file map; push honors it — that's how `.js` ↔ `.ts`
@@ -387,13 +412,54 @@ The remote list rides `search_workflows`. Everything else about the picker
 (type-to-filter, verb menu, resume loop, skeleton rows, TTY-gating, pure
 state machine exported for tests) is unchanged from Plans 19/23/27.
 
+Pulled entries are ordered **newest-synced first** (Plan 29) by a pure exported
+`sortByRecency`; the CLI applies it to the **local** list *before* `mergeRemote`,
+which appends available-then-unavailable remotes, so the three-group order above
+survives for free. **Decision — the recency signal is `<slug>/.decanter.json`'s
+mtime, not a stored `lastSyncedAt` field.** Every pull and push rewrites that
+file unconditionally, but a no-op sync rewrites it *byte-identically*, so git
+sees no diff and the auto-commit stays a real no-op; a committed timestamp would
+change on every sync and turn no-op syncs into churn plus spurious commits.
+Known limitation, accepted: a fresh `git clone` stamps every state file with the
+checkout time, so ordering degrades to the name tie-break until the first local
+sync — mtime is a *local-activity* signal, not history. Scripted `list` output
+keeps its dir/alphabetical order; re-ordering it would change machine-read
+output for no gain.
+
+A picker-run verb that fails on a **forceable** gate offers a retry (Plan 29).
+`--force` bypasses exactly one gate — the per-node code-drift guard — so the
+offer is keyed on a typed **`ForceableError`** (`lib/errors.mts`) thrown by
+`assertNoDrift`, never on sniffing the message: the compliance guard keeps
+throwing a plain `Error`, so a layout violation can never be offered a `--force`
+that wouldn't help it. The confirm defaults to **No** (bare Enter, anything but
+`y`/`yes`, and EOF all decline) and its copy says **draft**, matching what a
+forced push actually overwrites since Plan 32. On yes the *same* menu row
+re-dispatches with `force: true`, so a flag-carrying row keeps its flags. The
+decision lives in the loop, not inside `runPicker`: the readline prompt runs
+after `runPicker`'s `finally` has restored the terminal, and is closed before
+the next round so raw-mode/keypress re-attach cleanly. Scope: the interactive
+`pickerLoop` session only — the no-ref single-select path runs its verb on the
+ordinary non-interactive path, which already prints the `--force` hint.
+
+The banner wordmark's `n8n` columns render the **website's brand orange**
+(Plan 29) via `style.brand`: `--color-accent-500: oklch(0.7 0.15 60)` converts
+to `#E18528`, emitted as a 24-bit SGR because `styleText` has neither an orange
+nor truecolor. Gating is delegated to `styleText` itself (one rule for every
+color: non-TTY, `NO_COLOR`, `FORCE_COLOR`), and the depth ladder degrades to
+xterm-256 `172` then to the pre-Plan-29 `red`. `style.mts` holds the single
+derived value for the CLI side; semantic reds (diff `-` lines, the error prefix)
+are deliberately left alone.
+
 Output follows **one rule: styling and transient output exist only when the
 target stream is a TTY**; piped output is plain line-oriented text and no
 information is carried by color alone (the `⊘` glyph carries the third state
-by shape). Exit codes: `status` exits **1 on code conflict/remote code
-drift** — narrowed by Plan 32: remote *structure* changes are an
-informational snapshot-stale hint, not drift (structure is n8n's business,
-and MCP/skills edits would otherwise keep CI permanently red). `DEBUG=1`
+by shape). Exit codes: `preflight` exits **1 on a `not ready` verdict** — a
+code conflict is a `drift` **fail**, remote code drift a `drift` warn; remote
+*structure* changes are an informational `snapshot` finding, not drift
+(narrowed by Plan 32: structure is n8n's business, and MCP/skills edits would
+otherwise keep CI permanently red). **`diff` always exits 0** — it is an
+inspection view like `git diff`, not a gate (Plan 59; this dropped the old
+`status` verb's CI exit codes, and CI migrates to `preflight`). `DEBUG=1`
 prints stack traces.
 
 ## Pull flow (`n8n-decanter pull [id…]`)
@@ -401,9 +467,10 @@ prints stack traces.
 For each configured workflow:
 
 1. MCP `get_workflow_details` — the tip (draft if one exists, else the
-   published content; a *superseded* published version is unreadable over
-   MCP, so pull syncs the tip by design). Unavailable → the server's
-   guidance text + the CLI's enable hint.
+   published content). Pull mirrors the **tip** by design; a superseded
+   published version *is* readable over MCP (`get_workflow_version(versionId)`,
+   verified 2026-07-25), but decanter syncs the tip, not history. Unavailable →
+   the server's guidance text + the CLI's enable hint.
 2. Locate the local folder by id (scan `.decanter.json`s under root). An
    existing folder is kept as-is (sticky, Plan 27); a new one gets the
    kebab slug (`<slug>-<id8>` + warn on collision). Cache the display name.
@@ -416,7 +483,7 @@ For each configured workflow:
 4. For each JS Code node (`n8n-nodes-base.code`), matched by node id:
    - **Marker present** → TS-managed: compare `hash(remote body)` vs
      `hash(compile(local .ts))` — in sync → nothing; local == lastPushedHash
-     → **instance-side edit**: warn (inspect via `status --diff`), `.ts`
+     → **instance-side edit**: warn (inspect via `diff`), `.ts`
      untouched; remote == lastPushedHash → local modified, info; both moved →
      **CONFLICT** warning. No `.remote.js` files are written (Plan 32).
    - **No marker, local `.ts` exists** → never clobber TS source: keep the
@@ -466,11 +533,14 @@ Guard errors abort and are *not* bypassable with `--force`.
    to go live)` / `— unpublished draft` / `— published: code is live now`.
 6. Optional auto-commit (`commitOnPush`).
 
-## Compliance guard (`n8n-decanter check [id…]`)
+## Compliance guard (`lib/validate.mts` — the push/watch gate + preflight+s `layout` check)
 
 Unchanged by Plan 32 in substance — the guard validates the *file layer*,
 which is exactly the layer decanter still owns. Runs at the start of every
-push and standalone as `check` (offline, credential-free).
+push (and every watch save), and as `preflight`+s `layout` check — offline and
+credential-free under `--offline`. Plan 59 retired the standalone `check`
+verb: it removed a *view*, not a *gate*, and preflight+s `layout` finding now
+carries every violation in its `details` (what `check` printed in full).
 
 Errors (block push / exit 1): inline `jsCode` in the snapshot instead of a
 placeholder; placeholders referencing missing files, `.remote.js` leftovers,
@@ -484,7 +554,9 @@ and expression parameters).
 Warnings (don't block): unresolved `.remote.js` / `workflow.remote.json`
 leftovers — pre-Plan-32 artifacts; port and delete them.
 
-Typecheck gate: unchanged (see Type checking; scoping, template verify hook).
+Typecheck gate: unchanged (see Type checking; scoping, and the template verify
+hook — which spawns `preflight --offline` since Plan 59, Prereq 1).
+`preflight --no-typecheck` skips it, the escape hatch `check` had.
 
 ## Structure & lifecycle acts (n8n's MCP + pull-reconcile)
 
@@ -494,11 +566,18 @@ decanter's contract is the **reconcile**:
 
 - **Workflow rename** (`setWorkflowMetadata`, or the UI) → next `pull`
   re-caches the display name; the folder never moves (Plan 27).
-- **Node rename** (`renameNode`; n8n rewrites connections and `$('…')`
-  expression refs server-side, node id stable) → next `pull` renames the
+- **Node rename** (`renameNode`; node id stable) → next `pull` renames the
   local file (kebab collisions get `-<id8>`), re-points the placeholder,
-  updates the id-keyed map. `$('…')` refs inside local `.ts` sources are a
-  documented by-hand step (n8n holds compiled output, never `.ts`).
+  updates the id-keyed map. **The MCP op rewrites the node name and the
+  connections only** — verified live against n8n 2.30.7 and 2.33.3 (Plan 64):
+  every `$('…')` ref is left dangling, in Code-node source *and* in other
+  nodes' expression parameters, and the op reports success with
+  `validationWarnings: []`. Pull mirrors that faithfully; the dangling-ref
+  compliance error is what surfaces it. The n8n **editor** does rewrite refs,
+  but client-side in the browser before it saves — there is no server-side
+  rewrite for any client. Repair is a documented by-hand step, expression
+  parameters over MCP first (a forwarded write schedules a mirror pull that
+  would clobber an unpushed code fix), then local sources, then `push`.
 - **Code node added** (`addNode` **without** `jsCode` — the guard blocks
   code) → the node is born empty; `getWorkflowDetails` normalizes the
   missing `jsCode` to `""`, so `pull` lands it as an empty `code/` file
@@ -576,8 +655,13 @@ transports:
 - **`mcp connect` (`lib/mcpconnect.mts`) is the default route** — a stdio MCP
   server the agent spawns itself, which is what lets `init` scaffold a
   static, secret-free `.mcp.json`/`opencode.json` entry
-  (`{"command":"n8n-decanter","args":["mcp","connect"]}`): the instance MCP
-  is wired the moment init runs. One JSON-RPC message per line; stdout is
+  (`{"command":"npx","args":["--no-install","n8n-decanter","mcp","connect"]}`):
+  the instance MCP is wired the moment init runs. The `npx --no-install` prefix
+  (Plan 58) resolves the command whether decanter is installed globally or as a
+  local project dependency — a bare `n8n-decanter` only resolves on the agent's
+  `PATH` (a global install) and would otherwise **silently fail to start**,
+  dropping the agent onto whatever other n8n route it has, unguarded;
+  `--no-install` never downloads, so a missing install fails loudly. One JSON-RPC message per line; stdout is
   protocol-only (stderr logging; the dispatcher builds a stderr `Log` and a
   stderr-logging `McpClient`); strictly ordered processing (session-id
   capture race-free); SSE responses decoded back to per-line JSON; n8n's
@@ -631,7 +715,7 @@ transports:
 migration) — a **scenario** (`workflows/<folder>/scenarios/<slug>.json`) is a
 named, committed input set for a workflow — captured from a real run or
 scaffolded from its schemas — replayed and diffed by both
-`simulate --scenario <slug>` and `test --scenario <slug>`. It's the **one
+`preflight --simulate --scenario <slug>` and `test --scenario <slug>`. It's the **one
 committed pin artifact** (Plan 37 folded the earlier `mock`/`fixtures` split
 into it):
 
@@ -661,10 +745,10 @@ into it):
   asserted for it, and divergence is informational, not a fail. A
   capture-only scenario keeps the full per-node diff and
   exit-1-on-divergence semantics unchanged. `--json` reports
-  (`simulate`/`test`) carry `syntheticPins: boolean` and
+  (`preflight --simulate` / `test`) carry `syntheticPins: boolean` and
   `provenance: Record<node, "capture" | "authored" | "scaffolded">`.
 - **Migration.** A pre-Plan-37 `mocks/` dir auto-migrates to `scenarios/`
-  the first time any verb (`simulate`/`test`/`scenario`) touches it (plain
+  the first time any verb (`preflight`/`test`/`scenario`) touches it (plain
   `renameSync`, git-recorded); refuses when both dirs exist. A leftover
   `fixtures/` dir is a **hard error** naming the replacement — no read
   path, no silent fold (per-node fragments merging onto a gitignored
@@ -672,8 +756,9 @@ into it):
   `_decanterMock` is still read (as `_decanterScenario`) for scenarios
   written before the rename.
 - **`scenario check`** validates one scenario or every scenario in the
-  folder, offline, against the exact runData shape `simulate` consumes
-  (n8n publishes no JSON Schema for execution data); `simulate --scenario`/
+  folder, offline, against the exact runData shape the simulate stage consumes
+  (n8n publishes no JSON Schema for execution data);
+  `preflight --simulate --scenario`/
   `test --scenario` run the same check on load.
 - **Relation to the official skills.** `n8n-workflow-lifecycle-official`
   teaches the same `prepare_test_pin_data` tool for an **ephemeral**
@@ -733,7 +818,7 @@ with n8n.
 `test_workflow` (synchronous; the server caps the run at 5 minutes, so the
 verb uses a dedicated client with a ≥320 s timeout):
 
-- **Pin split = `simulate`'s classification** (shared code): every enabled
+- **Pin split = the simulate stage's classification** (shared `lib/simulate.mts` code): every enabled
   non-pure, non-loop-driver node — trigger/network/credentialed — is pinned
   from the capture (`--execution`, default newest) or a committed scenario
   (`--scenario`, see above); a node with no pinned data is a hard **gap**
@@ -757,36 +842,110 @@ verb uses a dedicated client with a ≥320 s timeout):
   no choice flags, choices are verb composition.
 - **Diff** (client-side): the test execution is read back over MCP
   `get_execution(includeData)`; each pure node with captured expectations
-  diffs first-run/first-output items via `simulate`'s `diffItems`; exit 1
+  diffs first-run/first-output items via `lib/simulate.mts`'s `diffItems`; exit 1
   on divergence; `--json` emits the report. The verb takes exactly ONE
   workflow ref (the plan sketched `[workflow…]`; selectors are per-workflow,
-  so multi-ref was dropped for `simulate` parity).
-- `simulate` stays the offline sibling (decided 2026-07-22): pre-push
-  verification of uncommitted code, CI without an instance, isolation,
-  version rehearsal — docs recommend `test` first everywhere.
+  so multi-ref was dropped for parity with the local-engine replay).
+- The local-engine replay stays the offline sibling (decided 2026-07-22; folded
+  into `preflight --simulate` by Plan 59): pre-push verification of uncommitted
+  code, CI without an instance (`--offline --simulate`), isolation, version
+  rehearsal. *(Docs originally recommended `test` first everywhere;
+  Plan 60/#162 reversed that — `test` runs the draft, so it belongs AFTER the
+  push, and the local-engine replay is the pre-push runtime check.)*
 
 ## Preflight — the scored verification gate (`preflight`, plans/36)
 
-`lib/preflight.mts` orchestrates the whole ladder into one read-only, scored
-verdict. It adds **zero execution paths** — it reuses `check`/`status`/`test`/
-`simulate`/`executions` quietly (a silent `Log`) and scores their returned
-facts. Nothing it does mutates (no push/publish/restore/draft write).
+`lib/preflight.mts` orchestrates the ladder into one read-only, scored verdict.
+It adds **zero execution paths** — it reuses `validateWorkflowDir` /
+`computeSyncFacts` / `runSimulation` / `executions` quietly (a silent `Log`)
+and scores their returned facts. Nothing
+it does mutates (no push/publish/restore/draft write) **and nothing it does
+runs the workflow on the instance**.
+
+**Plan 60 — the ordering fix.** `preflight` originally ran `test` as its
+instance-side runtime stage. `test_workflow` executes n8n's **draft**, while
+every other stage grades **local files**, so whenever a push was pending one
+score described two different artifacts — flagged only by the `parity` warn's
+−10. The verb surface now encodes the honest order:
+
+```
+preflight → push → test → publish
+```
+
+Each step verifies the artifact the previous one produced: `preflight` grades
+local code (reads the instance for sync facts only), `push` makes it the draft,
+`test` grades what was pushed, `publish` goes live. `runTest`'s `neverMutate`
+flag is gone with the stage — the read-only guarantee is now structural
+(preflight never calls `runTest`) rather than a mode.
+
+**`test` has two tiers (Plan 64).** Bare, it grades the draft **statically** —
+`danglingNodeRefs` over the nodes the instance returns — and executes nothing.
+With `--execution`/`--scenario` it is the pinned run, which now runs the static
+scan first so a known-broken draft is never fired at the instance. The
+latest-capture fallback is **gone**: a bare `test` used to execute for real,
+steered by whatever sat in the gitignored `executions/` dir, so the same commit
+behaved differently for different people. `publish` gates on the same scan,
+applied to the `getWorkflowDetails` read it already makes — the instance's
+draft, never the local `workflow.json`, which is a snapshot and would
+false-green on a stale mirror and false-red on a fresh clone. Running it in both
+places is intentional: the instance can change in between, so only the check
+inside `publish` is authoritative for that publish.
 
 - **Ladder (stable check ids agents key on), fast → slow:** static `layout`
   (`validateWorkflowDir`), `types` (`runTypecheckResult`); sync `connect` +
   `access` (one `getWorkflowDetails` — a reach-and-auth success is `connect`
   pass, an `isUnavailableInMcp` refusal is `connect` pass + `access` fail, any
   other error is `connect` fail), `parity`/`drift`/`snapshot` (from
-  `computeSyncFacts` — a per-node code-sync core **extracted from**
-  `statusWorkflow`, which is now a thin renderer over it so `status` stays
-  byte-identical), `lifecycle` (`publicationState`/`publishedVersionLagsDraft`),
+  `computeSyncFacts` — the per-node code-sync fact core, since Plan 59 the
+  single source shared by preflight's sync tier and the `diff` verb;
+  `statusWorkflow`'s standalone summary renderer died with the verb),
+  `lifecycle` (`publicationState`/`publishedVersionLagsDraft`),
   `history` (production-run health), `capture` (a pin source exists + matches
-  the draft); runtime `test` (`runTest` in a new **`neverMutate`** mode) and
-  `simulate` (`runSimulation` headless, `networkNone` forced).
-- **Profiles** (deterministic, no auto-escalation): `--quick` = static+sync,
-  default = +`test`, `--full` = +`simulate`, `--offline` = static+`simulate`
-  (no instance — joins the dispatcher's `offline` set so `loadConfig` skips
-  `requireHost`). A check outside the active profile is a `skip` with an unlock.
+  the draft); runtime `simulate` (`runSimulation` headless, `networkNone`
+  forced) — the **only** runtime stage since Plan 60, opt-in behind
+  `--simulate` since Plan 59, and it replays *local* code on a *local* engine.
+  The check **id** stays `simulate` even though the verb is gone: agents key on
+  it and `--require=simulate` depends on it.
+- **Depth: two orthogonal flags, no profiles** (deterministic, no
+  auto-escalation — Plan 59 deleted the `Profile`/`PROFILES`/`profileSpec`
+  machinery, and `--full`/`--quick` with it, leaving no tombstone: pre-1.0 the
+  maintainer's call was a clean surface over a migration shim, so both are now
+  merely unrecognized flags). `--simulate` is **additive**
+  (appends the local-engine stage); `--offline` is **subtractive** (drops the
+  instance-reads tier and joins the dispatcher's `offline` set, so `loadConfig`
+  skips `requireHost`). One pure function, `activeStages({simulate, offline})
+  → {sync: !offline, simulate}`, is the whole model; they compose:
+
+  ```
+  preflight                       static + instance reads            (the default gate)
+  preflight --simulate            + a local-engine run of your code
+  preflight --offline             static only — no instance contact  (edit hook, air-gapped CI)
+  preflight --offline --simulate  static + local engine, no instance
+  ```
+
+  **The inversion to remember:** the old `--offline` *profile* implied the
+  engine replay; the new `--offline` *flag* does not. `--offline --simulate` is
+  the old `--offline`. The flag name is unchanged, so nothing errors — it just
+  quietly does less, which is why it shipped as its own **Breaking:** entry.
+- A stage the flags don't activate is a `skip` with an `unlock`, never a silent
+  omission. `--require=<ids>` promotes such a skip to a `fail` (the CI teeth);
+  `--require=test` is rejected via `RETIRED_CHECK_IDS` with the flow as its
+  remediation.
+- **`--viewer`** (Plan 59, with `--simulate` only): leaves a browsable
+  throwaway n8n running so the replayed run can be opened in the UI. It does
+  **not** weaken the safety contract — `runSimulation` already runs two
+  containers, and only the graded `runEngine` one gets `networkNone`. Under
+  `--viewer` a multi-batch-loop workflow reports `simulate` as a **skip**
+  ("a preview, not a pass/fail check"), never a pass: that path returns
+  `ok: true` with an empty diff, so scoring it green would be a lie.
+- **`--no-typecheck`** skips the `types` stage — the escape hatch the retired
+  `check` verb had.
+- **`details[]` on every finding** (Plan 59): with `check` gone, the static tier
+  is the only view of a layout violation or a type error, so a finding carries
+  the *full* list behind its one-line message (every violation, every `tsc`
+  line, the drifted node names, the viewer URL). Correspondingly `layout`/
+  `types` failures carry **no `remediation`** — that field is contractually a
+  runnable command, and "edit these files" is not one.
 - **Scoring/verdict/coverage are pure functions** (unit-tested without IO):
   score starts at 100, each `fail` −40 (a `CONFLICT` `drift` −30), each `warn`
   −10, floor 0. Verdict: any `fail` → `not ready` (exit 1); else any `warn` →
@@ -794,21 +953,52 @@ facts. Nothing it does mutates (no push/publish/restore/draft write).
   promotes a skip of a named check to a `fail` at emit time (so the streamed
   line, the summary, and `--fail-fast` all agree). `--json` emits the report
   (single object, or an array for a multi-ref run); `--fail-fast` stops after
-  the first failure.
+  the first failure. Since Plan 59 the report carries the resolved
+  `flags: {simulate, offline}` where a `profile` string used to be, and each
+  check may carry `details[]` — the machine-readable half of the break, and the
+  one no doc *page* would otherwise mention.
 - **Executions in the gate:** before the runtime tier, a `capture`-source run
   with no explicit `--execution` auto-fetches the newest capture when
   `N8N_API_KEY` is set and the local one is missing/stale (`--no-fetch` opts
-  out; read-only, gitignored). `history` reads recent production runs via a new
+  out; read-only, gitignored). Since Plan 60 this only fires when a runtime
+  stage is active (`--simulate`) — without that flag there is no runtime stage,
+  so a missing capture is `info`, not `warn`. `history` reads recent production runs via a new
   MCP `searchExecutions` wrapper (`search_executions` — shape source-verified
   and smoke-asserted on 2.30.7: `{data:[{id,workflowId,status,mode,startedAt,
   stoppedAt}],count,estimated}`) with a REST `listExecutions({includeData:
   false})` fallback (a new lightweight variant — the old one always pulled full
   run data); a live workflow that's been failing is a `warn`, never a `fail`.
 - **Seams added (all behavior-preserving):** `runTypecheckResult` (fact core
-  under `runTypecheck`), `computeSyncFacts` (fact core under `statusWorkflow`),
-  `runTest({neverMutate})`, `api.listExecutions({includeData})`,
-  `mcp.searchExecutions`. Multi-ref like `pull`/`push`/`status` (no-ref TTY →
-  picker; piped → config workflows; aggregate exit).
+  under `runTypecheck`), `computeSyncFacts` (the per-node code-sync fact core,
+  now shared by preflight's sync tier and `diff`),
+  `api.listExecutions({includeData})`, `mcp.searchExecutions`. *(The
+  `runTest({neverMutate})` seam went with the test stage — Plan 60/#162.)*
+  Multi-ref like `pull`/`push`/`diff` (no-ref TTY → picker; piped → config
+  workflows; aggregate exit) — and, since Plan 59, a no-ref run with an empty
+  config `"workflows"` falls back to every *pulled* workflow, the behaviour the
+  retired `check` verb had.
+
+## Code diffs (`diff`, plans/59)
+
+The promoted half of the retired `status` verb: `preflight` is `git status`
+(the scored summary), `diff` is `git diff` (the actual changed lines). Splitting
+them is what let three overlapping "check my thing" verbs collapse into two with
+no capability lost.
+
+- `lib/diff.mts` — `diffWorkflow` over `computeSyncFacts` (the same fact core
+  preflight's sync tier scores, so the two can never disagree) plus the
+  existing `unifiedDiff`. `.ts` nodes are compiled first, bundling `shared/*`,
+  so the diff shows the exact bytes `push` would send — and a shared-helper edit
+  surfaces on **every** importing node.
+- Prints only nodes that are **not** in sync (`git diff` semantics), plus
+  deleted-remotely warnings; a clean tree says so in one line. The in-sync
+  roll-call, the publish state, the live-lags-draft note and the snapshot-stale
+  hint all moved to preflight findings (`parity` / `lifecycle` / `snapshot`) —
+  nothing was dropped, only relocated.
+- **Always exits 0.** It is an inspection view, not a gate. This deliberately
+  drops `status`'s CI exit codes; a pipeline that gated on drift now gates on
+  `preflight` (whose `drift` check fails on CONFLICT and warns on remote drift).
+- Multi-ref like `pull`/`push`, no-ref TTY → picker.
 
 ## Init flow (`n8n-decanter init [dir]`)
 
@@ -947,7 +1137,8 @@ proxy at a pinned tag to flag newly-added globals (names only, license-clean).
    ([Plan 8](plans/blocked/8-folder-hierarchy-in-sync-layout.md)).
 5. ✅ QoL: `watch`, `status`.
 6. ✅ `init`; 7. ✅ compliance guard + `check`; 8. ✅ structural validation +
-   `rename` (plans/2).
+   `rename` (plans/2). *(`status`/`check` were folded into `preflight`/`diff`
+   in Plan 59; kept verbatim here — this log records what shipped when.)*
 9. ✅ **Plan 32 (2026-07-22): MCP-native code layer** — `lib/mcp.mts` client
    + OAuth, pull/push/status/watch re-based (draft-first, code-only),
    structure verbs forwarded, lifecycle re-based, picker third state, init
@@ -966,7 +1157,7 @@ API-era build that still hold are kept; superseded ones are marked.
 - **`lastPushedHash` means "remote code hash at last sync"** (push *or*
   pull). Pull re-baselines even when surfacing an edit/conflict — otherwise
   push would stay blocked forever after a warned pull. Consequence: after a
-  warned pull, push overwrites the surfaced remote edits; `status --diff` +
+  warned pull, push overwrites the surfaced remote edits; the `diff` verb +
   git history are the safety net.
 - **Hashes are recorded from a post-write confirming read** (Plan 32) — MCP
   `update_workflow` returns a summary, never the workflow; the confirming
@@ -1022,8 +1213,9 @@ API-era build that still hold are kept; superseded ones are marked.
   `callTool`. The smoke suite bootstraps MCP itself (enable + rotate token +
   per-workflow toggle via the owner cookie — spike-only internals, fine for a
   throwaway container) and exercises the gate, draft-first pushes,
-  `--force`, the MCP rename (id stability + server-side reference rewriting,
-  live), watch, and lifecycle on the real image.
+  `--force`, the MCP rename (id stability + server-side **connection**
+  rewriting, live — expression refs are NOT rewritten; Plan 64 task 4 adds the
+  fixture that proves it), watch, and lifecycle on the real image.
 - **`shared/` bundling in `.ts` nodes** (plans/14): unchanged, including the
   export-free entry and CJS-interop rewrite (n8n's task-runner sandbox
   neuters getter descriptors) and the "no-import nodes keep byte-identical
@@ -1034,7 +1226,7 @@ API-era build that still hold are kept; superseded ones are marked.
   locking), which is why the API-era decanter had auto-publish-on-push and a
   PUT-canonical drift guard. Plan 32's MCP path made both obsolete: writes
   are draft-only by construction and the per-node hash check is the conflict
-  protection. The version-aware `status` fields (`versionId` /
+  protection. The version-aware sync-fact fields (`versionId` /
   `activeVersionId`, `publishedVersionLagsDraft`) carried over unchanged —
   they're first-class in the MCP responses too.
 

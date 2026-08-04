@@ -6,6 +6,12 @@
 // lib/engine.mts in-process — the engine integration is exactly what it checks.
 // It boots one n8n container to *capture* a real execution, then lets
 // runSimulation() spin its own throwaway engine containers for the replay.
+//
+// Plan 59 retired the `simulate` VERB; the replay is now `preflight --simulate`
+// (`--viewer` for the browsable run, and `--network-none` is no longer a user
+// flag — preflight forces it on every graded run). Step names below say
+// `preflight --simulate` because that is the surface these lib calls sit under;
+// the calls themselves are one layer below the CLI, unchanged by the rename.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -81,7 +87,7 @@ try {
     writeFileSync(path.join(TMP, "executions", `${exec.id}.json`), JSON.stringify(exec));
   });
 
-  await step("simulate: unedited workflow replays engine-true, exits ok", async () => {
+  await step("preflight --simulate: unedited workflow replays engine-true, exits ok", async () => {
     const report = await runSimulation(TMP, "1", { version: IMAGE_TAG }, log as any);
     assert.equal(report.engineOk, true, `engine error: ${report.engineError}`);
     assert.equal(report.ok, true, `unexpected divergence: ${report.divergent.join(", ")}`);
@@ -90,7 +96,7 @@ try {
     assert.deepEqual(compute.actual, [{ doubled: 42 }], "Compute must execute for real and match capture");
   });
 
-  await step("simulate: a broken Code node diverges and fails", async () => {
+  await step("preflight --simulate: a broken Code node diverges and fails", async () => {
     writeFileSync(path.join(TMP, "code", "compute.js"), "return [{ json: { doubled: -1 } }];\n"); // wrong output
     const report = await runSimulation(TMP, "1", { version: IMAGE_TAG }, log as any);
     assert.equal(report.ok, false, "a broken Code node must fail the simulation");
@@ -100,13 +106,16 @@ try {
     assert.deepEqual(compute.actual, [{ doubled: -1 }]);
   });
 
-  await step("simulate --network-none: hard-isolation replay still passes", async () => {
+  // networkNone is what `preflight --simulate` forces on every graded run
+  // (Plan 59 dropped the user-facing `--network-none` flag), so this step is
+  // now the isolation half of the default path, not an opt-in variant.
+  await step("preflight --simulate (forced network-none): hard-isolation replay still passes", async () => {
     writeFileSync(path.join(TMP, "code", "compute.js"), "const n = Number($input.first().json.body.n ?? 0);\nreturn [{ json: { doubled: n * 2 } }];\n");
     const report = await runSimulation(TMP, "1", { version: IMAGE_TAG, networkNone: true }, log as any);
     assert.equal(report.ok, true, `network-none run diverged/failed: ${report.engineError ?? report.divergent.join(",")}`);
   });
 
-  await step("simulate loop: a single-iteration loop replays engine-true (tier 1)", async () => {
+  await step("preflight --simulate loop: a single-iteration loop replays engine-true (tier 1)", async () => {
     // Hook -> Make(1 item) -> Loop(splitInBatches) --loop--> PerItem --> back to Loop
     //                                               --done--> Fetch(http, pinned)
     const loopWf = { name: "Sim Loop WF", nodes: [
@@ -146,7 +155,7 @@ try {
     assert.deepEqual(perItem?.actual, [{ doubled: 2 }], "PerItem must execute for real inside the loop and match the capture");
   });
 
-  await step("simulate viewer: leaves a browsable run in a kept-alive local n8n", async () => {
+  await step("preflight --simulate --viewer: leaves a browsable run in a kept-alive local n8n", async () => {
     const report = await runSimulation(TMP, "1", { version: IMAGE_TAG, viewer: true }, log as any);
     assert.equal(report.ok, true, `viewer run diverged/failed: ${report.engineError ?? report.divergent.join(",")}`);
     assert.ok(report.url && /\/workflow\/.+\/executions\/\d+$/.test(report.url), `expected a UI execution URL, got ${report.url}`);
@@ -168,7 +177,7 @@ try {
     assert.ok(report.url!.endsWith(`/executions/${results[0].id}`), `URL execId should match the saved run (${results[0].id})`);
   });
 
-  await step("scenario create + simulate --scenario: a committed capture replays identically", async () => {
+  await step("scenario create + preflight --simulate --scenario: a committed capture replays identically", async () => {
     const { slug, gaps } = await writeScenario(TMP, { execId: "1", slug: "happy path" }, log as any);
     assert.equal(slug, "happy-path");
     assert.deepEqual(gaps, [], "the happy-path capture has no gaps");

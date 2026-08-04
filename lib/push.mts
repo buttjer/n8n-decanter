@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { compileTs } from "./compile.mts";
+import { ForceableError } from "./errors.mts";
 import { commitWorkflowDir } from "./git.mts";
 import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, writeState } from "./state.mts";
@@ -13,7 +14,7 @@ export function assertCompliant({ errors, warnings }: ValidationResult, log: Log
   for (const w of warnings) log.warn(w);
   if (errors.length === 0) return;
   for (const e of errors) log.error(e);
-  throw new Error(`${what} does not comply with the decanter layout (${errors.length} problem${errors.length === 1 ? "" : "s"}) — fix the issues above, see also: n8n-decanter check`);
+  throw new Error(`${what} does not comply with the decanter layout (${errors.length} problem${errors.length === 1 ? "" : "s"}) — fix the issues above, see also: n8n-decanter preflight --offline`);
 }
 
 /** Turn a node source file into the jsCode payload (+ hash of the marker-less body). */
@@ -45,7 +46,10 @@ function assertNoDrift(problems: string[], force: boolean, log: Log): void {
   if (problems.length === 0) return;
   for (const p of problems) log[force ? "warn" : "error"](p);
   if (!force) {
-    throw new Error("remote code changed since last sync — pull first (or repeat with --force to overwrite the draft)");
+    // ForceableError, not Error: this is the ONE gate --force bypasses, so the
+    // picker loop may offer a force-retry after it (Plan 29). assertCompliant
+    // must keep throwing a plain Error.
+    throw new ForceableError("remote code changed since last sync — pull first (or repeat with --force to overwrite the draft)");
   }
   log.warn("--force: overwriting remote code changes");
 }
@@ -196,12 +200,12 @@ function verifyRoundTrip(dir: string, state: DecanterState, confirmed: Workflow,
       // means the server normalized the code after the write (recompiling
       // here would be the expensive way to say the same thing)
       if (markerHash !== null && sha256(remoteBody) !== markerHash) {
-        log.warn(`node "${node.name}": remote code does not match its @ts-n8n marker hash after push — the server normalized it? inspect with status --diff`);
+        log.warn(`node "${node.name}": remote code does not match its @ts-n8n marker hash after push — the server normalized it? inspect with \`n8n-decanter diff\``);
       }
       continue;
     }
     if (sha256(readFileSync(localFile, "utf8")) !== sha256(remoteBody)) {
-      log.warn(`node "${node.name}": remote code does not match ${ns.file} byte-exactly after push — the server normalized it? inspect with status --diff`);
+      log.warn(`node "${node.name}": remote code does not match ${ns.file} byte-exactly after push — the server normalized it? inspect with \`n8n-decanter diff\``);
     }
   }
 }

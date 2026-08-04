@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { ForceableError } from "../../lib/errors.mts";
 import type { McpClient } from "../../lib/mcp.mts";
 import { pushWorkflow } from "../../lib/push.mts";
 import type { Log, Workflow } from "../../lib/types.mts";
@@ -132,6 +133,31 @@ describe("pushWorkflow (MCP)", () => {
     assert.equal(updates.length, 0, "nothing written on abort");
     await pushWorkflow(mcp, r, "wf1", { force: true }, log);
     assert.equal(remote.nodes[2].parameters.jsCode, CODE_B, "--force restored the local body");
+  });
+
+  // Plan 29: the picker's force-retry offer keys on the TYPE, so the drift
+  // guard — the one gate --force bypasses — must be the one throwing it.
+  it("marks the drift abort ForceableError; the compliance guard stays a plain Error", async () => {
+    const r = root();
+    const dir = seedFolder(r);
+    const remote = remoteWorkflow();
+    remote.nodes[2].parameters.jsCode = CODE_B + "// UI hotfix\n";
+    const { mcp } = stubMcp(remote);
+    const { log } = capturingLog();
+    await assert.rejects(pushWorkflow(mcp, r, "wf1", {}, log), (err: Error) => {
+      assert.ok(err instanceof ForceableError, `drift abort must be forceable, got ${err.name}`);
+      return true;
+    });
+    // inline jsCode in the snapshot is a layout violation: --force can't fix it,
+    // so it must NOT be forceable
+    const snapshot = JSON.parse(readFileSync(path.join(dir, "workflow.json"), "utf8"));
+    snapshot.nodes[1].parameters.jsCode = "return [];\n";
+    writeFileSync(path.join(dir, "workflow.json"), JSON.stringify(snapshot, null, 2));
+    await assert.rejects(pushWorkflow(mcp, r, "wf1", { force: true }, log), (err: Error) => {
+      assert.ok(err instanceof Error && !(err instanceof ForceableError), "compliance failure must not be forceable");
+      assert.match(err.message, /does not comply with the decanter layout/);
+      return true;
+    });
   });
 
   it("re-baselines silently when the remote moved to exactly the local content", async () => {

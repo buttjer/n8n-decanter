@@ -80,33 +80,60 @@ export function sanitizeFilename(name: string): string {
   return cleaned || "unnamed";
 }
 
+/** A node reference found in source or an expression. */
+export interface NodeRef {
+  /** The node name it points at. */
+  name: string;
+  /** The reference exactly as written — `$('Fetch')`, `$node["Fetch"]`, … */
+  ref: string;
+}
+
 /**
- * Literal single-argument `$('Name')` / `$("Name")` / `$(`Name`)` calls.
- * Heuristic on purpose (no parse): non-literal args like `$(var)`, multi-arg
- * calls, template literals with `${…}`, and the legacy `$node["Name"]` form
- * don't match and are left alone.
+ * The four reference forms n8n itself recognises — its `applyAccessPatterns`
+ * rewrites exactly these on a rename (Plan 64). If n8n treats it as a reference,
+ * our guard has to know it, or a rename strands something nothing reports.
+ *
+ * A quoted-string body: any escape, or any char that isn't the quote/backslash.
  */
-const NODE_REF_RE = /\$\(\s*(['"`])((?:\\.|(?!\1)[^\\\n])*)\1\s*\)/g;
+const QUOTED = String.raw`(['"\`])((?:\\.|(?!\1)[^\\\n])*)\1`;
+const NODE_REF_PATTERNS = [
+  // $('Name') — single literal argument only; $(var), $('a', 2) and $() are
+  // deliberately not matched (a regex cannot resolve them).
+  new RegExp(String.raw`\$\(\s*${QUOTED}\s*\)`, "g"),
+  // $node["Name"]
+  new RegExp(String.raw`\$node\[\s*${QUOTED}\s*\]`, "g"),
+  // $items('Name') / $items('Name', 0) — unlike $(), extra args are the norm here
+  new RegExp(String.raw`\$items\(\s*${QUOTED}\s*[,)]`, "g"),
+] as const;
+/** $node.Name — unquoted, so a name with spaces can never use this form. */
+const NODE_DOT_RE = /\$node\.([A-Za-z_$][\w$]*)/g;
 
 const unescapeRef = (raw: string) => raw.replace(/\\(.)/g, "$1");
 
-/** Distinct node names referenced via literal `$('…')` in a piece of source. */
-export function findNodeRefs(source: string): string[] {
-  const names = new Set<string>();
-  for (const m of source.matchAll(NODE_REF_RE)) {
-    const name = unescapeRef(m[2]);
-    if (!name.includes("${")) names.add(name);
+/**
+ * Distinct node references in a piece of source or expression text.
+ *
+ * Heuristic on purpose (no parse): non-literal args like `$(var)`, and template
+ * literals carrying `${…}`, don't match and are left alone — n8n's own rewriter
+ * has the same ceiling.
+ */
+export function findNodeRefs(source: string): NodeRef[] {
+  // Keyed by the reference AS WRITTEN, not by the name: a node reached both as
+  // `$('Fetch')` and `$node["Fetch"]` has two broken call sites once it is gone,
+  // and the error message names the form so "why does this fail now?" answers
+  // itself. Collapsing to one per name would hide the second.
+  const byRef = new Map<string, NodeRef>();
+  const add = (name: string, ref: string): void => {
+    if (name.includes("${") || byRef.has(ref)) return;
+    byRef.set(ref, { name, ref });
+  };
+  for (const re of NODE_REF_PATTERNS) {
+    // `$items('X', 0)` matches up to the comma — close it so the quoted ref we
+    // show the user is a readable call rather than a dangling fragment.
+    for (const m of source.matchAll(re)) add(unescapeRef(m[2]), m[0].replace(/,$/, ")"));
   }
-  return [...names];
-}
-
-/** Rewrite literal `$('old')` references to the new name, keeping each call's quote style. */
-export function renameNodeRefs(source: string, oldName: string, newName: string): string {
-  return source.replace(NODE_REF_RE, (whole, quote: string, raw: string) => {
-    if (unescapeRef(raw) !== oldName) return whole;
-    const escaped = newName.replace(/\\/g, "\\\\").replaceAll(quote, `\\${quote}`);
-    return `$(${quote}${escaped}${quote})`;
-  });
+  for (const m of source.matchAll(NODE_DOT_RE)) add(m[1], m[0]);
+  return [...byRef.values()];
 }
 
 /** Kebab-case node-file name from a node name ("Parse Order" -> "parse-order"). */

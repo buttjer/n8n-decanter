@@ -219,7 +219,7 @@ Concretely:
    (ladder, profiles, scoring table, safety contract);
    [overview](../../docs/cli/overview.md) command surface + safety table row +
    picker line; the "Preflights" sections in
-   [test.md](../../docs/cli/test.md)/[simulate.md](../../docs/cli/simulate.md)/[check.md](../../docs/cli/check.md)
+   [test.md](../../docs/cli/test.md)/simulate.md/check.md *(the latter two folded into [preflight.md](../../docs/cli/preflight.md) — Plan 59)*
    point at the one-command form; README `## Commands` + the preflights
    feature bullet + compare-table cell; CHANGELOG `[Unreleased]` Added;
    **PLAN.md** new design section (registry, profiles, scoring, safety
@@ -280,7 +280,7 @@ Concretely:
   spike); `test_workflow`'s server-side execution-record footprint worth one
   smoke assertion (does a test run appear in `search_executions`? If so, the
   `history` check should exclude test-mode runs).
-- **Relation to [Plan 26](../open/26-npx-engine-backend.md):** when the npx
+- **Relation to [Plan 26](../draft/26-npx-engine-backend.md):** when the npx
   backend lands, `simulate`'s availability probe (today: Docker) widens
   automatically — preflight inherits it through the registry's availability
   logic; no coupling now.

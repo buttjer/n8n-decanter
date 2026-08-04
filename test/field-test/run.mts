@@ -26,7 +26,7 @@
 //   node test/field-test/run.mts <manifest.json> --dry-run    # print turns, spawn nothing
 //   node test/field-test/run.mts --help
 import { execFile as execFileCb, execFileSync, spawn } from "node:child_process";
-import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -54,7 +54,7 @@ const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
 
-interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
+interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const WORKDIR = manifest.workDir;
 const HARNESS = manifest.harnessRoot;
@@ -84,13 +84,165 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean }
+
+/**
+ * Which workflow the `remote-drift` preHook edits — kept in one place so the
+ * hook and the verifier can't disagree about the target.
+ */
+function driftTargetId(): string | undefined {
+  const t = manifest.seeded.find((s) => s.kind === "s1-skeleton" && s.availableInMCP) ?? manifest.seeded.find((s) => s.availableInMCP);
+  return t?.id;
+}
+
+/**
+ * Resolve a scenario's `verifyWorkflows` to the workflow ids verify should check.
+ *
+ * This field was declared in every scenario spine and **never read** — run.mts
+ * invoked verify with no ids, so every scenario verified every workflow. That is
+ * why S4 reported S3's deliberately-injected drift as its own failure.
+ *
+ * `"all"` keeps the old behaviour (pass nothing → verify discovers everything).
+ * An array selects by manifest `kind`, plus the pseudo-kind `"created"` for any
+ * workflow the AGENT made (present on the instance, absent from `seeded`) —
+ * S2 builds one, and S4 then works on it, so neither can name it up front.
+ */
+function resolveVerifyScope(scn: Scenario): string[] {
+  if (!Array.isArray(scn.verifyWorkflows)) return [];
+  const ids: string[] = [];
+  for (const sel of scn.verifyWorkflows) {
+    if (sel === "created") continue; // resolved below, by exclusion
+    for (const s of manifest.seeded) if (s.kind === sel) ids.push(s.id);
+  }
+  if (scn.verifyWorkflows.includes("created")) {
+    const seeded = new Set(manifest.seeded.map((s) => s.id));
+    for (const slug of trackedWorkflowIds()) if (!seeded.has(slug)) ids.push(slug);
+  }
+  return [...new Set(ids)];
+}
+
+/** Workflow ids of every folder decanter currently tracks in the scratch dir. */
+function trackedWorkflowIds(): string[] {
+  const root = path.join(WORKDIR, manifest.root);
+  if (!existsSync(root)) return [];
+  const out: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const st = JSON.parse(readFileSync(path.join(root, entry.name, ".decanter.json"), "utf8")) as { workflowId?: string };
+      if (st.workflowId) out.push(st.workflowId);
+    } catch { /* not a tracked folder */ }
+  }
+  return out;
+}
 function loadScenario(id: string): Scenario {
   const file = path.join(SCENARIO_DIR, `${id}.md`);
   const md = readFileSync(file, "utf8");
   const m = md.match(/##\s*Orchestration[\s\S]*?```json\n([\s\S]*?)\n```/);
   if (!m) throw new Error(`${id}.md has no \`\`\`json Orchestration block`);
   return JSON.parse(m[1]) as Scenario;
+}
+
+/**
+ * Refuse a scenario subset whose prerequisites are missing — BEFORE spending.
+ *
+ * Some scenarios act on state an earlier one built: S4 opens with "let's tidy
+ * *the orders workflow* … the step that tags high value", which is the workflow
+ * **S2 creates**. A full S1–S4 round satisfies that implicitly, so the coupling
+ * stayed invisible until someone ran a subset.
+ *
+ * Run `S4` alone and the round is not merely wrong, it is wrong in the most
+ * expensive way: the agent hunts for a workflow that does not exist, never
+ * pulls, and `verify.mts` reports "no tracked workflow folders" — a FAIL that
+ * reads like a product defect but is an operator error. That happened
+ * (ftrun-93355, $0.70 burned for zero signal).
+ *
+ * So: declare the dependency in the scenario spine and check it here. Refusing
+ * beats silently auto-including the prerequisite, which would double the spend
+ * without asking.
+ */
+/**
+ * A PATH for a noCli round: everything still resolves EXCEPT `n8n-decanter`.
+ *
+ * Naively dropping each PATH entry that carries the binary is wrong — a global
+ * install lives in the same bin dir as `node`/`npm`/`npx` (nvm, brew), so
+ * dropping it would leave the blind session with no Node at all. Instead each
+ * offending dir is replaced by a shadow dir of symlinks to everything in it
+ * *except* `n8n-decanter`, so only the CLI disappears.
+ *
+ * Why this must exist: a maintainer machine commonly has a global install
+ * (`npm link` from this repo). Inherited, it would sit on the session's PATH
+ * and silently defeat the entire condition — the round would "measure" an agent
+ * that could run the CLI all along.
+ */
+function sanitizedPath(inputPath: string): { PATH: string; npmPrefix: string } {
+  const shadowRoot = path.join(HARNESS, "nocli-path");
+  const out: string[] = [];
+  let shadowed = 0;
+  for (const [i, dir] of inputPath.split(path.delimiter).entries()) {
+    if (dir === "" || !existsSync(path.join(dir, "n8n-decanter"))) {
+      out.push(dir);
+      continue;
+    }
+    const shadow = path.join(shadowRoot, String(i));
+    mkdirSync(shadow, { recursive: true });
+    for (const entry of readdirSync(dir)) {
+      if (entry === "n8n-decanter") continue;
+      const link = path.join(shadow, entry);
+      if (!existsSync(link)) {
+        try {
+          symlinkSync(path.join(dir, entry), link);
+        } catch { /* unreadable/duplicate entry — skipping it only narrows PATH */ }
+      }
+    }
+    out.push(shadow);
+    shadowed++;
+    console.log(`  [noCli] shadowed ${dir} (every command except n8n-decanter still resolves)`);
+  }
+  if (shadowed === 0) console.log("  [noCli] no n8n-decanter found on PATH — nothing to shadow");
+
+  // Shadowing PATH is not enough on its own: `npx` re-resolves its OWN node bin
+  // dir (through the symlink) and finds machine-global installs there anyway —
+  // verified, `npx --no-install n8n-decanter` still succeeded. Pointing npm at
+  // an EMPTY prefix hides them. Its `bin/` goes on PATH so the agent's own
+  // `npm i -g` would still work: we remove the pre-existing install, we do not
+  // block the recovery paths a real user has.
+  const npmPrefix = path.join(HARNESS, "nocli-npm-prefix");
+  mkdirSync(path.join(npmPrefix, "bin"), { recursive: true });
+  mkdirSync(path.join(npmPrefix, "lib", "node_modules"), { recursive: true });
+  return { PATH: `${out.join(path.delimiter)}${path.delimiter}${path.join(npmPrefix, "bin")}`, npmPrefix };
+}
+
+function assertPrerequisites(ids: string[]): void {
+  const problems: string[] = [];
+  ids.forEach((id, i) => {
+    const earlier = new Set(ids.slice(0, i));
+    const sc = loadScenario(id);
+    for (const need of sc.requires ?? []) {
+      if (!earlier.has(need)) problems.push(`${id} requires ${need} to run first (it acts on state ${need} creates)`);
+    }
+    // A stage-shape precondition, not an ordering one: S6 measures what an agent
+    // does when the CLI is NOT runnable. Against an ordinary stage the CLI is
+    // installed, so the scenario would quietly measure nothing — the worst
+    // outcome for an expensive round. Refuse instead.
+    if (sc.requiresNoCli === true && manifest.noCli !== true) {
+      problems.push(`${id} needs a stage created with FIELD_NO_CLI=1 (this manifest has noCli=${JSON.stringify(manifest.noCli)}); against a normal stage it would measure nothing`);
+    }
+    // Container mode bakes the CLI into the fenced image as a GLOBAL install, so
+    // it is on PATH no matter what the workDir looks like — the no-CLI condition
+    // cannot exist there. Host mode only.
+    if (sc.requiresNoCli === true && containerMode) {
+      problems.push(`${id} cannot run in --container mode: the image installs the CLI globally, so it stays on PATH and the no-CLI condition cannot be staged. Run it host-mode (unsandboxed).`);
+    }
+  });
+  if (problems.length === 0) return;
+  const suggested = [...new Set(ids.flatMap((id) => [...(loadScenario(id).requires ?? []), id]))];
+  // plain message + exit 2, like the other preconditions — a stack trace here
+  // would bury the one line that tells the operator what to run instead
+  console.error("scenario prerequisites unmet — nothing was spent:");
+  for (const p of problems) console.error(`  ${p}`);
+  console.error(`try: node test/field-test/run.mts <manifest> ${suggested.join(" ")}`);
+  process.exit(2);
 }
 
 // Non-secret placeholders — safe to log / dry-run print / store in the turns
@@ -246,8 +398,24 @@ function applyPostInit(): void {
   if (existsSync(mcpPath)) {
     const mcp = JSON.parse(readFileSync(mcpPath, "utf8"));
     const srv = mcp.mcpServers?.["n8n-instance"];
-    if (srv && srv.command === "n8n-decanter") {
-      const inner = ["n8n-decanter", ...(srv.args ?? [])].join(" ");
+    // command is `npx --no-install n8n-decanter …` (Plan 58) or a bare
+    // `n8n-decanter …` — rebuild the full argv either way, don't key on it.
+    if (srv && typeof srv.command === "string") {
+      // MUST be idempotent: this runs once per SCENARIO, against the same
+      // workDir. Re-wrapping an already-wrapped command produced
+      // `sh -c 'exec sh -c exec npx … 2>>log 2>>log'`, and `sh -c` takes only
+      // its first word as the command — so that form runs the no-op `exec`
+      // builtin and exits instantly. The guard then never started, and every
+      // scenario after the FIRST ran with no `n8n-instance` tools at all,
+      // silently: an empty guard.log reads exactly like "the guard blocked
+      // nothing". S2/S3/S4 — whose whole subject is structure/lifecycle work
+      // through the guard — were never actually exercising it.
+      // So: peel every wrapper layer back to the pristine argv, then wrap once.
+      let inner = [srv.command, ...(srv.args ?? [])].join(" ");
+      for (let prev = ""; prev !== inner; ) {
+        prev = inner;
+        inner = inner.replace(/^sh\s+-c\s+/, "").replace(/^exec\s+/, "").replace(/(\s+2>>\S+)+$/, "");
+      }
       // container mode redirects to the harnessRoot's bind-mount inside the agent
       // (/harness) so the guard stderr still lands in HARNESS on the host.
       const guardTarget = containerMode ? "/harness/guard.log" : GUARD_LOG;
@@ -270,8 +438,9 @@ function applyPostInit(): void {
 // ---------- pre-hooks (harness plays a second client) ----------
 async function remoteDrift(): Promise<void> {
   // S3: a colleague edits a Code node's jsCode directly over raw MCP (guard-free).
-  const target = manifest.seeded.find((s) => s.kind === "s1-skeleton" && s.availableInMCP)
-    ?? manifest.seeded.find((s) => s.availableInMCP);
+  // Same lookup the verifier uses for --expect-drift, so the two cannot disagree.
+  const targetId = driftTargetId();
+  const target = manifest.seeded.find((s) => s.id === targetId);
   if (!target) { console.warn("  remote-drift: no available seeded workflow to edit"); return; }
   const { McpClient } = await import(new URL("../../lib/mcp.mts", import.meta.url).href);
   const client = new McpClient({ host: manifest.host, auth: { kind: "bearer", token: manifest.mcpToken }, requestTimeoutMs: 20_000 });
@@ -301,12 +470,38 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
       // CLI on PATH, and cwd /work is the bind-mounted sync dir. -T = no TTY (pipe).
       proc = spawn("docker", ["compose", "-f", COMPOSE, "--env-file", ENV_FILE, "exec", "-T", "-w", "/work", "agent", "claude", ...args], { env: { ...process.env, ...composeEnv } });
     } else {
-      // Prepend the workDir's node_modules/.bin so a bare `n8n-decanter` (in the
-      // agent's Bash and in the guard's .mcp.json command, both spawned by claude)
-      // resolves to the WORKDIR-LOCAL install — no global npm link needed.
+      // PATH policy for the blind session — deliberate, because it decides what
+      // the round can honestly measure (Plan 35 finding, 2026-07-26).
+      //
+      // The workDir install is LOCAL (a packed tarball, no global link), so a
+      // bare `n8n-decanter` in the agent's **Bash** does not resolve on its own.
+      // Prepending node_modules/.bin simulates the GLOBAL install most users
+      // have, and keeps Bash-surface friction out of the measurement.
+      //
+      // It is NOT needed by the guard any more: the scaffolded `.mcp.json` runs
+      // `npx --no-install n8n-decanter mcp connect` (Plan 58 Task 1), which
+      // resolves the local bin from cwd by itself. Set FIELD_NO_PATH_HELP=1 to
+      // drop the prepend and measure a genuinely unassisted PATH — that is the
+      // configuration a real local-install user's agent gets, and the one that
+      // would have caught Task 1's silent-fail.
+      //
+      // A noCli stage (Plan 57 / S6) needs BOTH: no prepend, and no ambient
+      // global either. A maintainer machine commonly has a global install (an
+      // `npm link` from this repo), which would sit on the inherited PATH and
+      // quietly defeat the whole condition — the round would "measure" an agent
+      // that could run the CLI all along. So strip every PATH entry that
+      // contains an `n8n-decanter` executable.
       const localBin = path.join(WORKDIR, "node_modules", ".bin");
-      const env = { ...process.env, PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}` };
-      proc = spawn("claude", args, { cwd: WORKDIR, env });
+      let PATH = process.env.PATH ?? "";
+      const extraEnv: Record<string, string> = {};
+      if (manifest.noCli === true) {
+        const sane = sanitizedPath(PATH);
+        PATH = sane.PATH;
+        extraEnv.npm_config_prefix = sane.npmPrefix;
+      } else if (process.env.FIELD_NO_PATH_HELP !== "1") {
+        PATH = `${localBin}${path.delimiter}${PATH}`;
+      }
+      proc = spawn("claude", args, { cwd: WORKDIR, env: { ...process.env, PATH, ...extraEnv } });
     }
     let buf = "";
     let sessionId: string | undefined;
@@ -401,7 +596,16 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   const verifyOut = path.join(HARNESS, `verify-${id}.json`);
   let verifyExit: number | null = null;
   try {
-    const { stdout, stderr } = await execFile(process.execPath, [VERIFY, manifestPath, "--scenario", id, "--out", verifyOut], { encoding: "utf8" });
+    const args = [VERIFY, manifestPath, "--scenario", id, "--out", verifyOut];
+    // A scenario that deliberately drifts the instance tells verify so, or its
+    // own correct behaviour scores as violations (S3), and every later scenario
+    // inherits them (S4).
+    if (scn.preHook === "remote-drift") {
+      const target = driftTargetId();
+      if (target) args.push("--expect-drift", target);
+    }
+    args.push(...resolveVerifyScope(scn));
+    const { stdout, stderr } = await execFile(process.execPath, args, { encoding: "utf8" });
     console.log(stdout + stderr);
     verifyExit = 0;
   } catch (err) {
@@ -506,6 +710,11 @@ if (argv.includes("--archive")) { await archiveRun(); process.exit(0); }
 
 if (!existsSync(WORKDIR)) { console.error(`workDir missing: ${WORKDIR} — run stage.mts first`); process.exit(2); }
 
+// Gate the subset BEFORE the image build and long before any claude turn — the
+// whole value of this check is that it costs nothing when it fires.
+const diagnosticOnly = argv.includes("--precheck") || argv.includes("--netcheck") || argv.includes("--smoke");
+if (!diagnosticOnly) assertPrerequisites(scenarioIds);
+
 let exitCode = 0;
 if (containerMode && !dryRun) await containerSetup();
 const deadline = Date.now() + RUN_BUDGET_MS; // budget starts AFTER the build/setup
@@ -551,7 +760,17 @@ try {
       exitCode = ok ? 0 : 1;
     } catch (err) { console.error(`smoke FAILED: ${(err as Error).message}`); exitCode = 1; }
   } else {
-    console.log(`orchestrating ${scenarioIds.join(", ")} against ${manifest.host}${containerMode ? " (fenced container)" : ""}\n  workDir ${WORKDIR}\n  guard.log ${GUARD_LOG}`);
+    // Record the PATH policy in the round's own output: whether the agent got a
+    // resolvable bare `n8n-decanter` is a condition of what the round measures,
+    // so it must never be an invisible default again (Plan 35 finding).
+    const pathPolicy = containerMode
+      ? "container: CLI on PATH (global install in the image)"
+      : manifest.noCli === true
+        ? "host: NO-CLI stage — no prepend AND any ambient n8n-decanter stripped from PATH (Plan 57 discoverability condition)"
+        : process.env.FIELD_NO_PATH_HELP === "1"
+          ? "host: UNASSISTED PATH (FIELD_NO_PATH_HELP=1) — bare `n8n-decanter` will NOT resolve in Bash"
+          : "host: node_modules/.bin prepended — simulates a global install for the agent's Bash";
+    console.log(`orchestrating ${scenarioIds.join(", ")} against ${manifest.host}${containerMode ? " (fenced container)" : ""}\n  workDir ${WORKDIR}\n  guard.log ${GUARD_LOG}\n  PATH policy: ${pathPolicy}`);
     const summary: Array<{ id: string; verifyExit: number | null; turns: number }> = [];
     for (const id of scenarioIds) {
       if (containerMode && !dryRun && Date.now() > deadline) { console.error(`[harness] run budget exhausted — stopping before ${id}`); exitCode = 2; break; }
@@ -561,7 +780,7 @@ try {
     for (const r of summary) console.log(`  ${r.id}: ${r.turns} turns, verify ${r.verifyExit === 0 ? "PASS" : r.verifyExit === null ? "(dry-run)" : "FAIL"}`);
     if (existsSync(GUARD_LOG)) console.log(`\nguard stderr captured -> ${GUARD_LOG}`);
     console.log(`transcripts -> ${path.join(HARNESS, "transcripts")}`);
-    console.log("\nNext: grade transcripts (Opus, unblinded) + contamination check, then append the run report to plans/open/35-blind-agent-field-test.md");
+    console.log("\nNext: grade transcripts (Opus, unblinded) + contamination check, then append the run report to the plan this round serves (plans/open/) — Plan 35 built this harness and is closed: plans/done/35-blind-agent-field-test.md");
     if (!dryRun) await archiveRun(); // auto-render + archive BEFORE any teardown
   }
 } finally {

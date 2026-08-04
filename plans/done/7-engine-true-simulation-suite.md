@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Priority** | P3 (spike may promote the rest; **unblocked** 2026-07-19 — Plan 3 C shipped as the `executions` verb) |
-| **Status** | **DONE 2026-07-21** (Docker backend) — all in-scope tasks shipped. Spike + tasks 2–5: the `simulate` verb replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`. **Task 8 tier-1** (single-iteration loops) + **tier-2** (viewer-only "iteration 1 of N" for multi-batch loops). **Task 6 gap handling** — shipped **without an LLM API** (core principle: no key, the dev's IDE agent is the model): the `mock` namespace (`mock create` / `mock check`) promotes a capture into a committed, hand-fillable **named scenario** `mocks/<slug>.json` that the **local IDE agent** (or a human) completes, structurally validated offline by `mock check` and on `simulate --mock` load. The dependency-free **npx engine backend** is the only deferred piece and is now its own plan — [Plan 26](../open/26-npx-engine-backend.md) — so it does not hold Plan 7 open. |
+| **Status** | **DONE 2026-07-21** (Docker backend) — all in-scope tasks shipped. Spike + tasks 2–5: the `simulate` verb replays engine-true against real n8n, with a browsable viewer, picker entry, and `--pin`. **Task 8 tier-1** (single-iteration loops) + **tier-2** (viewer-only "iteration 1 of N" for multi-batch loops). **Task 6 gap handling** — shipped **without an LLM API** (core principle: no key, the dev's IDE agent is the model): the `mock` namespace (`mock create` / `mock check`) promotes a capture into a committed, hand-fillable **named scenario** `mocks/<slug>.json` that the **local IDE agent** (or a human) completes, structurally validated offline by `mock check` and on `simulate --mock` load. The dependency-free **npx engine backend** is the only deferred piece and is now its own plan — [Plan 26](../draft/26-npx-engine-backend.md) — so it does not hold Plan 7 open. |
 | **Theme** | replay a whole workflow through the *real* n8n engine offline — network nodes pinned with captured execution data (gaps filled by hand-authored `mocks/` scenarios, no LLM API), side-effect-free nodes executing for real — with a hard guarantee that nothing external is written. |
 | **Model** | **Opus** — the highest-reasoning plan in the backlog: the route-B transform, the `n8n execute` subprocess orchestration, and above all the *safety-critical* default-deny node classification (a misclassified node runs for real) reward the strongest model. Once the spike (task 1) and transform are designed, the CLI/test wiring can drop to Sonnet. |
 
@@ -85,7 +85,7 @@ The engine backend is pluggable:
   `import:workflow` + `execute`; `--network none` adds an enforced outbound
   cutoff on top of the structural guarantee (no I/O-capable node survives the
   transform). This is the only backend built (v1) and the one that's validated.
-- **Deferred → [Plan 26](../open/26-npx-engine-backend.md): `npx n8n@<ver>`** with
+- **Deferred → [Plan 26](../draft/26-npx-engine-backend.md): `npx n8n@<ver>`** with
   `N8N_USER_FOLDER` in a scratch dir — the *dependency-free default* the plan
   originally wanted (no Docker; runs on the Node the CLI already needs). Split
   into its own plan because it needs its own validation (native sqlite install,
@@ -317,7 +317,7 @@ once, so its first-run pins are already exact. Two tiers:
    allowlist) plus the enforced `--network none` cutoff; engine version per the
    version-policy section (`n8nVersion` config, smoke-pin default). The **npx
    backend's** own isolation (structural + sandbox config, no physical cutoff)
-   moves to [Plan 26](../open/26-npx-engine-backend.md).
+   moves to [Plan 26](../draft/26-npx-engine-backend.md).
 5. **Tests.** The transform and fixture loader/validation are offline — cover
    them in `test/e2e.mts` (mock server grows nothing new beyond Plan 3 C's
    executions handler). The actual engine run needs a real n8n (npx download
