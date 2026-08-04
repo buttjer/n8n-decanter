@@ -1,4 +1,4 @@
-# Plan 72 — Claude Code plugin: marketplace listings only (Anthropic + n8n)
+# Plan 73 — Claude Code plugin: marketplace listings only (Anthropic + n8n)
 
 **Status:** Draft
 **Priority:** P2
