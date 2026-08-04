@@ -7,7 +7,7 @@ import { checkNodeImports, findBundleContext, scanNodeImports } from "./compile.
 import { LEGACY_FIXTURES_DIR, SCENARIOS_DIR } from "./executions.mts";
 import { readState } from "./state.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
-import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, forEachConnectionTarget, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
+import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, forEachConnectionTarget, isJsCodeNode, type NodeRef, placeholderFile, splitMarker } from "./util.mts";
 
 const execFile = promisify(execFileCb);
 
@@ -67,19 +67,24 @@ export function validateNodeFile(dir: string, file: string, label: string = file
   return { errors, warnings };
 }
 
-/** Dangling literal `$('…')` references in one string of source/expression text. */
-function danglingRefs(text: string, nodeNames: Set<string>): string[] {
-  return findNodeRefs(text).filter((name) => !nodeNames.has(name));
+/** Dangling node references in one string of source/expression text. */
+function danglingRefs(text: string, nodeNames: Set<string>): NodeRef[] {
+  return findNodeRefs(text).filter((r) => !nodeNames.has(r.name));
 }
 
+/** De-dupe by the name AND the form it was written in — both are worth reporting. */
+const uniqueRefs = (refs: NodeRef[]): NodeRef[] => [...new Map(refs.map((r) => [r.ref, r])).values()];
+
 /**
- * One dangling `$('…')` reference, and which half of the repair it belongs to
+ * One dangling node reference, and which half of the repair it belongs to
  * (Plan 64): `code` is ours — edit the file and push; `parameter` is n8n's
  * structure — only an MCP write or the editor can fix it.
  */
 export interface DanglingRef {
   node: string;
   name: string;
+  /** As written — `$('X')`, `$node["X"]`, `$node.X`, `$items('X')`. */
+  ref: string;
   where: "code" | "parameter";
 }
 
@@ -100,11 +105,11 @@ export function danglingNodeRefs(nodes: WorkflowNode[]): DanglingRef[] {
   for (const node of nodes) {
     const jsCode = node.parameters?.jsCode;
     if (typeof jsCode === "string" && !jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) {
-      for (const name of new Set(danglingRefs(jsCode, nodeNames))) out.push({ node: node.name, name, where: "code" });
+      for (const r of uniqueRefs(danglingRefs(jsCode, nodeNames))) out.push({ node: node.name, name: r.name, ref: r.ref, where: "code" });
     }
     const texts = parameterStrings(node.parameters, "jsCode");
-    for (const name of new Set(texts.flatMap((t) => danglingRefs(t, nodeNames)))) {
-      out.push({ node: node.name, name, where: "parameter" });
+    for (const r of uniqueRefs(texts.flatMap((t) => danglingRefs(t, nodeNames)))) {
+      out.push({ node: node.name, name: r.name, ref: r.ref, where: "parameter" });
     }
   }
   return out;
@@ -124,11 +129,11 @@ export function describeDanglingRefs(refs: DanglingRef[]): string[] {
   const lines: string[] = [];
   if (params.length > 0) {
     lines.push("expression parameters (structure — fix in n8n, not in workflow.json):");
-    for (const r of params) lines.push(`  node "${r.node}" references $('${r.name}')`);
+    for (const r of params) lines.push(`  node "${r.node}" references ${r.ref}`);
   }
   if (code.length > 0) {
     lines.push("Code-node source (yours — edit the file here, then push):");
-    for (const r of code) lines.push(`  node "${r.node}" references $('${r.name}')`);
+    for (const r of code) lines.push(`  node "${r.node}" references ${r.ref}`);
   }
   lines.push(
     params.length > 0 && code.length > 0
@@ -225,9 +230,9 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     // are the caller's to repair. This half is ours — edit the file and push.
     const filePath = path.join(dir, file);
     if (existsSync(filePath)) {
-      for (const name of danglingRefs(readFileSync(filePath, "utf8"), nodeNames)) {
+      for (const r of uniqueRefs(danglingRefs(readFileSync(filePath, "utf8"), nodeNames))) {
         errors.push(
-          `node "${node.name}": ${file} references $('${name}') — no node by that name` +
+          `node "${node.name}": ${file} references ${r.ref} — no node by that name` +
             ` (renamed? edit ${file} to the new name, then push)`,
         );
       }
@@ -275,10 +280,9 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   // while n8n stays broken, and the next pull reverts it.
   for (const node of nodes) {
     const texts = parameterStrings(node.parameters, "jsCode");
-    const dangling = new Set(texts.flatMap((t) => danglingRefs(t, nodeNames)));
-    for (const name of dangling) {
+    for (const r of uniqueRefs(texts.flatMap((t) => danglingRefs(t, nodeNames)))) {
       errors.push(
-        `node "${node.name}": a parameter references $('${name}') — no node by that name` +
+        `node "${node.name}": a parameter references ${r.ref} — no node by that name` +
           ` (renamed? this is structure — fix it in n8n (updateNodeParameters over MCP, or the editor), not in workflow.json)`,
       );
     }

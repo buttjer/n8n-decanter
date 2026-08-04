@@ -90,7 +90,7 @@ Each check has a **stable id** (agents key on it).
 
 | Tier | Check | Verifies | Can produce |
 | --- | --- | --- | --- |
-| **static** (offline, ms) | `layout` | the [compliance guard](#what-the-compliance-guard-catches): placeholders, connections, duplicate names/ids, orphans, dangling `$('…')` refs | fail / warn |
+| **static** (offline, ms) | `layout` | the [compliance guard](#what-the-compliance-guard-catches): placeholders, connections, duplicate names/ids, orphans, dangling node refs (`$('…')`, `$node[…]`, `$node.X`, `$items(…)`) | fail / warn |
 | | `types` | [typecheck](#typecheck) of the node files | fail / skip |
 | **sync** (instance, read-only) | `connect` | MCP reachable, auth valid (exercises OAuth refresh) | fail |
 | | `access` | workflow is *Available in MCP* | fail |
@@ -151,8 +151,11 @@ bypass them):
 - dangling connection sources/targets
 - duplicate node names or ids
 - orphan `.js`/`.ts` files nothing references
-- dangling literal `$('…')` references, in node source and in expression
-  parameters
+- dangling node references, in node source and in expression parameters — all
+  four forms n8n itself rewrites on a rename: `` $('X') ``, `$node["X"]`,
+  `$node.X`, `$items('X')`. Computed references (`$(someVar)`, a template
+  literal carrying `${…}`) are left alone; a regex cannot resolve them, and
+  n8n's own rewriter has the same limit
 - a leftover legacy `fixtures/` dir containing `.json` files — the per-node
   fixtures mechanism and the old `--pin` flag are retired; recreate the data as
   a [scenario](/docs/cli/scenario/), then delete the dir

@@ -300,8 +300,8 @@ describe("danglingNodeRefs", () => {
   it("separates the two halves, because they are repaired in different places", () => {
     const found = danglingNodeRefs([code("Transform", "return $('Gone').all();"), set("Label", "={{ $('Vanished').first().json.x }}")]);
     assert.deepEqual(found, [
-      { node: "Transform", name: "Gone", where: "code" },
-      { node: "Label", name: "Vanished", where: "parameter" },
+      { node: "Transform", name: "Gone", ref: "$('Gone')", where: "code" },
+      { node: "Label", name: "Vanished", ref: "$('Vanished')", where: "parameter" },
     ]);
   });
 
@@ -316,10 +316,10 @@ describe("danglingNodeRefs", () => {
   it("descends into nested objects and arrays", () => {
     const node = set("Filter", undefined);
     node.parameters = { filters: { conditions: [{ keyValue: "={{ $('Gone').first().json.x }}" }] } };
-    assert.deepEqual(danglingNodeRefs([node]), [{ node: "Filter", name: "Gone", where: "parameter" }]);
+    assert.deepEqual(danglingNodeRefs([node]), [{ node: "Filter", name: "Gone", ref: "$('Gone')", where: "parameter" }]);
   });
 
   it("reports each missing name once per node, not once per occurrence", () => {
-    assert.deepEqual(danglingNodeRefs([code("T", "$('Gone').all(); $('Gone').first();")]), [{ node: "T", name: "Gone", where: "code" }]);
+    assert.deepEqual(danglingNodeRefs([code("T", "$('Gone').all(); $('Gone').first();")]), [{ node: "T", name: "Gone", ref: "$('Gone')", where: "code" }]);
   });
 });
