@@ -38,7 +38,7 @@ pre-hook or seed kind does not exist, so an unbuilt one cannot silently
 | `backup create` / `restore` / `list`, `backupLimit` | **S10** | needs the corpus pack + `fill-backup-store` |
 | `publish` / `push --publish` / `unpublish`, live-vs-draft, guard publish gate (#200) | **S11** | **runnable** |
 | bulk no-ref verbs, non-TTY no-picker contract, `list --json`, `data-tables`, git hygiene | **S12** | needs the corpus pack + a seeded data table |
-| error-message routing: MCP unavailable / 401 / 403 / layout violation / misrouted config | **S13** | **runnable** — run `disable-mcp` only after [Plan 74](../../plans/draft/74-mcp-disabled-403.md) |
+| error-message routing: MCP unavailable / 401 / 403 / layout violation / misrouted config | **S13** | **runnable** (the 403 message landed with [Plan 74](../../plans/done/74-mcp-disabled-403.md)) |
 | workflows decanter did not create (legacy nodes, credentials, punctuation, scale) | **S7** | needs the corpus seed pack |
 | `init` OAuth browser consent | — | **not covered, deliberately**: e2e + unit own it; a browser consent flow is not gradeable headless |
 | `init` cold path (no pre-seeded `.env`) | — | **not covered yet**: `FIELD_NO_SEED_ENV=1` exists, no round has used it → Plan 62 |
@@ -72,7 +72,7 @@ node test/field-test/run.mts <manifest> --hook=<name>
 | `break-published-draft` | publishes, then leaves the draft with a dangling `$('…')` — the Plan 64 publish gate must refuse it (S11) |
 | `revoke-mcp-access` | takes a workflow out of MCP (S13) |
 | `rotate-mcp-token` | invalidates the session's token server-side → 401 (S13) |
-| `disable-mcp` | switches MCP off instance-wide → **403**, see [Plan 74](../../plans/draft/74-mcp-disabled-403.md) (S13) |
+| `disable-mcp` | switches MCP off instance-wide → **403**, see [Plan 74](../../plans/done/74-mcp-disabled-403.md) (S13) |
 | `inject-layout-violation` | an orphan file in `code/` — the compliance error `--force` does not bypass (S13) |
 | `misroute-mcp` | rewrites `.mcp.json` to point straight at n8n, taking the guard out of the path (S13) |
 

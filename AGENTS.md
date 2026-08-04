@@ -614,7 +614,7 @@ the same traps:
   off"** (corrected 2026-08-04, reproduced on 2.30.7): with
   `mcpAccessEnabled:false` the endpoint still 401s an absent/stale token and
   answers a **valid** token with **403** `{"message":"MCP access is disabled"}`.
-  Decanter maps 401 and 404 but not 403 — [Plan 74](plans/draft/74-mcp-disabled-403.md). Responses may be
+  Decanter maps all three ([Plan 74](plans/done/74-mcp-disabled-403.md)). Responses may be
   `text/event-stream` — parse `data:` lines. Send `accept: application/json,
   text/event-stream`; carry the `mcp-session-id` response header on later calls.
 - **Enabling and the token are BOTH headless via the owner cookie** (no UI needed):
