@@ -62,6 +62,12 @@
         "hooks": [
           { "type": "command", "command": "node .claude/hooks/verify.mjs" }
         ]
+      },
+      {
+        "matcher": "mcp__n8n-instance__update_workflow",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/rename-refs.mjs" }
+        ]
       }
     ],
     "SessionStart": [

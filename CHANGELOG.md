@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`init` now scaffolds a hook that catches stranded `$('…')` references right
+  after a rename.** n8n's `renameNode` MCP op rewrites the node name and the
+  connections only, so the references it leaves behind used to surface at the
+  next `push` — arbitrarily far from the rename that caused them. On Claude Code
+  a PostToolUse hook on `update_workflow` now reports them immediately, split
+  into the two halves and in the order they must be repaired: other nodes'
+  expression parameters in n8n first, then the code files here, then `push`.
+
+  It scans for the old name instead of running `preflight`, deliberately: the
+  hook fires before the background snapshot refresh, and until that lands the
+  snapshot still carries the old name, so every reference still resolves and
+  `preflight` would report clean. Silent when nothing references the renamed
+  node. The checklist in the scaffolded `AGENTS.md` remains the contract for
+  every agent — the hook is a reminder, not a replacement.
+
 ### Fixed
 
 - **Corrected the rename guidance: n8n's `renameNode` MCP op does NOT rewrite
