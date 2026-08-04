@@ -46,7 +46,19 @@ prerequisite artifact, step 2 is the actual goal.
 2. **Submit to the community marketplace** — that, not the own catalog, is what
    makes decanter findable to someone who has never heard of it. Users then run
    `/plugin marketplace add anthropics/claude-plugins-community` (manual, once)
-   and `/plugin install n8n-decanter@claude-community`.
+   and `/plugin install n8n-decanter@claude-community`. Mechanics, verified
+   2026-08-04:
+   - `claude plugin validate ./plugin` locally first — the review pipeline runs
+     the same check, plus automated safety screening, then a manual approval.
+   - Submit through the **Console form**
+     ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)).
+     The claude.ai form needs a Team/Enterprise org with directory-management
+     access; the Console form is the individual-author route.
+   - Approved entries are **pinned to a commit SHA**, and CI bumps the pin as we
+     push. The public catalog **syncs nightly**, so listing lags approval —
+     check by searching the name in the catalog's `marketplace.json`.
+   - **Never open a PR against `anthropics/claude-plugins-community`** — it is a
+     read-only mirror and PRs are closed automatically.
 3. **Skills only.** A short entry point — what decanter is, `init`, the
    file + `push` loop — that hands off to the CLI and the scaffolded `AGENTS.md`.
    No MCP server, no hooks, no permissions (see Non-goals).
@@ -57,6 +69,44 @@ prerequisite artifact, step 2 is the actual goal.
    checked fourth surface instead of a fifth place to forget.
 6. **Dev/CI:** `claude --plugin-dir ./plugin` for local runs;
    `claude plugin validate ./plugin --strict` in CI.
+7. **Doc surfaces** — the listing is user-facing, so the usual three move with
+   it: `README.md`, `/docs`, `CHANGELOG.md`. No `## Commands` row (a plugin is
+   not a verb, so `check:docs` requires nothing there).
+   - **`README.md` — five lines in `## Setup`**, right after the
+     `npm install -g` block. Keep it this small; the README is deliberately slim
+     ([Plan 38](../done/38-readme-slim.md)):
+
+     ~~~md
+     **Using Claude Code?** decanter is also a plugin — it adds
+     `/n8n-decanter:…` skills that walk you through setup and the
+     file → `push` loop:
+
+     ```sh
+     claude plugin marketplace add anthropics/claude-plugins-community
+     claude plugin install n8n-decanter@claude-community
+     ```
+
+     The plugin is an **entry point, not the tool**: the CLI above is still
+     required, and the guard still comes from the `init` scaffold.
+     ~~~
+
+     *Alternative shape, if it should carry the boundary explanation too: its own
+     short `## Claude Code plugin` section after "Works with n8n's official
+     skills", which already sets out limits in the same voice.*
+   - **Badge** next to the `vibe coded` one:
+
+     ~~~md
+     [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2)](https://claude.com/plugins)
+     ~~~
+   - **Feature bullet** at the top: the `Agent-native` bullet gains a clause
+     naming the plugin as an entry point.
+   - **`/docs`**: a short `docs/agents/claude-plugin.md`, cross-linked from
+     [n8n-skills.md](../../docs/agents/n8n-skills.md) (same audience, adjacent
+     topic).
+   - **Two traps to honour in that copy:** the shell form is
+     `claude plugin …`, **never** `/plugin …` inside a ```sh fence (the exact
+     copy-paste bug Plan 55 fixed), and the install target is
+     `@claude-community`, not our own catalog name.
 
 ## Non-goals — and why (all verified 2026-08-04 against the plugin reference)
 
@@ -68,11 +118,24 @@ prerequisite artifact, step 2 is the actual goal.
   `preflight` twice after every edit, un-silenceable until that repo re-`init`s.
   They also gain nothing: same events, same types, including `PreToolUse`
   `updatedInput` and `PostToolUse` `updatedToolOutput`.
-- **No permissions.** The manifest has no `permissions` key at all;
-  `.claude/settings.json` stays committed project policy.
+- **No permissions.** The manifest has no `permissions` key at all. A plugin may
+  ship a root `settings.json`, but only the `agent` and `subagentStatusLine` keys
+  are read — permissions are not among them, so `.claude/settings.json` stays
+  committed project policy.
 - **No scaffolding through the plugin.** A plugin install writes nothing into the
   project and there is no `onInstall` event (`Setup` is flag-driven). Stubs stay
   `init`'s job — the plugin can at most *trigger* it.
+- **No CLI shipped on the plugin's PATH.** A plugin *can* do this — a `bin/`
+  directory at the plugin root is added to the Bash tool's `PATH` while the
+  plugin is enabled — so this is a choice, not a limitation. Rejected because it
+  creates **version skew**: Claude would call the plugin's copy while the human,
+  `npm run typecheck`, and CI call the project's, and decanter's contract runs
+  through `.decanter.json`, per-node hashes and the `@ts-n8n` marker, where "which
+  version wrote this?" is a real failure channel. It also only covers Bash-tool
+  calls — not the user's terminal, not Cursor/opencode, and (**unverified**,
+  worth testing before relying on it) probably not hook processes either, so it
+  would not fix `verify.mjs`'s no-op-without-the-CLI behaviour. The CLI belongs in
+  the project: a pinned devDependency in `template/package.json.example`.
 - **No `userConfig` credentials.** `pluginConfigs` are read from user scope only,
   so it would mean one host/token for every project; `.env` and
   `.decanter-auth.json` keep credential ownership, which is also what keeps the
@@ -94,6 +157,14 @@ prerequisite artifact, step 2 is the actual goal.
   marketplace. It buys namespacing (`/n8n-decanter:…`) and one bundle instead of
   loose files; it is cosmetic, never loads monitors, and only loads when Claude
   Code starts in the repo root. Not part of this plan.
+- **Reality check on the reach this buys.** The community catalog is real and
+  maintained but not a mass channel: ~336 stars / 84 forks as of 2026-08-04, and
+  users must add it manually. Install counts aren't public. Treat the listing as
+  cheap upside, not a growth plan — which is also why the scope stays this thin.
+- **The bigger lever is n8n, not Anthropic.** `n8n-io/skills` is itself a
+  marketplace, and its audience — people pointing an agent at n8n — is exactly
+  decanter's. Getting named there or in n8n's ecosystem would outweigh both
+  Anthropic catalogs. Not scoped here; worth its own draft.
 - **Second-best channel, if the community submission stalls:** `init` could
   scaffold `extraKnownMarketplaces` + `enabledPlugins` into the sync dir's
   `.claude/settings.json` — Claude Code then prompts collaborators to install it
