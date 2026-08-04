@@ -42,23 +42,15 @@ let testRunOutcome: { status: string; error?: string; executionId?: string | nul
 let testExecCount = 0;
 const mkid = () => Math.random().toString(16).slice(2, 14).padEnd(12, "0");
 
-/** Rewrite literal $('Old') / $("Old") refs in a string (the mock's stand-in
- * for n8n's server-side expression rewriting on rename). */
-const renameRefs = (text: string, oldName: string, newName: string): string =>
-  text.split(`$('${oldName}')`).join(`$('${newName}')`).split(`$("${oldName}")`).join(`$("${newName}")`);
-
-const renameRefsDeep = (value: any, oldName: string, newName: string): any => {
-  if (typeof value === "string") return renameRefs(value, oldName, newName);
-  if (Array.isArray(value)) return value.map((v) => renameRefsDeep(v, oldName, newName));
-  if (value && typeof value === "object") {
-    for (const k of Object.keys(value)) value[k] = renameRefsDeep(value[k], oldName, newName);
-  }
-  return value;
-};
-
 /** Apply an update_workflow op batch, mirroring the verified 2.30.7 semantics:
- * name-addressed, updateNodeParameters merges, renameNode keeps ids and
- * rewrites connections + expression refs, addNode re-mints the id. */
+ * name-addressed, updateNodeParameters merges, addNode re-mints the id, and
+ * renameNode keeps ids and rewrites CONNECTIONS ONLY.
+ *
+ * That last part used to be wrong here, and it mattered: the mock rewrote
+ * `$('…')` refs across every node's parameters too, so the suite affirmed a
+ * server behaviour n8n does not have and the rename step asserted a healed
+ * workflow. Verified live against n8n 2.30.7 and 2.33.3 (Plan 64) — the MCP op
+ * sets the name, re-keys the connections, and leaves every reference behind. */
 function applyOps(wf: any, operations: any[]): void {
   for (const [i, op] of operations.entries()) {
     if (op.type === "updateNodeParameters") {
@@ -80,7 +72,6 @@ function applyOps(wf: any, operations: any[]): void {
           }
         }
       }
-      for (const n of wf.nodes) renameRefsDeep(n.parameters, op.oldName, op.newName);
     } else if (op.type === "addNode") {
       // the server mints the node id — deliberately adversarial for the CLI's
       // by-name landing resolution
@@ -1642,11 +1633,12 @@ await step("guard: dangling $('…') in code and parameters blocks preflight", a
   writeFileSync(path.join(dir2, "workflow.json"), wfJson);
 });
 
-await step("node rename over raw MCP (the agent path): refs rewritten server-side, pull makes files follow", async () => {
+await step("node rename over raw MCP (the agent path): connections follow, refs DANGLE, and the documented repair order clears it", async () => {
   const dir2 = dir1; // sticky folder (order-sync); the workflow's display name is now "Order Sync v2"
-  // remote-side wiring that must follow the rename: a connection targeting the
-  // node, a $('…') ref in another node's code, and an expression parameter —
-  // all rewritten SERVER-side (n8n's renameNode contract), mirrored by the mock
+  // Three things point at the node about to be renamed: a connection, a $('…')
+  // ref in ANOTHER node's code, and an expression parameter. n8n's MCP rename
+  // moves the first and abandons the other two — this step is the regression
+  // test for that, and for the repair sequence the docs prescribe.
   const wf = db.get("wf123");
   wf.connections["Transform: EU/US"] = { main: [[{ node: "Amazon Feed", type: "main", index: 0 }]] };
   wf.nodes.find((n: any) => n.id === "n4").parameters = { value: "={{ $('Amazon Feed').first().json.sku }}" };
@@ -1657,22 +1649,47 @@ await step("node rename over raw MCP (the agent path): refs rewritten server-sid
   // The rename verbs are retired — an agent (or skill) renames the node over
   // n8n's MCP; decanter's job is the reconcile on the next pull.
   await (await mcpClient()).callTool("update_workflow", { workflowId: "wf123", operations: [{ type: "renameNode", oldName: "Amazon Feed", newName: "Amazon Export" }] });
-  // remote followed (name, connections, expression params, code refs) — and the id survived
   assert.ok(wf.nodes.some((n: any) => n.name === "Amazon Export" && n.id === "n3"), "node renamed remotely, id stable");
-  assert.equal(wf.connections["Transform: EU/US"].main[0][0].node, "Amazon Export", "connection target follows");
-  assert.equal(wf.nodes.find((n: any) => n.id === "n4").parameters.value, "={{ $('Amazon Export').first().json.sku }}", "expression parameter follows");
-  // local follows via pull: file renamed, refs arrive rewritten
+  assert.equal(wf.connections["Transform: EU/US"].main[0][0].node, "Amazon Export", "connection target follows — this half n8n does do");
+  assert.equal(wf.nodes.find((n: any) => n.id === "n4").parameters.value, "={{ $('Amazon Feed').first().json.sku }}", "expression parameter is LEFT BEHIND");
+  assert.match(wf.nodes.find((n: any) => n.id === "n2").parameters.jsCode, /\$\('Amazon Feed'\)/, "code ref is LEFT BEHIND");
+
+  // pull reconciles what it can — file move, placeholder, id-keyed map — and
+  // faithfully mirrors the refs n8n broke. It is a mirror, not a repairer.
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
-  assert.match(read(dir2, "code", "transform-eu-us.js"), /\$\('Amazon Export'\)/);
   assert.ok(existsSync(path.join(dir2, "code", "amazon-export.ts")), "file renamed");
   assert.ok(!existsSync(path.join(dir2, "code", "amazon-feed.ts")), "old file gone");
   assert.equal(state(dir2).nodes.n3.file, "code/amazon-export.ts");
   assert.match(read(dir2, "workflow.json"), /"\/\/@file:code\/amazon-export\.ts"/);
+  assert.match(read(dir2, "code", "transform-eu-us.js"), /\$\('Amazon Feed'\)/, "the stale ref came down with the pull");
+
+  // Both halves now hard-error, and each says where it is repaired.
+  const rBroken = await cli("preflight", "--offline", "--no-typecheck");
+  assert.equal(rBroken.code, 1, rBroken.out);
+  assert.match(rBroken.out, /transform-eu-us\.js references \$\('Amazon Feed'\).*edit .* to the new name, then push/s);
+  assert.match(rBroken.out, /a parameter references \$\('Amazon Feed'\).*fix it in n8n/s);
+  // …and push refuses the whole workflow until both are clean — not forceable.
+  const rPush = await cli("push", "order-sync");
+  assert.equal(rPush.code, 1, rPush.out);
+  assert.match(rPush.out, /does not comply with the decanter layout \(2 problems\)/);
+
+  // The documented repair order: expression parameters over MCP FIRST (they are
+  // structure — nothing here can push them), then the code file, then push.
+  await (await mcpClient()).callTool("update_workflow", {
+    workflowId: "wf123",
+    operations: [{ type: "updateNodeParameters", nodeName: "Set", parameters: { value: "={{ $('Amazon Export').first().json.sku }}" } }],
+  });
+  r = await cli("pull");
+  assert.equal(r.code, 0, r.out);
+  const codeFile2 = path.join(dir2, "code", "transform-eu-us.js");
+  writeFileSync(codeFile2, read(dir2, "code", "transform-eu-us.js").replace("$('Amazon Feed')", "$('Amazon Export')"));
+  r = await cli("push", "order-sync");
+  assert.equal(r.code, 0, r.out);
 
   const rCheck = await cli("preflight", "--offline", "--no-typecheck");
   assert.equal(rCheck.code, 0, rCheck.out);
-  // the rewritten code still runs, with fixture data keyed by the NEW name
+  // the repaired code still runs, with fixture data keyed by the NEW name
   writeFileSync(path.join(TMP, "fx-rename.json"), JSON.stringify({ nodes: { "Amazon Export": [{ json: { sku: "a-1" } }] } }));
   const rRun = await cli("node", "run", path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-rename.json");
   assert.equal(rRun.code, 0, rRun.out);

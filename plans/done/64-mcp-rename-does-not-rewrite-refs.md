@@ -1,7 +1,8 @@
 # Plan 64 — MCP `renameNode` strands every `$('…')` ref; our contract says the opposite
 
-**Status:** In progress — tasks 1 + 2 (#191), 3a (#193) and 3b (#195) shipped;
-3c, 3d, 4, 5 open
+**Status:** Done — tasks 1–4 shipped (#191, #193, #195, #198, #200, #201).
+Task 5 is an upstream **filing**, not decanter work: the report is written and
+handed to the maintainer, the same way `npm publish` is (see root `AGENTS.md`).
 **Priority:** P1
 **Source:** claim B1 of the 2026-07-30 field report (39 renames left every
 reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
@@ -361,7 +362,13 @@ CHANGELOG entry goes under Changed, not Fixed.
   This is the permanent version of the throwaway probe.
 - Unit coverage for the new error strings.
 
-### 5. Report upstream — two asks, not one
+### 5. Report upstream — two asks, not one *(prepared; filing is the maintainer's)*
+
+An issue in someone else's repo is a publication under the maintainer's name, so
+an agent prepares it and does not open it. The evidence it rests on is
+reproducible from this repo: the smoke suite's rename step measures the
+behaviour against a live container on every release, and the probe that first
+established it used no decanter code at all.
 
 **(a) The code.** The fix is small and the precedent is in-repo:
 `update-workflow.tool.ts` already imports `Workflow` from `n8n-workflow`, and

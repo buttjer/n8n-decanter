@@ -466,6 +466,69 @@ try {
     assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after rename round-trip: " + r.out);
   });
 
+  // Plan 64. The one claim this whole plan rests on is about SOMEONE ELSE'S
+  // software: n8n's MCP renameNode rewrites the node name and the connections
+  // and abandons every $('…') reference. Unit and e2e tests can only assert it
+  // against our own mock — this step is the only place that measures the real
+  // thing, so if n8n ever fixes it (the handler is under active refactor
+  // upstream), THIS is what fails, and that failure is the signal to revisit
+  // the plan, not a bug.
+  //
+  // Deliberately on a throwaway workflow: it is left broken on purpose, and the
+  // publish gates now refuse broken drafts, so reusing the suite's main
+  // workflow would poison every later step.
+  let refWfId = "";
+  await step("MCP rename against the REAL instance: connections follow, $('…') refs are abandoned — and the go-live gates refuse the result", async () => {
+    const made = await api("POST", "/api/v1/workflows", {
+      name: "smoke rename refs",
+      settings: {},
+      nodes: [
+        { id: "r1", name: "Start", type: "n8n-nodes-base.manualTrigger", typeVersion: 1, position: [0, 0], parameters: {} },
+        { id: "r2", name: "Fetch", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { jsCode: "return [{ json: { sku: 'a-1' } }];" } },
+        // a Code node referencing another BY NAME, and a non-Code node with an
+        // `=`-prefixed expression parameter — the two halves the field report saw
+        { id: "r3", name: "Transform", type: "n8n-nodes-base.code", typeVersion: 2, position: [440, 0], parameters: { jsCode: "return $('Fetch').all();" } },
+        { id: "r4", name: "Label", type: "n8n-nodes-base.set", typeVersion: 3.4, position: [660, 0],
+          parameters: { mode: "manual", assignments: { assignments: [{ id: "a1", name: "sku", type: "string", value: "={{ $('Fetch').first().json.sku }}" }] } } },
+      ],
+      connections: {
+        Start: { main: [[{ node: "Fetch", type: "main", index: 0 }]] },
+        Fetch: { main: [[{ node: "Transform", type: "main", index: 0 }]] },
+        Transform: { main: [[{ node: "Label", type: "main", index: 0 }]] },
+      },
+    });
+    refWfId = made.id;
+    await enableMcpAccess(refWfId);
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpRef = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    await mcpRef.callTool("update_workflow", { workflowId: refWfId, operations: [{ type: "renameNode", oldName: "Fetch", newName: "Fetched" }] });
+
+    const after = await api("GET", `/api/v1/workflows/${refWfId}`);
+    const node = (id: string) => after.nodes.find((n: any) => n.id === id);
+    assert.equal(node("r2").name, "Fetched", `real n8n accepted the rename (${IMAGE})`);
+    assert.ok(after.connections.Fetched, "connections were rewritten — this half n8n DOES do");
+    // The load-bearing pair. If either flips, n8n changed and Plan 64's whole
+    // contract (docs, hook, gates) has to be revisited.
+    assert.match(node("r3").parameters.jsCode, /\$\('Fetch'\)/, `n8n left the Code-node ref stale (${IMAGE}) — if this fails, n8n now rewrites refs and Plan 64 needs revisiting`);
+    assert.match(node("r4").parameters.assignments.assignments[0].value, /\$\('Fetch'\)/, `n8n left the expression parameter stale (${IMAGE}) — same signal`);
+
+    // The gates that exist because of the above, against the real instance.
+    // Pull first — the verbs resolve a ref through the local mirror, and an
+    // agent would have it pulled anyway. Pull is a mirror: it faithfully brings
+    // the broken refs down rather than repairing them.
+    const rPull = await cli("pull", refWfId);
+    assert.equal(rPull.code, 0, rPull.out);
+    const rPub = await cli("publish", refWfId);
+    assert.equal(rPub.code, 1, "publish must refuse a draft whose refs dangle: " + rPub.out);
+    assert.match(rPub.out, /dangling \$\('…'\) reference\(s\) on the draft would go live/, rPub.out);
+    const live = await api("GET", `/api/v1/workflows/${refWfId}`);
+    assert.notEqual(live.active, true, "nothing went live");
+
+    const rTest = await cli("test", refWfId);
+    assert.equal(rTest.code, 1, "bare test grades the draft statically: " + rTest.out);
+    assert.match(rTest.out, /node "Transform" references \$\('Fetch'\)/, rTest.out);
+  });
+
   await step("tags survive an untouched pull→push round-trip", async () => {
     const tag = await api("POST", "/api/v1/tags", { name: "smoke-tag" });
     await api("PUT", `/api/v1/workflows/${wfId}/tags`, [{ id: tag.id }]);
@@ -669,6 +732,18 @@ try {
       // the local .ts source references the old name — refresh the snapshot/state
       let r = await cli("pull", wfId);
       assert.equal(r.code, 0, r.out);
+      // Plan 64 task 3c: a raw publish_workflow through the guard is refused
+      // when the draft would go live broken — the bypass around the `publish`
+      // verb. Uses the throwaway workflow the rename step deliberately broke.
+      const badPublish = await rpc({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "publish_workflow", arguments: { workflowId: refWfId } } }, session);
+      const badMsg = parseResult(badPublish.text);
+      assert.equal(badMsg.result?.isError, true, "guard must refuse a publish that would go live broken: " + badPublish.text);
+      assert.match(JSON.parse(badMsg.result.content[0].text).error, /dangling reference\(s\) on the draft of .* would go live/);
+      assert.notEqual((await api("GET", `/api/v1/workflows/${refWfId}`)).active, true, "the instance never published it");
+      // …and a clean one still passes through, so the gate is not a blanket block
+      const okPublish = await rpc({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "publish_workflow", arguments: { workflowId: wfId } } }, session);
+      assert.notEqual(parseResult(okPublish.text).result?.isError, true, "a clean draft still publishes through the guard: " + okPublish.text);
+
       // the two renames bumped the DRAFT versionId; re-publish so the suite's
       // "published & in sync" precondition holds for the steps after this one
       r = await cli("publish", wfId);
@@ -1098,12 +1173,26 @@ try {
     assert.match(r.out, new RegExp(`"doubled":\\s*${n * 2}\\b`), `offline run reproduces the live output: ${r.out}`);
   });
 
-  await step("test verb: pinned run on the REAL instance — draft tested, pure node diffed clean (Plan 33)", async () => {
+  await step("test verb: bare is static, --execution runs pinned on the REAL instance (Plan 33 + Plan 64)", async () => {
     // captures from the previous steps are still on disk; local == draft ==
     // published, so the non-TTY run tests the draft as-is and the
     // deterministic Code node must reproduce its captured output exactly
     const draftBefore = (await api("GET", `/api/v1/workflows/${wfId}`)).versionId;
-    const r = await cli("test", wfId);
+    // Plan 64: bare `test` grades the draft statically and runs NOTHING — even
+    // with usable captures sitting right there, which is what it used to pick up.
+    const rStatic = await cli("test", wfId);
+    assert.equal(rStatic.code, 0, rStatic.out);
+    assert.match(rStatic.out, /statically clean/, rStatic.out);
+    assert.match(rStatic.out, /nothing was executed/, rStatic.out);
+    assert.doesNotMatch(rStatic.out, /pinned from capture/, "bare test must not pin: " + rStatic.out);
+
+    // newest capture on disk — the id the removed fallback used to pick silently
+    const execId = readdirSync(path.join(wfDir, "executions"))
+      .filter((f) => /^\d+\.json$/.test(f))
+      .map((f) => Number(f.replace(".json", "")))
+      .sort((a, b) => b - a)[0];
+    assert.ok(execId, "a capture is on disk to pin from");
+    const r = await cli("test", wfId, `--execution=${execId}`);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /pinned from capture/, "pins sourced from the newest capture: " + r.out);
     assert.match(r.out, /Ümläut Nödé: matches capture/, "the real instance rerun matches the capture: " + r.out);
