@@ -33,7 +33,7 @@ pre-hook or seed kind does not exist, so an unbuilt one cannot silently
 | CLI discoverability from a fresh clone | S6 (`FIELD_NO_CLI=1`) | runnable — 6 rounds, 6 PASS |
 | `watch` | S5 | written, **never run** → [Plan 62](../../plans/open/62-field-test-unrun-conditions.md) |
 | `preflight` (`--json`, `--require`, `--fail-on`, `--fail-fast`, coverage block) | **S8** | **runnable** — stage `--seeds wave2` |
-| `scenario create --execution` / `check`, `executions`, `test` after push | **S8** | **runnable** — land [Plan 65](../../plans/draft/65-three-gate-scenario-mismatch.md) first |
+| `scenario create --execution` / `check`, `executions`, `test` after push | **S8** | **runnable** ([Plan 65](../../plans/done/65-three-gate-scenario-mismatch.md) landed) |
 | `preflight --simulate` / `--offline` / `--viewer`, loop preview, `node run` | **S9** | **runnable** host-only, `--seeds wave2` — land [Plan 63](../../plans/open/63-field-feedback-bugfixes.md)/[66](../../plans/draft/66-multi-output-pins.md) first |
 | `backup create` / `restore` / `list`, `backupLimit` | **S10** | needs the corpus pack + `fill-backup-store` |
 | `publish` / `push --publish` / `unpublish`, live-vs-draft, guard publish gate (#200) | **S11** | **runnable** |

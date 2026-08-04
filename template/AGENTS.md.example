@@ -509,6 +509,15 @@ gap rather than run half-real — and filling it is a task you, the agent, are
 well-suited to complete. **The CLI never calls an LLM or invents values; you
 author the data locally and it is reviewed in the diff.**
 
+**The two replays do not demand the same nodes.** `preflight --simulate` asks
+only for the nodes the capture actually **reached**; `test` asks for **every**
+enabled, non-pure node, because it runs on the live instance with real
+credentials. `scenario create --execution` closes the difference for you (nodes
+the capture never reached are pinned to an empty run and listed under
+`_decanterScenario.notExercised` — review that claim). If `test` still refuses a
+scenario, top it up: `n8n-decanter scenario create "<workflow>" "<slug>"
+--extend`, then author the added nodes. `scenario check` reports both gates.
+
 The loop:
 
 ```sh

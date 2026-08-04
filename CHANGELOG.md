@@ -74,6 +74,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   node. The checklist in the scaffolded `AGENTS.md` remains the contract for
   every agent — the hook is a reminder, not a replacement.
 
+### Added
+
+- **`scenario create <workflow> "<slug>" --extend`** — top an **existing**
+  scenario up with the pinnable nodes it is missing, keeping every value already
+  authored. Previously `scenario create` refused an existing file outright, so a
+  scenario `test` rejected could only be fixed by hand-editing raw JSON for nodes
+  the tool had never named. Also covers the ordinary case of a workflow that
+  gained a node after its scenario was written.
+
+### Changed
+
+- **`scenario check` now reports the `test` gate too, not just the
+  `preflight --simulate` one.** The two demand different node sets on purpose —
+  `--simulate` asks only for nodes the capture **reached**, `test` asks for
+  **every** enabled non-pure node because it runs on the live instance with real
+  credentials. Reporting only the looser one meant a scenario could be green and
+  still be refused by `test`. `check` now says which gate you have passed, and
+  names `--extend` as the way to close the difference. The docs that asserted the
+  two rules were the same are corrected.
+
+- **`scenario create --execution` pins unreached nodes to an empty run instead of
+  asking you to invent output for them.** A pinnable node the capture never
+  reached is written as `[{"data":{"main":[[]]}}]` — "this branch isn't
+  exercised" — and listed under `_decanterScenario.notExercised`. That makes a
+  capture-seeded scenario usable with `test` straight away, keeps the node pinned
+  to zero items (so it can never touch the real world), and leaves the claim
+  visible for review: if a branch *should* have run, give it real data.
+
 ### Fixed
 
 - **Scenario gaps are now judged per branch, not per node.** A branching node

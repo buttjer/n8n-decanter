@@ -107,7 +107,7 @@ takes an output index (default 0, so every other caller is unchanged), and both
 consumers read the branch they are actually looking at. Three unit cases in
 [`test/unit/simulate.test.mts`](../../test/unit/simulate.test.mts); the two that
 assert the new behaviour were confirmed to **fail** against the old code.
-Pulled forward out of turn because [Plan 65](../draft/65-three-gate-scenario-mismatch.md)
+Pulled forward out of turn because [Plan 65](../done/65-three-gate-scenario-mismatch.md)
 depends on it — `fill` stays wrong regardless of which gate wins until this
 lands.
 
@@ -191,7 +191,7 @@ folder-scoped auto-commit will pick it up. Trimming itself is
   `"Node": []`, so an author who deliberately wrote "emits nothing" is told they
   didn't fill it. Distinguish "no entry" from "empty entry" in the message. (The
   *semantics* — whether `[]` should count as filled — is
-  [Plan 65](../draft/65-three-gate-scenario-mismatch.md)'s call, not this one's.)
+  [Plan 65](../done/65-three-gate-scenario-mismatch.md)'s call, not this one's.)
 
 ## Acceptance / verification
 

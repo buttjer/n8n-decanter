@@ -550,6 +550,14 @@ export interface ScenarioMeta {
    * validates.
    */
   fill: Array<{ node: string; type: string; parameters: NodeParameters; inputSample: unknown[]; expectedSchema?: unknown }>;
+  /**
+   * Nodes pre-filled with an empty run because the capture never reached them
+   * (Plan 65). They satisfy `test`'s stricter gate without anyone inventing
+   * output for a path that did not run — but they are recorded here, not
+   * hidden: an empty pin is a claim ("this branch isn't exercised") a reviewer
+   * should be able to see and challenge.
+   */
+  notExercised?: string[];
 }
 
 /** Placeholder schema recorded for a scaffolded node n8n couldn't schema (still provenance `scaffolded`). */
@@ -558,6 +566,39 @@ const NO_SCHEMA_HINT = { $comment: "no schema available from n8n — author a si
 /** Nodes that must be pinned in a scenario/test run: enabled, not on the pure allowlist, not a loop driver. */
 function pinnableNodes(wf: Workflow): WorkflowNode[] {
   return (wf.nodes ?? []).filter((n) => n.disabled !== true && !isPureNode(n) && !isLoopDriver(n));
+}
+
+/**
+ * The nodes `test` would still refuse to pin — **its** rule, evaluated offline
+ * (Plan 65).
+ *
+ * The three gates disagree on purpose. `preflight --simulate` demands data only
+ * for nodes the capture actually *reached*, because an unreached node is
+ * neutralized into a throwing Code node — worst case the replay stops. `test`
+ * demands **every** pinnable node, because it runs on the live instance with
+ * real credentials: a node reached unexpectedly there hits the real world.
+ *
+ * Keeping both rules is right. Letting `scenario check` report only the looser
+ * one was not: a capture-seeded scenario could be green and still be rejected by
+ * `test`, with no supported way to fix it. This is what makes the stricter gate
+ * visible *before* you spend a run on it.
+ */
+export function testPinGaps(wf: Workflow, runData: RunData): string[] {
+  return pinnableNodes(wf)
+    .filter((n) => firstRunItems(runData[n.name]) === undefined)
+    .map((n) => n.name);
+}
+
+/**
+ * Run data marking a node as **deliberately not exercised**: it ran, and emitted
+ * nothing. Satisfies both gates (they ask "is there data?", and `[]` is data)
+ * while pinning the node to zero items, so `test` cannot let it touch the real
+ * world. This is the honest encoding of "the capture never took this branch",
+ * and it is what a capture-seeded scenario now writes for those nodes instead of
+ * asking a human to invent output for a path that did not run.
+ */
+function notExercisedRun(): NodeRun[] {
+  return [{ data: { main: [[]] } }];
 }
 
 /**
@@ -576,14 +617,15 @@ function pinnableNodes(wf: Workflow): WorkflowNode[] {
  */
 export async function writeScenario(
   dir: string,
-  opts: { execId?: string; slug: string; scaffold?: PinDataScaffold },
+  opts: { execId?: string; slug: string; scaffold?: PinDataScaffold; extend?: boolean },
   log: Log,
 ): Promise<{ slug: string; file: string; gaps: string[]; coverage?: PinDataScaffold["coverage"] }> {
   const name = kebabCase(opts.slug);
   const scenarioFile = path.join(dir, SCENARIOS_DIR, `${name}.json`);
-  if (existsSync(scenarioFile)) {
-    throw new Error(`scenario "${name}" already exists: ${path.relative(process.cwd(), scenarioFile)} — edit it directly, or delete it to regenerate`);
+  if (existsSync(scenarioFile) && opts.extend !== true) {
+    throw new Error(`scenario "${name}" already exists: ${path.relative(process.cwd(), scenarioFile)} — edit it directly, add --extend to top it up with nodes it is missing, or delete it to regenerate`);
   }
+  if (opts.extend === true) return extendScenario(dir, name, scenarioFile, log);
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) throw new Error(`no workflow.json in ${dir} — pull the workflow first`);
   const wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
@@ -625,6 +667,18 @@ export async function writeScenario(
     const schema = schemaByNode.get(g.node);
     return { node: g.node, type: g.type, parameters: g.parameters, inputSample: g.input.map((i) => i.json), ...(schema !== undefined ? { expectedSchema: schema } : {}) };
   });
+
+  // Plan 65: close the gap between the two rules HERE, where the capture is in
+  // hand — not by asking the author to invent output for a path that never ran.
+  // A pinnable node the capture neither ran nor reached is pinned to an empty
+  // run ("this branch isn't exercised"), which satisfies `test` and keeps the
+  // node from touching the real world. Recorded in `notExercised`, never hidden.
+  const baseRunData = ((baseExec as { data?: { resultData?: { runData?: RunData } } }).data?.resultData?.runData ?? {}) as RunData;
+  const gapNames = new Set(gaps.map((g) => g.node));
+  const notExercised = pinnableNodes(wf)
+    .map((n) => n.name)
+    .filter((n) => !gapNames.has(n) && firstRunItems(baseRunData[n]) === undefined);
+  for (const node of notExercised) baseRunData[node] = notExercisedRun();
   const wfVersion = typeof (baseExec as { workflowVersionId?: unknown }).workflowVersionId === "string"
     ? (baseExec as { workflowVersionId: string }).workflowVersionId
     : (typeof wf.versionId === "string" ? wf.versionId : undefined);
@@ -637,6 +691,7 @@ export async function writeScenario(
       ? `Scenario pin data — synthetic, not a full real capture. For each node in "fill", add data.resultData.runData["<node>"] = [ { "data": { "main": [ [ { "json": { …the output it should emit… } } ] ] } } ], using its type/parameters/inputSample${opts.scaffold ? "/expectedSchema" : ""} as context. Keep the "fill" list as-is — it records which nodes are synthetic (provenance) and is what "scenario check" validates. Validate offline: n8n-decanter scenario check <workflow> ${name}. Then replay: n8n-decanter preflight <workflow> --simulate --scenario ${name}.`
       : `Committed, reproducible copy of capture ${opts.execId} — no gaps to fill.`,
     fill,
+    ...(notExercised.length > 0 ? { notExercised } : {}),
   };
   mkdirSync(path.dirname(scenarioFile), { recursive: true });
   // Strip the capture's embedded workflowData: nothing reads it, and it
@@ -655,8 +710,50 @@ export async function writeScenario(
   } else {
     log.ok(`scenario "${name}" written from ${seededFrom} -> ${rel} — no gaps; replay with \`preflight --simulate --scenario ${name}\``);
   }
+  if (notExercised.length > 0) {
+    log.info(`pinned ${notExercised.length} node${notExercised.length === 1 ? "" : "s"} to an EMPTY run — the capture never reached ${notExercised.length === 1 ? "it" : "them"}: ${notExercised.join(", ")}. That is what makes this scenario usable with \`test\` too; review the claim, and give one real output if a branch should have run.`);
+  }
   if (opts.execId !== undefined) log.warn("scenario copies real captured data — review for credentials/PII before committing");
   return { slug: name, file: scenarioFile, gaps: gaps.map((g) => g.node), coverage: opts.scaffold?.coverage };
+}
+
+/**
+ * `scenario create --extend`: top an EXISTING scenario up with the pinnable
+ * nodes it is missing, keeping every value already authored.
+ *
+ * Without this the dead end was total: `test` refused a scenario for nodes it
+ * never listed, told the user to run `scenario create`, and `scenario create`
+ * refused to touch an existing file — leaving hand-editing raw JSON for nodes
+ * the tool had never named. It also covers the ordinary case of a workflow that
+ * gained a node after its scenario was written.
+ *
+ * Deliberately additive: existing `runData` and `fill` entries are never
+ * rewritten, so an extend can't quietly undo an author's work.
+ */
+function extendScenario(dir: string, name: string, scenarioFile: string, log: Log): { slug: string; file: string; gaps: string[] } {
+  if (!existsSync(scenarioFile)) {
+    throw new Error(`no scenario "${name}" to extend under ${SCENARIOS_DIR}/ — create it first: n8n-decanter scenario create <workflow> "${name}" --execution <id>`);
+  }
+  const wfFile = path.join(dir, "workflow.json");
+  if (!existsSync(wfFile)) throw new Error(`no workflow.json in ${dir} — pull the workflow first`);
+  const wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
+  const exec = JSON.parse(readFileSync(scenarioFile, "utf8")) as Execution & { _decanterScenario?: ScenarioMeta };
+  const meta = readScenarioMeta(exec);
+  if (meta === undefined) throw new Error(`${path.relative(process.cwd(), scenarioFile)} has no "_decanterScenario" block — it is a raw capture, not a scenario`);
+
+  const runData = ((exec as { data?: { resultData?: { runData?: RunData } } }).data?.resultData?.runData ?? {}) as RunData;
+  const listed = new Set(meta.fill.map((f) => f.node));
+  const missing = pinnableNodes(wf).filter((n) => !listed.has(n.name) && firstRunItems(runData[n.name]) === undefined);
+  if (missing.length === 0) {
+    log.ok(`scenario "${name}" already covers every pinnable node — nothing to add`);
+    return { slug: name, file: scenarioFile, gaps: [] };
+  }
+
+  const added = missing.map((n) => ({ node: n.name, type: n.type, parameters: n.parameters, inputSample: [] as unknown[] }));
+  const next: ScenarioMeta = { ...meta, fill: [...meta.fill, ...added] };
+  writeFileSync(scenarioFile, JSON.stringify({ ...exec, _decanterScenario: next }, null, 2) + "\n");
+  log.warn(`added ${added.length} node${added.length === 1 ? "" : "s"} to "${name}": ${added.map((a) => a.node).join(", ")} — author their runData, then \`scenario check ${name}\``);
+  return { slug: name, file: scenarioFile, gaps: added.map((a) => a.node) };
 }
 
 /** The slugs of the committed scenarios in a workflow folder (sorted). */
@@ -672,6 +769,37 @@ export function listScenarioSlugs(dir: string): string[] {
  * doesn't need Docker. Parses the file and runs `validateScenarioRunData`; logs
  * OK / the node-named error per scenario. Returns the number of invalid ones.
  */
+/**
+ * Say out loud whether `test` would accept this scenario too (Plan 65).
+ *
+ * `validateScenarioRunData` answers the *simulate* question — "is every node the
+ * fill list names filled?" — and that used to be the only thing `scenario check`
+ * reported. `test` asks a stricter one, so a scenario could pass here and be
+ * refused there, which is how a field report ended up hand-writing pins for 11
+ * nodes the tool had never listed. Reported, not enforced: the looser gate is
+ * still legitimately green for a `preflight --simulate` replay.
+ */
+function reportTestReadiness(dir: string, exec: Execution, slug: string, log: Log): void {
+  const wfFile = path.join(dir, "workflow.json");
+  if (!existsSync(wfFile)) return; // nothing to compare against — stay quiet
+  let wf: Workflow;
+  try {
+    wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
+  } catch {
+    return; // a broken snapshot is the layout check's business, not this one
+  }
+  const runData = ((exec as { data?: { resultData?: { runData?: RunData } } }).data?.resultData?.runData ?? {}) as RunData;
+  const missing = testPinGaps(wf, runData);
+  if (missing.length === 0) {
+    log.info(`scenario "${slug}": also complete for \`test\` (every pinnable node has data)`);
+    return;
+  }
+  log.warn(
+    `scenario "${slug}": complete for \`preflight --simulate\`, but \`test\` needs ${missing.length} more node${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}. ` +
+      `\`test\` pins EVERY non-pure node because it runs on the live instance with real credentials. Add them with: n8n-decanter scenario create <workflow> "${slug}" --extend`,
+  );
+}
+
 export function checkScenarios(dir: string, slug: string | undefined, log: Log): number {
   const slugs = slug !== undefined ? [kebabCase(slug)] : listScenarioSlugs(dir);
   if (slugs.length === 0) {
@@ -686,6 +814,7 @@ export function checkScenarios(dir: string, slug: string | undefined, log: Log):
       const exec = JSON.parse(readFileSync(file, "utf8")) as Execution;
       validateScenarioRunData(exec, s);
       log.ok(`scenario "${s}": valid`);
+      reportTestReadiness(dir, exec, s, log);
     } catch (err) {
       log.error((err as Error).message);
       invalid++;

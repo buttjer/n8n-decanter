@@ -6,6 +6,7 @@ order: 16
 
 ```sh
 n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold] [--json]
+n8n-decanter scenario create <workflow> "<slug>" --extend
 n8n-decanter scenario check  <workflow> ["<slug>"] [--json]
 ```
 
@@ -31,6 +32,36 @@ node added or reparametrized since the capture, or every node when building a
 scenario from scratch. Both replays hard-error on a gap; a scenario is how
 you supply the missing data as a reproducible, reviewable set.
 
+### The two replays do not demand the same nodes
+
+This matters when you fill a scenario by hand, so it is stated plainly:
+
+| | demands pin data for |
+| --- | --- |
+| `preflight --simulate` | network nodes the capture **actually reached**. An unreached node is neutralized (it throws if something reaches it), so an untaken branch is exempt. |
+| `test` | **every** enabled, non-pure, non-loop-driver node — reachable or not. |
+
+`test` is stricter on purpose: it runs on the **live instance with real
+credentials**, so a node reached unexpectedly there would hit the real world,
+while a `--simulate` node reached unexpectedly only stops the replay.
+
+You do not normally have to care, because `scenario create --execution` closes
+the difference for you: a pinnable node the capture never reached is pinned to an
+**empty run** and listed under `_decanterScenario.notExercised`. That is an
+honest claim ("this branch isn't exercised"), not invented output, and it keeps
+the node from running for real. **Review it** — if a branch *should* have run,
+give it real data instead.
+
+For a scenario written before this, or one you hand-edited, `scenario check`
+tells you where you stand and `--extend` fills the difference:
+
+```sh
+n8n-decanter scenario check order-sync happy-path
+# ✓ scenario "happy-path": valid
+# ! complete for `preflight --simulate`, but `test` needs 2 more nodes: Notify, Archive
+#   → n8n-decanter scenario create order-sync "happy-path" --extend
+```
+
 ## `scenario create`
 
 Two seeds, composable:
@@ -44,6 +75,9 @@ n8n-decanter scenario create order-sync "happy-path" --execution 4812 --scaffold
 
 n8n-decanter scenario create order-sync "from-scratch" --scaffold
 #   no capture: every pinnable node becomes a schema-annotated fill entry
+
+n8n-decanter scenario create order-sync "happy-path" --extend
+#   existing scenario: add the pinnable nodes it is missing, keep every value
 ```
 
 - **`<slug>`** names the scenario (`happy-path`, `empty-cart`, `error-case`) and

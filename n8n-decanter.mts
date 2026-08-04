@@ -81,6 +81,7 @@ ${b("Inspect & test")}
 
 ${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-scaffolded)")}
   ${b("scenario create")} <workflow> ["<slug>"] [--execution <id>] [--scaffold]   ${d("write a committed scenario from a capture and/or the workflow's schemas")}
+  ${b("scenario create")} <workflow> "<slug>" --extend            ${d("top an existing scenario up with the nodes `test` still needs")}
   ${b("scenario check")} <workflow> ["<slug>"]                     ${d("structurally validate a scenario (or all); exits 1 on invalid")}
 
 ${b("Backup")} ${d("(git-native, redeployable disaster-recovery store — REST, needs N8N_API_KEY)")}
@@ -218,6 +219,7 @@ async function main() {
   const publishFlag = args.includes("--publish");
   const noTypecheck = args.includes("--no-typecheck");
   const scaffoldFlag = args.includes("--scaffold");
+  const extendFlag = args.includes("--extend");
   const allowEnv = args.includes("--allow-env");
   const remoteFlag = args.includes("--remote");
   const jsonFlag = args.includes("--json");
@@ -334,7 +336,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--host=", "--token=", "--api-key=", "--help", "--version");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--host=", "--token=", "--api-key=", "--help", "--version");
     try {
       const config = loadConfig(process.cwd(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -345,7 +347,7 @@ async function main() {
     return;
   }
 
-  await dispatch(command, rest, { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags });
+  await dispatch(command, rest, { force, publishFlag, noTypecheck, scaffoldFlag, extendFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags });
 }
 
 interface Flags {
@@ -353,6 +355,7 @@ interface Flags {
   publishFlag: boolean;
   noTypecheck: boolean;
   scaffoldFlag: boolean;
+  extendFlag: boolean;
   remoteFlag: boolean;
   jsonFlag: boolean;
   allFlag: boolean;
@@ -365,7 +368,7 @@ interface Flags {
 }
 
 /** Flag defaults for picker-launched verbs (no CLI flags in play). */
-const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, scaffoldFlag: false, remoteFlag: false, jsonFlag: false, allFlag: false, simulateFlag: false, offlineFlag: false, viewerFlag: false, failFastFlag: false, noFetchFlag: false, valueFlags: new Map() };
+const PICKER_FLAGS: Flags = { force: false, publishFlag: false, noTypecheck: false, scaffoldFlag: false, extendFlag: false, remoteFlag: false, jsonFlag: false, allFlag: false, simulateFlag: false, offlineFlag: false, viewerFlag: false, failFastFlag: false, noFetchFlag: false, valueFlags: new Map() };
 
 /**
  * Picker rows that are a verb PLUS flags (Plan 59). Every other row dispatches
@@ -477,7 +480,7 @@ async function pickOneWorkflow(config: DecanterConfig, verb: string, log: Log): 
 
 /** Config-needing verbs: load config, resolve refs, run the verb switch. */
 async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
-  const { force, publishFlag, noTypecheck, scaffoldFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags } = flags;
+  const { force, publishFlag, noTypecheck, scaffoldFlag, extendFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags } = flags;
   // Since Plan 32 the sync verbs (and the node namespace, which forwards
   // structure acts to n8n) go over MCP; only the executions/data-tables fetches
   // still use the REST API (requireApiKey at the verb).
@@ -854,11 +857,20 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       break;
     }
     case "scenario:create": {
-      if (refs.length < 1) throw new Error('scenario create needs a workflow ref: n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold]');
+      if (refs.length < 1) throw new Error('scenario create needs a workflow ref: n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold] [--extend]');
       const dir = findWorkflowDir(config.root, refs[0], log);
       if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
       migrateScenariosDir(dir, log);
       assertNoLegacyFixtures(dir);
+      // --extend tops an EXISTING scenario up with the pinnable nodes it lacks
+      // (Plan 65). Offline and additive — it never re-seeds from a capture, so
+      // it needs neither --execution nor --scaffold.
+      if (extendFlag) {
+        if (refs[1] === undefined) throw new Error('scenario create --extend needs the scenario slug: n8n-decanter scenario create <workflow> "<slug>" --extend');
+        const extended = await writeScenario(dir, { slug: refs[1], extend: true }, log);
+        if (jsonFlag) console.log(JSON.stringify({ slug: extended.slug, file: path.relative(process.cwd(), extended.file), gaps: extended.gaps }, null, 2));
+        break;
+      }
       // Seed sources, composable: a capture (--execution <id>, or the newest one)
       // and/or the workflow's schemas (--scaffold, via n8n's read-only
       // prepare_test_pin_data oracle). A bare --scaffold builds from scratch

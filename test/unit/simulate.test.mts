@@ -21,6 +21,7 @@ import {
   SIM_START_NODE,
   SimulationGapError,
   sourceFile,
+  testPinGaps,
   validateScenarioRunData,
   writeScenario,
 } from "../../lib/simulate.mts";
@@ -348,6 +349,108 @@ describe("buildSimulation — branch-aware reachability", () => {
     const notTaken = gaps.find((g) => g.node === "NotTaken");
     assert.ok(notTaken, `expected NotTaken to be the gap, got ${gaps.map((g) => g.node).join(", ") || "none"}`);
     assert.deepEqual(notTaken.input.map((i) => (i as { json: { side: string } }).json.side), ["no"]);
+  });
+});
+
+// Plan 65: `scenario check` and `test` enforced different node sets, so a
+// capture-seeded scenario could be green here and rejected there — with no
+// supported way to fix it, because `scenario create` refused an existing file.
+describe("scenario ↔ test gate parity (Plan 65)", () => {
+  /** Webhook -> Decide(if): output0 -> Taken(http), output1 -> NotTaken(http). */
+  function branchWf(): Workflow {
+    return {
+      id: "wf1", name: "Branch WF", versionId: "v1",
+      nodes: [
+        { id: "w", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { path: "hook" } },
+        { id: "i", name: "Decide", type: "n8n-nodes-base.if", typeVersion: 2, position: [200, 0], parameters: {} },
+        { id: "t", name: "Taken", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [400, -80], parameters: {} },
+        { id: "n", name: "NotTaken", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [400, 80], parameters: {} },
+      ] as WorkflowNode[],
+      connections: {
+        Webhook: { main: [[{ node: "Decide", type: "main", index: 0 }]] },
+        Decide: { main: [[{ node: "Taken", type: "main", index: 0 }], [{ node: "NotTaken", type: "main", index: 0 }]] },
+      },
+      settings: { executionOrder: "v1" },
+    };
+  }
+  /** The capture took the TRUE branch, so NotTaken never ran and was never reached. */
+  const dirWithCapture = () => scaffold({
+    "workflow.json": JSON.stringify(branchWf()),
+    ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: {} }),
+    "executions/7.json": JSON.stringify({
+      id: 7, status: "success", workflowId: "wf1", workflowVersionId: "v1",
+      data: { resultData: { runData: {
+        Webhook: run([item({ n: 1 })]),
+        Decide: [{ data: { main: [[item({ side: "yes" })], []] } }],
+        Taken: run([item({ ok: true })]),
+      } } },
+    }),
+  });
+
+  it("testPinGaps applies test's rule: every pinnable node, reachable or not", () => {
+    const gaps = testPinGaps(branchWf(), { Webhook: run([item({})]), Taken: run([item({})]) } as never);
+    assert.deepEqual(gaps, ["NotTaken"]);
+  });
+
+  it("a capture-seeded scenario pins the unreached branch to an EMPTY run, and records it", async () => {
+    const dir = dirWithCapture();
+    await writeScenario(dir, { execId: "7", slug: "happy" }, log);
+    const written = JSON.parse(readFileSync(path.join(dir, SCENARIOS_DIR, "happy.json"), "utf8")) as {
+      data: { resultData: { runData: Record<string, unknown> } };
+      _decanterScenario: { fill: Array<{ node: string }>; notExercised?: string[] };
+    };
+    // pinned to zero items — satisfies `test` without inventing output, and the
+    // node cannot touch the real world
+    assert.deepEqual(written.data.resultData.runData.NotTaken, [{ data: { main: [[]] } }]);
+    // …and the claim is visible, not hidden
+    assert.deepEqual(written._decanterScenario.notExercised, ["NotTaken"]);
+    // it is NOT a fill entry: nobody is being asked to author it
+    assert.equal(written._decanterScenario.fill.some((f) => f.node === "NotTaken"), false);
+    // both gates now agree on this scenario
+    assert.deepEqual(testPinGaps(branchWf(), written.data.resultData.runData as never), []);
+  });
+
+  it("scenario check reports the test gate too when a hand-edited scenario is short", () => {
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(branchWf()),
+      [`${SCENARIOS_DIR}/short.json`]: JSON.stringify({
+        id: "short", data: { resultData: { runData: { Webhook: run([item({})]), Taken: run([item({})]) } } },
+        _decanterScenario: { source: "capture", createdAt: "2026-08-04", guidance: "", fill: [] },
+      }),
+    });
+    assert.equal(checkScenarios(dir, "short", log), 0); // still VALID for simulate
+    assert.ok(warnings.some((w) => /`test` needs 1 more node.*NotTaken/.test(w)), `expected a test-gate warning, got: ${warnings.join(" | ")}`);
+    assert.ok(warnings.some((w) => /--extend/.test(w)), "the warning must name the way out");
+  });
+
+  it("--extend adds the missing nodes and keeps what was already authored", async () => {
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(branchWf()),
+      [`${SCENARIOS_DIR}/short.json`]: JSON.stringify({
+        id: "short", data: { resultData: { runData: { Webhook: run([item({ keep: "me" })]), Taken: run([item({})]) } } },
+        _decanterScenario: { source: "capture", createdAt: "2026-08-04", guidance: "", fill: [] },
+      }),
+    });
+    const res = await writeScenario(dir, { slug: "short", extend: true }, log);
+    assert.deepEqual(res.gaps, ["NotTaken"]);
+    const after = JSON.parse(readFileSync(path.join(dir, SCENARIOS_DIR, "short.json"), "utf8")) as {
+      data: { resultData: { runData: Record<string, unknown> } };
+      _decanterScenario: { fill: Array<{ node: string }> };
+    };
+    assert.deepEqual(after._decanterScenario.fill.map((f) => f.node), ["NotTaken"]);
+    assert.deepEqual(after.data.resultData.runData.Webhook, run([item({ keep: "me" })])); // untouched
+  });
+
+  it("--extend on an already-complete scenario is a no-op, not an error", async () => {
+    const dir = dirWithCapture();
+    await writeScenario(dir, { execId: "7", slug: "happy" }, log);
+    const res = await writeScenario(dir, { slug: "happy", extend: true }, log);
+    assert.deepEqual(res.gaps, []);
+  });
+
+  it("--extend refuses a scenario that does not exist", async () => {
+    const dir = scaffold({ "workflow.json": JSON.stringify(branchWf()) });
+    await assert.rejects(writeScenario(dir, { slug: "nope", extend: true }, log), /no scenario "nope" to extend/);
   });
 });
 
