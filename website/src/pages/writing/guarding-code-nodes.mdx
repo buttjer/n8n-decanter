@@ -8,6 +8,7 @@ date: "2026-07-27"
 
 import GuardDemo from "../../components/GuardDemo.astro";
 import PublishGateDemo from "../../components/PublishGateDemo.astro";
+import SplitMap from "../../components/SplitMap.astro";
 
 n8n is the best thing that happened to the boring half of my work. Hundreds of
 integrations somebody else keeps current. Credentials in a vault instead of
@@ -115,6 +116,12 @@ source is replaced by a pointer:
 Structure still diffs cleanly in git; the code it points to lives where code
 belongs. When the agent adds a Code node over MCP, it arrives empty, and the
 first push seeds it.
+
+Put together — who owns what, and how code reaches n8n:
+
+<div class="not-prose my-8">
+  <SplitMap />
+</div>
 
 ## The wrinkle nobody warns you about
 
