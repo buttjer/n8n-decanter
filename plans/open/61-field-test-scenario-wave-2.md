@@ -187,6 +187,64 @@ vendoring. Fetching happens on the **host during staging**, never inside the
   a test cannot answer: *what does the agent conclude, and what does it tell the
   user?*
 
+## Progress (2026-08-04)
+
+**The scenario pack is written; the staging machinery is not.** `S7`–`S13` exist
+as full specs with `## Orchestration` spines, and the runner now **refuses** a
+scenario whose pre-hook or seed kind does not exist — so the specs can sit ahead
+of the machinery without any risk of a round quietly measuring an untouched
+environment (the failure mode the old bare `if (preHook === "remote-drift")`
+allowed). Landed:
+
+- `scenarios/S7–S13.md` (Tasks 4 + 7, the spec half)
+- `run.mts`: a pre-hook **registry** + hard refusal of an unknown hook;
+  `requiresSeedKinds` + hard refusal of a missing seed kind; `--expect-drift`
+  generalised from one hook name to a set
+- `test/unit/field-scenarios.test.mts` — every scenario file parses, its id
+  matches its filename, `requires` resolves, and no turn leaks
+  evaluation-signalling vocabulary or a Plan 59-removed verb (offline, in
+  `npm test`)
+- the verb × scenario coverage matrix in `test/field-test/README.md` (Task 10)
+
+### Wave 2a machinery — built and validated against a live n8n (2026-08-04)
+
+**Wave 2a is complete: S8, S9, S11 and S13 are runnable.** Every piece was
+exercised against a real n8n 2.30.7 in Docker before being called done (the
+plan's acceptance criterion 4), one hook at a time via the new `--hook=<name>`
+diagnostic:
+
+- **Seed packs** — `stage.mts --seeds <pack>` / `FIELD_SEED_PACK`. `builtin`
+  (default) reproduces every earlier round's world byte-for-byte; `wave2` adds
+  `s8-ladder` (two chained Code nodes, so a run gives the second one a real
+  *input* sample — a single self-contained node would reproduce exactly the
+  synthetic-pin shape S8 exists to move past) and `loop-preview` (a
+  `splitInBatches` loop, which needs explicit two-output connections the
+  straight-line `chain()` helper cannot express).
+- **All nine pre-hooks**, each verified end to end: `seed-capture`,
+  `publish-then-drift`, `break-published-draft`, `revoke-mcp-access`,
+  `rotate-mcp-token`, `disable-mcp`, `inject-layout-violation`, `misroute-mcp`
+  (plus the pre-existing `remote-drift`).
+- **`--hook=<name>`** — play one hook and exit. The hooks are the only part of
+  the harness that mutates a real n8n, and until now the only way to exercise
+  one was to spend a scenario.
+- **The owner cookie** is carried in the manifest (redacted in archives): n8n's
+  internal `/rest/mcp/*` surface is the only way to revoke MCP availability,
+  rotate the token, or switch the server off.
+
+**Verified facts, not assumptions:** `test_workflow(workflowId, pinData:{})` is
+the synchronous execution path (`execute_workflow` returns `{status:"started"}`
+and needs polling); both persist a normal execution with full
+`resultData.runData`. The injected layout violation produces the exact refusal
+S13 grades; the rotated token produces the exact 401.
+
+**One product finding fell out, offline and for free** — the D6 principle in
+action: a switched-off MCP server answers **403**, never 404, and decanter has
+no message for it → [Plan 74](../draft/74-mcp-disabled-403.md). `AGENTS.md`'s
+"404 when disabled" claim is corrected in the same change.
+
+**Still to build:** the corpus seed-pack loader and its vet/modernize pass
+(Tasks 5 + 6) and `fill-backup-store`, which gate **S7, S10 and S12** — wave 2b.
+
 ## Tasks
 
 Split into two waves so the corpus work does not gate the best scenarios.

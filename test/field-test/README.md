@@ -15,7 +15,70 @@ rule that out). Never part of `npm test`.
 | `verify.mts` | Scripted invariant oracle (no LLM): placeholder integrity, `.js` byte-equality, `.ts` marker-hash relation, `.decanter.json` git-history, `get_workflow_history` evidence. Exit 1 on any violation. |
 | `report.mts` | **Renders a run's transcripts into ONE self-contained HTML report** — a chat-style timeline of each blind session (prompts, agent reasoning, every tool call + result, guard log, verdicts), with each file change diffed under the action that caused it. Renders a live run (`<manifest>`) or a committed archive (`--from <raw.tgz>`) identically. |
 | `runs/<iso>-<runId>/` | **Committed round archives** — `raw.tgz` (the source of truth) + `report.html` (the view). See *Debugging* below. |
-| `scenarios/S1–S5.md` + `STYLE.md` | Persona / goal / adaptive-beats / checklist + a machine-readable `## Orchestration` turn spine; blinding rules verbatim. |
+| `scenarios/S1–S13.md` + `STYLE.md` | Persona / goal / adaptive-beats / checklist + a machine-readable `## Orchestration` turn spine; blinding rules verbatim. Structurally checked offline by `test/unit/field-scenarios.test.mts` (part of `npm test`). |
+
+## Scenario × surface coverage
+
+Which scenario exercises which part of the product, and — as importantly — what
+nothing covers and why. S1–S6 and the wave-2a scenarios (S8, S9, S11, S13) are
+**runnable today**; the corpus-dependent rest of S7–S13 are
+[Plan 61](../../plans/open/61-field-test-scenario-wave-2.md)'s wave 2, written
+ahead of the staging machinery they need (`run.mts` refuses a scenario whose
+pre-hook or seed kind does not exist, so an unbuilt one cannot silently
+"measure" an untouched environment).
+
+| Surface | Covered by | Status |
+| --- | --- | --- |
+| `pull` / `push` / `diff` / drift guard / TS conversion / MCP structure + reconcile | S1–S4 | runnable (only 3 archived rounds on the post-Plan-59 verb surface) |
+| CLI discoverability from a fresh clone | S6 (`FIELD_NO_CLI=1`) | runnable — 6 rounds, 6 PASS |
+| `watch` | S5 | written, **never run** → [Plan 62](../../plans/open/62-field-test-unrun-conditions.md) |
+| `preflight` (`--json`, `--require`, `--fail-on`, `--fail-fast`, coverage block) | **S8** | **runnable** — stage `--seeds wave2` |
+| `scenario create --execution` / `check`, `executions`, `test` after push | **S8** | **runnable** — land [Plan 65](../../plans/draft/65-three-gate-scenario-mismatch.md) first |
+| `preflight --simulate` / `--offline` / `--viewer`, loop preview, `node run` | **S9** | **runnable** host-only, `--seeds wave2` — land [Plan 63](../../plans/open/63-field-feedback-bugfixes.md)/[66](../../plans/draft/66-multi-output-pins.md) first |
+| `backup create` / `restore` / `list`, `backupLimit` | **S10** | needs the corpus pack + `fill-backup-store` |
+| `publish` / `push --publish` / `unpublish`, live-vs-draft, guard publish gate (#200) | **S11** | **runnable** |
+| bulk no-ref verbs, non-TTY no-picker contract, `list --json`, `data-tables`, git hygiene | **S12** | needs the corpus pack + a seeded data table |
+| error-message routing: MCP unavailable / 401 / 403 / layout violation / misrouted config | **S13** | **runnable** — run `disable-mcp` only after [Plan 74](../../plans/draft/74-mcp-disabled-403.md) |
+| workflows decanter did not create (legacy nodes, credentials, punctuation, scale) | **S7** | needs the corpus seed pack |
+| `init` OAuth browser consent | — | **not covered, deliberately**: e2e + unit own it; a browser consent flow is not gradeable headless |
+| `init` cold path (no pre-seeded `.env`) | — | **not covered yet**: `FIELD_NO_SEED_ENV=1` exists, no round has used it → Plan 62 |
+| `completion` | — | **not covered, deliberately**: shell-integration surface, no agent-facing behaviour to grade |
+| `mcp serve` (HTTP guard transport) | — | **not covered**: the scaffold wires `mcp connect`; the HTTP variant has no blind-agent path today |
+
+### Seed packs and pre-hooks
+
+**Seed packs** (`stage.mts --seeds <pack>`, or `FIELD_SEED_PACK`):
+
+- `builtin` *(default)* — the four workflows every archived round staged.
+  Unchanged on purpose: a fifth workflow changes what `list --remote` shows,
+  which is an input to S1's discovery beat and S6's fresh-clone measurement.
+- `wave2` — `builtin` plus `Weekly revenue totals` (`s8-ladder`: two chained
+  Code nodes, so a run gives the second one a real **input** sample) and
+  `Order backlog in chunks` (`loop-preview`: a `splitInBatches` loop, the one
+  graph whose local replay is viewer-only).
+
+**Pre-hooks** are the harness playing a second actor before a scenario's first
+turn. Play one on its own — no claude spend — with:
+
+```sh
+node test/field-test/run.mts <manifest> --hook=<name>
+```
+
+| hook | what it stages |
+| --- | --- |
+| `remote-drift` | a colleague's raw-MCP `jsCode` edit (S3) |
+| `seed-capture` | runs the `s8-ladder` workflow so a **real** execution exists to fetch (S8) |
+| `publish-then-drift` | publishes, then drifts the **draft** while live keeps running (S11) |
+| `break-published-draft` | publishes, then leaves the draft with a dangling `$('…')` — the Plan 64 publish gate must refuse it (S11) |
+| `revoke-mcp-access` | takes a workflow out of MCP (S13) |
+| `rotate-mcp-token` | invalidates the session's token server-side → 401 (S13) |
+| `disable-mcp` | switches MCP off instance-wide → **403**, see [Plan 74](../../plans/draft/74-mcp-disabled-403.md) (S13) |
+| `inject-layout-violation` | an orphan file in `code/` — the compliance error `--force` does not bypass (S13) |
+| `misroute-mcp` | rewrites `.mcp.json` to point straight at n8n, taking the guard out of the path (S13) |
+
+A scenario naming a hook that does not exist, or a seed kind this stage never
+created, is **refused before any spend** — `run.mts` used to silently no-op an
+unknown hook and run the turns against an untouched environment.
 
 ## Run it (UNSANDBOXED)
 
