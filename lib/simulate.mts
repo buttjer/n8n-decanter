@@ -149,12 +149,16 @@ function runDataOf(exec: Execution, execId: string): RunData {
 }
 
 /** Items a node emitted on its first run, first output — `[]` if it emitted none. */
-export function firstRunItems(runs: NodeRun[] | undefined): RunItem[] | undefined {
+export function firstRunItems(runs: NodeRun[] | undefined, outputIndex = 0): RunItem[] | undefined {
   if (!runs || runs.length === 0) return undefined;
   const main = runs[0]?.data?.main;
   if (!Array.isArray(main)) return [];
-  const first = main[0];
-  return Array.isArray(first) ? first : [];
+  // A branching node emits on ONE output per run: an IF that took "true" has
+  // items in main[0] and an empty (or absent) main[1]. Reading main[0] for every
+  // edge — the old behaviour — therefore judged the untaken branch reachable and
+  // fed its target the other branch's items (Plan 63 task 4).
+  const out = main[outputIndex];
+  return Array.isArray(out) ? out : [];
 }
 
 /** Where a replay source lives: a slug-named committed scenario, or a raw temp capture. */
@@ -284,9 +288,9 @@ function connectedTargets(connections: Record<string, unknown>): Set<string> {
  */
 function reachableInCapture(target: string, connections: Record<string, unknown>, runData: RunData): boolean {
   let reachable = false;
-  forEachConnectionTarget(connections, (t, source, type) => {
+  forEachConnectionTarget(connections, (t, source, type, outputIndex) => {
     if (t.node !== target || type !== "main" || reachable) return;
-    const items = firstRunItems(runData[source]);
+    const items = firstRunItems(runData[source], outputIndex);
     if (items && items.length > 0) reachable = true;
   });
   return reachable;
@@ -295,9 +299,9 @@ function reachableInCapture(target: string, connections: Record<string, unknown>
 /** Captured items feeding a node on its `main` inputs — few-shot context for a gap guess. */
 function capturedInputFor(target: string, connections: Record<string, unknown>, runData: RunData): RunItem[] {
   const input: RunItem[] = [];
-  forEachConnectionTarget(connections, (t, source, type) => {
+  forEachConnectionTarget(connections, (t, source, type, outputIndex) => {
     if (t.node !== target || type !== "main") return;
-    const items = firstRunItems(runData[source]);
+    const items = firstRunItems(runData[source], outputIndex);
     if (items) input.push(...items);
   });
   return input;

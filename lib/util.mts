@@ -53,16 +53,20 @@ export function placeholderFile(node: JsCodeNode): string | null {
  */
 export function forEachConnectionTarget(
   connections: Record<string, unknown>,
-  cb: (target: { node?: unknown }, source: string, type: string) => void,
+  cb: (target: { node?: unknown }, source: string, type: string, outputIndex: number) => void,
 ): void {
   for (const [source, byType] of Object.entries(connections)) {
     if (!byType || typeof byType !== "object") continue;
     for (const [type, groups] of Object.entries(byType as Record<string, unknown>)) {
       if (!Array.isArray(groups)) continue;
-      for (const group of groups) {
+      // The group index IS the source node's output index — an IF's group 0 is
+      // its "true" branch, group 1 its "false" branch. It was in scope here all
+      // along and never passed on, so every caller silently read output 0
+      // (Plan 63 task 4).
+      for (const [outputIndex, group] of groups.entries()) {
         if (!Array.isArray(group)) continue;
         for (const target of group) {
-          if (target && typeof target === "object") cb(target as { node?: unknown }, source, type);
+          if (target && typeof target === "object") cb(target as { node?: unknown }, source, type, outputIndex);
         }
       }
     }

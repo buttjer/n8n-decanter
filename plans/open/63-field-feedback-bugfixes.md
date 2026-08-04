@@ -101,6 +101,16 @@ Fix: add `outputIndex` to `forEachConnectionTarget`'s callback signature, then
 have `reachableInCapture` and `capturedInputFor` read
 `runs[0].data.main[outputIndex]`. Small and local; fixes both symptoms.
 
+**Done (2026-08-04).** Exactly that: the group index — which was in scope in
+`forEachConnectionTarget` all along — is passed to the callback, `firstRunItems`
+takes an output index (default 0, so every other caller is unchanged), and both
+consumers read the branch they are actually looking at. Three unit cases in
+[`test/unit/simulate.test.mts`](../../test/unit/simulate.test.mts); the two that
+assert the new behaviour were confirmed to **fail** against the old code.
+Pulled forward out of turn because [Plan 65](../draft/65-three-gate-scenario-mismatch.md)
+depends on it — `fill` stays wrong regardless of which gate wins until this
+lands.
+
 ### 5. `node run` silently ignores the branch index
 
 [`n8n-globals.d.ts:32`](../../n8n-globals.d.ts) — the type surface decanter ships
