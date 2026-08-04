@@ -29,18 +29,33 @@ left**, so the plan is deliberately a marketing surface, not a feature.
 
 ## Scope
 
+**Own marketplace ≠ discovery.** The `/plugin` **Discover** tab lists plugins
+only from marketplaces the user already has, and the only one added
+automatically is Anthropic's `claude-plugins-official`. A repo marketplace is
+therefore reachable only by people who already know the repo name — the same
+circularity as the `init` printout. Reach comes from **submission to
+`anthropics/claude-plugins-community`** (third-party plugins that passed
+Anthropic's automated validation and safety screening, each pinned to a commit
+SHA); the official marketplace is curated at Anthropic's discretion and the
+in-app submission forms feed the community catalog, not it. So step 1 is a
+prerequisite artifact, step 2 is the actual goal.
+
 1. `.claude-plugin/marketplace.json` at repo root, plus `plugin/` holding
    `.claude-plugin/plugin.json` (`name`, `description`, `keywords`, `homepage`,
    `repository`, `license`).
-2. **Skills only.** A short entry point — what decanter is, `init`, the
+2. **Submit to the community marketplace** — that, not the own catalog, is what
+   makes decanter findable to someone who has never heard of it. Users then run
+   `/plugin marketplace add anthropics/claude-plugins-community` (manual, once)
+   and `/plugin install n8n-decanter@claude-community`.
+3. **Skills only.** A short entry point — what decanter is, `init`, the
    file + `push` loop — that hands off to the CLI and the scaffolded `AGENTS.md`.
    No MCP server, no hooks, no permissions (see Non-goals).
-3. **Release coupling:** bump `plugin.json` `version` in the same
+4. **Release coupling:** bump `plugin.json` `version` in the same
    `chore/release-x.y.z` PR as `package.json`. Omitting `version` makes Claude
    Code fall back to the git SHA, i.e. every commit reads as a new version.
-4. **Drift guard:** teach `npm run check:docs` about the plugin so it becomes a
+5. **Drift guard:** teach `npm run check:docs` about the plugin so it becomes a
    checked fourth surface instead of a fifth place to forget.
-5. **Dev/CI:** `claude --plugin-dir ./plugin` for local runs;
+6. **Dev/CI:** `claude --plugin-dir ./plugin` for local runs;
    `claude plugin validate ./plugin --strict` in CI.
 
 ## Non-goals — and why (all verified 2026-08-04 against the plugin reference)
@@ -79,6 +94,16 @@ left**, so the plan is deliberately a marketing surface, not a feature.
   marketplace. It buys namespacing (`/n8n-decanter:…`) and one bundle instead of
   loose files; it is cosmetic, never loads monitors, and only loads when Claude
   Code starts in the repo root. Not part of this plan.
+- **Second-best channel, if the community submission stalls:** `init` could
+  scaffold `extraKnownMarketplaces` + `enabledPlugins` into the sync dir's
+  `.claude/settings.json` — Claude Code then prompts collaborators to install it
+  when they trust the folder. That is exactly the dropped Plan 56 shape, and it
+  reaches *collaborators of an existing project*, never new users.
+- Own/local marketplaces also show a **thinner detail pane** (no *Context cost*,
+  no *Last updated*, and "Components will be discovered at installation" instead
+  of the *Will install* inventory), and third-party marketplaces have
+  auto-update **off** by default. Both argue for the community catalog over a
+  self-hosted one.
 - A marketplace listing is a **distribution channel, not agent substance**, so it
   doesn't conflict with the tool-agnostic rule in the root `AGENTS.md` — as long
   as the content stays in `AGENTS.md` and the plugin only points at it.
