@@ -32,7 +32,7 @@ still gets a whole-project gate. The exit code aggregates across them.
 ```sh
 n8n-decanter preflight <workflow>   # 1. is my local code sound?      (local)
 n8n-decanter push     <workflow>    # 2. make it the draft            (writes the draft)
-n8n-decanter test     <workflow>    # 3. run it for real on n8n       (runs the draft)
+n8n-decanter test     <workflow>    # 3. grade the draft on n8n       (static; pinned run with a flag)
 n8n-decanter publish  <workflow>    # 4. go live                      (publishes)
 ```
 
@@ -44,7 +44,7 @@ shipping. Each step verifies the artifact the previous step produced:
 | --- | --- | --- |
 | `preflight` | your local files | reads only |
 | `push` | — | **writes the draft** |
-| `test` | the draft, which is now your code | **runs the draft** |
+| `test` | the draft, which is now your code | reads it; **runs the draft** with `--execution`/`--scenario` |
 | `publish` | — | **publishes** |
 
 `preflight` is deliberately the only step that changes nothing. It is safe to

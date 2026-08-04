@@ -17,7 +17,7 @@ import { ENABLE_MCP_VERB, mergeRemote, runPicker, runVerbWithForceRetry, sortByR
 import { ALL_CHECK_IDS, type CheckId, describeFlags, exitCodeOf, formatCheckDetails, formatCheckLine, type Palette, renderPreflightSummary, RETIRED_CHECK_IDS, runPreflight } from "./lib/preflight.mts";
 import { pullWorkflow } from "./lib/pull.mts";
 import { pushWorkflow } from "./lib/push.mts";
-import { printTestReport, runTest } from "./lib/testrun.mts";
+import { printTestReport, runStaticTest, runTest } from "./lib/testrun.mts";
 import { runNode } from "./lib/run.mts";
 import { findWorkflowDir, listWorkflowRefs, looksLikeWorkflowId, matchWorkflowRef, readState } from "./lib/state.mts";
 import { diffWorkflow } from "./lib/diff.mts";
@@ -75,7 +75,8 @@ ${b("Inspect & test")}
   ${b("data-tables")} [table…] [--filter=… --search=… --sort=… --limit=N --all]   ${d("fetch data-table schema + rows (read-only)")}
   ${b("data-tables")} [table…] clean              ${d("delete fetched data-table data (offline)")}
   ${b("test")} <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
-  ${d("                                            pinned run on the INSTANCE (draft; after push); exits 1 on divergence")}
+  ${d("                                            grades the INSTANCE's draft (after push). Bare: static check only,")}
+  ${d("                                            nothing runs. With --execution/--scenario: pinned run, exits 1 on divergence")}
   ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
 
 ${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-scaffolded)")}
@@ -736,9 +737,20 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         throw new Error("pass either --scenario <slug> or --execution <id>, not both");
       }
       const source = scenarioSlug !== undefined ? "scenario" as const : "capture" as const;
-      const ref = scenarioSlug ?? valueFlags.get("execution") ?? latestCaptureId(dir) ?? undefined;
-      if (ref === undefined) throw new Error(`no execution to pin from: pass --execution <id> (or --scenario <slug>), or fetch one with \`n8n-decanter executions ${refs[0]}\``);
-      if (source === "capture" && valueFlags.get("execution") === undefined) log.info(style.dim(`no --execution/--scenario given; using the latest capture ${ref}`));
+      const ref = scenarioSlug ?? valueFlags.get("execution");
+      // Plan 64: NO latest-capture fallback. A bare `test` used to execute for
+      // real against the instance, steered by whatever sat in the gitignored
+      // executions/ dir — so two people on one commit got different behaviour.
+      // Bare is now the read-only static tier; executing means saying so.
+      if (ref === undefined) {
+        const staticMcp = createMcpClient(config, log);
+        await withEnableHint(async () => {
+          const report = await runStaticTest(staticMcp, refs[0], log);
+          if (jsonFlag) console.log(JSON.stringify(report, null, 2));
+          if (!report.ok) process.exitCode = 1;
+        });
+        break;
+      }
       // test_workflow is synchronous with a 5-minute server-side cap — this
       // call needs a client whose timeout outlives it
       const testMcp = createMcpClient({ ...config, requestTimeoutMs: Math.max(config.requestTimeoutMs, 320_000) }, log);

@@ -33,7 +33,7 @@ This document is the contract for creating and editing these files.
 - **`push` writes the DRAFT and is part of finishing the work — code that only
   exists in this folder is not done. `publish` (or `push --publish`) changes
   what is actually running and needs the user's say-so.** The loop:
-  **edit → `preflight` (grades local) → `push` → `test` (runs the draft — now
+  **edit → `preflight` (grades local) → `push` → `test` (grades the draft — now
   your code) → `publish` only when asked.**
 
 The rest of this document is the full contract behind those points.
@@ -480,11 +480,14 @@ divergence.
     instance at all.
 - `n8n-decanter push <workflow>` — make your local code the workflow's draft
   (see the push rule above; a push lands on the draft and never goes live).
-- `n8n-decanter test <workflow>` — pinned run **on the instance** (MCP; draft
-  only, the live version is never touched), so it belongs **after `push`**. It
-  is the strongest runtime check — the instance's exact engine, community nodes
-  included, no Docker. Non-interactive runs never mutate and say so when your
-  local edits aren't pushed yet.
+- `n8n-decanter test <workflow>` — grades the **instance's draft**, so it
+  belongs **after `push`**. Bare it is a **static check** (dangling `$('…')`
+  refs) that executes nothing and needs no capture — this is also what `publish`
+  refuses on. With `--execution <id>` / `--scenario <slug>` it is a pinned run
+  on the instance (draft only, the live version is never touched): the strongest
+  runtime check — exact engine, community nodes, no Docker. **There is no
+  fallback**; if you want it to run, say so with a flag. Non-interactive runs
+  never mutate and say so when your local edits aren't pushed yet.
 - `n8n-decanter diff [workflow…]` — the **inspection** view next to
   `preflight`'s gate: per-node line diffs of local code vs what n8n holds
   (`.ts` compiled first, so a `shared/` edit shows in every importing node).

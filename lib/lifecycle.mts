@@ -1,6 +1,7 @@
 import { getWorkflowDetails, type McpClient, publishWorkflowMcp, unpublishWorkflowMcp } from "./mcp.mts";
 import type { Log } from "./types.mts";
 import { publicationState } from "./util.mts";
+import { danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
 
 /**
  * `publish` — take the draft live (MCP `publish_workflow`, Plan 32). Since
@@ -13,6 +14,23 @@ export async function publishWorkflow(mcp: McpClient, id: string, log: Log): Pro
   if (publicationState(before) === "published" && before.activeVersionId === before.versionId) {
     log.info(`"${before.name}" (${id}) is already published — the draft is live`);
     return;
+  }
+  // Go-live gate (Plan 64 task 3b). Scans the draft we just read — the thing
+  // about to become live — NOT the repo folder: `workflow.json` is a snapshot,
+  // so grading it here would false-green on a stale mirror and false-red on a
+  // fresh clone. The scan is shared with `test`'s static tier, and re-running it
+  // is the point rather than waste: the instance can change between the two, so
+  // only the check inside `publish` is authoritative for this publish. It costs
+  // no extra call — the read above already happened.
+  const dangling = danglingNodeRefs(before.nodes);
+  if (dangling.length > 0) {
+    throw new Error(
+      [
+        `refusing to publish "${before.name}" — ${dangling.length} dangling $('…') reference(s) on the draft would go live:`,
+        ...describeDanglingRefs(dangling),
+        `then re-check with: n8n-decanter test ${id}`,
+      ].join("\n"),
+    );
   }
   await publishWorkflowMcp(mcp, id);
   log.ok(`published "${before.name}" (${id}) — code is live now`);

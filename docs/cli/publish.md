@@ -23,6 +23,27 @@ Both go over n8n's MCP server. Without refs they act on the workflows listed
 in `decanter.config.json`. `push --publish` combines a push with the publish
 in one command.
 
+## The go-live gate
+
+`publish` refuses a draft carrying a dangling `$('…')` reference — one that
+names a node the workflow doesn't have. That reference fails at run time, so
+publishing it would put a known break into production.
+
+The check runs against **the draft on the instance**, not your local folder.
+That is deliberate: `workflow.json` is a snapshot, so grading it here would pass
+a broken workflow whenever the local mirror is out of date, and block a
+legitimate publish from a fresh clone. It costs nothing extra — `publish`
+already reads the draft to decide what to do.
+
+It is the same check [`test`](/docs/cli/test/) runs bare, and the message names
+both halves and the order to repair them in. Running it in both places is not
+redundant: the instance can change between the two, so only the check inside
+`publish` is authoritative for that publish.
+
+The usual cause is a rename — n8n's `renameNode` MCP op rewrites the node name
+and the connections only, and leaves every reference behind. See
+[`pull`](/docs/cli/pull/#renames-and-migrations).
+
 ## Already in that state
 
 Running `publish` when the live version already equals the draft (or

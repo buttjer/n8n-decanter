@@ -874,9 +874,22 @@ preflight → push → test → publish
 
 Each step verifies the artifact the previous one produced: `preflight` grades
 local code (reads the instance for sync facts only), `push` makes it the draft,
-`test` runs what was pushed, `publish` goes live. `runTest`'s `neverMutate` flag
-is gone with the stage — the read-only guarantee is now structural (preflight
-never calls `runTest`) rather than a mode.
+`test` grades what was pushed, `publish` goes live. `runTest`'s `neverMutate`
+flag is gone with the stage — the read-only guarantee is now structural
+(preflight never calls `runTest`) rather than a mode.
+
+**`test` has two tiers (Plan 64).** Bare, it grades the draft **statically** —
+`danglingNodeRefs` over the nodes the instance returns — and executes nothing.
+With `--execution`/`--scenario` it is the pinned run, which now runs the static
+scan first so a known-broken draft is never fired at the instance. The
+latest-capture fallback is **gone**: a bare `test` used to execute for real,
+steered by whatever sat in the gitignored `executions/` dir, so the same commit
+behaved differently for different people. `publish` gates on the same scan,
+applied to the `getWorkflowDetails` read it already makes — the instance's
+draft, never the local `workflow.json`, which is a snapshot and would
+false-green on a stale mirror and false-red on a fresh clone. Running it in both
+places is intentional: the instance can change in between, so only the check
+inside `publish` is authoritative for that publish.
 
 - **Ladder (stable check ids agents key on), fast → slow:** static `layout`
   (`validateWorkflowDir`), `types` (`runTypecheckResult`); sync `connect` +

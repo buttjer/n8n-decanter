@@ -2394,12 +2394,23 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   r = await cli("executions", "wfT1");
   assert.equal(r.code, 0, r.out);
 
-  // in-sync, non-TTY: pins the trigger, runs, diffs clean, never mutates
-  const updatesBefore = updateCount;
-  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+  // Plan 64: a BARE `test` is the static tier — it grades the instance's draft
+  // and runs nothing, even though capture 301 is sitting right there and used to
+  // be picked up and executed. That silent fallback is gone for good.
+  lastTestCall = undefined;
   r = await cli("test", "wfT1");
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /no --execution\/--scenario given; using the latest capture 301/);
+  assert.match(r.out, /statically clean/);
+  assert.match(r.out, /nothing was executed/);
+  assert.match(r.out, /pass --scenario <slug> or --execution <id>/);
+  assert.doesNotMatch(r.out, /pinned from capture/, "bare test must not pin");
+  assert.equal(lastTestCall, undefined, "bare test must not call test_workflow");
+
+  // in-sync, non-TTY, EXPLICIT capture: pins the trigger, runs, diffs clean, never mutates
+  const updatesBefore = updateCount;
+  testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+  r = await cli("test", "wfT1", "--execution=301");
+  assert.equal(r.code, 0, r.out);
   assert.match(r.out, /1 node\(s\) pinned from capture 301/);
   assert.match(r.out, /Compute: matches capture/);
   assert.match(r.out, /instance test matches the capture/);
@@ -2411,7 +2422,7 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   const computeFile = path.join(wfDir("Instance Test Flow"), "code", "compute.js");
   const originalCompute = read(wfDir("Instance Test Flow"), "code", "compute.js");
   writeFileSync(computeFile, "return [{ json: { doubled: 3 } }];\n");
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /local code differs from the draft — this tested the draft, NOT your local code; run `n8n-decanter push` first/);
   assert.equal(updateCount, updatesBefore, "still no mutation with local edits pending");
@@ -2419,21 +2430,21 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
 
   // divergence → exit 1 with the per-node diff
   testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 999 } }]] } }] };
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 1);
   assert.match(r.out, /Compute: diverged from capture/);
   assert.match(r.out, /instance test diverged: Compute/);
 
   // instance-side failure (the 5-min timeout wording) surfaces verbatim
   testRunOutcome = { status: "error", error: "Workflow execution timed out after 300 seconds", executionId: null };
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 1);
   assert.match(r.out, /instance test run failed: Workflow execution timed out after 300 seconds/);
   testRunOutcome = { status: "success" };
 
   // gap: a network node with no captured output must abort BEFORE anything runs
   db.get("wfT1").nodes.push({ id: "t3", name: "Fetch Prices", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [440, 0], parameters: { url: "http://x" } });
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 1);
   assert.match(r.out, /cannot pin "Fetch Prices"[\s\S]*scenario create/);
   db.get("wfT1").nodes.pop();
@@ -2506,7 +2517,7 @@ await step("preflight: one scored, local-code gate that never writes and never r
   assert.equal(r.code, 0, "after the push the gate is clean");
   assert.doesNotMatch(r.out, /push to make it the draft/, "parity warn gone once local IS the draft");
   const execsBeforePostPushTest = testExecCount;
-  r = await cli("test", "wfT1");
+  r = await cli("test", "wfT1", "--execution=301");
   assert.equal(testExecCount, execsBeforePostPushTest + 1, "the instance run happens AFTER the push, via the test verb");
   // (divergence-vs-capture verdicts are the dedicated test-verb step's business;
   // this step pins the ORDER: preflight never ran it, push-then-test did)

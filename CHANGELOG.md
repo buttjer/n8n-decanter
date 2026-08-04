@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: `n8n-decanter test <workflow>` no longer executes.** It used to
+  fall back to the newest capture under `executions/` and run the workflow for
+  real on your instance — a directory that is gitignored, so the same commit
+  behaved differently for different people, and a bare verb had real side
+  effects. Bare `test` is now a **static tier**: it reads the instance's draft,
+  reports dangling `$('…')` references, and runs nothing. Pass
+  `--execution <id>` or `--scenario <slug>` for the pinned run, which is
+  otherwise unchanged. There is no deprecation shim — a `test` that still
+  executed *sometimes* would keep exactly the ambiguity this removes.
+
+  The pinned run now also does the static check first, so a draft already known
+  to be broken is never fired at the instance.
+- **`publish` refuses a draft carrying a dangling `$('…')` reference.**
+  Previously nothing checked: the compliance guard runs on `push`, `preflight`
+  and `backup` — not `publish` — so a task that only renamed nodes never hit a
+  gate and the break went live. The check reads **the draft on the instance**
+  (the read `publish` already makes), not your local folder: `workflow.json` is
+  a snapshot, so grading it would pass a broken workflow on a stale mirror and
+  block a legitimate publish from a fresh clone.
+
 ### Added
 
 - **`init` now scaffolds a hook that catches stranded `$('…')` references right
