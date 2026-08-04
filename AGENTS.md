@@ -609,7 +609,12 @@ the same traps:
 ### MCP server (built-in, n8n ≥ ~2.13; verified on 2.30.7)
 
 - **Endpoint:** `POST /mcp-server/http` (Streamable HTTP JSON-RPC). Probe with no
-  token → **401** when live, **404** when disabled/too-old. Responses may be
+  token → **401** when the endpoint exists, **404** when it does not (n8n too old,
+  or a wrong host/path). **A no-token probe cannot tell "live" from "switched
+  off"** (corrected 2026-08-04, reproduced on 2.30.7): with
+  `mcpAccessEnabled:false` the endpoint still 401s an absent/stale token and
+  answers a **valid** token with **403** `{"message":"MCP access is disabled"}`.
+  Decanter maps 401 and 404 but not 403 — [Plan 74](plans/draft/74-mcp-disabled-403.md). Responses may be
   `text/event-stream` — parse `data:` lines. Send `accept: application/json,
   text/event-stream`; carry the `mcp-session-id` response header on later calls.
 - **Enabling and the token are BOTH headless via the owner cookie** (no UI needed):
