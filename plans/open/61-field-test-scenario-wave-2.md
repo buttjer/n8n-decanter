@@ -239,8 +239,8 @@ S13 grades; the rotated token produces the exact 401.
 
 **One product finding fell out, offline and for free** — the D6 principle in
 action: a switched-off MCP server answers **403**, never 404, and decanter has
-no message for it → [Plan 74](../draft/74-mcp-disabled-403.md). `AGENTS.md`'s
-"404 when disabled" claim is corrected in the same change.
+no message for it → [Plan 74](../done/74-mcp-disabled-403.md) (**since fixed**).
+`AGENTS.md`'s "404 when disabled" claim is corrected in the same change.
 
 **Still to build:** the corpus seed-pack loader and its vet/modernize pass
 (Tasks 5 + 6) and `fill-backup-store`, which gate **S7, S10 and S12** — wave 2b.

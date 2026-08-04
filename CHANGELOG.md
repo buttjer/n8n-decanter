@@ -76,6 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An n8n whose MCP access is switched off now says so.** Turning MCP off is a
+  one-click state in n8n (Settings → MCP) and it makes the server answer a valid
+  token with `403 MCP access is disabled` — it never 404s. decanter recognised
+  401 and 404 but not 403, so every command failed with a bare
+  `403 Forbidden` and no next step. It now surfaces n8n's own reason plus the
+  fix. The 404 message was reworded to match what 404 actually means (no MCP
+  server at that address — wrong `N8N_HOST`, or an n8n too old to have one).
+
+  Note the ordering trap, now documented in the troubleshooting FAQ: a missing
+  or stale token still returns 401 while MCP is off, so the 401 can hide the 403.
+
 - **Corrected the rename guidance: n8n's `renameNode` MCP op does NOT rewrite
   `$('…')` references.** The scaffolded agent guide (and the 0.6.0 notes below)
   claimed n8n rewrites connections *and* `$('…')` references server-side on a

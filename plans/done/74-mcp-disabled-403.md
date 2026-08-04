@@ -1,6 +1,6 @@
 # Plan 74 — A switched-off MCP server answers 403, and decanter has no message for it
 
-**Status:** Draft
+**Status:** Done (2026-08-04)
 **Priority:** P2
 **Source:** fell out of building [Plan 61](../open/61-field-test-scenario-wave-2.md)'s
 `disable-mcp` pre-hook; reproduced against real n8n 2.30.7 on 2026-08-04.
@@ -43,17 +43,24 @@ disabled. Corrected in the same change as this note.
 - Every other reachable failure on this path has a routing hint. This one
   reads like an internal error.
 
-## Sketch
+## Done
 
-1. Map **403** in [`lib/mcp.mts`](../../lib/mcp.mts) beside 401/404: surface
-   n8n's own `message` plus the same *"enable MCP access in n8n (Settings →
-   MCP)"* next step the 404 branch already carries.
-2. Re-word the **404** branch: it means the endpoint is absent (n8n too old or
-   a wrong host/path), not "disabled".
-3. [`docs/faq/troubleshooting.md`](../../docs/faq/troubleshooting.md): a row for
-   *MCP access is disabled*, including the 401-masks-403 ordering trap.
-4. `CHANGELOG.md` — user-facing (Fixed).
-5. A guard-proxy/e2e case: a mock answering 403 produces the routed message.
+1. **403 mapped** in [`lib/mcp.mts`](../../lib/mcp.mts) beside 401/404: it
+   surfaces n8n's own `message` plus *"turn MCP access on in n8n (Settings →
+   MCP); if it is on, the token's user may lack access"*. A 403 with no JSON
+   body still routes.
+2. **404 re-worded** — it means the endpoint is absent (wrong `N8N_HOST`, or an
+   n8n too old to ship one), and says explicitly that a switched-off server
+   answers 403 instead.
+3. [`docs/faq/troubleshooting.md`](../../docs/faq/troubleshooting.md) — its own
+   section, including the **401-masks-403** ordering trap, and the 404 section
+   corrected.
+4. `CHANGELOG.md` — Fixed.
+5. Two cases in [`test/unit/mcp.test.mts`](../../test/unit/mcp.test.mts): a mock
+   answering 403 with n8n's body, and one with no JSON body.
+
+The condition stays in S13's rubric — the fix changes *what* a blind agent is
+graded on (does the routed message land?), not whether it is worth measuring.
 
 ## Notes
 

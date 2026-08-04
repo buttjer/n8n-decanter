@@ -65,12 +65,26 @@ from the workflow card in the n8n workflows list (⋯ menu) or the workflow
 settings, then retry. [list --remote](/docs/cli/list/) marks which workflows
 still need it.
 
+## "n8n refused the MCP request (403 — MCP access is disabled)"
+
+MCP access is switched **off** for the whole instance. Turn it on under n8n →
+**Settings → MCP**. If it is already on, the token's user may not have access
+to MCP.
+
+**A stale token hides this**, because the 401 below is checked first: if
+decanter reports the 401 and a fresh token does not help, check the MCP switch
+too.
+
 ## "no MCP endpoint … (404)" or "MCP token was rejected (401)"
 
-The 404 means MCP access is off (n8n → Settings → MCP) or the n8n predates
-the built-in MCP server (~2.20+). The 401 means the token is wrong — note
-that the **public API key is not a valid MCP token**; mint one under n8n →
-Settings → MCP → API key, or re-run [init](/docs/cli/init/) for OAuth.
+The **404** means there is no MCP server at that address at all — check
+`N8N_HOST` points at the right instance, and that the n8n is recent enough
+(~2.20+) to ship the built-in MCP server. A server that exists but is switched
+off answers **403**, not 404 (see above).
+
+The **401** means the token is wrong — note that the **public API key is not a
+valid MCP token**; mint one under n8n → Settings → MCP → API key, or re-run
+[init](/docs/cli/init/) for OAuth.
 
 ## "MCP session expired … re-run: n8n-decanter init"
 

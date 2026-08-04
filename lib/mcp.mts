@@ -583,8 +583,25 @@ export class McpClient {
         ? "the MCP token was rejected (401) — mint a fresh one in n8n (Settings → MCP) and update N8N_MCP_TOKEN (the public API key is not a valid MCP token)"
         : "MCP authorization rejected (401) — re-run: n8n-decanter init");
     }
+    // 403 is what a SWITCHED-OFF MCP server answers a valid token with, verified
+    // on n8n 2.30.7 (Plan 74). It never 404s for that — 404 means the endpoint
+    // is not there at all. Without this branch the user got a bare
+    // "403 Forbidden" for a state they reach by flipping a documented switch.
+    // Note a missing/stale token still 401s while MCP is off, so the 401 above
+    // can mask this one; the troubleshooting page says so.
+    if (res.status === 403) {
+      const detail = ((): string => {
+        try {
+          const m = (JSON.parse(text) as { message?: unknown }).message;
+          return typeof m === "string" && m !== "" ? ` (${m})` : "";
+        } catch {
+          return "";
+        }
+      })();
+      throw new Error(`n8n refused the MCP request (403)${detail} — turn MCP access on in n8n (Settings → MCP); if it is on, the token's user may lack access`);
+    }
     if (res.status === 404) {
-      throw new Error(`no MCP endpoint at ${this.#host}${MCP_PATH} (404) — enable MCP access in n8n (Settings → MCP; needs n8n ≥ ~2.20)`);
+      throw new Error(`no MCP endpoint at ${this.#host}${MCP_PATH} (404) — this n8n has no MCP server: check N8N_HOST points at the right instance, and that n8n is ≥ ~2.20 (a server that exists but is switched off answers 403, not 404)`);
     }
     if (isNotification) return undefined;
     if (!res.ok) throw new Error(`MCP ${method} failed: ${res.status} ${res.statusText}\n${text.slice(0, 2000)}`);
