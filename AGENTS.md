@@ -481,8 +481,11 @@ mock server.
   server the agent spawns from the scaffolded `.mcp.json` — decanter's creds,
   no secret, stderr-only logging; `mcp serve` is the localhost HTTP variant
   (per-session secret, `.decanter-proxy.json` discovery file) for
-  URL-configured agents. Both forward everything except `update_workflow`
-  writes that set `jsCode`.
+  URL-configured agents. Both forward everything except two refusals, shared so
+  the transports can't drift: `update_workflow` writes that set `jsCode`
+  (`guardMessage`), and a `publish_workflow` whose draft carries dangling node
+  references (`guardPublish` — async, needs a read; **fail-closed**, so a read
+  that fails refuses too and says the *check* failed).
 - Data model (the part that spans files):
   - `workflows/<slug>/workflow.json` — **read-only structure snapshot**, each
     Code node's `jsCode` replaced by a `//@file:code/<node>.js` placeholder;

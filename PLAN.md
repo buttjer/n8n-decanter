@@ -677,7 +677,14 @@ transports:
   JSON-Pointer `path` targets `jsCode` (code in a scalar `value`, no key —
   the bypass the branch review caught). The rest of the op vocabulary is
   deliberately NOT enumerated; only these two source-writing routes are
-  intercepted. Unparseable bodies **fail closed** (403), bodies over 10 MB get
+  intercepted. The **second** block rule (Plan 64 task 3c, `guardPublish`):
+  `tools/call` → `publish_workflow` whose draft carries dangling node references
+  is refused, so the go-live gate `publish` runs can't be walked around by
+  calling the raw MCP tool. It is async (one `get_workflow_details` round-trip)
+  and therefore separate from the sync `guardMessage`, but shared by both
+  transports the same way; a failed read **fails closed** and the message names
+  the *check* as what failed. Unparseable bodies **fail closed** (403), bodies
+  over 10 MB get
   413 (drain-then-respond — destroying the socket would RST before the
   client reads the answer), non-secret requests 401 without touching n8n.
 - Binds `127.0.0.1` only; default port 5680 (`--port`, `0` = ephemeral).

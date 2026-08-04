@@ -63,13 +63,16 @@ Code is git's job. It wants files, diffs, types, review, blame, history.
 
 So the move isn't to take MCP away from the agent. It's to take *one write* off
 it. [n8n-decanter](/) sits between your agent and n8n as an MCP server of its
-own. It forwards the entire tool surface — create, read, update, rename, connect,
-publish — and refuses exactly one thing: an `update_workflow` operation that sets
-`jsCode`.
+own. It forwards the entire tool surface — create, read, update, rename, connect
+— and refuses one thing: an `update_workflow` operation that sets `jsCode`.
 
 The agent connects through a scaffolded `.mcp.json` and never sees a second set
 of credentials. From its side, n8n's full toolset is there, minus one door. When
 it tries that door, it's told where the file is instead.
+
+Exactly one other call isn't waved through unread: `publish_workflow`, the
+go-live step, is checked before it passes. That's a gate, not an ownership
+claim — and it's the subject of the section after next.
 
 ## What it writes instead
 
@@ -133,8 +136,9 @@ not a thing your customers hit.
 
 On top of that, a push runs two independent gates:
 
-1. **Compliance.** Layout and structural violations are hard errors. `--force`
-   does not bypass this one, on purpose — if it were bypassable it would be
+1. **Compliance.** Layout and structural violations are hard errors — including
+   a `$('Some node')` call that names a node which no longer exists. `--force`
+   does not bypass this one, on purpose: if it were bypassable it would be
    bypassed.
 2. **Per-node drift.** If a node's remote code moved off the hash recorded at
    last sync and differs from what you're about to send, the push aborts rather
@@ -143,6 +147,15 @@ On top of that, a push runs two independent gates:
 
 The split matters more than either gate. One is a rule about correctness and
 isn't negotiable; the other is a warning about concurrency and sometimes is.
+
+And because going live is the step that actually costs something, the same
+correctness check runs there too — including when the agent skips the CLI and
+calls n8n's `publish_workflow` tool itself. That's the guard's second refusal,
+for a boring reason: a gate you can walk around isn't a gate. It fails closed as
+well. If the draft can't be read, nothing is published, and the error says the
+*check* couldn't run rather than pretending to know the workflow is broken —
+"couldn't verify, so we shipped it" being the one outcome a gate must never
+have.
 
 ## What I'd flag before you trust it
 
@@ -153,6 +166,13 @@ the honest sharp edges:
   decanter. An agent handed your raw n8n credentials can write whatever it likes.
   This is a tool for keeping a cooperating agent inside the lines, not a
   containment boundary for a hostile one.
+- **A rename doesn't repair its own references.** n8n's MCP `renameNode` rewrites
+  the node name and the connections — not the `$('Old name')` calls in Code nodes
+  or in other nodes' expressions. (The editor does rewrite them, in the browser,
+  before it saves; the MCP op reports success and leaves them dangling.) Decanter
+  catches them at push, `test` and `publish` instead of at 3am, and on Claude
+  Code a hook reports them the moment the rename lands — but the repair is still
+  someone's job.
 - **Pull re-baselines even on conflict.** After a conflicting pull, the next push
   overwrites the remote edit. That's deliberate — files are the source of truth —
   but it will surprise you once.
@@ -165,9 +185,9 @@ the honest sharp edges:
 ## Where this leaves the agent
 
 It can do the thing it's good at — restructuring a workflow, wiring a new branch,
-renaming a step across every reference — through the engine's own validated API.
-And the part that needed review gets review, because it's a file in a pull
-request instead of a string in a payload.
+renaming a step and repairing what the rename stranded — through the engine's own
+validated API. And the part that needed review gets review, because it's a file
+in a pull request instead of a string in a payload.
 
 That's the whole idea. Not *don't let agents touch it*. Just: **don't let the
 part that needs a diff live somewhere a diff can't reach.**
