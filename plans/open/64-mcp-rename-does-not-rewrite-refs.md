@@ -1,7 +1,7 @@
 # Plan 64 — MCP `renameNode` strands every `$('…')` ref; our contract says the opposite
 
-**Status:** In progress — tasks 1 + 2 shipped (PR #191), 3a in review (PR #193);
-3b, 3c, 4, 5 open
+**Status:** In progress — tasks 1 + 2 (#191), 3a (#193) and 3b (#195) shipped;
+3c, 3d, 4, 5 open
 **Priority:** P1
 **Source:** claim B1 of the 2026-07-30 field report (39 renames left every
 reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
@@ -9,7 +9,7 @@ reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
 tracker / the forum — and **reproduced live against real n8n in Docker (2.30.7
 and 2.33.3)**, twice: once for n8n's behavior alone, once end-to-end through
 decanter.
-**Snapshot:** 2026-08-04T05:12Z @ 39f41d9
+**Snapshot:** 2026-08-04T12:33Z @ 39d9f22
 **Model:** Opus for task 1 (the contract prose is load-bearing); Sonnet for the rest.
 
 n8n's MCP `renameNode` rewrites the node name and the connections and leaves
@@ -274,16 +274,77 @@ Deliberately **not** touched: `scenario create`'s own latest-capture fallback
 input data for a **file write**, with no side effect on the instance, so the
 ambiguity that forces the removal in `test` does not exist there.
 
-#### 3c. Guard policy on `publish_workflow` — decide separately
+#### 3c. Gate `publish_workflow` in the guard, fail-closed
 
 `guardMessage` only inspects `update_workflow` for `jsCode`, so
 `publish_workflow` is forwarded unconditionally: **an agent can go live around
 3b entirely.** (`push --publish` is already covered — it runs through
 `pushWorkflow`'s gate. Only the bare verb and the raw MCP call are not.)
 
-Warning or blocking here touches the guard's stated contract ("forward everything
-except `jsCode` writes"), so it is a policy decision, not a bug fix. Kept out of
-3a/3b deliberately.
+**Decision: gate it — read the workflow, run 3b's scan, forward only if clean.**
+
+Three objections were raised against this and all three turned out to be wrong,
+so they are recorded here rather than re-litigated:
+
+- *"The guard would need a new capability."* It already has one.
+  `n8n-decanter.mts:952` builds `const serveMcp = mcp()` and hands it to the
+  mirror — the comment says *"reusing the guard's own credentialed client"* — and
+  `mcp:connect` does the same (`createMcpClient(config, elog)`, *"same client the
+  guard forwards with"*). The guard **already makes its own reads**: the mirror
+  runs a full `pullWorkflow` after *every* forwarded `update_workflow`.
+- *"Latency."* Measured against that full pull-per-structure-edit, one read
+  before the far rarer publish is noise.
+- *"It makes the guard a policy engine."* It is one. `guardMessage` inspects
+  content and blocks `update_workflow` calls carrying `jsCode`. Gating a publish
+  on its content is the same kind of act, not a new category.
+
+**Fail-closed.** If the read fails we block, with a message saying the *check*
+could not run — not that the workflow is broken. Rationale: a failing read almost
+certainly means n8n is unreachable, in which case the publish would fail anyway,
+and "couldn't verify, so we let it go live" is not a gate.
+
+**The one real implementation note:** `guardMessage` is **synchronous** today and
+returns a ready-made response for blocks. This needs an async sibling, since the
+check requires a round-trip. That is exactly where the two transports could drift
+— and `lib/mcpserve.mts:102-104` already states they must not (*"Shared by BOTH
+transports on purpose … must not drift"*). So the async path is shared code, and
+a test drives **both** transports through the same sequence.
+
+#### 3d. Detect all four reference forms — and stop the hook diverging
+
+`NODE_REF_RE` (`lib/util.mts:89`) matches only `$('X')` / `$("X")` / `` $(`X`) ``.
+n8n's own `applyAccessPatterns` handles **four** forms, and rewrites all four on a
+UI rename. **If n8n treats it as a reference, our guard has to know it** —
+otherwise a rename strands something we never report.
+
+| form | pattern |
+|---|---|
+| `$('X')` | already covered, three quote styles |
+| `$node["X"]` | `\$node\[\s*(['"`])…\1\s*\]` |
+| `$node.X` | `\$node\.([A-Za-z_$][\w$]*)` — unquoted; names with spaces cannot use this form anyway |
+| `$items('X')` | first string argument; ignore any further arguments |
+
+The documented limits stay: `${…}` template literals and non-literal `$(someVar)`
+are unresolvable by regex, and n8n has the same ceiling.
+
+**This is what makes 3a and 3b agree.** The rename hook shipped in 3a already
+matches `$(`, `$node[` and `$items(` — so today the **hook reports refs the gate
+would let through**, which is the dangerous direction: `$node["Old"]` dangles, the
+hook flags it, `publish` waves it live. One contract, and since the hook is a
+standalone `.mjs` in the template that cannot import from `lib/`, pin it with a
+test that feeds **both** implementations the same corpus of ref forms and asserts
+identical detection.
+
+**Delete `renameNodeRefs`** (`lib/util.mts:104`) rather than widening it: zero
+production callers since the `rename` verb retired, and we decided not to
+auto-repair. Widening it would mean maintaining a rewriter nobody calls.
+
+**Behaviour change worth flagging, not hiding.** This feeds `validateWorkflowDir`,
+so `preflight` and `push` too: an existing workflow with a `$node["Deleted"]`
+reference starts producing a **hard error** that `--force` cannot bypass, where it
+previously passed. Correct, but it will surprise people — so the message should
+name *which form* was found, making it obvious why it surfaces now, and the
+CHANGELOG entry goes under Changed, not Fixed.
 
 ### 4. Make the tests honest
 
@@ -368,7 +429,15 @@ any of it.**
   up and run. Its output must not be mistakable for a run.
 - **3b**: `test --scenario X` on a workflow with a dangling ref aborts **before**
   the instance executes.
-- **3c**: whatever is decided, `push --publish` and the bare `publish` verb agree.
+- **3c**: a raw `publish_workflow` through the guard is blocked when the draft
+  carries a dangling ref, and forwarded when it does not — driven through **both**
+  transports in one test, because that is where they could drift. A failed read
+  blocks with a "could not verify" message, not a "workflow is broken" one. And
+  `push --publish`, the bare `publish` verb, and the guarded MCP call all agree.
+- **3d**: `$node["X"]`, `$node.X` and `$items('X')` are detected wherever
+  `$('X')` is — asserted by feeding one corpus of ref forms to **both** the CLI
+  scan and the scaffolded hook and comparing, so the two cannot drift again.
+  Existing `$('X')` behaviour is unchanged.
 - e2e's rename step asserts the **real** semantics (refs dangle) and walks the
   documented repair order to green.
 - The smoke suite's rename step asserts stale refs against a real instance — it
