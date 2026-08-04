@@ -25,8 +25,15 @@ manage. `mcp serve` exists for harnesses that only take an MCP **URL**:
   source lives in this repo, not in ad-hoc MCP writes. The full op vocabulary
   is deliberately not enumerated; only the two source-writing routes are
   intercepted.
+- **Blocked:** `publish_workflow` when the draft it would take live carries a
+  dangling `$('…')` reference — the same check
+  [`test`](/docs/cli/test/) and [`publish`](/docs/cli/publish/) run. Without it
+  the go-live gate is bypassable: an agent could publish over raw MCP and skip
+  the verb entirely. **Fail-closed** — if the check itself cannot run (n8n
+  unreachable), the publish is refused too, and the message says the *check*
+  failed rather than blaming the workflow.
 - **Everything else passes through untouched**, including SSE responses:
-  reads, structure edits, wiring, publishing, the n8n build/lifecycle tools.
+  reads, structure edits, wiring, the n8n build/lifecycle tools.
 
 Like [mcp connect](/docs/cli/mcp-connect/), a forwarded structure edit also
 triggers the **live mirror** — a debounced background `pull` that refreshes the

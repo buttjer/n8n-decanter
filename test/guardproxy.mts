@@ -53,14 +53,28 @@ const upstream = http.createServer((req, res) => {
 await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
 const upstreamHost = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
 
-// A stub client: the proxy only needs bearerToken(); count the force-refreshes.
+// A stub client: the proxy needs bearerToken(), plus callTool() since the
+// publish gate (Plan 64 task 3c) reads the draft before letting a publish
+// through. `draftNodes` is what that read returns; null makes it throw, which
+// is the fail-closed path.
 let refreshes = 0;
+let draftNodes: unknown[] | null = [];
 const mcpStub = {
   bearerToken: async (force = false) => {
     if (force) refreshes++;
     return force ? "refreshed-token" : "real-n8n-token";
   },
+  callTool: async (name: string) => {
+    if (name !== "get_workflow_details") throw new Error("unexpected tool " + name);
+    if (draftNodes === null) throw new Error("n8n unreachable");
+    return { workflow: { id: "wf1", name: "Demo", nodes: draftNodes, connections: {} } };
+  },
 } as unknown as McpClient;
+
+const codeNode = (name: string, jsCode: string) => ({ id: `c-${name}`, name, type: "n8n-nodes-base.code", parameters: { jsCode } });
+const publishCall = (id = 1) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "publish_workflow", arguments: { workflowId: "wf1" } } });
+/** The error text out of a blocked tool result, whichever transport produced it. */
+const blockText = (msg: any): string => JSON.parse(msg.result.content[0].text).error;
 
 // Recording mirror (Plan 51 Part A): the guard calls schedule(id) after
 // forwarding a non-blocked update_workflow; assert the hook fires correctly.
@@ -202,6 +216,56 @@ await step("upstream 401 → one forced token refresh, then the retry succeeds",
   assert.equal(refreshes, before + 1, "exactly one forced refresh");
   assert.equal(seen[seen.length - 1].auth, "Bearer refreshed-token", "retry used the refreshed token");
 });
+
+// ---------- the publish gate, on BOTH transports (Plan 64 task 3c) ----------
+// `n8n-decanter publish` refuses a draft with dangling refs, but the raw MCP
+// tool used to sail straight past it — so an agent could ship exactly what the
+// rest of Plan 64 exists to catch. The gate is async (it needs a read), which is
+// why it is separate from the synchronous `guardMessage`; both transports share
+// it, and the stdio step below drives the SAME cases so they cannot drift.
+
+const PUBLISH_CASES = [
+  { name: "clean draft forwards", nodes: [codeNode("Fetch", "return [];")] as unknown[] | null, blocked: false },
+  { name: "dangling ref is refused", nodes: [codeNode("T", "return $('Gone').all();")] as unknown[] | null, blocked: true },
+  { name: "failed read is refused (fail closed)", nodes: null, blocked: true },
+];
+
+await step("publish gate (HTTP): a broken draft is refused, a clean one forwards, a failed read refuses", async () => {
+  for (const c of PUBLISH_CASES) {
+    draftNodes = c.nodes;
+    const before = seen.length;
+    const r = await post(JSON.stringify(publishCall()));
+    assert.equal(r.status, 200, c.name);
+    if (!c.blocked) {
+      assert.ok(seen.length > before, `${c.name}: must reach n8n`);
+      continue;
+    }
+    assert.equal(seen.length, before, `${c.name}: n8n must never see it`);
+    assert.equal(JSON.parse(r.text).result.isError, true, c.name);
+  }
+  draftNodes = [];
+});
+
+await step("publish gate: the refusal routes both halves, and a failed read never claims the workflow is broken", async () => {
+  draftNodes = [
+    codeNode("T", "return $('Gone').all();"),
+    { id: "s1", name: "Label", type: "n8n-nodes-base.set", parameters: { value: "={{ $('Vanished').first().json.x }}" } },
+  ];
+  const broken = blockText(JSON.parse((await post(JSON.stringify(publishCall()))).text));
+  assert.match(broken, /2 dangling reference\(s\) on the draft of wf1 would go live/);
+  assert.match(broken, /expression parameters \(structure — fix in n8n/);
+  assert.match(broken, /Code-node source/);
+  assert.ok(broken.indexOf("expression parameters") < broken.indexOf("Code-node source"), "parameters listed first — the order that does not lose the code edit");
+  assert.match(broken, /n8n-decanter test wf1/);
+
+  draftNodes = null;
+  const unreadable = blockText(JSON.parse((await post(JSON.stringify(publishCall()))).text));
+  assert.match(unreadable, /could not read wf1 to check it before publishing, so it was NOT published/);
+  assert.match(unreadable, /says nothing about the workflow/);
+  assert.doesNotMatch(unreadable, /dangling/, "a failed check must not read as a finding");
+  draftNodes = [];
+});
+
 
 await step("close removes the discovery file", async () => {
   await handle.close();
@@ -356,6 +420,27 @@ await step("stdio upstream down: an id'd request gets a JSON-RPC error naming th
   assert.match(msg.error.message, /unreachable.*127\.0\.0\.1:9/);
   await dead.end();
 });
+
+await step("publish gate (stdio): identical verdicts — the two transports must not drift", async () => {
+  const s = startStdio();
+  for (const c of PUBLISH_CASES) {
+    draftNodes = c.nodes;
+    const before = seen.length;
+    s.send(publishCall(9));
+    const msg = JSON.parse(await s.next());
+    assert.equal(msg.id, 9, c.name);
+    if (!c.blocked) {
+      assert.ok(seen.length > before, `${c.name}: must reach n8n`);
+      assert.equal(msg.result.isError, undefined, `${c.name}: forwarded, so the upstream echo comes back`);
+      continue;
+    }
+    assert.equal(seen.length, before, `${c.name}: n8n must never see it`);
+    assert.equal(msg.result.isError, true, c.name);
+  }
+  draftNodes = [];
+  await s.end();
+});
+
 
 if (!hasFailed()) {
   await new Promise<void>((resolve) => upstream.close(() => resolve()));

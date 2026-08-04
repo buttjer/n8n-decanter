@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The agent guard now refuses a `publish_workflow` that would take a broken
+  draft live.** `publish` already checked, but the raw MCP tool went straight
+  through the guard — so an agent could go live around the verb and ship exactly
+  the breakage the check exists to catch. Both transports (`mcp connect` and
+  `mcp serve`) run the same check on the same shared code.
+
+  **Fail-closed:** if the check itself cannot run — n8n unreachable — the publish
+  is refused too, and the message says the *check* failed rather than claiming
+  the workflow is broken. A read that fails almost certainly means the publish
+  would have failed anyway, and "couldn't verify, so we shipped it" is not a gate.
+
 - **Dangling-reference checks now cover all four forms n8n rewrites on a rename**
   — `` $('X') `` (as before) plus `$node["X"]`, `$node.X` and `$items('X')`.
   Previously only the first was detected, so a rename could strand a `$node[…]`

@@ -36,9 +36,14 @@ The guard is the same one [mcp serve](/docs/cli/mcp-serve/) enforces over HTTP:
 - **Blocked:** `update_workflow` calls that write Code-node source
   (`jsCode`) — the caller gets an instructive tool error pointing at the file
   \+ [push](/docs/cli/push/) flow.
+- **Blocked:** `publish_workflow` when the draft it would take live carries a
+  dangling `$('…')` reference — the same check [`test`](/docs/cli/test/) and
+  [`publish`](/docs/cli/publish/) run, so an agent cannot go live around the
+  verb. **Fail-closed**: if the check itself cannot run, the publish is refused
+  too, and the message says the *check* failed rather than blaming the workflow.
 - **Everything else forwards untouched**: reads, structure edits (`addNode`,
-  `renameNode`, wiring), publishing, archiving — the whole n8n MCP surface,
-  SSE responses included.
+  `renameNode`, wiring), archiving — the whole n8n MCP surface, SSE responses
+  included.
 
 That combination is what powers the guarded authoring loop: an agent builds
 and wires structure over MCP (adding Code nodes **without** `jsCode` — the
