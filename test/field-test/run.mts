@@ -84,7 +84,7 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresSeedKinds?: string[] }
 
 /**
  * Which workflow the `remote-drift` preHook edits — kept in one place so the
@@ -233,6 +233,21 @@ function assertPrerequisites(ids: string[]): void {
     // cannot exist there. Host mode only.
     if (sc.requiresNoCli === true && containerMode) {
       problems.push(`${id} cannot run in --container mode: the image installs the CLI globally, so it stays on PATH and the no-CLI condition cannot be staged. Run it host-mode (unsandboxed).`);
+    }
+    // A scenario may declare a pre-hook before the hook exists (Plan 61 writes
+    // the scenario specs ahead of the staging machinery). Refuse rather than
+    // run the turns against an environment nothing was done to.
+    if (sc.preHook !== undefined && !(sc.preHook in PRE_HOOKS)) {
+      problems.push(`${id} declares preHook "${sc.preHook}", which run.mts does not implement (known: ${Object.keys(PRE_HOOKS).join(", ")}); without it the scenario would run against an untouched environment and measure nothing`);
+    }
+    // Same argument, one layer down: the seeds a scenario acts on. `builtin`
+    // stages four workflows; a scenario written for a seed pack that was not
+    // staged would hunt for a workflow that does not exist (the ftrun-93355
+    // failure mode, generalised from ordering to stage shape).
+    for (const kind of sc.requiresSeedKinds ?? []) {
+      if (!manifest.seeded.some((s) => s.kind === kind)) {
+        problems.push(`${id} needs a seeded workflow of kind "${kind}"; this stage seeded ${manifest.seeded.map((s) => s.kind).join(", ") || "(nothing)"}`);
+      }
     }
   });
   if (problems.length === 0) return;
@@ -452,6 +467,27 @@ async function remoteDrift(): Promise<void> {
   console.log(`  remote-drift: colleague edited "${code.name}" in "${target.name}" (${target.id}) over raw MCP`);
 }
 
+/**
+ * Every pre-hook the harness knows how to play, by the name a scenario declares.
+ *
+ * The dispatch used to be a bare `if (scn.preHook === "remote-drift")`, which
+ * meant any OTHER name — a typo, or a hook a scenario declares before it is
+ * built — silently staged nothing. The round would then run the full turn
+ * sequence against an intact environment and "measure" it: the most expensive
+ * possible way to learn nothing (the same failure mode the prerequisite check
+ * above exists to prevent). An unknown name is now refused before any spend.
+ */
+const PRE_HOOKS: Record<string, () => Promise<void>> = {
+  "remote-drift": remoteDrift,
+};
+
+/**
+ * Hooks that deliberately move the remote off decanter's last-sync hash, so
+ * `verify.mts` is told to expect it. Without this the scenario's own correct
+ * behaviour scores as a violation — the S3/S4 bug that #171 fixed.
+ */
+const DRIFTING_HOOKS = new Set(["remote-drift", "publish-then-drift"]);
+
 // ---------- one blind claude -p turn ----------
 const TURN_TIMEOUT_MS = Number(process.env.FIELD_TURN_TIMEOUT_MS ?? 900_000); // 15 min/turn safety net
 async function claudeTurn(msg: string, turnIndex: number, resumeId: string | undefined, transcript: string): Promise<{ sessionId: string | undefined; resultText: string }> {
@@ -570,7 +606,7 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
     return { id, verifyExit: null, turns: turns.length };
   }
 
-  if (scn.preHook === "remote-drift") await remoteDrift();
+  if (scn.preHook !== undefined) await PRE_HOOKS[scn.preHook]();
 
   // The STAGE now pre-runs `init`, so .claude/ + .mcp.json exist before the agent
   // starts — wire the allow-extension + guard-stderr capture up front (idempotent,
@@ -600,7 +636,7 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
     // A scenario that deliberately drifts the instance tells verify so, or its
     // own correct behaviour scores as violations (S3), and every later scenario
     // inherits them (S4).
-    if (scn.preHook === "remote-drift") {
+    if (scn.preHook !== undefined && DRIFTING_HOOKS.has(scn.preHook)) {
       const target = driftTargetId();
       if (target) args.push("--expect-drift", target);
     }

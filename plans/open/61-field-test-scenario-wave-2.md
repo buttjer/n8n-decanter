@@ -187,6 +187,32 @@ vendoring. Fetching happens on the **host during staging**, never inside the
   a test cannot answer: *what does the agent conclude, and what does it tell the
   user?*
 
+## Progress (2026-08-04)
+
+**The scenario pack is written; the staging machinery is not.** `S7`–`S13` exist
+as full specs with `## Orchestration` spines, and the runner now **refuses** a
+scenario whose pre-hook or seed kind does not exist — so the specs can sit ahead
+of the machinery without any risk of a round quietly measuring an untouched
+environment (the failure mode the old bare `if (preHook === "remote-drift")`
+allowed). Landed:
+
+- `scenarios/S7–S13.md` (Tasks 4 + 7, the spec half)
+- `run.mts`: a pre-hook **registry** + hard refusal of an unknown hook;
+  `requiresSeedKinds` + hard refusal of a missing seed kind; `--expect-drift`
+  generalised from one hook name to a set
+- `test/unit/field-scenarios.test.mts` — every scenario file parses, its id
+  matches its filename, `requires` resolves, and no turn leaks
+  evaluation-signalling vocabulary or a Plan 59-removed verb (offline, in
+  `npm test`)
+- the verb × scenario coverage matrix in `test/field-test/README.md` (Task 10)
+
+**Still to build, and deliberately not written blind:** the pre-hooks
+themselves (Tasks 2 + 3), capture seeding and the `s8-ladder` / `loop-preview`
+seeds (Task 1), and the corpus seed-pack loader (Tasks 5 + 6). Each of those
+drives a real instance, and Plan 61's own acceptance criterion 4 says the
+machinery must not be exercised for the first time by an expensive round —
+they need a live Docker stage to validate, which is the next unit of work.
+
 ## Tasks
 
 Split into two waves so the corpus work does not gate the best scenarios.
