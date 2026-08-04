@@ -1,6 +1,7 @@
 # Plan 64 — MCP `renameNode` strands every `$('…')` ref; our contract says the opposite
 
-**Status:** In progress — tasks 1 + 2 shipped (PR #191); 3–5 open
+**Status:** In progress — tasks 1 + 2 shipped (PR #191), 3a in review (PR #193);
+3b, 3c, 4, 5 open
 **Priority:** P1
 **Source:** claim B1 of the 2026-07-30 field report (39 renames left every
 reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
@@ -8,7 +9,7 @@ reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
 tracker / the forum — and **reproduced live against real n8n in Docker (2.30.7
 and 2.33.3)**, twice: once for n8n's behavior alone, once end-to-end through
 decanter.
-**Snapshot:** 2026-08-03T20:31Z @ f4bc105
+**Snapshot:** 2026-08-04T05:12Z @ 39f41d9
 **Model:** Opus for task 1 (the contract prose is load-bearing); Sonnet for the rest.
 
 n8n's MCP `renameNode` rewrites the node name and the connections and leaves
@@ -188,28 +189,90 @@ Two constraints that shape it:
   (`lib/preflight.mts:88-91` contracts `remediation` as "the exact next COMMAND …
   never prose"), at the cost of the four-surface docs tax.
 
-#### 3b. Gate `publish` — against the instance, not the repo
+#### 3b. A static tier on `test`, and the same scan as a `publish` gate
 
-`publish` already reads what it is about to make live:
-`const before = await getWorkflowDetails(mcp, id)` (`lib/lifecycle.mts:12`), with
-byte-exact `jsCode` and every parameter. Scan **`before.nodes`**.
+**No new verb.** [Plan 60](../done/60-preflight-first-verb-surface.md) already
+assigned the subjects — `preflight` grades **local files**, `test` grades **the
+instance's draft**, and `test` sits between `push` and `publish` in the
+documented flow. A static check of the remote draft is therefore not a new
+category: it is the **cheap tier of what `test` already is**. Putting it on
+`preflight` would be the outlier, and would re-split what
+[Plan 59](../done/59-declutter-verify-verbs.md) just consolidated.
 
-Explicitly **do not** reuse `validateWorkflowDir` here — that validates the repo
-folder (placeholders, orphans, state, layout), none of which belongs in a go-live
-decision. Checking the remote read instead removes the whole staleness problem:
-no false green from an out-of-date snapshot, no false red from a fresh clone
-missing a `.ts` file, and therefore **no `ForceableError` pretext needed**. It
-also catches the case the local check structurally cannot — instance broken,
-local mirror clean.
+**One scan, two callers.** Extract a **source-agnostic** `(text, nodeNames)`
+function out of `lib/validate.mts`, which reads files off disk today. Both
+callers need it, because the text comes from different places: locally a Code
+node's `jsCode` is a `//@file:` placeholder with the real source in the file,
+remotely it is inline on the node.
 
-Requires extracting a **source-agnostic** scan. Today `lib/validate.mts` reads
-files off disk; both callers need a pure `(text, nodeNames)` function, because
-the text comes from different places: locally a Code node's `jsCode` is a
-`//@file:` placeholder and the real source is in the file, remotely it is inline
-on the node.
+**`test <workflow>` with no `--scenario`/`--execution` runs the static tier.**
+Read the draft, scan every node's `jsCode` and expression parameters for
+dangling refs, report, execute nothing.
+
+- **Remove the latest-capture fallback** (`n8n-decanter.mts:739-741`). Not
+  tidiness — it is forced: the bare verb cannot mean both "check statically,
+  run nothing" and "grab whatever capture is lying around and execute for real".
+  It also fixes a genuine wart: today the bare verb has **side effects on the
+  instance**, steered by the contents of a **gitignored** directory, so two
+  people on the same commit get different behavior. Afterwards the bare verb is
+  **read-only** and executing requires saying so. **Breaking** — 0.x → minor.
+- **The output must not read as "it ran."** Not `✓ test passed` but something
+  like *"static check only — nothing was executed; pass `--scenario`/
+  `--execution` to run it."*
+- **`test --scenario X` runs the static scan first**, then executes — so we
+  never fire a real run against something already known to be broken.
+
+**`publish` calls the same function** on the read it already makes:
+`const before = await getWorkflowDetails(mcp, id)` (`lib/lifecycle.mts:12`),
+byte-exact `jsCode` and every parameter. Scan `before.nodes`.
+
+- Explicitly **do not** reuse `validateWorkflowDir` — that validates the repo
+  folder (placeholders, orphans, state, layout), none of which belongs in a
+  go-live decision. Scanning the remote read removes the staleness problem
+  entirely: no false green from an out-of-date snapshot, no false red from a
+  fresh clone missing a `.ts` file, and therefore **no `ForceableError` pretext
+  needed**. It also catches what a local check structurally cannot — instance
+  broken, local mirror clean.
+- **Yes, the scan usually runs twice** (once in `test`, once in `publish`), and
+  that is the point rather than waste: the instance can change between the two
+  — a colleague editing in the UI, another agent sending a rename — so only the
+  check *inside* `publish` is authoritative for that publish. It is also free:
+  `publish` already does the read, so the marginal cost is a regex pass.
+- Keep `publish`'s refusal **terse**, pointing at `test` rather than reprinting
+  the report.
 
 Note this writes nothing — decanter reads, and refuses its own action. Consistent
 with `PLAN.md:94-99`, unlike the rejected "decanter repairs parameters over MCP".
+
+**No legacy support — settled.** The fallback is deleted outright: no deprecation
+period, no "warns now, removed later" shim, no env escape hatch. A bare `test`
+that still executed *sometimes* would keep exactly the ambiguity this change
+exists to remove.
+
+**Docs are part of the task, not a follow-up.** This changes a verb's meaning, so
+the surface is wider than the usual three. Grounded list — every file that
+currently describes `test`:
+
+| surface | what changes |
+|---|---|
+| `n8n-decanter.mts:77` | the usage line (`<workflow> [--execution … \| --scenario …]`) must show that bare = static |
+| `n8n-decanter.mts:729`, `:740-741` | the arg error, and the removal of the "using the latest capture" info line |
+| `README.md` | the `## Commands` row for `test` |
+| `docs/cli/test.md` | the whole page — new tier, fallback gone |
+| `docs/cli/publish.md` | the new gate and its refusal |
+| `docs/cli/overview.md` | the command-surface entry (`check:docs` enforces its existence, not its prose) |
+| `docs/cli/preflight.md` | wherever it hands off to `test` |
+| `docs/cli/node-run.md` | the ladder mention |
+| `docs/agents/offline-loop.md`, `docs/agents/overview.md` | the agent-facing loop |
+| `docs/concepts/sync-layout.md` | the flow mention |
+| `template/AGENTS.md.example` | the verify flow — the file an agent actually reads |
+| `PLAN.md` | Plan 60's `preflight → push → test → publish` description gains a tier |
+| `CHANGELOG.md` | **Breaking:** entry |
+
+Deliberately **not** touched: `scenario create`'s own latest-capture fallback
+(`n8n-decanter.mts:853-861`). It looks like the same wart but is not — it picks
+input data for a **file write**, with no side effect on the instance, so the
+ambiguity that forces the removal in `test` does not exist there.
 
 #### 3c. Guard policy on `publish_workflow` — decide separately
 
@@ -299,6 +362,12 @@ any of it.**
   ref, and still publishes when the remote is clean but the **local** snapshot is
   stale or absent — that pair is the whole point of scanning `before.nodes`
   rather than the folder, so both directions need a test.
+- **3b**: bare `test <workflow>` reports the same finding and **executes
+  nothing** — asserted against an instance whose draft is broken *and* a
+  `executions/` dir holding a usable capture, which today would have been picked
+  up and run. Its output must not be mistakable for a run.
+- **3b**: `test --scenario X` on a workflow with a dangling ref aborts **before**
+  the instance executes.
 - **3c**: whatever is decided, `push --publish` and the bare `publish` verb agree.
 - e2e's rename step asserts the **real** semantics (refs dangle) and walks the
   documented repair order to green.
@@ -309,9 +378,13 @@ any of it.**
 
 ## Notes
 
-- CHANGELOG: tasks 1 and 2 shipped their entries under `[Unreleased]` in PR #191.
-  Task 3 is user-facing in all three parts (3a changes what the scaffold does, 3b
-  changes when `publish` refuses, 3c changes what the guard forwards).
+- CHANGELOG: tasks 1 and 2 shipped their entries under `[Unreleased]` in PR #191;
+  3a in PR #193. 3b is user-facing twice over and one half is **Breaking:**
+  (`test` no longer falls back to the latest capture, so the bare verb stops
+  executing); 3c changes what the guard forwards.
+- 3b's docs work is listed **inside the task**, not here — it changes a verb's
+  meaning, so it spans thirteen surfaces including the CLI's own usage string, and
+  treating it as a trailing chore is how it gets half-done.
 - `lib/validate.mts:196`'s comment has always been correctly scoped to the UI —
   **the code was right; only the prose was wrong.** The dangling-ref check is what
   made the field report's fallout visible at all.
