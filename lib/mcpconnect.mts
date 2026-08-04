@@ -19,7 +19,7 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { MCP_PATH, type McpClient } from "./mcp.mts";
-import { guardMessage, logToolCall, mirrorTargetId } from "./mcpserve.mts";
+import { guardMessage, guardPublish, logToolCall, mirrorTargetId } from "./mcpserve.mts";
 import type { Mirror } from "./mirror.mts";
 import type { Log } from "./types.mts";
 
@@ -172,6 +172,12 @@ export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input =
         log.warn("blocked a jsCode write (update_workflow) — pointed the agent at the file + push flow");
         return emit(Array.isArray(parsed) ? [blocked] : blocked);
       }
+      // Second gate (Plan 64 task 3c): a publish only forwards when the draft it
+      // would take live is clean. Async — it needs a read — which is why it is
+      // separate from the synchronous `guardMessage`, and shared with `mcp serve`
+      // for the same reason that one is: the transports must not drift.
+      const publishBlocked = await guardPublish(record, mcp, log);
+      if (publishBlocked !== null) return emit(Array.isArray(parsed) ? [publishBlocked] : publishBlocked);
       // Audit trail: one line per tool call the guard lets through. NAME ONLY —
       // arguments carry workflow content and would make this log a PII/secret
       // surface. Every n8n MCP call an agent makes passes through here, so this

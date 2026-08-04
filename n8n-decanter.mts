@@ -956,6 +956,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       log.ok(`MCP guard-proxy listening on ${handle.url}`);
       log.info(`  forwards to ${config.host} with decanter's credentials — the agent never sees them`);
       log.info(`  blocks: update_workflow calls carrying jsCode (Code-node source is files + \`n8n-decanter push\`)`);
+      log.info(`  blocks: publish_workflow when the draft carries a dangling $('…') reference (fail-closed — an unverifiable draft is not published)`);
       if (config.liveMirror) log.info(`  live mirror: refreshes workflow.json after a forwarded structure edit (liveMirror: false to disable)`);
       log.info("");
       log.info("point your agent's MCP config at it (session secret rotates per run):");

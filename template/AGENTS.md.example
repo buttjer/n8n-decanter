@@ -112,10 +112,12 @@ description says**, and the boundary is:
   already carries the guarded route: an `n8n-instance` server that spawns
   `n8n-decanter mcp connect` — a stdio MCP server holding decanter's
   credentials (you never see them; no secret to manage). It forwards every
-  read and structure operation untouched and **blocks exactly one thing**:
-  `update_workflow` calls that write Code-node source (`jsCode`). If a call
-  comes back "blocked by the n8n-decanter guard-proxy", that is not an error
-  to work around — route the code through the repo (edit the file, `push`).
+  read and structure operation untouched and blocks **two** things:
+  `update_workflow` calls that write Code-node source (`jsCode`), and
+  `publish_workflow` when the draft would go live carrying a dangling `$('…')`
+  reference. If a call comes back "blocked by the n8n-decanter guard-proxy",
+  that is not an error to work around — route the code through the repo (edit
+  the file, `push`), or repair the references it lists before publishing.
   For harnesses that only take an MCP URL, `n8n-decanter mcp serve` is the
   same guard as a localhost HTTP proxy (per-session secret). A session-start
   hook (`mcp-route-check.mjs`) warns when a config in this dir bypasses the

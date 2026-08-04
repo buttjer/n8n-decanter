@@ -15,9 +15,10 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { unlinkSync, writeFileSync } from "node:fs";
-import { MCP_PATH, type McpClient } from "./mcp.mts";
+import { getWorkflowDetails, MCP_PATH, type McpClient } from "./mcp.mts";
 import type { Mirror } from "./mirror.mts";
 import type { Log } from "./types.mts";
+import { type DanglingRef, danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
 
 /** Gitignored discovery file (sync-dir root): the running proxy's endpoint + secret. */
 export const PROXY_STATE_FILE = ".decanter-proxy.json";
@@ -89,6 +90,66 @@ export function guardMessage(msg: Record<string, unknown>): Record<string, unkno
   if (!writesJsCode(params.arguments)) return null;
   const result = { content: [{ type: "text", text: JSON.stringify({ error: JSCODE_BLOCK_TEXT }) }], isError: true };
   return { jsonrpc: "2.0", id: (msg as { id?: unknown }).id ?? null, result };
+}
+
+/** The workflow id a `publish_workflow` call targets, or `null` for anything else. */
+export function publishTargetId(msg: Record<string, unknown>): string | null {
+  if (msg.method !== "tools/call") return null;
+  const params = msg.params as { name?: unknown; arguments?: unknown } | undefined;
+  if (params?.name !== "publish_workflow") return null;
+  const id = (params.arguments as { workflowId?: unknown } | undefined)?.workflowId;
+  return typeof id === "string" && id !== "" ? id : null;
+}
+
+/**
+ * The guard's **async** second gate (Plan 64 task 3c): a `publish_workflow`
+ * call only forwards when the draft it would take live has no dangling `$('…')`
+ * references.
+ *
+ * Without this the go-live gate is bypassable — `n8n-decanter publish` checks,
+ * but the raw MCP tool went straight through, so an agent could ship the exact
+ * breakage the rest of Plan 64 exists to catch.
+ *
+ * **Fail-closed.** A failed read blocks too, and says the *check* could not run
+ * rather than claiming the workflow is broken. A read failing almost certainly
+ * means n8n is unreachable, in which case the publish would fail anyway — and
+ * "couldn't verify, so we let it go live" is not a gate.
+ *
+ * Async on purpose, and separate from `guardMessage` for that reason: this one
+ * needs a round-trip. Shared by BOTH transports, like `guardMessage` — they must
+ * not drift in what they refuse.
+ */
+export async function guardPublish(
+  msg: Record<string, unknown>,
+  mcp: McpClient,
+  log: Log,
+): Promise<Record<string, unknown> | null> {
+  const id = publishTargetId(msg);
+  if (id === null) return null;
+  const refuse = (text: string): Record<string, unknown> => ({
+    jsonrpc: "2.0",
+    id: (msg as { id?: unknown }).id ?? null,
+    result: { content: [{ type: "text", text: JSON.stringify({ error: text }) }], isError: true },
+  });
+  let dangling: DanglingRef[];
+  try {
+    dangling = danglingNodeRefs((await getWorkflowDetails(mcp, id)).nodes);
+  } catch (err) {
+    log.warn(`could not verify ${id} before publish — refusing (fail closed)`);
+    return refuse(
+      `blocked by the n8n-decanter guard-proxy: could not read ${id} to check it before publishing, so it was NOT published. ` +
+        `This says nothing about the workflow — the check itself failed: ${(err as Error).message}`,
+    );
+  }
+  if (dangling.length === 0) return null;
+  log.warn(`blocked publish_workflow for ${id} — ${dangling.length} dangling reference(s) on the draft`);
+  return refuse(
+    [
+      `blocked by the n8n-decanter guard-proxy: ${dangling.length} dangling reference(s) on the draft of ${id} would go live.`,
+      ...describeDanglingRefs(dangling),
+      `then re-check with: n8n-decanter test ${id}`,
+    ].join("\n"),
+  );
 }
 
 /**
@@ -197,6 +258,14 @@ export async function startGuardProxy(
             return void res
               .writeHead(200, { "content-type": "application/json" })
               .end(JSON.stringify(Array.isArray(parsed) ? [blocked] : blocked));
+          }
+          // Second gate (Plan 64 task 3c): a publish only forwards when the
+          // draft it would take live is clean. Async — it needs a read.
+          const publishBlocked = await guardPublish(record, mcp, log);
+          if (publishBlocked !== null) {
+            return void res
+              .writeHead(200, { "content-type": "application/json" })
+              .end(JSON.stringify(Array.isArray(parsed) ? [publishBlocked] : publishBlocked));
           }
           logToolCall(record, log); // audit trail — same line shape as `mcp connect`
           // Live mirror (Plan 51 Part A): a forwardable structure edit — refresh
