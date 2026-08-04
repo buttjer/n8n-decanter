@@ -278,6 +278,79 @@ describe("buildSimulation — untaken / disabled exemptions", () => {
   });
 });
 
+// Plan 63 task 4: reachability is per-OUTPUT, not per-node. An IF emits on one
+// output per run — items in main[0] when it took "true", nothing in main[1] —
+// and every consumer used to read main[0] regardless of which edge it was
+// looking at. So the untaken branch's target counted as reachable (a demanded
+// gap the capture provably never reached) and was handed the OTHER branch's
+// items as its input sample.
+describe("buildSimulation — branch-aware reachability", () => {
+  /** Webhook -> Decide(if): output0 -> Taken(http), output1 -> NotTaken(http). */
+  function branchingWorkflow(): Workflow {
+    return {
+      id: "wf1", name: "Branch WF", versionId: "v1",
+      nodes: [
+        { id: "w", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: { path: "hook" } },
+        { id: "i", name: "Decide", type: "n8n-nodes-base.if", typeVersion: 2, position: [200, 0], parameters: {} },
+        { id: "t", name: "Taken", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [400, -80], parameters: { url: "http://example.com/yes" } },
+        { id: "n", name: "NotTaken", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [400, 80], parameters: { url: "http://example.com/no" } },
+      ] as WorkflowNode[],
+      connections: {
+        Webhook: { main: [[{ node: "Decide", type: "main", index: 0 }]] },
+        Decide: { main: [[{ node: "Taken", type: "main", index: 0 }], [{ node: "NotTaken", type: "main", index: 0 }]] },
+      },
+      settings: { executionOrder: "v1" },
+    };
+  }
+
+  /** The capture took the TRUE branch: Decide emitted on main[0], nothing on main[1]. */
+  function scaffoldBranching(): string {
+    return scaffold({
+      "workflow.json": JSON.stringify(branchingWorkflow()),
+      ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: {} }),
+      "executions/1.json": JSON.stringify({
+        id: 1, status: "success", workflowId: "wf1", workflowVersionId: "v1",
+        data: { resultData: { runData: {
+          Webhook: run([item({ n: 1 })]),
+          Decide: [{ data: { main: [[item({ side: "yes" })], []] } }],
+          Taken: run([item({ status: "ok" })]),
+        } } },
+      }),
+    });
+  }
+
+  it("does not demand data for the branch the capture never took", async () => {
+    // Before the fix `NotTaken` read Decide's main[0] — non-empty — and was
+    // reported as a gap the author had to fill for a path that never ran.
+    const sim = await buildSimulation(scaffoldBranching(), "1", log);
+    const notTaken = nodeNamed(sim.workflow, "NotTaken");
+    assert.equal(notTaken.type, "n8n-nodes-base.code"); // neutralized, not demanded
+    assert.match(String(notTaken.parameters.jsCode), /reached unexpectedly/);
+  });
+
+  it("still demands data for a node the taken branch DID reach", async () => {
+    const dir = scaffoldBranching();
+    const capture = JSON.parse(readFileSync(path.join(dir, "executions/1.json"), "utf8")) as { data: { resultData: { runData: Record<string, unknown> } } };
+    delete capture.data.resultData.runData.Taken; // reachable on main[0], no data
+    writeFileSync(path.join(dir, "executions/1.json"), JSON.stringify(capture));
+    await assert.rejects(buildSimulation(dir, "1", log), /Taken/);
+  });
+
+  it("fills the gap's input sample from the branch that actually fed it", async () => {
+    const dir = scaffoldBranching();
+    const capture = JSON.parse(readFileSync(path.join(dir, "executions/1.json"), "utf8")) as { data: { resultData: { runData: Record<string, unknown> } } };
+    // Decide took the FALSE branch this time, so NotTaken is the reachable gap
+    // and its input must be the false branch's items — not the true branch's.
+    capture.data.resultData.runData.Decide = [{ data: { main: [[], [item({ side: "no" })]] } }];
+    delete capture.data.resultData.runData.Taken;
+    writeFileSync(path.join(dir, "executions/1.json"), JSON.stringify(capture));
+    const gaps = await detectGaps(dir, "1", log);
+    const notTaken = gaps.find((g) => g.node === "NotTaken");
+    assert.ok(notTaken, `expected NotTaken to be the gap, got ${gaps.map((g) => g.node).join(", ") || "none"}`);
+    assert.deepEqual(notTaken.input.map((i) => (i as { json: { side: string } }).json.side), ["no"]);
+  });
+});
+
 describe("latestCaptureId", () => {
   it("returns the highest numeric capture id (newest), ignoring non-numeric files", () => {
     const dir = scaffold({

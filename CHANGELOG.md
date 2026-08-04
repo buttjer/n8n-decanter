@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Scenario gaps are now judged per branch, not per node.** A branching node
+  (an `IF`, a `Switch`) emits on **one** output per run, but `preflight
+  --simulate` and `scenario create --execution` read its *first* output for every
+  outgoing edge. Two consequences, both wrong: a node on the branch the capture
+  **never took** was reported as a gap you had to write pin data for, and a
+  genuine gap's `inputSample` was filled from the **other** branch's items — so
+  you coded against the wrong upstream shape. Untaken branches are exempt and
+  neutralized, as documented.
+
 - **An n8n whose MCP access is switched off now says so.** Turning MCP off is a
   one-click state in n8n (Settings → MCP) and it makes the server answer a valid
   token with `403 MCP access is disabled` — it never 404s. decanter recognised
