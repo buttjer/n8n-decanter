@@ -9,7 +9,6 @@ import {
   placeholderFile,
   publicationState,
   publishedVersionLagsDraft,
-  renameNodeRefs,
   sanitizeFilename,
   sanitizeForPut,
   sha256,
@@ -114,34 +113,51 @@ describe("kebabCase", () => {
 });
 
 describe("findNodeRefs", () => {
+  const names = (src: string) => findNodeRefs(src).map((r) => r.name).sort();
+
   it("finds all three quote styles and dedupes", () => {
-    const refs = findNodeRefs("$('A') + $(\"B\") + $(`C`) + $('A')");
-    assert.deepEqual(refs.sort(), ["A", "B", "C"]);
+    assert.deepEqual(names("$('A') + $(\"B\") + $(`C`) + $('A')"), ["A", "B", "C"]);
   });
   it("unescapes escaped quotes in the name", () => {
-    assert.deepEqual(findNodeRefs("$('It\\'s')"), ["It's"]);
+    assert.deepEqual(names("$('It\\'s')"), ["It's"]);
   });
   it("skips template refs containing ${…}", () => {
-    assert.deepEqual(findNodeRefs("$(`Node ${suffix}`)"), []);
+    assert.deepEqual(names("$(`Node ${suffix}`)"), []);
   });
-  it("skips non-literal and multi-arg calls", () => {
-    assert.deepEqual(findNodeRefs("$(someVar) + $('a', 2) + $()"), []);
+  it("skips non-literal and multi-arg $() calls", () => {
+    assert.deepEqual(names("$(someVar) + $('a', 2) + $()"), []);
   });
-});
 
-describe("renameNodeRefs", () => {
-  it("rewrites only the matching name, preserving each call's quote style", () => {
-    const src = "$('Old') $(\"Old\") $(`Old`) $('Other')";
-    assert.equal(renameNodeRefs(src, "Old", "New"), "$('New') $(\"New\") $(`New`) $('Other')");
+  // Plan 64 3d: n8n's own applyAccessPatterns rewrites four forms on a rename.
+  // If n8n treats it as a reference, the guard has to see it too — otherwise a
+  // rename strands a call site nothing reports.
+  it("finds the legacy $node[\"…\"] form", () => {
+    assert.deepEqual(names('$node["Fetch"].json + $node[\'Other\'].json'), ["Fetch", "Other"]);
   });
-  it("escapes the quote character in the new name", () => {
-    assert.equal(renameNodeRefs("$('Old')", "Old", "It's"), "$('It\\'s')");
+  it("finds the $node.Name dot form", () => {
+    assert.deepEqual(names("$node.Fetch.json.x"), ["Fetch"]);
   });
-  it("matches escaped-quote spellings of the old name", () => {
-    assert.equal(renameNodeRefs("$('It\\'s')", "It's", "Plain"), "$('Plain')");
+  it("finds $items(), where extra arguments are the norm", () => {
+    assert.deepEqual(names("$items('Fetch', 0) + $items(\"Other\")"), ["Fetch", "Other"]);
   });
-  it("leaves non-literal calls untouched", () => {
-    assert.equal(renameNodeRefs("$(someVar)", "Old", "New"), "$(someVar)");
+
+  it("reports BOTH forms when one node is reached two ways — each is a broken call site", () => {
+    const refs = findNodeRefs("$node[\"Fetch\"] then $('Fetch')").sort((a, b) => a.ref.localeCompare(b.ref));
+    assert.deepEqual(refs, [
+      { name: "Fetch", ref: "$('Fetch')" },
+      { name: "Fetch", ref: '$node["Fetch"]' },
+    ]);
+  });
+  it("still collapses an identical reference written twice", () => {
+    assert.deepEqual(findNodeRefs("$('Fetch') and $('Fetch')"), [{ name: "Fetch", ref: "$('Fetch')" }]);
+  });
+
+  // The `ref` is what the error message shows, so it has to read as the thing
+  // the user actually wrote — that is how "why does this fail NOW?" answers itself.
+  it("carries the reference verbatim, closing $items() at the argument", () => {
+    assert.deepEqual(findNodeRefs("$('A')"), [{ name: "A", ref: "$('A')" }]);
+    assert.deepEqual(findNodeRefs("$node.B"), [{ name: "B", ref: "$node.B" }]);
+    assert.deepEqual(findNodeRefs("$items('C', 1)"), [{ name: "C", ref: "$items('C')" }]);
   });
 });
 

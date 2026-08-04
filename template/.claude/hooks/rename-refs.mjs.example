@@ -57,10 +57,21 @@ const dir = (() => {
 })();
 if (!dir) process.exit(0); // not tracked here (yet) — nothing to say
 
-/** The reference forms a rename strands. n8n's own rewriter handles these four. */
+/**
+ * The reference forms a rename strands — the same four n8n's own
+ * `applyAccessPatterns` rewrites, and the same four the CLI's `findNodeRefs`
+ * detects. This file cannot import from the CLI, so a unit test feeds both
+ * implementations one corpus and asserts they agree; keep them in step.
+ */
 const refRe = (name) => {
   const n = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\$\\(\\s*(['"\`])${n}\\1|\\$node\\[\\s*(['"])${n}\\2|\\$items\\(\\s*(['"])${n}\\3`);
+  const dot = /^[A-Za-z_$][\w$]*$/.test(name) ? `|\\$node\\.${n}(?![\\w$])` : "";
+  return new RegExp(
+    `\\$\\(\\s*(['"\`])${n}\\1\\s*\\)` +
+      `|\\$node\\[\\s*(['"\`])${n}\\2\\s*\\]` +
+      `|\\$items\\(\\s*(['"\`])${n}\\3\\s*[,)]` +
+      dot,
+  );
 };
 
 const walk = (d) => (existsSync(d) ? readdirSync(d).flatMap((e) => {

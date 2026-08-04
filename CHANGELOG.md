@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dangling-reference checks now cover all four forms n8n rewrites on a rename**
+  — `` $('X') `` (as before) plus `$node["X"]`, `$node.X` and `$items('X')`.
+  Previously only the first was detected, so a rename could strand a `$node[…]`
+  call site that nothing reported: `preflight`, `push`, `test` and `publish` all
+  passed it, and it failed at run time instead. The rule is n8n's own — its
+  rewriter handles exactly these four — so if n8n treats it as a reference, the
+  guard now does too.
+
+  **This can surface errors in workflows that passed before.** A `$node["Old"]`
+  reference to a node that no longer exists is a hard compliance error, which
+  `--force` does not bypass. The message quotes the reference **as written**, so
+  it is clear which form triggered it. Computed references (`$(someVar)`, a
+  template literal with `${…}`) are still left alone — a regex cannot resolve
+  them, and n8n has the same limit.
+
 - **Breaking: `n8n-decanter test <workflow>` no longer executes.** It used to
   fall back to the newest capture under `executions/` and run the workflow for
   real on your instance — a directory that is gitignored, so the same commit
