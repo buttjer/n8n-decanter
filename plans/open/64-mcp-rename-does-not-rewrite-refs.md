@@ -1,7 +1,7 @@
 # Plan 64 — MCP `renameNode` strands every `$('…')` ref; our contract says the opposite
 
-**Status:** In progress — tasks 1 + 2 (#191), 3a (#193) and 3b (#195) shipped;
-3c, 3d, 4, 5 open
+**Status:** In progress — tasks 1–4 shipped (#191, #193, #195, #198, #200, and
+this one); only task 5 (the upstream report) is open
 **Priority:** P1
 **Source:** claim B1 of the 2026-07-30 field report (39 renames left every
 reference stale). Verified against n8n's source at `n8n@2.30.7`, `n8n@2.32.7`,
