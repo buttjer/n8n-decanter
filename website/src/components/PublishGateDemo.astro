@@ -1,0 +1,71 @@
+---
+// Looping simulation of the go-live gate: a rename is forwarded, the
+// `publish_workflow` that would ship its stranded references is refused (real
+// guard wording, real repair order), the agent fixes parameters first and code
+// second, re-checks with `test`, and only then publishes. Production is on the
+// published version the whole time. Same house pattern as AgentDemo/GuardDemo.
+---
+
+<div class="mx-auto w-full max-w-3xl overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-lg">
+  <div class="flex items-center gap-2 border-b border-zinc-800 px-4 py-2.5">
+    <span class="h-3 w-3 rounded-full bg-red-500/80"></span>
+    <span class="h-3 w-3 rounded-full bg-yellow-500/80"></span>
+    <span class="h-3 w-3 rounded-full bg-green-500/80"></span>
+    <span class="ml-2 font-mono text-xs text-zinc-500">coding agent — going live</span>
+  </div>
+  <div
+    id="publish-demo-body"
+    role="img"
+    aria-label="Animated demo: a node rename is forwarded to n8n, the publish that would take its stranded references live is refused, the agent repairs the expression parameters and then the code file, re-checks with test, and publishes. Production keeps serving the published version throughout."
+    class="h-[21rem] overflow-hidden px-4 py-3 font-mono text-[12px] leading-[1.6] text-zinc-100 sm:text-[13px]"
+  ></div>
+</div>
+
+<style>
+  #publish-demo-body :global(.who) { color: #a1a1aa; }
+  #publish-demo-body :global(.you) { color: #60a5fa; }
+  #publish-demo-body :global(.bot) { color: #c4b5fd; }
+  #publish-demo-body :global(.tool) { color: #34d399; }
+  #publish-demo-body :global(.add) { color: #34d399; }
+  #publish-demo-body :global(.del) { color: #f87171; }
+  #publish-demo-body :global(.ok) { color: #34d399; }
+  #publish-demo-body :global(.no) { color: #f87171; }
+  #publish-demo-body :global(.dim) { color: #71717a; }
+  #publish-demo-body :global(.blk) { margin-top: 0.5rem; }
+</style>
+
+<script>
+  const body = document.getElementById("publish-demo-body");
+  if (body) {
+    // Each entry: [html, ms to linger before revealing the next].
+    const steps: [string, number][] = [
+      ['<div><span class="who you">▌ You</span></div><div>Rename "Fetch orders" to "Load orders", then take it live.</div>', 1400],
+      ['<div class="blk"><span class="tool">⏺ n8n MCP</span> update_workflow · renameNode "Fetch orders" → "Load orders"</div><div class="ok">✓ forwarded — node renamed, connections rewired</div><div class="dim">n8n rewrites the name and the wiring. Not the references.</div>', 1900],
+      ['<div class="blk"><span class="tool">⏺ n8n MCP</span> publish_workflow wf_8kQ2</div><div class="no">✗ blocked by the n8n-decanter guard-proxy: 2 dangling reference(s) on the draft of wf_8kQ2 would go live.</div><div class="dim">expression parameters (structure — fix in n8n, not in workflow.json):</div><div class="dim">&nbsp;&nbsp;node "Totals" references $(\'Fetch orders\')</div><div class="dim">Code-node source (yours — edit the file here, then push):</div><div class="dim">&nbsp;&nbsp;node "Score risk" references $(\'Fetch orders\')</div>', 3200],
+      ['<div class="blk"><span class="who bot">▌ Agent</span></div><div>Nothing went live. Repairing the parameters first, then the code — that order matters.</div>', 1800],
+      ['<div class="blk"><span class="tool">⏺ n8n MCP</span> update_workflow · setNodeParameter "Totals" → $(\'Load orders\')</div><div class="ok">✓ forwarded</div><div class="blk"><span class="tool">⏺ Edit</span> workflows/order-enrichment/code/score-risk.ts</div><div class="del">-   const { total } = $(\'Fetch orders\').first().json;</div><div class="add">+   const { total } = $(\'Load orders\').first().json;</div>', 2400],
+      ['<div class="blk"><span class="tool">⏺ Run</span> n8n-decanter push "Order enrichment"</div><div class="ok">✓ pushed to the draft</div><div class="blk"><span class="tool">⏺ Run</span> n8n-decanter test "Order enrichment"</div><div class="ok">✓ draft is statically clean; nothing was executed</div>', 2200],
+      ['<div class="blk"><span class="tool">⏺ n8n MCP</span> publish_workflow wf_8kQ2</div><div class="ok">✓ forwarded — published</div><div class="dim">Production ran the old version until this line. It never saw the broken one.</div>', 2900],
+    ];
+
+    const render = (n: number) => {
+      body.innerHTML = steps.slice(0, n).map((s) => s[0]).join("");
+      // Keep the newest line in view — the panel scrolls, it doesn't resize.
+      body.scrollTop = body.scrollHeight;
+    };
+
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      render(steps.length);
+    } else {
+      let n = 0;
+      const tick = () => {
+        n = n >= steps.length ? 1 : n + 1;
+        render(n);
+        const ms = n >= steps.length ? steps[steps.length - 1][1] : steps[n - 1][1];
+        window.setTimeout(tick, ms);
+      };
+      tick();
+    }
+  }
+</script>

@@ -7,6 +7,7 @@ date: "2026-07-27"
 ---
 
 import GuardDemo from "../../components/GuardDemo.astro";
+import PublishGateDemo from "../../components/PublishGateDemo.astro";
 
 n8n is the best thing that happened to the boring half of my work. Hundreds of
 integrations somebody else keeps current. Credentials in a vault instead of in my
@@ -204,6 +205,13 @@ well. If the draft can't be read, nothing is published, and the error says the
 *check* couldn't run rather than pretending to know the workflow is broken —
 "couldn't verify, so we shipped it" being the one outcome a gate must never
 have.
+
+Here is the whole shape of it: a rename that looks clean, a publish that isn't
+allowed to be, and production serving the old version the entire time.
+
+<div class="not-prose my-8">
+  <PublishGateDemo />
+</div>
 
 ## What I'd flag before you trust it
 
