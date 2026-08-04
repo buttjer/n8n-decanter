@@ -244,6 +244,36 @@ byte-exact `jsCode` and every parameter. Scan `before.nodes`.
 Note this writes nothing — decanter reads, and refuses its own action. Consistent
 with `PLAN.md:94-99`, unlike the rejected "decanter repairs parameters over MCP".
 
+**No legacy support — settled.** The fallback is deleted outright: no deprecation
+period, no "warns now, removed later" shim, no env escape hatch. A bare `test`
+that still executed *sometimes* would keep exactly the ambiguity this change
+exists to remove.
+
+**Docs are part of the task, not a follow-up.** This changes a verb's meaning, so
+the surface is wider than the usual three. Grounded list — every file that
+currently describes `test`:
+
+| surface | what changes |
+|---|---|
+| `n8n-decanter.mts:77` | the usage line (`<workflow> [--execution … \| --scenario …]`) must show that bare = static |
+| `n8n-decanter.mts:729`, `:740-741` | the arg error, and the removal of the "using the latest capture" info line |
+| `README.md` | the `## Commands` row for `test` |
+| `docs/cli/test.md` | the whole page — new tier, fallback gone |
+| `docs/cli/publish.md` | the new gate and its refusal |
+| `docs/cli/overview.md` | the command-surface entry (`check:docs` enforces its existence, not its prose) |
+| `docs/cli/preflight.md` | wherever it hands off to `test` |
+| `docs/cli/node-run.md` | the ladder mention |
+| `docs/agents/offline-loop.md`, `docs/agents/overview.md` | the agent-facing loop |
+| `docs/concepts/sync-layout.md` | the flow mention |
+| `template/AGENTS.md.example` | the verify flow — the file an agent actually reads |
+| `PLAN.md` | Plan 60's `preflight → push → test → publish` description gains a tier |
+| `CHANGELOG.md` | **Breaking:** entry |
+
+Deliberately **not** touched: `scenario create`'s own latest-capture fallback
+(`n8n-decanter.mts:853-861`). It looks like the same wart but is not — it picks
+input data for a **file write**, with no side effect on the instance, so the
+ambiguity that forces the removal in `test` does not exist there.
+
 #### 3c. Guard policy on `publish_workflow` — decide separately
 
 `guardMessage` only inspects `update_workflow` for `jsCode`, so
@@ -352,10 +382,9 @@ any of it.**
   3a in PR #193. 3b is user-facing twice over and one half is **Breaking:**
   (`test` no longer falls back to the latest capture, so the bare verb stops
   executing); 3c changes what the guard forwards.
-- 3b touches the verb surface, so it pays the full three-surface tax
-  (`README.md` `## Commands` row wording, `docs/cli/test.md` + `docs/cli/publish.md`,
-  `CHANGELOG.md`) plus the scaffolded `AGENTS.md` flow — and `PLAN.md`, since
-  Plan 60's `preflight → push → test → publish` description gains a tier.
+- 3b's docs work is listed **inside the task**, not here — it changes a verb's
+  meaning, so it spans thirteen surfaces including the CLI's own usage string, and
+  treating it as a trailing chore is how it gets half-done.
 - `lib/validate.mts:196`'s comment has always been correctly scoped to the UI —
   **the code was right; only the prose was wrong.** The dangling-ref check is what
   made the field report's fallout visible at all.
