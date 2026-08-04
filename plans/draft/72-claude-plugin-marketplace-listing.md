@@ -1,4 +1,4 @@
-# Plan 72 — Claude Code plugin: marketplace listing only
+# Plan 72 — Claude Code plugin: marketplace listings only (Anthropic + n8n)
 
 **Status:** Draft
 **Priority:** P2
@@ -9,15 +9,17 @@ reach. Picks up the plugin findings in
 dropped Plan 56) and the skills-pack note in
 [30-agent-llm-working-ergonomics.md](../open/30-agent-llm-working-ergonomics.md).
 **Snapshot:** 2026-08-04T14:08Z @ 1955c62
-**Theme:** decanter is invisible in the one place Claude Code users shop for
-tooling — list it there, and ship nothing else through that channel.
+**Theme:** decanter is invisible in the places agent users shop for tooling —
+get listed in two of them, and ship nothing else through that channel.
 
-Publish a **thin** Claude Code plugin whose only job is discovery: it shows up in
-`/plugin` Discover, carries a couple of skills that point at the CLI, and leaves
-the guard, hooks, permissions and scaffolding exactly where they are. Every
-*technical* thing a plugin could do is either already covered by `init`'s
-scaffold or better off committed in the user's repo — **reach is the only reason
-left**, so the plan is deliberately a marketing surface, not a feature.
+Publish a **thin** Claude Code plugin whose only job is discovery, and get it
+listed in the two catalogs that matter: Anthropic's community marketplace and
+**n8n's own** (`n8n-io/skills`, whose audience is precisely decanter's). The
+plugin carries a couple of skills that point at the CLI and leaves the guard,
+hooks, permissions and scaffolding exactly where they are. Every *technical*
+thing a plugin could do is either already covered by `init`'s scaffold or better
+off committed in the user's repo — **reach is the only reason left**, so this is
+deliberately a distribution plan, not a feature.
 
 ## Why
 
@@ -43,8 +45,8 @@ prerequisite artifact, step 2 is the actual goal.
 1. `.claude-plugin/marketplace.json` at repo root, plus `plugin/` holding
    `.claude-plugin/plugin.json` (`name`, `description`, `keywords`, `homepage`,
    `repository`, `license`).
-2. **Submit to the community marketplace** — that, not the own catalog, is what
-   makes decanter findable to someone who has never heard of it. Users then run
+2. **Track A — submit to Anthropic's community marketplace** — that, not our own
+   catalog, is what makes decanter findable to someone who has never heard of it. Users then run
    `/plugin marketplace add anthropics/claude-plugins-community` (manual, once)
    and `/plugin install n8n-decanter@claude-community`. Mechanics, verified
    2026-08-04:
@@ -69,7 +71,23 @@ prerequisite artifact, step 2 is the actual goal.
    checked fourth surface instead of a fifth place to forget.
 6. **Dev/CI:** `claude --plugin-dir ./plugin` for local runs;
    `claude plugin validate ./plugin --strict` in CI.
-7. **Doc surfaces** — the listing is user-facing, so the usual three move with
+7. **Track B — n8n's own marketplace (`n8n-io/skills`).** A marketplace is just a
+   repo with a catalog, so n8n's skills repo is one — and its users are exactly
+   decanter's: people pointing an agent at n8n. This track is **outreach, not
+   engineering**, and it has the better audience-fit of the two:
+   - The ask is **reciprocal and already earned**: decanter recommends their pack
+     on a first `init` (Plan 55), documents the pairing in
+     [n8n-skills.md](../../docs/agents/n8n-skills.md), and enforces the boundary
+     in code so pairing is safe by construction — the guard forwards their whole
+     build/lifecycle surface and blocks only `jsCode` writes.
+   - Concretely: offer a catalog entry pointing at our plugin (a marketplace
+     entry can reference an external repo, so nothing needs vendoring), or
+     failing that a mention in their skills docs; and a post on
+     [community.n8n.io](https://community.n8n.io) framed as the pairing, not an
+     ad.
+   - **Honest limits:** no pipeline, no SLA, and n8n may simply decline. Nothing
+     in the repo may depend on this landing — Track A stands alone.
+8. **Doc surfaces** — the listing is user-facing, so the usual three move with
    it: `README.md`, `/docs`, `CHANGELOG.md`. No `## Commands` row (a plugin is
    not a verb, so `check:docs` requires nothing there).
    - **`README.md` — five lines in `## Setup`**, right after the
@@ -157,14 +175,12 @@ prerequisite artifact, step 2 is the actual goal.
   marketplace. It buys namespacing (`/n8n-decanter:…`) and one bundle instead of
   loose files; it is cosmetic, never loads monitors, and only loads when Claude
   Code starts in the repo root. Not part of this plan.
-- **Reality check on the reach this buys.** The community catalog is real and
+- **Reality check on the reach Track A buys.** The community catalog is real and
   maintained but not a mass channel: ~336 stars / 84 forks as of 2026-08-04, and
-  users must add it manually. Install counts aren't public. Treat the listing as
-  cheap upside, not a growth plan — which is also why the scope stays this thin.
-- **The bigger lever is n8n, not Anthropic.** `n8n-io/skills` is itself a
-  marketplace, and its audience — people pointing an agent at n8n — is exactly
-  decanter's. Getting named there or in n8n's ecosystem would outweigh both
-  Anthropic catalogs. Not scoped here; worth its own draft.
+  users must add it manually. Install counts aren't public. Treat it as cheap
+  upside, not a growth plan — which is also why the scope stays this thin, and
+  why **Track B is expected to outweigh it** despite having no process behind it:
+  audience fit beats catalog size here.
 - **Second-best channel, if the community submission stalls:** `init` could
   scaffold `extraKnownMarketplaces` + `enabledPlugins` into the sync dir's
   `.claude/settings.json` — Claude Code then prompts collaborators to install it
