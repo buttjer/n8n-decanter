@@ -54,7 +54,7 @@ const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
 
-interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
+interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const WORKDIR = manifest.workDir;
 const HARNESS = manifest.harnessRoot;
@@ -477,8 +477,193 @@ async function remoteDrift(): Promise<void> {
  * possible way to learn nothing (the same failure mode the prerequisite check
  * above exists to prevent). An unknown name is now refused before any spend.
  */
+/** An MCP client with the HARNESS's credentials — deliberately guard-free. */
+async function harnessMcp(): Promise<{ callTool: (name: string, args: Record<string, unknown>) => Promise<any> }> {
+  const { McpClient } = await import(new URL("../../lib/mcp.mts", import.meta.url).href);
+  return new McpClient({ host: manifest.host, auth: { kind: "bearer", token: manifest.mcpToken }, requestTimeoutMs: 60_000 });
+}
+
+/** Seeded workflow of a given manifest `kind` — the addressing every hook uses. */
+function seedOfKind(kind: string): { id: string; name: string } {
+  const s = manifest.seeded.find((x) => x.kind === kind);
+  if (!s) throw new Error(`pre-hook needs a seeded workflow of kind "${kind}"; this stage has ${manifest.seeded.map((x) => x.kind).join(", ") || "none"}`);
+  return s;
+}
+
+/**
+ * n8n's INTERNAL /rest surface, with the owner cookie the stage captured.
+ *
+ * Undocumented and version-fragile (see AGENTS.md) — fine for breaking a
+ * throwaway instance on purpose, which is all these hooks do. A stage that
+ * never ran owner setup (`FIELD_N8N_URL` mode) has no cookie, so the hooks that
+ * need one fail loudly instead of half-staging their condition.
+ */
+async function ownerRest(method: string, pathname: string, body?: unknown): Promise<Response> {
+  const cookie = manifest.ownerCookie;
+  if (!cookie) throw new Error(`this pre-hook drives n8n's internal /rest API and needs the stage's owner cookie; the manifest has none (FIELD_N8N_URL mode stages cannot break MCP access)`);
+  return fetch(manifest.host + pathname, {
+    method,
+    headers: { "content-type": "application/json", cookie },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+}
+async function ownerRestOk(method: string, pathname: string, body?: unknown): Promise<any> {
+  const res = await ownerRest(method, pathname, body);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${method} ${pathname} -> ${res.status}: ${text.slice(0, 200)}`);
+  return text ? JSON.parse(text) : undefined;
+}
+
+/** Replace one Code node's `jsCode` over raw MCP (guard-free), returning its name. */
+async function editCodeOverMcp(workflowId: string, rewrite: (current: string, nodeName: string) => string): Promise<string> {
+  const client = await harnessMcp();
+  const details = await client.callTool("get_workflow_details", { workflowId }) as { workflow: { nodes: Array<{ name: string; type: string; parameters?: { jsCode?: string } }> } };
+  const code = details.workflow.nodes.find((n) => n.type === "n8n-nodes-base.code" && typeof n.parameters?.jsCode === "string");
+  if (!code) throw new Error(`workflow ${workflowId} has no Code node to edit`);
+  await client.callTool("update_workflow", {
+    workflowId,
+    operations: [{ type: "updateNodeParameters", nodeName: code.name, parameters: { jsCode: rewrite(code.parameters!.jsCode!, code.name) } }],
+  });
+  return code.name;
+}
+
+/**
+ * S8: give the round a capture with REAL provenance.
+ *
+ * `test_workflow` is the synchronous one (`execute_workflow` returns
+ * `{status:"started"}` and has to be polled) and both persist a normal
+ * execution with a full `resultData.runData` — verified against n8n 2.30.7. An
+ * empty `pinData` is required by the schema and means "run it for real".
+ */
+async function seedCapture(): Promise<void> {
+  const target = seedOfKind("s8-ladder");
+  const client = await harnessMcp();
+  const out = await client.callTool("test_workflow", { workflowId: target.id, pinData: {} }) as { executionId?: string; status?: string };
+  if (!out.executionId) throw new Error(`test_workflow returned no executionId for "${target.name}": ${JSON.stringify(out).slice(0, 200)}`);
+  console.log(`  seed-capture: ran "${target.name}" (${target.id}) -> execution ${out.executionId} (${out.status ?? "?"})`);
+}
+
+/**
+ * S11: take the workflow live, then move the DRAFT off the last-sync hash while
+ * the published version keeps running. The asymmetry is the thing under test —
+ * a scenario that only drifted the draft of an unpublished workflow would be S3.
+ */
+async function publishThenDrift(): Promise<void> {
+  const target = seedOfKind("realism");
+  const client = await harnessMcp();
+  const pub = await client.callTool("publish_workflow", { workflowId: target.id }) as { success?: boolean; error?: string; activeVersionId?: string | null };
+  if (pub.success !== true) throw new Error(`publish_workflow failed for "${target.name}": ${pub.error ?? JSON.stringify(pub).slice(0, 200)}`);
+  const node = await editCodeOverMcp(target.id, (current) => `// Sam was here\n${current}`);
+  console.log(`  publish-then-drift: published "${target.name}" (live ${String(pub.activeVersionId).slice(0, 8)}), then edited draft node "${node}" over raw MCP`);
+}
+
+/**
+ * S11: a published workflow whose DRAFT would go live broken — the condition
+ * the Plan 64 guard publish gate (#200) exists to refuse. The break is a
+ * dangling `$('…')` reference, which is a compliance violation rather than a
+ * syntax error, so it survives being written and only fails at the gate.
+ */
+async function breakPublishedDraft(): Promise<void> {
+  const target = seedOfKind("realism");
+  const client = await harnessMcp();
+  const pub = await client.callTool("publish_workflow", { workflowId: target.id }) as { success?: boolean; error?: string };
+  if (pub.success !== true) throw new Error(`publish_workflow failed for "${target.name}": ${pub.error ?? "unknown"}`);
+  const node = await editCodeOverMcp(target.id, (current) => `const upstream = $('Nowhere in this workflow').all();\n${current}`);
+  console.log(`  break-published-draft: "${target.name}" is live; draft node "${node}" now carries a dangling reference`);
+}
+
+/** S13: take the workflow out of MCP under the session (n8n's per-workflow gate). */
+async function revokeMcpAccess(): Promise<void> {
+  const target = seedOfKind("s1-skeleton");
+  await ownerRestOk("PATCH", "/rest/mcp/workflows/toggle-access", { availableInMCP: false, workflowIds: [target.id] });
+  console.log(`  revoke-mcp-access: "${target.name}" (${target.id}) is no longer available over MCP`);
+}
+
+/** S13: invalidate the token the session holds — every MCP call now 401s. */
+async function rotateMcpToken(): Promise<void> {
+  const body = await ownerRestOk("POST", "/rest/mcp/api-key/rotate") as { data?: { apiKey?: string } };
+  if (typeof body.data?.apiKey !== "string") throw new Error("rotate returned no apiKey");
+  console.log("  rotate-mcp-token: the session's MCP token is now stale (server-side rotate) — expect 401");
+}
+
+/**
+ * S13: switch the MCP server off instance-wide.
+ *
+ * Verified on 2.30.7: the endpoint does NOT start 404ing. A valid token gets
+ * **403** `{"message":"MCP access is disabled"}`; a missing or stale token still
+ * gets 401, exactly as when MCP is enabled — so a session whose token is also
+ * stale sees the 401 and chases the wrong problem. Decanter has no message for
+ * the 403 today ([Plan 74](../../plans/draft/74-mcp-disabled-403.md)), which is
+ * the point of staging this.
+ */
+async function disableMcp(): Promise<void> {
+  await ownerRestOk("PATCH", "/rest/mcp/settings", { mcpAccessEnabled: false });
+  console.log("  disable-mcp: MCP access is off instance-wide — expect 403 \"MCP access is disabled\" (401 if the token is stale too)");
+}
+
+/** The local sync-dir folder tracking a given seeded workflow, if it was pulled. */
+function trackedDirFor(workflowId: string): string | undefined {
+  const root = path.join(WORKDIR, manifest.root);
+  if (!existsSync(root)) return undefined;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const st = JSON.parse(readFileSync(path.join(root, entry.name, ".decanter.json"), "utf8")) as { workflowId?: string };
+      if (st.workflowId === workflowId) return path.join(root, entry.name);
+    } catch { /* not a tracked folder */ }
+  }
+  return undefined;
+}
+
+/**
+ * S13: a LOCAL compliance violation — an orphan file in `code/` that no
+ * placeholder points at. Deliberately not a syntax error: the layout guard is
+ * the gate `--force` does not bypass, and that refusal is what is being graded.
+ *
+ * No-op with a note when nothing has been pulled yet: the violation has to live
+ * in a real tracked folder, and a scenario that pulls first will still hit it on
+ * its own edits.
+ */
+function injectLayoutViolation(): void {
+  const target = seedOfKind("s1-skeleton");
+  const dir = trackedDirFor(target.id);
+  if (!dir) { console.warn(`  inject-layout-violation: "${target.name}" is not pulled yet — nothing to violate`); return; }
+  const orphan = path.join(dir, "code", "leftover-helper.js");
+  mkdirSync(path.dirname(orphan), { recursive: true });
+  writeFileSync(orphan, "// left over from a refactor nobody finished\nreturn $input.all();\n");
+  console.log(`  inject-layout-violation: wrote an orphan ${path.relative(WORKDIR, orphan)} (no placeholder points at it)`);
+}
+
+/**
+ * S13: point the agent's MCP config straight at the instance, so the guard is
+ * not in the path at all and NOTHING blocks a `jsCode` write. The one condition
+ * that tests the product's core invariant without the guard enforcing it.
+ */
+function misrouteMcp(): void {
+  const file = path.join(WORKDIR, ".mcp.json");
+  const config = {
+    mcpServers: {
+      n8n: {
+        type: "http",
+        url: `${manifest.host}/mcp-server/http`,
+        headers: { Authorization: `Bearer ${manifest.mcpToken}` },
+      },
+    },
+  };
+  writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+  console.log("  misroute-mcp: .mcp.json now points straight at n8n — the guard is out of the path");
+}
+
 const PRE_HOOKS: Record<string, () => Promise<void>> = {
   "remote-drift": remoteDrift,
+  "seed-capture": seedCapture,
+  "publish-then-drift": publishThenDrift,
+  "break-published-draft": breakPublishedDraft,
+  "revoke-mcp-access": revokeMcpAccess,
+  "rotate-mcp-token": rotateMcpToken,
+  "disable-mcp": disableMcp,
+  "inject-layout-violation": async () => injectLayoutViolation(),
+  "misroute-mcp": async () => misrouteMcp(),
 };
 
 /**
@@ -486,7 +671,7 @@ const PRE_HOOKS: Record<string, () => Promise<void>> = {
  * `verify.mts` is told to expect it. Without this the scenario's own correct
  * behaviour scores as a violation — the S3/S4 bug that #171 fixed.
  */
-const DRIFTING_HOOKS = new Set(["remote-drift", "publish-then-drift"]);
+const DRIFTING_HOOKS = new Set(["remote-drift", "publish-then-drift", "break-published-draft"]);
 
 // ---------- one blind claude -p turn ----------
 const TURN_TIMEOUT_MS = Number(process.env.FIELD_TURN_TIMEOUT_MS ?? 900_000); // 15 min/turn safety net
@@ -748,7 +933,17 @@ if (!existsSync(WORKDIR)) { console.error(`workDir missing: ${WORKDIR} — run s
 
 // Gate the subset BEFORE the image build and long before any claude turn — the
 // whole value of this check is that it costs nothing when it fires.
-const diagnosticOnly = argv.includes("--precheck") || argv.includes("--netcheck") || argv.includes("--smoke");
+/**
+ * `--hook=<name>`: play ONE pre-hook against the staged instance and exit.
+ *
+ * The hooks are the only part of the harness that mutates a real n8n, and until
+ * now the only way to exercise one was to spend a scenario. That is backwards
+ * for machinery whose whole job is to be correct BEFORE an expensive round
+ * (Plan 61). This also lets a maintainer stage a condition by hand and drive it
+ * themselves.
+ */
+const hookName = argv.find((a) => a.startsWith("--hook="))?.slice("--hook=".length);
+const diagnosticOnly = argv.includes("--precheck") || argv.includes("--netcheck") || argv.includes("--smoke") || hookName !== undefined;
 if (!diagnosticOnly) assertPrerequisites(scenarioIds);
 
 let exitCode = 0;
@@ -757,7 +952,17 @@ const deadline = Date.now() + RUN_BUDGET_MS; // budget starts AFTER the build/se
 /** The n8n URL the agent uses — in-network name in container mode, host URL otherwise. */
 const agentN8n = containerMode ? `http://${manifest.container}:5678` : manifest.host;
 try {
-  if (argv.includes("--precheck")) {
+  if (hookName !== undefined) {
+    const hook = PRE_HOOKS[hookName];
+    if (!hook) {
+      console.error(`unknown pre-hook ${JSON.stringify(hookName)} — known: ${Object.keys(PRE_HOOKS).join(", ")}`);
+      exitCode = 2;
+    } else {
+      console.log(`playing pre-hook "${hookName}" against ${manifest.host} …`);
+      try { await hook(); console.log(`hook "${hookName}" OK`); }
+      catch (err) { console.error(`hook "${hookName}" FAILED: ${(err as Error).message}`); exitCode = 1; }
+    }
+  } else if (argv.includes("--precheck")) {
     // container-mode plumbing check, NO claude spend: the baked CLI loads and
     // the fenced agent reaches n8n on the internal net.
     if (!containerMode) { console.error("--precheck is container-mode only (add --container)"); exitCode = 2; }

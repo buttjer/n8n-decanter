@@ -103,8 +103,17 @@ const chain = (nodes: N8nNode[]) => Object.fromEntries(nodes.slice(0, -1).map((n
 /** best-effort kebab slug (decanter recomputes on pull; verify discovers by id). */
 const kebab = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/[\s_]+/g, "-").replace(/-+/g, "-");
 
-interface Seed { name: string; nodes: N8nNode[]; availableInMCP: boolean; kind: string }
-const SEEDS: Seed[] = [
+const splitInBatches = (id: string, name: string, batchSize: number, pos: [number, number]): N8nNode => ({ id, name, type: "n8n-nodes-base.splitInBatches", typeVersion: 3, position: pos, parameters: { batchSize, options: {} } });
+
+interface Seed { name: string; nodes: N8nNode[]; availableInMCP: boolean; kind: string; connections?: Record<string, unknown> }
+
+/**
+ * The four workflows every round has ever staged. Kept as its own pack so
+ * adding wave-2 material cannot perturb the world S1–S6 were measured in:
+ * a fifth workflow changes what `list --remote` shows, which is an input to
+ * S1's discovery beat and S6's fresh-clone measurement (Plan 61, D1).
+ */
+const BUILTIN_SEEDS: Seed[] = [
   {
     name: "Weekly digest roll-up",
     kind: "realism",
@@ -130,6 +139,87 @@ const SEEDS: Seed[] = [
     nodes: (() => { const t = manualTrigger(), c = codeNode("c1", "Normalize", "", [220, 0]), d = noOp("d1", "Done", [440, 0]); return [t, c, d]; })(),
   },
 ];
+
+/**
+ * Wave-2 additions (Plan 61). Two workflows the S8/S9 ladder scenarios need and
+ * `builtin` deliberately lacks:
+ *
+ * - `s8-ladder` — TWO chained Code nodes, so a run gives the second one a real
+ *   INPUT sample. A single self-contained Code node would produce a capture
+ *   whose input is the manual trigger's empty item, which is precisely the
+ *   synthetic-pin shape S8 exists to move past (D4).
+ * - `loop-preview` — a `splitInBatches` loop, the one graph shape whose local
+ *   replay is viewer-only and hard-errors headless. The corpus has no loop
+ *   worth reusing, so it is hand-built.
+ */
+const ORDERS_FIXTURE = `// upstream system hands us the week's orders
+const orders = [
+  { id: 'A-1', customer: 'ada', amount: 42.5, kind: 'sale' },
+  { id: 'A-2', customer: 'bo', amount: 13.25, kind: 'sale' },
+  { id: 'A-3', customer: 'ada', amount: -13.25, kind: 'refund' },
+  { id: 'A-4', customer: 'cy', amount: 99.999, kind: 'sale' },
+  { id: 'A-5', customer: 'bo', amount: 7.005, kind: 'sale' },
+  { id: 'A-6', customer: 'cy', amount: -99.999, kind: 'refund' },
+];
+return orders.map((json) => ({ json }));
+`;
+const TOTALS_CODE = `// weekly totals per customer
+const totals = {};
+for (const item of $input.all()) {
+  const { customer, amount } = item.json;
+  totals[customer] = (totals[customer] ?? 0) + amount;
+}
+return Object.entries(totals).map(([customer, total]) => ({ json: { customer, total } }));
+`;
+const WAVE2_SEEDS: Seed[] = [
+  {
+    name: "Weekly revenue totals",
+    kind: "s8-ladder",
+    availableInMCP: true,
+    nodes: (() => {
+      const t = manualTrigger();
+      const fetch = codeNode("c1", "Fetch orders", ORDERS_FIXTURE, [220, 0]);
+      const totals = codeNode("c2", "Build totals", TOTALS_CODE, [440, 0]);
+      const d = noOp("d1", "Done", [660, 0]);
+      return [t, fetch, totals, d];
+    })(),
+  },
+  {
+    name: "Order backlog in chunks",
+    kind: "loop-preview",
+    availableInMCP: true,
+    nodes: (() => {
+      const t = manualTrigger();
+      const make = codeNode("c1", "Make batches", "return Array.from({ length: 7 }, (_, i) => ({ json: { order: i + 1 } }));\n", [220, 0]);
+      const loop = splitInBatches("l1", "Loop", 3, [440, 0]);
+      const process = codeNode("c2", "Process chunk", "return $input.all().map((i) => ({ json: { ...i.json, seen: true } }));\n", [660, 120]);
+      const d = noOp("d1", "Done", [660, -120]);
+      return [t, make, loop, process, d];
+    })(),
+    // splitInBatches has TWO outputs — 0 is "done", 1 is the loop body — so the
+    // straight-line `chain()` helper cannot express it.
+    connections: {
+      "When clicked": { main: [[{ node: "Make batches", type: "main", index: 0 }]] },
+      "Make batches": { main: [[{ node: "Loop", type: "main", index: 0 }]] },
+      Loop: { main: [[{ node: "Done", type: "main", index: 0 }], [{ node: "Process chunk", type: "main", index: 0 }]] },
+      "Process chunk": { main: [[{ node: "Loop", type: "main", index: 0 }]] },
+    },
+  },
+];
+
+/**
+ * Seed packs, selected with `--seeds <pack>` / `FIELD_SEED_PACK`. `builtin` is
+ * the default and reproduces every earlier round's world exactly.
+ */
+const SEED_PACKS: Record<string, Seed[]> = {
+  builtin: BUILTIN_SEEDS,
+  wave2: [...BUILTIN_SEEDS, ...WAVE2_SEEDS],
+};
+const SEED_PACK = process.argv.includes("--seeds") ? process.argv[process.argv.indexOf("--seeds") + 1] : (process.env.FIELD_SEED_PACK ?? "builtin");
+const SEEDS: Seed[] = SEED_PACKS[SEED_PACK] ?? (() => {
+  console.error(`unknown seed pack ${JSON.stringify(SEED_PACK)} — known: ${Object.keys(SEED_PACKS).join(", ")}`);
+  process.exit(2);
+})();
 
 // ---------- boot + provision ----------
 interface SeedResult { id: string; name: string; slug: string; availableInMCP: boolean; kind: string }
@@ -196,7 +286,7 @@ async function provision(): Promise<{ container: string | null; seeded: SeedResu
   const seeded: SeedResult[] = [];
   const toEnable: string[] = [];
   for (const s of SEEDS) {
-    const created = await api("POST", "/api/v1/workflows", { name: s.name, nodes: s.nodes, connections: chain(s.nodes), settings: { executionOrder: "v1" } });
+    const created = await api("POST", "/api/v1/workflows", { name: s.name, nodes: s.nodes, connections: s.connections ?? chain(s.nodes), settings: { executionOrder: "v1" } });
     seeded.push({ id: created.id, name: s.name, slug: kebab(s.name), availableInMCP: s.availableInMCP, kind: s.kind });
     if (s.availableInMCP) toEnable.push(created.id);
   }
@@ -475,6 +565,12 @@ try {
     container,
     mcpToken: MCP,
     apiKey: KEY,
+    // The owner cookie is the ONLY way to reach n8n's internal /rest/mcp/*
+    // surface, which is what S13's failure-mode pre-hooks need in order to
+    // revoke a workflow's MCP availability, rotate the token out from under the
+    // session, or switch the MCP server off. Empty in FIELD_N8N_URL mode (no
+    // owner setup ran), and redacted out of every committed archive.
+    ownerCookie: COOKIE,
     owner: { email: OWNER.email },
     harnessRoot,
     workDir,
@@ -491,6 +587,7 @@ try {
     // agent image: the local packed tarball, or the npm spec (FIELD_DECANTER_SPEC).
     cliTarball,
     decanterSpec,
+    seedPack: SEED_PACK,
     seeded,
     allowExtension: ALLOW_EXTENSION,
   };
@@ -504,6 +601,7 @@ try {
   console.log(`workDir     ${workDir}   (blind agent cwd)`);
   console.log(`harnessRoot ${harnessRoot}   (manifest, transcripts, guard.log — agent never enters)`);
   console.log(`skills      ${skills.found ? `${skills.count} vendored${skills.license ? ` (${skills.license})` : ""}` : "PACK ABSENT (clone failed)"} — ${skills.fidelity}`);
+  console.log(`seed pack   ${SEED_PACK}`);
   console.log("seeded workflows:");
   for (const s of seeded) console.log(`  ${s.availableInMCP ? "✓" : "·"} ${s.name}  [${s.kind}]  ${s.id}`);
   console.log(`\nmanifest    ${manifestPath}`);
