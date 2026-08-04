@@ -6,10 +6,19 @@ standfirst: "n8n ships an MCP server, so a coding agent can edit your workflows 
 date: "2026-07-27"
 ---
 
-Recent n8n versions ship a built-in MCP server. Point a coding agent at it and
-it genuinely works: the agent can search workflows, read their full structure,
-add nodes, rename them, wire connections, publish a version. For the first ten
-minutes it feels like the future arrived on schedule.
+n8n is the best thing that happened to the boring half of my work. Hundreds of
+integrations somebody else keeps current. Credentials in a vault instead of in my
+`.env`. An execution history that shows which item failed, on which node, with
+the payload, and lets me retry that one. A canvas a colleague can read without
+ever opening an editor. Draft and published versions, so the thing serving
+traffic isn't whatever I saved last. And all of it self-hostable, so none of it
+is rented.
+
+Recent versions also ship a built-in MCP server — which is further than most
+tools have gone. Point a coding agent at it and it genuinely works: the agent can
+search workflows, read their full structure, add nodes, rename them, wire
+connections, publish a version. For the first ten minutes it feels like the
+future arrived on schedule.
 
 Then it edits a Code node, and you notice what you gave up.
 
@@ -55,11 +64,16 @@ direction you don't quite trust.
 The observation everything else follows from: **structure and code want different
 owners.**
 
-Structure is n8n's job. It has an editor, a schema, validation, an execution
-model. Nothing you build in git will beat that, and making git a second master
-for it just means two things to reconcile.
+Structure is n8n's job, and it is *good* at it — that's the whole reason this
+works. The canvas, the schema, validation before a save, the draft/published
+split, the execution model, the credential store, the four hundred integrations
+that are somebody else's maintenance burden. Rebuilding any of that in git would
+mean writing a worse engine to get better diffs. And making git a second master
+for structure just means two masters to reconcile.
 
-Code is git's job. It wants files, diffs, types, review, blame, history.
+Code is git's job. It wants files, diffs, types, review, blame, history. n8n
+never claimed otherwise; a workflow engine storing a function as a string is the
+correct call for a workflow engine.
 
 So the move isn't to take MCP away from the agent. It's to take *one write* off
 it. [n8n-decanter](/) sits between your agent and n8n as an MCP server of its
@@ -70,9 +84,9 @@ The agent connects through a scaffolded `.mcp.json` and never sees a second set
 of credentials. From its side, n8n's full toolset is there, minus one door. When
 it tries that door, it's told where the file is instead.
 
-Exactly one other call isn't waved through unread: `publish_workflow`, the
-go-live step, is checked before it passes. That's a gate, not an ownership
-claim — and it's the subject of the section after next.
+One other call isn't waved through unread: `publish_workflow`. Going live gets
+checked before it passes — a gate, not an ownership claim, and the subject of
+*Being wrong should be cheap* below.
 
 ## What it writes instead
 
@@ -105,6 +119,30 @@ Structural changes still show up as clean git diffs; the code they refer to live
 where code belongs. When the agent adds a Code node over MCP, it lands with no
 source at all — an empty file — and the first push seeds it from whatever you or
 it then write there.
+
+## What it is, plainly
+
+A CLI. MIT, on npm, one process running next to a git repo you already have.
+`init` scaffolds the folder and your agent's config, `pull` and `push` move
+Code-node source between repo and instance, `watch` does it on save, `diff` shows
+what's different, and `mcp connect` is the guard the agent talks to. It works
+against any n8n new enough to ship the MCP server, cloud or self-hosted — no
+plugin, no fork, no change to how anyone else on the team uses n8n. **There is no
+service in the middle:** nothing is hosted by me, your credentials stay on your
+machine, and if you delete the tool tomorrow your workflows keep running exactly
+as they are. n8n stays the product. This is a bracket around one field.
+
+**Who it's for:** people whose Code nodes stopped being one-liners. A few hundred
+lines of real logic across a handful of nodes, a repo you already review in, and
+an agent you'd rather keep pointing at the workflow than take away from it. Teams
+get the review surface back; solo builders get types, a diff, and shared helpers
+that exist once.
+
+**Who it isn't for:** workflows that are all integrations and barely any code. If
+your Code nodes are three `return items` one-liners, the n8n editor is already
+the right place and a repo buys you nothing but ceremony. It also isn't a
+deployment tool — it won't promote workflows between environments or manage
+credentials. Those are n8n's problems, and n8n has its own answers.
 
 ## The wrinkle nobody warns you about
 
