@@ -16,6 +16,7 @@ import { readState, writeState } from "./state.mts";
 import { diffItems, firstRunItems, isLoopDriver, isPureNode, type NodeDiff, type Provenance, type RunData, type RunItem, readCapture, scenarioIsSynthetic, scenarioProvenance, type SimSource } from "./simulate.mts";
 import type { DecanterConfig, Log, Workflow } from "./types.mts";
 import { isJsCodeNode, publicationState, sha256, splitMarker } from "./util.mts";
+import { type DanglingRef, danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
 
 /**
  * Crash-safe pre-test draft snapshot, written before a test-triggered push
@@ -183,6 +184,43 @@ async function restoreDraft(mcp: McpClient, dir: string, id: string, snapshot: D
  * composition: `push` first). The live version is never affected either
  * way — `test_workflow` runs the draft.
  */
+/** What `test` reports when it runs nothing (Plan 64 task 3b). */
+export interface StaticReport {
+  id: string;
+  name: string;
+  /** Dangling `$('…')` refs on the instance's DRAFT — the thing publish would go live with. */
+  dangling: DanglingRef[];
+  ok: boolean;
+}
+
+/**
+ * `test <workflow>` with no `--scenario`/`--execution`: grade the instance's
+ * draft **statically** and execute nothing (Plan 64 task 3b).
+ *
+ * This is the cheap tier of what `test` already is. Plan 60 assigned the
+ * subjects — `preflight` grades local files, `test` grades the instance's draft
+ * — so the static check of a remote draft belongs here rather than in preflight.
+ * It is also what `publish` gates on, via the same `danglingNodeRefs` scan, so
+ * the two can never disagree.
+ *
+ * Deliberately NOT a fallback to "the latest capture": that made a bare `test`
+ * execute for real against the instance, steered by the contents of a gitignored
+ * directory. Executing now requires saying so.
+ */
+export async function runStaticTest(mcp: McpClient, id: string, log: Log): Promise<StaticReport> {
+  const remote = await getWorkflowDetails(mcp, id);
+  const dangling = danglingNodeRefs(remote.nodes);
+  const report: StaticReport = { id, name: remote.name, dangling, ok: dangling.length === 0 };
+  if (report.ok) {
+    log.ok(`"${remote.name}" (${id}) — draft is statically clean; nothing was executed`);
+    log.info(`pass --scenario <slug> or --execution <id> to actually run it on the instance`);
+  } else {
+    log.error(`"${remote.name}" (${id}) — ${dangling.length} dangling $('…') reference(s) on the DRAFT:`);
+    for (const line of describeDanglingRefs(dangling)) log.error(line);
+  }
+  return report;
+}
+
 export async function runTest(
   mcp: McpClient,
   config: DecanterConfig,
@@ -204,6 +242,14 @@ export async function runTest(
 
   // 1) pre-check read: publication state + the byte-exact draft snapshot
   let remote = await getWorkflowDetails(mcp, id);
+  // Never fire a real run at a draft we already know is broken (Plan 64): a
+  // dangling $('…') fails at run time anyway, and the run has real side effects.
+  const dangling = danglingNodeRefs(remote.nodes);
+  if (dangling.length > 0) {
+    throw new Error(
+      [`"${remote.name}" has ${dangling.length} dangling $('…') reference(s) on the draft — refusing to run it on the instance:`, ...describeDanglingRefs(dangling)].join("\n"),
+    );
+  }
   const snapshot = snapshotOf(remote);
   const differs = await localDiffersFromDraft(dir, remote, log);
 

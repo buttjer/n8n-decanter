@@ -81,3 +81,60 @@ describe("unpublishWorkflow", () => {
     assert.match(lines.join("\n"), /is already unpublished/);
   });
 });
+
+// --- Plan 64 task 3b: the go-live gate ---------------------------------------
+// `publish` scans the draft it ALREADY read, not the repo folder. That choice is
+// what these tests pin: the finding must come from the instance, so a stale or
+// absent local mirror can neither hide a break nor invent one.
+const codeNode = (name: string, jsCode: string) => ({ id: `c-${name}`, name, type: "n8n-nodes-base.code", parameters: { jsCode } });
+const setNode = (name: string, value: string) => ({ id: `s-${name}`, name, type: "n8n-nodes-base.set", parameters: { value } });
+
+describe("publishWorkflow — dangling-ref gate", () => {
+  it("refuses when the DRAFT carries a dangling ref in Code-node source", async () => {
+    const { mcp, calls } = stubMcp(wf({ versionId: "v2", activeVersionId: null, nodes: [codeNode("Transform", "return $('Fetch').all();")] as any }));
+    const { log } = capturingLog();
+    await assert.rejects(() => publishWorkflow(mcp, "wf1", log), /refusing to publish "Demo" — 1 dangling/);
+    assert.deepEqual(calls, [], "nothing may go live");
+  });
+
+  it("refuses on a dangling ref in another node's expression parameter, and routes it to n8n", async () => {
+    const nodes = [codeNode("Keep", "return [];"), setNode("Label", "={{ $('Fetch').first().json.x }}")];
+    const { mcp, calls } = stubMcp(wf({ versionId: "v2", activeVersionId: null, nodes: nodes as any }));
+    const { log } = capturingLog();
+    await assert.rejects(() => publishWorkflow(mcp, "wf1", log), (err: Error) => {
+      assert.match(err.message, /expression parameters \(structure — fix in n8n, not in workflow\.json\)/);
+      assert.match(err.message, /node "Label" references \$\('Fetch'\)/);
+      assert.match(err.message, /n8n-decanter test wf1/);
+      return true;
+    });
+    assert.deepEqual(calls, []);
+  });
+
+  it("orders the two halves parameters-first — the order that does not lose the code edit", async () => {
+    const nodes = [codeNode("Transform", "return $('Fetch').all();"), setNode("Label", "={{ $('Fetch').first().json.x }}")];
+    const { mcp } = stubMcp(wf({ versionId: "v2", activeVersionId: null, nodes: nodes as any }));
+    const { log } = capturingLog();
+    await assert.rejects(() => publishWorkflow(mcp, "wf1", log), (err: Error) => {
+      assert.ok(err.message.indexOf("expression parameters") < err.message.indexOf("Code-node source"), "parameters must be listed first");
+      assert.match(err.message, /fix the expression parameters FIRST/);
+      return true;
+    });
+  });
+
+  it("publishes a clean draft — a resolvable ref is not a finding", async () => {
+    const nodes = [codeNode("Fetch", "return [];"), codeNode("Transform", "return $('Fetch').all();")];
+    const { mcp, calls } = stubMcp(wf({ versionId: "v2", activeVersionId: null, nodes: nodes as any }));
+    const { log } = capturingLog();
+    await publishWorkflow(mcp, "wf1", log);
+    assert.deepEqual(calls, ["publish"]);
+  });
+
+  it("ignores a //@file: placeholder — locally that is not the source", async () => {
+    // The gate reads the instance, where jsCode is inline. A placeholder can
+    // only reach it via a hand-mangled draft; it must not be scanned as code.
+    const { mcp, calls } = stubMcp(wf({ versionId: "v2", activeVersionId: null, nodes: [codeNode("Transform", "//@file:code/transform.js")] as any }));
+    const { log } = capturingLog();
+    await publishWorkflow(mcp, "wf1", log);
+    assert.deepEqual(calls, ["publish"]);
+  });
+});

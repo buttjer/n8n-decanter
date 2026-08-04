@@ -133,7 +133,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `diff [workflow…]` | Per-node line diff of local code vs the n8n draft — an inspection view, always exits 0 |
 | `executions [workflow…]` | Fetch recent execution data (read-only) |
 | `data-tables [table…]` | Fetch data-table schema + rows (read-only) |
-| `test <workflow>` | Pinned run **on the instance** (draft); diffs vs a capture |
+| `test <workflow>` | Grade the **instance's draft**: static check bare, pinned run with `--execution`/`--scenario` |
 | `preflight [workflow…]` | The one local gate — layout, types, instance sync facts, optional local-engine replay — scored and read-only; run before `push` (exits 1 on *not ready*) |
 | `scenario create` / `scenario check` | Build / validate a committed scenario (captured and/or schema-scaffolded) |
 | `backup create` / `restore` / `list` | Git-native disaster recovery — capture / redeploy / list versioned full-export backups |

@@ -1,12 +1,38 @@
 ---
 title: test
-description: Run the workflow on your n8n instance with pinned data — the recommended runtime check.
+description: Grade the draft on your n8n instance — statically, or with a pinned run.
 order: 10
 ---
 
 ```sh
 n8n-decanter test <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
 ```
+
+`test` grades **the draft on your instance** — the thing
+[`publish`](/docs/cli/publish/) would take live. It has two tiers.
+
+## Bare: the static tier — nothing runs
+
+```sh
+n8n-decanter test <workflow>
+```
+
+Reads the draft and checks it for dangling `$('…')` references, in Code-node
+source *and* in other nodes' expression parameters. **It executes nothing** and
+needs no capture, no scenario, and no pinning — so it always works, including on
+a fresh clone.
+
+This is the cheap half of the same question the pinned run asks, and it is what
+[`publish`](/docs/cli/publish/) refuses on. The usual cause of a finding is a
+rename: n8n's `renameNode` MCP op rewrites the node name and the connections
+only and leaves every reference behind (the n8n editor does rewrite them). The
+output names both halves and the order to repair them in — see
+[`pull`](/docs/cli/pull/#renames-and-migrations).
+
+> A green bare `test` means "statically clean, nothing was executed". It is not
+> a statement that the workflow runs. For that, pin it:
+
+## With `--execution` / `--scenario`: the pinned run
 
 Runs the workflow **on your n8n instance** (MCP `test_workflow`) with
 external touchpoints pinned: the trigger, credentialed nodes, and HTTP
@@ -19,11 +45,13 @@ capture — divergence exits 1, so it's CI-gateable like the local-engine
 [`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage).
 
 Pins come from the same sources that stage uses: a fetched capture
-(`--execution <id>`, defaulting to the newest under `executions/`) or a
-committed [scenario](/docs/cli/scenario/) (`--scenario <slug>`). A
-trigger/network node with no captured output **aborts before anything
-runs** — an unpinned one would hit the real world. `--trigger <node>` picks
-the start trigger in multi-trigger workflows.
+(`--execution <id>`) or a committed [scenario](/docs/cli/scenario/)
+(`--scenario <slug>`). **One of the two is required** — there is no fallback to
+"the newest capture lying around", because a bare `test` must never execute. A
+trigger/network node with no captured output **aborts before anything runs** —
+an unpinned one would hit the real world. So does a dangling `$('…')` reference:
+the static tier runs first, and a known-broken draft is never fired at the
+instance. `--trigger <node>` picks the start trigger in multi-trigger workflows.
 
 **Synthetic pins are the exception to the diff.** A `--scenario` with any
 `authored`/`scaffolded` node (see
@@ -52,7 +80,12 @@ first, then test what you pushed.
 | [`preflight --offline`](/docs/cli/preflight/) | locally, static | nothing | every edit — layout + types, offline |
 | [`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage) | local engine, runtime | Docker + a capture/scenario | runtime evidence about **local** code, before pushing; CI without an instance; enforced network isolation |
 | [**`preflight`**](/docs/cli/preflight/) | the above, scored | as available | **before `push`** — one verdict over your local code |
-| **`test`** | **your instance**, runtime | MCP + a capture/scenario | **after `push`** — instance-exact engine, community nodes, no Docker |
+| **`test`** (bare) | **your instance**, static | MCP | **after `push`** — is the draft internally sound? nothing runs |
+| **`test --execution/--scenario`** | **your instance**, runtime | MCP + a capture/scenario | **after `push`** — instance-exact engine, community nodes, no Docker |
+
+The split follows the same line as everything else here: `preflight` grades your
+**local files**, `test` grades **the instance's draft**. The static tier is not a
+second `preflight --offline` — it reads a different artifact.
 
 ## What gets tested — local code or the draft?
 

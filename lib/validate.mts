@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { checkNodeImports, findBundleContext, scanNodeImports } from "./compile.mts";
 import { LEGACY_FIXTURES_DIR, SCENARIOS_DIR } from "./executions.mts";
 import { readState } from "./state.mts";
-import type { Log, Workflow } from "./types.mts";
+import type { Log, Workflow, WorkflowNode } from "./types.mts";
 import { CODE_DIR, FILE_PLACEHOLDER_PREFIX, findNodeRefs, forEachConnectionTarget, isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
 
 const execFile = promisify(execFileCb);
@@ -70,6 +70,74 @@ export function validateNodeFile(dir: string, file: string, label: string = file
 /** Dangling literal `$('…')` references in one string of source/expression text. */
 function danglingRefs(text: string, nodeNames: Set<string>): string[] {
   return findNodeRefs(text).filter((name) => !nodeNames.has(name));
+}
+
+/**
+ * One dangling `$('…')` reference, and which half of the repair it belongs to
+ * (Plan 64): `code` is ours — edit the file and push; `parameter` is n8n's
+ * structure — only an MCP write or the editor can fix it.
+ */
+export interface DanglingRef {
+  node: string;
+  name: string;
+  where: "code" | "parameter";
+}
+
+/**
+ * Scan a workflow's nodes for dangling `$('…')` references — **source-agnostic**
+ * (Plan 64 task 3b). The local mirror and the instance's draft carry the same
+ * workflow in two shapes: locally a Code node's `jsCode` is a `//@file:`
+ * placeholder with the real source in a file, remotely it is inline on the node.
+ * This takes whatever nodes it is handed, so `test`/`publish` can grade the
+ * instance's draft with the exact rule `validateWorkflowDir` applies to the repo.
+ *
+ * Placeholders are skipped, not scanned: locally the source lives in the file,
+ * which `validateWorkflowDir` reads separately.
+ */
+export function danglingNodeRefs(nodes: WorkflowNode[]): DanglingRef[] {
+  const nodeNames = new Set(nodes.map((n) => n.name));
+  const out: DanglingRef[] = [];
+  for (const node of nodes) {
+    const jsCode = node.parameters?.jsCode;
+    if (typeof jsCode === "string" && !jsCode.startsWith(FILE_PLACEHOLDER_PREFIX)) {
+      for (const name of new Set(danglingRefs(jsCode, nodeNames))) out.push({ node: node.name, name, where: "code" });
+    }
+    const texts = parameterStrings(node.parameters, "jsCode");
+    for (const name of new Set(texts.flatMap((t) => danglingRefs(t, nodeNames)))) {
+      out.push({ node: node.name, name, where: "parameter" });
+    }
+  }
+  return out;
+}
+
+/**
+ * Shared wording for dangling refs found on the INSTANCE's draft — used by
+ * `test`'s static tier and by `publish`'s gate so both say the same thing.
+ *
+ * The order is load-bearing, not cosmetic: fixing the code half first and the
+ * parameter half second loses the code edit, because the MCP write that fixes a
+ * parameter schedules a background pull that overwrites unpushed `.js` files.
+ */
+export function describeDanglingRefs(refs: DanglingRef[]): string[] {
+  const params = refs.filter((r) => r.where === "parameter");
+  const code = refs.filter((r) => r.where === "code");
+  const lines: string[] = [];
+  if (params.length > 0) {
+    lines.push("expression parameters (structure — fix in n8n, not in workflow.json):");
+    for (const r of params) lines.push(`  node "${r.node}" references $('${r.name}')`);
+  }
+  if (code.length > 0) {
+    lines.push("Code-node source (yours — edit the file here, then push):");
+    for (const r of code) lines.push(`  node "${r.node}" references $('${r.name}')`);
+  }
+  lines.push(
+    params.length > 0 && code.length > 0
+      ? "fix the expression parameters FIRST (update_workflow / updateNodeParameters, or the editor), then the code files, then push — the other order loses the code edit to the background snapshot refresh"
+      : params.length > 0
+        ? "fix them in n8n (update_workflow / updateNodeParameters, or the editor) — editing workflow.json changes nothing on the instance"
+        : "edit the file(s) here, then `n8n-decanter push`",
+  );
+  return lines;
 }
 
 /** Every string inside a node's parameters, skipping the jsCode placeholder. */
