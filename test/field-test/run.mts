@@ -592,9 +592,9 @@ async function rotateMcpToken(): Promise<void> {
  * Verified on 2.30.7: the endpoint does NOT start 404ing. A valid token gets
  * **403** `{"message":"MCP access is disabled"}`; a missing or stale token still
  * gets 401, exactly as when MCP is enabled — so a session whose token is also
- * stale sees the 401 and chases the wrong problem. Decanter has no message for
- * the 403 today ([Plan 74](../../plans/draft/74-mcp-disabled-403.md)), which is
- * the point of staging this.
+ * stale sees the 401 and chases the wrong problem. The 403 now carries n8n's
+ * own reason plus the fix ([Plan 74](../../plans/done/74-mcp-disabled-403.md));
+ * whether that routes a blind agent is what this condition grades.
  */
 async function disableMcp(): Promise<void> {
   await ownerRestOk("PATCH", "/rest/mcp/settings", { mcpAccessEnabled: false });

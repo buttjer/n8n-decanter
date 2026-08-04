@@ -133,9 +133,39 @@ describe("McpClient.callTool", () => {
     const host404 = `http://127.0.0.1:${(plain.address() as import("node:net").AddressInfo).port}`;
     try {
       const mcp = new McpClient({ host: host404, auth: { kind: "bearer", token: "x" } });
-      await assert.rejects(mcp.callTool("x", {}), /no MCP endpoint .*404.*enable MCP access/is);
+      await assert.rejects(mcp.callTool("x", {}), /no MCP endpoint .*404.*N8N_HOST/is);
     } finally {
       await new Promise<void>((r) => plain.close(() => r()));
+    }
+  });
+
+  // Plan 74: n8n 2.30.7 answers a VALID token with 403 {"message":"MCP access is
+  // disabled"} when MCP is switched off — it never 404s for that. Before this
+  // branch existed the user saw a bare "403 Forbidden" for a state reachable by
+  // flipping the documented n8n switch, while the 404 case beside it routed them.
+  it("maps a switched-off MCP server (403) to n8n's own reason plus the fix", async () => {
+    const off = http.createServer((_req, res) => {
+      res.writeHead(403, { "content-type": "application/json" }).end(JSON.stringify({ message: "MCP access is disabled" }));
+    });
+    await new Promise<void>((r) => off.listen(0, "127.0.0.1", () => r()));
+    const host = `http://127.0.0.1:${(off.address() as import("node:net").AddressInfo).port}`;
+    try {
+      const mcp = new McpClient({ host, auth: { kind: "bearer", token: "valid" } });
+      await assert.rejects(mcp.callTool("x", {}), /403.*MCP access is disabled.*Settings → MCP/is);
+    } finally {
+      await new Promise<void>((r) => off.close(() => r()));
+    }
+  });
+
+  it("still routes a 403 that carries no JSON body", async () => {
+    const off = http.createServer((_req, res) => void res.writeHead(403).end("nope"));
+    await new Promise<void>((r) => off.listen(0, "127.0.0.1", () => r()));
+    const host = `http://127.0.0.1:${(off.address() as import("node:net").AddressInfo).port}`;
+    try {
+      const mcp = new McpClient({ host, auth: { kind: "bearer", token: "valid" } });
+      await assert.rejects(mcp.callTool("x", {}), /refused the MCP request \(403\) — turn MCP access on/is);
+    } finally {
+      await new Promise<void>((r) => off.close(() => r()));
     }
   });
 });
