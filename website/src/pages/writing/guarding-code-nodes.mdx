@@ -6,6 +6,8 @@ standfirst: "n8n ships an MCP server, so a coding agent can edit your workflows 
 date: "2026-07-27"
 ---
 
+import GuardDemo from "../../components/GuardDemo.astro";
+
 n8n is the best thing that happened to the boring half of my work. Hundreds of
 integrations somebody else keeps current. Credentials in a vault instead of in my
 `.env`. An execution history that shows which item failed, on which node, with
@@ -87,6 +89,14 @@ it tries that door, it's told where the file is instead.
 One other call isn't waved through unread: `publish_workflow`. Going live gets
 checked before it passes — a gate, not an ownership claim, and the subject of
 *Being wrong should be cheap* below.
+
+Watching it happen is more convincing than describing it. The structural write
+sails through; the source write hits the one closed door and comes back with an
+address:
+
+<div class="not-prose my-8">
+  <GuardDemo />
+</div>
 
 ## What it writes instead
 
