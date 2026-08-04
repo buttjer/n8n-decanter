@@ -294,9 +294,9 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   Auto-merge is not enabled on the repo and admin-bypass is disallowed, so a
   blocked merge means "checks still pending" — wait them out, don't try to
   force it.
-- **Sandboxed shells:** `.git/config` writes (e.g. cleaning up a stale
-  `branch.<name>` section left by a sandboxed `git branch -D`) still need
-  escalation — see "Sandboxed shells" below.
+- **Sandboxed shells:** push with `git push origin <branch>`, **not** `-u` — the
+  upstream `-u` writes is what makes a later `git branch -D` need a blocked
+  `.git/config` write. See "Sandboxed shells" below.
 
 ## One worktree per task — never reuse a dirty one
 
@@ -354,21 +354,44 @@ commit in the main working tree", you skipped the worktree step — start a
 worktree in your default worktree dir (`git worktree add -b <branch>
 .claude/worktrees/<name> main`) and retry.
 
-## Sandboxed shells: .git/config writes need escalation
+## Sandboxed shells: what breaks, and how to avoid it
 
-Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) still
-block direct `.git/config` writes, even though credentialed git operations
-(`git push`, `gh`) now authenticate fine sandboxed since
-`credential.https://github.com.helper` points at `gh` instead of the
-unreachable macOS keychain:
+Agent command sandboxes (Claude Code sandbox mode, Codex sandbox, …) route
+**all** network egress through an authenticating localhost proxy
+(`HTTPS_PROXY=http://…@localhost:<port>`, allowlisted hosts only) and block
+direct `.git/config` writes. Credentialed git operations authenticate fine
+since `credential.https://github.com.helper` points at `gh`.
 
-- **`.git/config` writes are blocked sandboxed** — e.g. `git branch -D` of
-  a branch with an upstream deletes the branch but then warns `could not
-  lock config file`, leaving a stale `branch.<name>` section. Clean up
+- **Push without `-u` so branch deletion stays sandbox-clean.** `.git/config`
+  writes are blocked, so `git branch -D` of a branch **with an upstream** warns
+  `could not lock config file` and orphans a `branch.<name>` section. The
+  upstream is what `git push -u` writes — verified: `push -u` writes
+  `branch.<name>.remote` + `.merge`, plain `git push origin <branch>` writes
+  **nothing**. So **use `git push origin <branch>`**; the later `git branch -D`
+  then has no config to touch and needs no escalation. (Cost: pushing that
+  branch again also needs `origin <branch>` — trivial, since the normal flow is
+  push once then `gh pr merge`.) Clean up sections left by older `-u` pushes
   unsandboxed: `git config --remove-section branch.<name>`.
+- **Node's `fetch()` ignores the proxy** → a bare `fetch failed` even for
+  allowlisted hosts, while `curl` on the same URL returns 200. Set
+  **`NODE_USE_ENV_PROXY=1`** (Node >= 24) — verified to make
+  `npm run audit:globals` complete sandboxed. Put it in the harness's `env`
+  config rather than as a command prefix (an inline `VAR=… cmd` breaks
+  allowlist matching — see "Invoke commands so a human can approve *and* read
+  them").
+- **`gh` fails intermittently** with `tls: failed to verify certificate: x509:
+  OSStatus -26276` — on **GETs as well as POSTs**, on a host that worked
+  seconds earlier. `SSL_CERT_FILE` does not fix it; `gh` spawned from node
+  fails far more than `gh` run directly from the shell. Retry before concluding
+  anything is blocked.
+- **A failed `gh` mutating call may still have succeeded server-side, so never
+  trust a single negative read.** `gh release create` returned the TLS error yet
+  *did* create the release, and a `gh release list` seconds later still did not
+  list it — re-running would have created a duplicate. Re-check after a delay
+  and query the **specific object** (`gh release view <tag> --json …`), not a
+  list, before retrying any mutation.
 - Commit, status, diff, log, branch creation, worktree add, and push/gh
-  (credentialed) — all fine sandboxed; only `.git/config` writes need
-  escalation.
+  (credentialed) — all fine sandboxed.
 
 ## Commands
 
