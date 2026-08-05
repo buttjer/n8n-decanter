@@ -30,7 +30,9 @@ function rehypeBaseLinks() {
 export default defineConfig({
   site,
   base,
-  integrations: [mdx(), sitemap()],
+  // `/writing/` holds only the redirect stub for the article that moved to
+  // buttjer.net — keep it out of the sitemap (it also carries noindex).
+  integrations: [mdx(), sitemap({ filter: (page) => !page.includes("/writing/") })],
   vite: { plugins: [tailwindcss()] },
   markdown: {
     rehypePlugins: [rehypeBaseLinks],
