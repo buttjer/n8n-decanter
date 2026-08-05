@@ -149,6 +149,13 @@ signpost error** — the pattern `lib/run.mts` already uses for `$vars` /
 fixture format a per-output shape is [Plan 66](../draft/66-multi-output-pins.md)'s
 job, not this one's.
 
+**Done (2026-08-05).** Signpost added, and it covers **`$input.all(n)`** too —
+the `.d.ts` declares the parameter on both surfaces, and the same "one pinned
+array per node" argument applies. Branch `0` and the bare call stay emulated, so
+the common case is untouched. The docs row now points at a dedicated
+branch-index paragraph rather than a bare 🟡, because the honest answer is not
+"partial" but "refused, with two named ways forward".
+
 ### 6. A data-tables 403 gives no hint what's missing
 
 [`lib/api.mts:132`](../../lib/api.mts) throws one generic message for every
