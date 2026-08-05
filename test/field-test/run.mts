@@ -677,6 +677,30 @@ async function draftVersions(ids: string[]): Promise<Map<string, string>> {
   return out;
 }
 
+/**
+ * S10: pre-fill the backup store so the round meets `backupLimit` pruning.
+ *
+ * Writes plausible, *previous* exports straight into `backups/` rather than
+ * calling `backup create` N times: the verb refuses to re-backup an unchanged
+ * `versionId`, so N calls would produce one file. Shape matches what
+ * `lib/backup.mts` writes — `<fsTimestamp>.<short versionId>.json` — because
+ * `backup list` and the `<backup>` ref forms parse the filename.
+ */
+async function fillBackupStore(): Promise<void> {
+  const target = seedOfKind("corpus-credentialed");
+  const dir = trackedDirFor(target.id);
+  if (!dir) { console.warn(`  fill-backup-store: "${target.name}" is not pulled yet — nothing to fill`); return; }
+  const backups = path.join(dir, "backups");
+  mkdirSync(backups, { recursive: true });
+  const base = Date.parse("2026-07-01T09:00:00Z");
+  for (let i = 0; i < 22; i++) { // > the default backupLimit of 20, so a create prunes
+    const when = new Date(base + i * 86_400_000).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const version = `old${String(i).padStart(5, "0")}`;
+    writeFileSync(path.join(backups, `${when}.${version}.json`), JSON.stringify({ id: target.id, name: target.name, versionId: version, nodes: [], connections: {} }, null, 2) + "\n");
+  }
+  console.log(`  fill-backup-store: wrote 22 prior backups for "${target.name}" — the next \`backup create\` must prune to backupLimit`);
+}
+
 const PRE_HOOKS: Record<string, () => Promise<void>> = {
   "remote-drift": remoteDrift,
   "seed-capture": seedCapture,
@@ -687,6 +711,7 @@ const PRE_HOOKS: Record<string, () => Promise<void>> = {
   "disable-mcp": disableMcp,
   "inject-layout-violation": async () => injectLayoutViolation(),
   "misroute-mcp": async () => misrouteMcp(),
+  "fill-backup-store": fillBackupStore,
 };
 
 /**

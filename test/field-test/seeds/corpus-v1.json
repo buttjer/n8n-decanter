@@ -1,0 +1,63 @@
+{
+  "$comment": [
+    "Plan 61 wave 2b. A seed pack is a DECLARATIVE manifest — no workflow JSON is",
+    "vendored here. n8n-io/test-workflows ships no license file, so the content is",
+    "fetched at stage time, cached outside git, and never committed; this file only",
+    "records repo@sha + filename so a round stays reproducible.",
+    "Facts re-verified against the pinned sha on 2026-08-05."
+  ],
+  "source": {
+    "repo": "n8n-io/test-workflows",
+    "sha": "c1d376431a818f81f44e9ce645b8fb4878805419",
+    "path": "workflows"
+  },
+  "seeds": [
+    { "inline": "realism" },
+    { "inline": "s4-archive-target" },
+    { "inline": "realism-gated" },
+    { "inline": "s1-skeleton" },
+
+    {
+      "file": "92.json",
+      "kind": "corpus-legacy-fn",
+      "why": "IF — 24 nodes, 4 legacy n8n-nodes-base.function nodes, 0 credentials. decanter extracts only n8n-nodes-base.code, so this pulls down with ZERO code files: S7's hypothesis in its purest form.",
+      "availableInMCP": true
+    },
+    {
+      "file": "259.json",
+      "kind": "corpus-inherited",
+      "why": "ChainQA — 16 nodes, 1 modern Code node, 3 credential refs, LangChain. A realistic inherited AI workflow.",
+      "availableInMCP": true
+    },
+    {
+      "file": "235.json",
+      "kind": "corpus-ambiguous",
+      "why": "SummarizationChain:Simple:Map — one of five workflows sharing a name prefix; the ambiguous-ref cluster, free of charge.",
+      "availableInMCP": true
+    },
+    {
+      "file": "240.json",
+      "kind": "corpus-ambiguous",
+      "why": "SummarizationChain:Simpe:Refine — the sibling that makes the prefix ambiguous (typo is theirs).",
+      "availableInMCP": true
+    },
+    {
+      "file": "247.json",
+      "kind": "corpus-gated",
+      "why": "A third SummarizationChain, deliberately left OUT of MCP — S7 grades whether the agent explains the red third state as an action the user can take.",
+      "availableInMCP": false
+    },
+    {
+      "file": "233.json",
+      "kind": "corpus-credentialed",
+      "why": "QdrantVectorStore:* — 18 nodes, 8 credential refs, and a `*` in the name: real input for the kebab slug rule AND backup restore's rebind hints.",
+      "availableInMCP": true
+    },
+    {
+      "file": "252.json",
+      "kind": "corpus-bulk",
+      "why": "vectorStorePGVector:* — 29 nodes, 14 credential refs. Scale, for the whole-folder scenario.",
+      "availableInMCP": true
+    }
+  ]
+}

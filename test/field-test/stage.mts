@@ -27,7 +27,7 @@
 //   FIELD_API_KEY=<key>     (FIELD_N8N_URL mode) a public API key for that instance
 //   FIELD_KEEP=1            (--down) keep the container; only remove harness dirs
 import { execFile as execFileCb } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +36,8 @@ import { installSkillsPack, type SkillsInstall } from "./skills-install.mts";
 
 const execFile = promisify(execFileCb);
 /** The n8n-decanter repo this stage lives in — the CLI under test (test/field-test/ → ../..). */
-const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PACKAGE_ROOT = path.resolve(HERE, "..", "..");
 const docker = (...args: string[]) => execFile("docker", args, { encoding: "utf8" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -105,7 +106,7 @@ const kebab = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^\w\s-]
 
 const splitInBatches = (id: string, name: string, batchSize: number, pos: [number, number]): N8nNode => ({ id, name, type: "n8n-nodes-base.splitInBatches", typeVersion: 3, position: pos, parameters: { batchSize, options: {} } });
 
-interface Seed { name: string; nodes: N8nNode[]; availableInMCP: boolean; kind: string; connections?: Record<string, unknown> }
+interface Seed { name: string; nodes: N8nNode[]; availableInMCP: boolean; kind: string; connections?: Record<string, unknown>; origin?: { repo: string; sha: string; file: string } }
 
 /**
  * The four workflows every round has ever staged. Kept as its own pack so
@@ -211,18 +212,143 @@ const WAVE2_SEEDS: Seed[] = [
  * Seed packs, selected with `--seeds <pack>` / `FIELD_SEED_PACK`. `builtin` is
  * the default and reproduces every earlier round's world exactly.
  */
+/**
+ * A seed pack read from `seeds/<pack>.json` (Plan 61 wave 2b) — a DECLARATIVE
+ * manifest, never vendored workflow JSON. `n8n-io/test-workflows` ships no
+ * license file, so its content is fetched at stage time, cached outside git, and
+ * never committed; the manifest records `repo@sha` + filename so a round stays
+ * reproducible without copying anything.
+ */
+interface PackFile {
+  source: { repo: string; sha: string; path: string };
+  seeds: Array<{ inline?: string; file?: string; kind?: string; why?: string; availableInMCP?: boolean }>;
+}
+
+/** Corpus JSON cached by sha, OUTSIDE the repo — fetched once, reused by later stages. */
+const corpusCache = (sha: string) => path.join(os.tmpdir(), `decanter-corpus-${sha.slice(0, 12)}`);
+
+async function fetchCorpusFile(source: PackFile["source"], file: string): Promise<any> {
+  const cacheDir = corpusCache(source.sha);
+  const cached = path.join(cacheDir, file);
+  if (existsSync(cached)) return JSON.parse(readFileSync(cached, "utf8"));
+  const url = `https://raw.githubusercontent.com/${source.repo}/${source.sha}/${source.path}/${file}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`corpus fetch failed: ${url} -> ${res.status}`);
+  const text = await res.text();
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(cached, text);
+  return JSON.parse(text);
+}
+
+/**
+ * Vet + modernize on import (Plan 61 D2/task 6). Rewrites are **explicit and
+ * logged**, never silent: `n8n-nodes-base.start` no longer ships in n8n 2.30.7,
+ * so a raw import would land an unrecognized trigger. `function` → `code` is
+ * deliberately NOT done — the un-converted workflow is the interesting case.
+ */
+function modernize(wf: any, file: string): { nodes: N8nNode[]; connections: Record<string, unknown>; transforms: string[] } {
+  const transforms: string[] = [];
+  const nodes = (wf.nodes ?? []).map((n: N8nNode) => {
+    if (n.type !== "n8n-nodes-base.start") return n;
+    transforms.push(`${n.name}: n8n-nodes-base.start → manualTrigger (Start was removed from n8n)`);
+    return { ...n, type: "n8n-nodes-base.manualTrigger", typeVersion: 1, parameters: {} };
+  });
+  if (wf.active === true) transforms.push("dropped active:true (a seeded workflow never starts live)");
+  if (transforms.length > 0) console.log(`  ${file}: ${transforms.join("; ")}`);
+  return { nodes, connections: wf.connections ?? {}, transforms };
+}
+
+/**
+ * Node types the instance actually registers, or `null` when we cannot tell.
+ *
+ * `/rest/node-types` is internal and version-fragile, so a stage that cannot
+ * read it must say the vet was **skipped** rather than claim a pass — the whole
+ * point of the vet is that a seed with an unknown node type fails the STAGE, not
+ * a scenario mid-round.
+ */
+async function registeredNodeTypes(): Promise<Set<string> | null> {
+  if (!COOKIE) return null;
+  try {
+    // `/types/nodes.json` is the editor's registry — a flat array of every
+    // installed node's description, cookie-authed. (`/rest/node-types` is a
+    // *lookup* endpoint: POST it a list and it echoes those back, so it can
+    // never enumerate. Verified on 2.30.7: GET /rest/node-types 404s.)
+    // …and it is served LAZILY: seconds after owner setup it can still 404 while
+    // the editor bundle is being assembled, so a single probe would make the vet
+    // skip itself by timing alone. Retry briefly before concluding it is absent.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const res = await rest("GET", "/types/nodes.json");
+      if (res.ok) {
+        const body = (await res.json()) as Array<{ name?: string }>;
+        const names = (Array.isArray(body) ? body : []).map((n) => n.name).filter((n): n is string => typeof n === "string");
+        if (names.length > 0) return new Set(names);
+      }
+      await sleep(2000);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const SEED_PACKS: Record<string, Seed[]> = {
   builtin: BUILTIN_SEEDS,
   wave2: [...BUILTIN_SEEDS, ...WAVE2_SEEDS],
 };
 const SEED_PACK = process.argv.includes("--seeds") ? process.argv[process.argv.indexOf("--seeds") + 1] : (process.env.FIELD_SEED_PACK ?? "builtin");
-const SEEDS: Seed[] = SEED_PACKS[SEED_PACK] ?? (() => {
-  console.error(`unknown seed pack ${JSON.stringify(SEED_PACK)} — known: ${Object.keys(SEED_PACKS).join(", ")}`);
+const PACK_FILE = path.join(HERE, "seeds", `${SEED_PACK}.json`);
+if (SEED_PACKS[SEED_PACK] === undefined && !existsSync(PACK_FILE)) {
+  console.error(`unknown seed pack ${JSON.stringify(SEED_PACK)} — known: ${[...Object.keys(SEED_PACKS), ...readdirSync(path.join(HERE, "seeds")).filter((f: string) => f.endsWith(".json")).map((f: string) => f.slice(0, -5))].join(", ")}`);
   process.exit(2);
-})();
+}
+const BUILTIN_BY_KIND = new Map(BUILTIN_SEEDS.concat(WAVE2_SEEDS).map((s) => [s.kind, s]));
+
+/**
+ * Resolve the selected pack to concrete seeds. A code pack is returned as-is; a
+ * `seeds/<pack>.json` manifest is expanded — inline entries map back to the
+ * hand-built builders by `kind`, corpus entries are fetched, vetted and
+ * modernized. **A pack that cannot be seeded fails the STAGE**, never a scenario
+ * mid-round (Plan 61 task 6).
+ */
+async function resolveSeeds(): Promise<Seed[]> {
+  const code = SEED_PACKS[SEED_PACK];
+  if (code !== undefined) return code;
+  const pack = JSON.parse(readFileSync(PACK_FILE, "utf8")) as PackFile;
+  const registered = await registeredNodeTypes();
+  console.log(registered === null
+    ? "  seed vet: the instance never served its node registry — SKIPPED (node types are NOT checked)"
+    : `  seed vet: ${registered.size} node types registered on this instance`);
+  const out: Seed[] = [];
+  for (const entry of pack.seeds) {
+    if (entry.inline !== undefined) {
+      const seed = BUILTIN_BY_KIND.get(entry.inline);
+      if (!seed) throw new Error(`pack ${SEED_PACK}: no built-in seed of kind "${entry.inline}"`);
+      out.push(seed);
+      continue;
+    }
+    if (entry.file === undefined || entry.kind === undefined) throw new Error(`pack ${SEED_PACK}: an entry needs either "inline" or "file" + "kind"`);
+    const wf = await fetchCorpusFile(pack.source, entry.file);
+    const { nodes, connections } = modernize(wf, entry.file);
+    if (registered !== null) {
+      const unknown = [...new Set(nodes.map((n) => n.type))].filter((t) => !registered.has(t));
+      if (unknown.length > 0) {
+        throw new Error(`pack ${SEED_PACK}: ${entry.file} ("${wf.name}") uses node type(s) this n8n does not register: ${unknown.join(", ")} — fix the pack or the transforms, do not run a round on it`);
+      }
+    }
+    out.push({
+      name: wf.name ?? entry.file,
+      kind: entry.kind,
+      availableInMCP: entry.availableInMCP !== false,
+      nodes,
+      connections,
+      origin: { repo: pack.source.repo, sha: pack.source.sha, file: entry.file },
+    });
+  }
+  return out;
+}
 
 // ---------- boot + provision ----------
-interface SeedResult { id: string; name: string; slug: string; availableInMCP: boolean; kind: string }
+interface SeedResult { id: string; name: string; slug: string; availableInMCP: boolean; kind: string; origin?: { repo: string; sha: string; file: string }; nodeTypes?: number; codeNodes?: number; credentialRefs?: number }
 async function provision(): Promise<{ container: string | null; seeded: SeedResult[] }> {
   const external = process.env.FIELD_N8N_URL;
   let container: string | null = null;
@@ -268,7 +394,7 @@ async function provision(): Promise<{ container: string | null; seeded: SeedResu
     // scoped public API key (verify's byte-exact read + the agent's REST verbs)
     const keyRes = await rest("POST", "/rest/api-keys", {
       label: "flows-ops", expiresAt: null,
-      scopes: ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:list", "workflow:activate", "workflow:deactivate", "execution:read", "execution:list", "tag:create", "tag:read", "workflowTags:update", "workflowTags:list"],
+      scopes: ["workflow:create", "workflow:read", "workflow:update", "workflow:delete", "workflow:list", "workflow:activate", "workflow:deactivate", "execution:read", "execution:list", "tag:create", "tag:read", "workflowTags:update", "workflowTags:list", "dataTable:create", "dataTable:list", "dataTable:read", "dataTableColumn:create", "dataTableColumn:read", "dataTableRow:create", "dataTableRow:read"],
     });
     if (!keyRes.ok) throw new Error(`api key creation failed: ${keyRes.status} ${await keyRes.text()}`);
     KEY = JSON.parse(await keyRes.text()).data.rawApiKey;
@@ -285,11 +411,49 @@ async function provision(): Promise<{ container: string | null; seeded: SeedResu
   if (!KEY) throw new Error("no public API key available for seeding (FIELD_N8N_URL mode needs FIELD_API_KEY)");
   const seeded: SeedResult[] = [];
   const toEnable: string[] = [];
-  for (const s of SEEDS) {
+  for (const s of await resolveSeeds()) {
     const created = await api("POST", "/api/v1/workflows", { name: s.name, nodes: s.nodes, connections: s.connections ?? chain(s.nodes), settings: { executionOrder: "v1" } });
-    seeded.push({ id: created.id, name: s.name, slug: kebab(s.name), availableInMCP: s.availableInMCP, kind: s.kind });
+    seeded.push({
+      id: created.id, name: s.name, slug: kebab(s.name), availableInMCP: s.availableInMCP, kind: s.kind,
+      // provenance travels into the manifest so a round is reproducible without
+      // the corpus ever entering git (Plan 61 task 5)
+      ...(s.origin !== undefined ? { origin: s.origin } : {}),
+      nodeTypes: [...new Set(s.nodes.map((n) => n.type))].length,
+      codeNodes: s.nodes.filter((n) => n.type === "n8n-nodes-base.code").length,
+      credentialRefs: s.nodes.filter((n) => (n as { credentials?: unknown }).credentials !== undefined).length,
+    });
     if (s.availableInMCP) toEnable.push(created.id);
   }
+  // S12 asks "what's in the Orders table?" — a pack that stages workflows but no
+  // table would measure the agent hunting for something that does not exist.
+  // Public-API create + row insert, the same recipe the smoke suite uses; a
+  // too-old n8n 404s the surface, and that is a skip, not a stage failure.
+  if (SEED_PACK !== "builtin") {
+    try {
+      const probe = await fetch(`${HOST}/api/v1/data-tables`, { headers: { "X-N8N-API-KEY": KEY, accept: "application/json" } });
+      if (probe.status === 404) {
+        console.log("  data table: /api/v1/data-tables is absent on this n8n — skipped");
+      } else {
+        const table = await api("POST", "/api/v1/data-tables", {
+          name: "Orders",
+          columns: [{ name: "reference", type: "string" }, { name: "status", type: "string" }, { name: "total", type: "number" }],
+        });
+        await api("POST", `/api/v1/data-tables/${table.id}/rows`, {
+          data: [
+            { reference: "A-1001", status: "pending", total: 42.5 },
+            { reference: "A-1002", status: "shipped", total: 13.25 },
+            { reference: "A-1003", status: "pending", total: 99.99 },
+            { reference: "A-1004", status: "cancelled", total: 0 },
+            { reference: "A-1005", status: "pending", total: 7.01 },
+          ],
+        });
+        console.log(`  data table "Orders" seeded with 5 rows (${table.id})`);
+      }
+    } catch (err) {
+      console.warn(`  data table seeding failed (${(err as Error).message.split("\n")[0]}) — S12's table question will find nothing`);
+    }
+  }
+
   // per-workflow MCP opt-in for the available ones (REST toggle needs the owner cookie; skipped in external mode)
   if (toEnable.length && COOKIE) {
     const res = await rest("PATCH", "/rest/mcp/workflows/toggle-access", { availableInMCP: true, workflowIds: toEnable });
