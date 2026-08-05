@@ -273,8 +273,38 @@ drive the real `verify.mts` as a subprocess against hand-broken fixtures, so eac
 new invariant is **demonstrated to fail when violated** — acceptance criterion 4,
 met before a round pays for it.
 
-**Still to build:** the corpus seed-pack loader and its vet/modernize pass
-(Tasks 5 + 6) and `fill-backup-store`, which gate **S7, S10 and S12** — wave 2b.
+### Wave 2b + enforced isolation (2026-08-05)
+
+**S7, S10 and S12 are unblocked**, and every piece was verified against real n8n
+2.30.7 before being called done:
+
+- **Seed packs from a declarative manifest** (`seeds/corpus-v1.json`) — `repo@sha`
+  + filename only, fetched at stage time, cached outside git, never committed.
+  Per-seed `origin` + `nodeTypes`/`codeNodes`/`credentialRefs` land in the round
+  manifest, so a round is reproducible without vendoring.
+- **Vet against the instance's own registry** (901 node types on 2.30.7). An
+  unknown type fails the **stage**, never a scenario mid-round. `/types/nodes.json`
+  is served **lazily**, so a single probe made the vet skip itself by timing
+  alone — it retries, and when it still cannot read the registry it reports
+  **SKIPPED** rather than claiming a pass.
+- **Modernize** — `n8n-nodes-base.start` → `manualTrigger`, every transform
+  logged; `function` → `code` stays off by design.
+- **`fill-backup-store`** and a seeded **`Orders`** data table for S12.
+
+**A finding for free** (D6 working as intended): the manifest records
+`corpus-legacy-fn` as **24 nodes, 3 types, `codeNodes: 0`** — the legacy
+`function` blind spot proven at the data level, so S7's round only has to grade
+what the agent *says* about it.
+
+**Runs are now isolated, and the runner enforces it** (maintainer's call). The
+unit is a scenario plus its declared `requires` chain; anything else sharing a
+stage is **refused before spending**, with `--isolate` staging a fresh instance
+per unit and tearing it down after. The justification is on the record: round
+`ftrun-29773` graded S13 in a world S11's pull had already shaped.
+
+**Known limit:** `fill-backup-store` writes into `workflows/<slug>/backups/`,
+which only exists once the workflow is pulled — on a fresh stage the hook warns
+and does nothing, so S10's pruning beat fires only if the scenario pulls first.
 
 ## Tasks
 
