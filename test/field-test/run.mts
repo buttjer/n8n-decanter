@@ -101,7 +101,7 @@ const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
 
-interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
+interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedEnv?: boolean; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const WORKDIR = manifest.workDir;
 const HARNESS = manifest.harnessRoot;
@@ -131,7 +131,7 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresSeedKinds?: string[]; readOnly?: boolean }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresSeedEnvOff?: boolean; requiresSeedKinds?: string[]; readOnly?: boolean }
 
 /**
  * Which workflow the `remote-drift` preHook edits — kept in one place so the
@@ -321,6 +321,12 @@ function assertPrerequisites(ids: string[]): void {
     // cannot exist there. Host mode only.
     if (sc.requiresNoCli === true && containerMode) {
       problems.push(`${id} cannot run in --container mode: the image installs the CLI globally, so it stays on PATH and the no-CLI condition cannot be staged. Run it host-mode (unsandboxed).`);
+    }
+    // Same argument as requiresNoCli: a cold-start scenario against a stage that
+    // pre-seeded `.env` measures nothing at all — `init` would just reuse the
+    // credentials and the whole condition evaporates (Plan 62 task 2).
+    if (sc.requiresSeedEnvOff === true && manifest.seedEnv !== false) {
+      problems.push(`${id} needs a stage created with FIELD_NO_SEED_ENV=1 (this manifest has seedEnv=${JSON.stringify(manifest.seedEnv)}); with a pre-seeded .env there is no cold start to measure`);
     }
     // A scenario may declare a pre-hook before the hook exists (Plan 61 writes
     // the scenario specs ahead of the staging machinery). Refuse rather than

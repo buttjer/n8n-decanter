@@ -523,7 +523,7 @@ async function unblindTarball(tgz: string): Promise<string[]> {
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean }> {
+async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean }> {
   const base = os.tmpdir();
   const workDir = path.join(base, `flows-ops-${PID}`);
   const harnessRoot = path.join(base, `ftrun-${PID}`);
@@ -691,7 +691,7 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
     console.log("FIELD_NO_CLI=1 — removed node_modules (fresh-clone state): the project's decanter evidence is committed, the CLI is NOT runnable");
   }
 
-  return { workDir, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli };
+  return { workDir, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv: process.env.FIELD_NO_SEED_ENV !== "1" };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -721,7 +721,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli } = await scaffold();
+  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -745,6 +745,11 @@ try {
     // is NOT installed (fresh-clone state) — the Plan 57 discoverability
     // condition. Recorded so a round's archive states which world it measured.
     noCli,
+    // FIELD_NO_SEED_ENV=1: no pre-seeded `.env`, so the project has NO
+    // credentials and `init` must actually be driven — the Plan 62 task 2
+    // condition. Recorded so a scenario can refuse a stage that would make it
+    // measure nothing (S14), and so a round's archive states which world it saw.
+    seedEnv,
     // the stage pre-ran init, so scenarios start from a configured project
     inited,
     // Container mode (run.mts --container) bakes one of these into the fenced
