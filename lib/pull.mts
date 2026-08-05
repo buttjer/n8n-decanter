@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { compileTs } from "./compile.mts";
-import { commitWorkflowDir } from "./git.mts";
+import { type CommitResult, commitWorkflowDir } from "./git.mts";
 import { getWorkflowDetails, type McpClient } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, renameNodeFilePair, writeState } from "./state.mts";
 import type { DecanterState, Log, NodeState, Workflow, WorkflowNode } from "./types.mts";
@@ -87,6 +87,21 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
   // placeholder back to `.js` (Plan 35 field-test finding). Same reconcile push
   // runs, so the two stay symmetric.
   reconcileFileMapFromSnapshot(dir, state);
+
+  // Snapshot BEFORE the write loop (Plan 63 task 1). Pull overwrites plain `.js`
+  // files and `workflow.json` with the remote unconditionally, and its own
+  // commit used to run *after* that — so an uncommitted local edit was destroyed
+  // and never entered git, while the warning printed on that very path told the
+  // user to "recover via git". `watch` and the live mirror already commit first
+  // and say why; this verb was the odd one out, and it is the one users run.
+  //
+  // A failed snapshot does NOT abort the pull (a folder outside git must still
+  // be pullable) — it downgrades the recovery claim below to the truth.
+  const snapshot: CommitResult | "skipped" = commitOnPull
+    ? await commitWorkflowDir(dir, `decanter: snapshot before pull (${id})`, log)
+    : "skipped";
+  const recoverable = snapshot === "committed" || snapshot === "clean";
+
   const usedNames = new Set<string>();
   const placeholders = new Map<string, string>(); // node id -> file name
 
@@ -131,8 +146,20 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
     } else {
       if (existsSync(filePath)) {
         const localHash = sha256(readFileSync(filePath, "utf8"));
-        if (localHash !== remoteHash && nodeState.lastPushedHash !== undefined && localHash !== nodeState.lastPushedHash) {
-          log.warn(`${wf.name} / ${node.name}: overwriting unpushed local changes in ${file} with the remote code (recover via git)`);
+        // No `lastPushedHash` gate (Plan 63 task 2). That conjunct was borrowed
+        // from push's "an undefined baseline never drifts" relaxation, and on
+        // the READ side it is backwards: no baseline means the node is not in
+        // `.decanter.json` yet, so the local file is precisely the one with no
+        // protection. Concrete loss path, and it matches the scaffolded agent
+        // workflow: an agent adds a Code node over the guard (the guard blocks
+        // `jsCode`, so the remote body is empty), writes the source into
+        // `code/<node>.js`, and a debounced mirror pull fires before the first
+        // push — no state entry, no warning, empty remote body wins.
+        if (localHash !== remoteHash && localHash !== nodeState.lastPushedHash) {
+          log.warn(
+            `${wf.name} / ${node.name}: overwriting unpushed local changes in ${file} with the remote code` +
+              (recoverable ? " (recover via git — snapshotted just now)" : " — NOT recoverable: no pre-pull snapshot was committed"),
+          );
         }
       }
       if (writeIfChanged(filePath, remoteBody)) log.info(`wrote ${path.basename(dir)}/${file}`);

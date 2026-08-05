@@ -49,6 +49,13 @@ Fix: `commitWorkflowDir(dir, "decanter: snapshot before pull (<id>)", log)` ahea
 of the write loop (`n8n-decanter.mts:596`). Minimum acceptable alternative: only
 say "recover via git" when a pre-pull snapshot actually succeeded.
 
+**Done (2026-08-05).** Both, not either: the snapshot runs ahead of the write
+loop, **and** the warning tells the truth when it could not be taken (no git
+repo, `commitOnPull: false`, a git error) instead of promising a recovery that
+does not exist. A failed snapshot does **not** abort the pull — a folder outside
+git must stay pullable; that is the difference from `watch`, which can refuse
+its own startup pull without costing the user anything.
+
 ### 2. `pull`'s clobber warning skips the case that needs it most
 
 The warning is gated on `nodeState.lastPushedHash !== undefined`
@@ -68,6 +75,9 @@ Fix: drop the `lastPushedHash !== undefined` conjunct. A tracked file that exist
 on disk and differs from the remote body warrants a warning regardless of
 baseline.
 
+**Done (2026-08-05).** Conjunct dropped, with the reasoning kept at the site so
+nobody re-borrows push's relaxation onto the read side.
+
 ### 3. The live mirror ignores a failed safety commit
 
 [`lib/mirror.mts:109`](../../lib/mirror.mts) awaits `commitWorkflowDir` but
@@ -80,6 +90,13 @@ overwrite.
 
 Fix: capture the `CommitResult` and skip `pullWorkflow` with a warning when it is
 `"failed"`, mirroring [`lib/watch.mts:52-57`](../../lib/watch.mts).
+
+**Done (2026-08-05).** Exactly that, plus the case in
+[`test/unit/mirror.test.mts`](../../test/unit/mirror.test.mts) the existing
+`isGitRepo` rail never covered: a repo that *exists* but whose **commit** fails
+(a refusing `pre-commit` hook stands in for every real cause). It drives the real
+`defaultRefresh`, so a regression makes `pullWorkflow` run against a stub MCP and
+blow up rather than pass quietly — confirmed to fail against the old code.
 
 ### 4. Scenario reachability is branch-blind
 

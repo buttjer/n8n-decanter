@@ -106,7 +106,19 @@ export function createMirror(opts: MirrorOptions): Mirror {
     // Commit BEFORE pull — pull overwrites plain .js files and workflow.json
     // with the remote unconditionally, so an unpushed edit must be committed
     // first to stay recoverable (mirrors watch's snapshot-then-pull order).
-    if (dir) await commitWorkflowDir(dir, `decanter: live-mirror snapshot before refresh (${id})`, log);
+    // …and a FAILED snapshot must stop the pull (Plan 63 task 3). The result was
+    // awaited and discarded, but `commitWorkflowDir` returns "failed" (never
+    // throws) for any git error — unset identity, mid-merge, index.lock, a
+    // rejecting hook — so the documented rail ("a dirty tree is safety-committed
+    // before the pull") silently degraded into an unrecoverable overwrite.
+    // `watch` already refuses its startup pull on the same condition.
+    if (dir) {
+      const snapshot = await commitWorkflowDir(dir, `decanter: live-mirror snapshot before refresh (${id})`, log);
+      if (snapshot === "failed") {
+        log.warn(`live mirror: no git safety net for ${id} — skipping the refresh so unpushed local edits survive; commit or fix git, then pull manually`);
+        return;
+      }
+    }
     const { name } = await pullWorkflow(mcp, root, id, { commitOnPull }, log);
     log.info(`mirrored "${name}" (${id})`);
   }

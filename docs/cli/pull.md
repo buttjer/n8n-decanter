@@ -45,8 +45,14 @@ the `.ts` by hand. See [TypeScript nodes](/docs/concepts/typescript-nodes/).
 Pulling records the remote code as the new sync base — **after a warned
 pull, the next push overwrites the surfaced remote edits by design**, with
 [`diff`](/docs/cli/diff/) and git history as the safety net. `.js` files are
-overwritten with the remote body (pull warns when that clobbers unpushed
-local edits — recover via git).
+overwritten with the remote body, and pull warns when that clobbers unpushed
+local edits.
+
+**git really is the safety net here**: pull takes a **snapshot commit before it
+writes anything**, so an uncommitted local edit is recoverable from that commit
+(`commitOnPull` must be on — it is by default). If the snapshot cannot be made
+(no git repo, `commitOnPull: false`, a git error), the pull still runs but the
+warning says so instead of promising a recovery that does not exist.
 
 ## Renames and migrations
 
