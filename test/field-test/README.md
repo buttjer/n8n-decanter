@@ -17,6 +17,31 @@ rule that out). Never part of `npm test`.
 | `runs/<iso>-<runId>/` | **Committed round archives** — `raw.tgz` (the source of truth) + `report.html` (the view). See *Debugging* below. |
 | `scenarios/S1–S13.md` + `STYLE.md` | Persona / goal / adaptive-beats / checklist + a machine-readable `## Orchestration` turn spine; blinding rules verbatim. Structurally checked offline by `test/unit/field-scenarios.test.mts` (part of `npm test`). |
 
+## Runs are isolated, and the runner enforces it
+
+**Every scenario gets its own n8n instance and its own scratch project.** The
+unit of isolation is a scenario **plus its declared `requires` chain** (S4 opens
+on the workflow S2 creates, so those two share one stage); everything else is
+staged fresh and torn down after.
+
+```sh
+node test/field-test/run.mts --isolate --seeds corpus-v1 S7 S10 S12
+#   isolating 3 scenario(s) into 3 unit(s): S7, S10, S12
+#   …stages, runs, archives and tears down each in turn
+```
+
+Passing several independent scenarios to **one** manifest is now **refused
+before anything is spent**. This is not tidiness: round `ftrun-29773` ran S13
+after S11 in the same workDir, and S13's agent opened with *"there is no contact
+cleanup workflow locally; this repo only tracks weekly-digest-roll-up"* — S11's
+pull had shaped what S13 measured, and the resulting FAIL read like a product
+defect. A round is expensive; a contaminated one is expensive **and** misleading.
+
+`--isolate` re-execs this script per unit rather than threading a second manifest
+through it, so verify scoping, archiving and pre-hooks stay byte-identical to a
+hand-driven single run — and each unit archives on its own, so a later failure
+never costs the earlier units' evidence.
+
 ## Scenario × surface coverage
 
 Which scenario exercises which part of the product, and — as importantly — what

@@ -49,7 +49,54 @@ const dryRun = argv.includes("--dry-run");
 // fenced to Anthropic-only — the safe way to run them UNATTENDED (see the
 // container-mode design in the plan + test/field-test/docker/).
 const containerMode = argv.includes("--container");
-const positional = argv.filter((a) => !a.startsWith("--"));
+/** `--seeds <pack>`, passed through to each stage `--isolate` creates. */
+const SEED_PACK_ARG = argv.includes("--seeds") ? argv[argv.indexOf("--seeds") + 1] : undefined;
+const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--seeds");
+
+/**
+ * `--isolate S7 S10 …`: one FRESH instance + scratch project per scenario (or
+ * per `requires` chain), torn down before the next — the maintainer's standing
+ * requirement that runs never share state, enforced rather than documented.
+ *
+ * Implemented by re-exec: this process stages, then spawns `run.mts <manifest>
+ * <unit>` as a child and tears the stage down afterwards. Re-exec rather than
+ * threading a second manifest through this module keeps every existing code
+ * path — verify scoping, archiving, pre-hooks — byte-identical to a hand-driven
+ * single run. Each unit archives on its own, so a later failure never costs the
+ * earlier units' evidence.
+ */
+if (argv.includes("--isolate")) {
+  const ids = positional.length > 0 ? positional : ["S1", "S2", "S3", "S4"];
+  const units = groupScenarios(ids);
+  const passthrough = argv.filter((a) => a === "--dry-run" || a === "--container");
+  console.log(`isolating ${ids.length} scenario(s) into ${units.length} unit(s): ${units.map((u) => u.join("+")).join(", ")}`);
+  let failed = 0;
+  for (const [i, unit] of units.entries()) {
+    console.log(`\n===== unit ${i + 1}/${units.length}: ${unit.join(" ")} — staging a fresh instance =====`);
+    const stageArgs = SEED_PACK_ARG !== undefined ? ["--seeds", SEED_PACK_ARG] : [];
+    const staged = await execFile(process.execPath, [path.join(HERE, "stage.mts"), ...stageArgs], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    const mf = (staged.stdout.match(/^MANIFEST=(.+)$/m) ?? [])[1];
+    if (mf === undefined) { console.error(`unit ${unit.join("+")}: stage printed no MANIFEST= line`); failed++; continue; }
+    console.log(`  stage ${mf}`);
+    try {
+      const { stdout, stderr } = await execFile(process.execPath, [path.join(HERE, "run.mts"), mf, ...unit, ...passthrough], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+      console.log(stdout + stderr);
+    } catch (err) {
+      const e = err as { stdout?: string; stderr?: string };
+      console.log((e.stdout ?? "") + (e.stderr ?? ""));
+      console.error(`unit ${unit.join("+")} exited non-zero`);
+      failed++;
+    } finally {
+      // Tear down even when the unit failed: the archive is already written into
+      // the repo, and a leaked container would poison the next unit's ports.
+      await execFile(process.execPath, [path.join(HERE, "stage.mts"), "--down", mf], { encoding: "utf8" }).catch(() => {});
+      console.log(`  torn down ${mf}`);
+    }
+  }
+  console.log(`\n=== isolated run: ${units.length - failed}/${units.length} unit(s) completed ===`);
+  process.exit(failed > 0 ? 1 : 0);
+}
+
 const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
@@ -211,6 +258,47 @@ function sanitizedPath(inputPath: string): { PATH: string; npmPrefix: string } {
   mkdirSync(path.join(npmPrefix, "bin"), { recursive: true });
   mkdirSync(path.join(npmPrefix, "lib", "node_modules"), { recursive: true });
   return { PATH: `${out.join(path.delimiter)}${path.delimiter}${path.join(npmPrefix, "bin")}`, npmPrefix };
+}
+
+/**
+ * Partition scenarios into the units that may legitimately share one stage.
+ *
+ * The unit is a scenario **plus its declared `requires` chain** — S4 opens on
+ * "the orders workflow", which is the one S2 creates, so those two must see the
+ * same instance. Everything else must not: a shared stage lets one scenario
+ * shape the world the next one is graded in.
+ */
+function groupScenarios(ids: string[]): string[][] {
+  const groups: string[][] = [];
+  for (const id of ids) {
+    const needs = new Set(loadScenario(id).requires ?? []);
+    const joined = groups.find((g) => g.some((other) => needs.has(other)));
+    if (joined) joined.push(id);
+    else groups.push([id]);
+  }
+  return groups;
+}
+
+/**
+ * Refuse to run independent scenarios against ONE stage (maintainer's call,
+ * 2026-08-05) — the harness now enforces isolation instead of documenting it.
+ *
+ * This is not hypothetical tidiness. Round `ftrun-29773` ran S13 after S11 in the
+ * same workDir, and S13's agent opened with "there is no contact cleanup
+ * workflow locally; this repo only tracks weekly-digest-roll-up" — S11's pull had
+ * shaped what S13 measured, and the resulting FAIL read like a product defect.
+ * A round is expensive; a contaminated one is expensive AND misleading.
+ */
+function assertIsolation(ids: string[]): void {
+  const groups = groupScenarios(ids);
+  if (groups.length <= 1) return;
+  console.error("scenarios must not share a stage — nothing was spent:");
+  console.error(`  requested: ${ids.join(", ")} → ${groups.length} independent units: ${groups.map((g) => g.join("+")).join(", ")}`);
+  console.error("  a shared instance and workDir let one scenario shape the world the next is graded in");
+  console.error("\n  run them isolated (a fresh instance per unit, torn down after):");
+  console.error(`    node test/field-test/run.mts --isolate ${SEED_PACK_ARG ? `--seeds ${SEED_PACK_ARG} ` : ""}${ids.join(" ")}`);
+  console.error("  …or drive one unit at a time against its own stage.");
+  process.exit(2);
 }
 
 function assertPrerequisites(ids: string[]): void {
@@ -1008,6 +1096,7 @@ if (!existsSync(WORKDIR)) { console.error(`workDir missing: ${WORKDIR} — run s
  */
 const hookName = argv.find((a) => a.startsWith("--hook="))?.slice("--hook=".length);
 const diagnosticOnly = argv.includes("--precheck") || argv.includes("--netcheck") || argv.includes("--smoke") || hookName !== undefined;
+if (!diagnosticOnly) assertIsolation(scenarioIds);
 if (!diagnosticOnly) assertPrerequisites(scenarioIds);
 
 let exitCode = 0;
