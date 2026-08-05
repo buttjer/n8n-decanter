@@ -104,6 +104,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`node run` no longer answers a branch index with the wrong branch's data.**
+  `$('Node').all(1)`, `$items('Node', 1)` and `$input.all(1)` ask for a node's
+  *second* output — an `IF`'s false branch, a `Switch`'s other case. A fixture
+  pins **one** items array per node, so there is no honest answer, but the
+  argument was accepted and **ignored**: you got output 0's items and the node
+  looked like it worked, graded against a shape it will never see live. Worse
+  than empty data, because nothing fails. These calls now refuse with a message
+  naming the call and the two ways forward (pin that branch as its own fixture
+  node, or run it for real with `test`) — the same signpost pattern `$vars` and
+  `$secrets` already use. `n8n-globals.d.ts` declared the parameter and
+  `docs/cli/node-run.md` listed the calls as fully covered, so both surfaces had
+  promised something the emulation never did.
+
 - **`pull` no longer destroys uncommitted local edits.** It committed the folder
   *after* overwriting it, so an uncommitted `.js` edit was gone and had never
   entered git — while the warning printed on that exact path told you to

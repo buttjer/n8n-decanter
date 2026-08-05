@@ -96,10 +96,33 @@ function asItem(value: unknown): Item {
   return { json: value ?? {} };
 }
 
-function makeNodeRef(items: unknown[]) {
+/**
+ * A fixture pins ONE items array per node, so there is no honest answer for a
+ * branch other than the first (Plan 63 task 5).
+ *
+ * `all(branchIndex)` and `$items(name, outputIndex)` used to accept the argument
+ * and **ignore** it, handing back output 0's items — so a Code node reading an
+ * IF's false branch got the true branch's data and looked like it worked. That
+ * is *wrong* data, not missing data, which is strictly worse than the empty-pin
+ * problem in Plan 66: nothing fails, and the node is graded against a shape it
+ * will never see live. `n8n-globals.d.ts` declares the parameter, and
+ * `docs/cli/node-run.md` listed these calls as fully covered, so both surfaces
+ * promised something the emulation never did.
+ */
+function branchSignpost(call: string): never {
+  throw new Error(
+    `${call} asks for a branch other than the first, which \`run\` cannot answer — a fixture pins one items array per node, ` +
+      `so there is no second output to read. Pin that branch's items as their own fixture node, or run it for real with \`n8n-decanter test\`.`,
+  );
+}
+
+function makeNodeRef(items: unknown[], label = "$('Node')") {
   const list = items.map(asItem);
   return {
-    all: () => list,
+    all: (branchIndex?: number) => {
+      if (branchIndex !== undefined && branchIndex !== 0) branchSignpost(`${label}.all(${branchIndex})`);
+      return list;
+    },
     first: () => list[0],
     last: () => list[list.length - 1],
     // Approximation: offline `run` has no paired-item graph, so `.item` /
@@ -159,10 +182,15 @@ export async function buildGlobals(fixture: Fixture, context: { node?: WorkflowN
   const input = (fixture.input ?? [{ json: {} }]).map(asItem);
   const nodes: Record<string, ReturnType<typeof makeNodeRef>> = {};
   for (const [name, items] of Object.entries(fixture.nodes ?? {})) {
-    nodes[name] = makeNodeRef(items);
+    nodes[name] = makeNodeRef(items, `$(${JSON.stringify(name)})`);
   }
   const $input = {
-    all: () => input,
+    // same rule as `$('Node').all()` — the fixture pins one input array, so a
+    // second branch has no honest answer (Plan 63 task 5)
+    all: (branchIndex?: number) => {
+      if (branchIndex !== undefined && branchIndex !== 0) branchSignpost(`$input.all(${branchIndex})`);
+      return input;
+    },
     first: () => input[0],
     last: () => input[input.length - 1],
     item: input[0],
@@ -180,7 +208,10 @@ export async function buildGlobals(fixture: Fixture, context: { node?: WorkflowN
   const $node = new Proxy({} as Record<string, ReturnType<typeof makeNodeRef>>, {
     get: (_t, prop) => (isProbeKey(prop) ? undefined : nodeRef(prop as string)),
   });
-  const $items = (name?: string, _outputIndex?: number, _runIndex?: number) => (name === undefined ? input : nodeRef(name).all());
+  const $items = (name?: string, outputIndex?: number, _runIndex?: number) => {
+    if (outputIndex !== undefined && outputIndex !== 0) branchSignpost(`$items(${JSON.stringify(name ?? "")}, ${outputIndex})`);
+    return name === undefined ? input : nodeRef(name).all();
+  };
 
   // Luxon backs DateTime/Duration/Interval; jmespath backs `$jmespath` (n8n
   // pins 0.16.0, data-first `search(data, expr)`). Both are hard deps, so a
