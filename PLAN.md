@@ -760,6 +760,22 @@ into it):
   (n8n publishes no JSON Schema for execution data);
   `preflight --simulate --scenario`/
   `test --scenario` run the same check on load.
+- **Two gates, deliberately different — and now stated as such (Plan 65).**
+  `preflight --simulate` demands data only for nodes the capture **reached**
+  (an unreached node is neutralized, so worst case the replay stops);
+  `test` demands **every** pinnable node, because it runs on the live
+  instance with real credentials and a node reached unexpectedly there hits
+  the real world. Keeping both is right; reporting only the looser one was
+  not — a capture-seeded scenario could be green and still be refused by
+  `test`, with no supported way to fix it (`scenario create` refused an
+  existing file). Three changes close that: (1) `scenario create
+  --execution` pins a pinnable-but-unreached node to an **empty run** and
+  records it under `_decanterScenario.notExercised` — an honest
+  "this branch isn't exercised", never an invented value, and the empty pin
+  keeps the node from running for real; (2) `scenario check` reports the
+  `test` gate alongside the simulate one; (3) `scenario create --extend`
+  tops an **existing** scenario up with the nodes it lacks, additively, so
+  `test`'s refusal has a supported way out instead of hand-edited JSON.
 - **Relation to the official skills.** `n8n-workflow-lifecycle-official`
   teaches the same `prepare_test_pin_data` tool for an **ephemeral**
   in-session flow (schemas → agent-generated values → `test_workflow`,

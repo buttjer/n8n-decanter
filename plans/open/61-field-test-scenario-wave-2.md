@@ -4,7 +4,7 @@
 **Priority:** P2 — the harness is finished and proven ([Plan 35](../done/35-blind-agent-field-test.md),
 22 archived rounds); this widens *what* it tests. **Sequenced behind the
 field-report bugfix wave** ([Plan 63](63-field-feedback-bugfixes.md),
-[65](../draft/65-three-gate-scenario-mismatch.md),
+[65](../done/65-three-gate-scenario-mismatch.md),
 [68](../draft/68-live-mirror-visibility.md)) — running it first would spend
 Sonnet rounds re-finding defects that are already written down.
 **Source:** extends [Plan 35](../done/35-blind-agent-field-test.md) (S1–S6);
@@ -350,9 +350,11 @@ synthetic-pins labeling; `diff`; `test`'s **non-interactive never-mutate**
 behavior.
 **Value:** this is the documented agent gate, unexercised — and rebuilt by
 Plans 59/60 *after* the last round that could have measured it.
-**Sequencing:** run **after** [Plan 65](../draft/65-three-gate-scenario-mismatch.md)
-lands. Today `scenario check`, `preflight --simulate` and `test` enforce three
-different node sets; a round run now would spend its turns rediscovering that.
+**Sequencing:** unblocked — [Plan 65](../done/65-three-gate-scenario-mismatch.md)
+landed 2026-08-04. `scenario check` now reports both gates and
+`scenario create --extend` closes the difference, so a "green check, then `test`
+demands more nodes" transcript is a **regression**, not the known state a round
+would waste turns rediscovering.
 
 ### S9 — Air-gapped day (offline ladder) · **host-only (Docker)**
 

@@ -83,9 +83,17 @@ export function buildTestPins(wf: Workflow, runData: RunData, ref: string, sourc
     pinData[node.name] = items;
   }
   if (gaps.length > 0) {
+    // The old hint said "scenario create", which REFUSED an existing scenario —
+    // a dead end for exactly the case that reaches here (Plan 65). `--extend`
+    // adds these nodes to the scenario that was rejected; a raw capture still
+    // needs promoting first.
+    const fix = source === "scenario"
+      ? `n8n-decanter scenario create <workflow> "${ref}" --extend`
+      : `n8n-decanter scenario create <workflow> --execution ${ref}`;
     throw new Error(
       `cannot pin ${gaps.map((g) => `"${g}"`).join(", ")} — no captured output in ${source} ${ref}, and an unpinned ` +
-        `trigger/network node would run for REAL on the instance. Fill a scenario first: n8n-decanter scenario create <workflow>`,
+        `trigger/network node would run for REAL on the instance. \`test\` pins EVERY non-pure node, which is stricter than ` +
+        `\`preflight --simulate\` (it only demands the ones the capture reached). Add them with: ${fix}`,
     );
   }
   return { pinData, pinned: Object.keys(pinData) };
