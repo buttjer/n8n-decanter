@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { scanNodeImports } from "../lib/compile.mts";
 import { nodeFileContextDir } from "../lib/state.mts";
+import { NO_TYPESCRIPT } from "../lib/validate.mts";
 
 // `typescript` is a devDependency of *this* package, never a runtime one —
 // a plain `import ts from "typescript"` resolves relative to this script's
@@ -19,9 +20,6 @@ import { nodeFileContextDir } from "../lib/state.mts";
 // back to this script's own location for setups where the sync dir has no
 // `typescript` of its own (e.g. this repo's own dev/test tree, where the
 // CLI's own node_modules carries it).
-/** Marker `lib/validate.mts` matches to turn "no typescript" into a named skip. */
-export const NO_TYPESCRIPT = "decanter: typescript is not installed";
-
 function resolveTypescript(): typeof import("typescript") {
   try {
     return createRequire(path.join(process.cwd(), "package.json"))("typescript");
