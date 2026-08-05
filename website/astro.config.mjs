@@ -30,10 +30,7 @@ function rehypeBaseLinks() {
 export default defineConfig({
   site,
   base,
-  // `/writing/` holds unlisted long-form drafts shared by link only; keeping
-  // them out of the sitemap is half the hiding (the other half is the
-  // `noindex` meta ArticleLayout sets).
-  integrations: [mdx(), sitemap({ filter: (page) => !page.includes("/writing/") })],
+  integrations: [mdx(), sitemap()],
   vite: { plugins: [tailwindcss()] },
   markdown: {
     rehypePlugins: [rehypeBaseLinks],
