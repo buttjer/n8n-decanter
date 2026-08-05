@@ -67,7 +67,7 @@ async function runVerify(manifest: string): Promise<Array<{ name: string; ok: bo
   return parsed.workflows.flatMap((w) => w.checks);
 }
 
-const find = (checks: Array<{ name: string }>, needle: string) => checks.find((c) => c.name.includes(needle));
+const find = <T extends { name: string }>(checks: T[], needle: string): T | undefined => checks.find((c) => c.name.includes(needle));
 
 describe("field-test verify — local invariants (Plan 61 task 9)", () => {
   it("passes a clean folder: no cached data in git, no scenarios to fault", async () => {
