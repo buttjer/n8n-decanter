@@ -200,8 +200,21 @@ export function readCapture(dir: string, ref: string, source: SimSource): { exec
 
 /** A scenario's metadata block — reads the Plan 37 `_decanterScenario`, or the legacy `_decanterMock`. */
 export function readScenarioMeta(exec: Execution): ScenarioMeta | undefined {
+  return readScenarioMarker(exec)?.meta;
+}
+
+/**
+ * The scenario marker AND which key carried it (Plan 63 task 8).
+ *
+ * Pre-rename files still use `_decanterMock`, and messages that hardcoded
+ * `_decanterScenario.fill` were naming a key that is literally not in the file
+ * the reader has open. Whoever renders a message uses `key`.
+ */
+export function readScenarioMarker(exec: Execution): { meta: ScenarioMeta; key: "_decanterScenario" | "_decanterMock" } | undefined {
   const e = exec as { _decanterScenario?: ScenarioMeta; _decanterMock?: ScenarioMeta };
-  return e._decanterScenario ?? e._decanterMock;
+  if (e._decanterScenario) return { meta: e._decanterScenario, key: "_decanterScenario" };
+  if (e._decanterMock) return { meta: e._decanterMock, key: "_decanterMock" };
+  return undefined;
 }
 
 /**
@@ -238,8 +251,9 @@ export function scenarioIsSynthetic(exec: Execution): boolean {
  * scenario nodes still listed to fill but left without data. Exported for testing.
  */
 export function validateScenarioRunData(exec: Execution, slug: string): void {
-  const meta = readScenarioMeta(exec);
-  if (meta === undefined) return; // not a scenario
+  const marker = readScenarioMarker(exec);
+  if (marker === undefined) return; // not a scenario
+  const { meta, key: markerKey } = marker;
   const runData = (exec as { data?: { resultData?: { runData?: unknown } } }).data?.resultData?.runData;
   const problems: string[] = [];
   if (runData && typeof runData === "object" && !Array.isArray(runData)) {
@@ -260,11 +274,23 @@ export function validateScenarioRunData(exec: Execution, slug: string): void {
       });
     }
   }
-  const unfilled = (meta.fill ?? [])
-    .map((f) => f.node)
-    .filter((n): n is string => typeof n === "string" && firstRunItems((runData as RunData | undefined)?.[n]) === undefined);
-  if (unfilled.length > 0) {
-    problems.push(`incomplete: add runData for ${unfilled.join(", ")} (still listed in _decanterScenario.fill)`);
+  // Split "no entry at all" from "an entry that emits nothing" (Plan 63 task 8):
+  // an author who deliberately wrote `"Node": []` was told they had not filled
+  // it, because `firstRunItems` returns undefined for both. Whether `[]` should
+  // COUNT as filled is Plan 65's call; this only stops the message from lying
+  // about what is in the file.
+  const rd = runData as RunData | undefined;
+  const missing: string[] = [];
+  const emptyEntry: string[] = [];
+  for (const f of meta.fill ?? []) {
+    if (typeof f.node !== "string" || firstRunItems(rd?.[f.node]) !== undefined) continue;
+    (Array.isArray(rd?.[f.node]) ? emptyEntry : missing).push(f.node);
+  }
+  if (missing.length > 0) {
+    problems.push(`incomplete: add runData for ${missing.join(", ")} (still listed in ${markerKey}.fill)`);
+  }
+  if (emptyEntry.length > 0) {
+    problems.push(`incomplete: ${emptyEntry.join(", ")} has an EMPTY runs array — write one run with the items it should emit, or \`[{"data":{"main":[[]]}}]\` to say it emits nothing (listed in ${markerKey}.fill)`);
   }
   if (problems.length > 0) {
     throw new Error(`scenario ${SCENARIOS_DIR}/${kebabCase(slug)}.json is invalid:\n  - ${problems.join("\n  - ")}\n  expected per node: runData["<node>"] = [ { "data": { "main": [ [ { "json": { … } } ] ] } } ]`);
@@ -477,7 +503,12 @@ export async function buildSimulation(
     const names = gaps.map((g) => g.node).join(", ");
     throw new SimulationGapError(
       source === "scenario"
-        ? `scenario "${ref}" still has network node(s) with no data: ${names} — add their runData under data.resultData.runData in ${SCENARIOS_DIR}/${sourceName(ref, "scenario")}.json (see the _decanterScenario block), then re-run. Validate offline with: n8n-decanter scenario check <workflow> ${ref}.`
+        // Do NOT point at the marker block here (Plan 63 task 8). These node
+        // names come from the WORKFLOW GRAPH — they are reachable network nodes
+        // the scenario does not cover — so by definition they are *not* in
+        // `fill`, and telling the reader to "see the _decanterScenario block"
+        // sent the field report hunting for entries that were never there.
+        ? `scenario "${ref}" does not cover network node(s) reached by the replay: ${names} — they are NOT listed in the scenario's "fill", so add each one yourself under data.resultData.runData["<node>"] in ${SCENARIOS_DIR}/${sourceName(ref, "scenario")}.json, or let \`n8n-decanter scenario create <workflow> "${ref}" --extend\` list them for you. Validate offline with: n8n-decanter scenario check <workflow> ${ref}.`
         : `network node(s) reached with no captured data: ${names} — create a committed, fillable scenario with \`n8n-decanter scenario create <workflow> --execution ${ref}\`, add their runData, and replay with \`preflight --simulate --scenario <slug>\`. The scenario is edited locally — the CLI never calls a model.`,
       gaps,
     );
@@ -699,16 +730,27 @@ export async function writeScenario(
   // node source in git, violating the snapshot invariant (Plan 33; the
   // compliance guard warns about legacy scenarios that still embed it).
   const { workflowData: _dropped, ...cleanExec } = baseExec;
-  writeFileSync(scenarioFile, JSON.stringify({ ...cleanExec, _decanterScenario: meta }, null, 2) + "\n");
+  const payload = JSON.stringify({ ...cleanExec, _decanterScenario: meta }, null, 2) + "\n";
+  writeFileSync(scenarioFile, payload);
+  const bytes = Buffer.byteLength(payload);
 
   const rel = path.relative(process.cwd(), scenarioFile);
   const seededFrom = opts.execId !== undefined ? `capture ${opts.execId}` : "workflow schemas";
+  // Size is a first-class fact here (Plan 63 task 7): a capture-seeded scenario
+  // is a verbatim copy of every item of every node, `scenarios/` is tracked on
+  // purpose, and the folder-scoped auto-commit sweeps it into history on the
+  // next pull/push. The field report's was 33 MB. `lib/compile.mts` already
+  // warns above ~100 KB for a compiled node — this lands in the same history.
+  const size = bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   if (gaps.length > 0) {
-    log.info(`scenario "${name}" written from ${seededFrom} -> ${rel}`);
+    log.info(`scenario "${name}" written from ${seededFrom} -> ${rel} (${size})`);
     if (opts.scaffold) log.info(`scaffold coverage: ${opts.scaffold.coverage.withSchemaFromExecution + opts.scaffold.coverage.withSchemaFromDefinition} with schema, ${opts.scaffold.coverage.withoutSchema} without, ${opts.scaffold.coverage.skipped} run for real (of ${opts.scaffold.coverage.total})`);
     log.warn(`author runData for ${gaps.length} node${gaps.length === 1 ? "" : "s"}: ${gaps.map((g) => g.node).join(", ")} — see "_decanterScenario", validate with \`scenario check ${name}\`, then \`preflight --simulate --scenario ${name}\``);
   } else {
-    log.ok(`scenario "${name}" written from ${seededFrom} -> ${rel} — no gaps; replay with \`preflight --simulate --scenario ${name}\``);
+    log.ok(`scenario "${name}" written from ${seededFrom} -> ${rel} (${size}) — no gaps; replay with \`preflight --simulate --scenario ${name}\``);
+  }
+  if (bytes > 1024 * 1024) {
+    log.warn(`that scenario is ${size} and \`scenarios/\` is TRACKED — the next pull or push auto-commits the whole workflow folder, so it lands in git history permanently. Trim it before that, or keep the capture out of the scenario.`);
   }
   if (notExercised.length > 0) {
     log.info(`pinned ${notExercised.length} node${notExercised.length === 1 ? "" : "s"} to an EMPTY run — the capture never reached ${notExercised.length === 1 ? "it" : "them"}: ${notExercised.join(", ")}. That is what makes this scenario usable with \`test\` too; review the claim, and give one real output if a branch should have run.`);

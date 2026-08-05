@@ -8,6 +8,28 @@ import type { DataTable, DataTableColumn, DataTableRow, Execution, Workflow } fr
  * export a redeployable copy). The daily code path and lifecycle (pull/push/
  * watch/status/publish) stay on MCP (lib/mcp.mts).
  */
+/**
+ * Which n8n API scope a refused request needed (Plan 63 task 6).
+ *
+ * A 403 says "valid key, missing scope" and n8n names no scope — so the caller
+ * is left guessing which of eight to add. The scope names are already pinned in
+ * `template/.env.example` and the smoke suite, and Plan 25 verified the trap
+ * this exists for: column and row reads have **distinct** scopes that do not
+ * fold into `dataTable:read`, so a key that lists tables fine still 403s on
+ * `/columns`.
+ */
+function scopeHint(method: string, pathname: string): string {
+  const readOnly = " decanter only ever READS data tables — no write scope is needed.";
+  if (pathname.includes("/data-tables/") && pathname.includes("/columns")) return `Add \`dataTableColumn:read\` (listing tables uses \`dataTable:list\`, which does NOT cover columns).${readOnly}`;
+  if (pathname.includes("/data-tables/") && pathname.includes("/rows")) return `Add \`dataTableRow:read\` (separate from \`dataTable:read\`).${readOnly}`;
+  if (pathname.startsWith("/api/v1/data-tables")) return `Add \`dataTable:list\` and \`dataTable:read\`.${readOnly}`;
+  if (/^\/api\/v1\/executions\/\d/.test(pathname)) return "Add `execution:read`.";
+  if (pathname.startsWith("/api/v1/executions")) return "Add `execution:list` (and `execution:read` to fetch one).";
+  if (pathname.startsWith("/api/v1/workflows") && method === "POST") return "Add `workflow:create` (`backup restore` redeploys a backup as a new workflow).";
+  if (pathname.startsWith("/api/v1/workflows")) return "Add `workflow:read` (and `workflow:list` for init's connection check).";
+  return "Check the key's scopes in n8n → Settings → n8n API.";
+}
+
 export class N8nApi {
   #host: string;
   #apiKey: string;
@@ -129,6 +151,13 @@ export class N8nApi {
       });
       const text = await res.text();
       if (!res.ok) {
+        // A 403 from the public API means the key is valid but under-scoped —
+        // and n8n does not say which scope is missing. Mapped HERE rather than
+        // in each caller so every REST surface (executions, data-tables, backup)
+        // gets it: `pathname` already identifies what was refused.
+        if (res.status === 403) {
+          throw new Error(`${method} ${pathname} was refused (403) — N8N_API_KEY is valid but lacks a scope. ${scopeHint(method, pathname)}`);
+        }
         throw new Error(`${method} ${pathname} failed: ${res.status} ${res.statusText}\n${text.slice(0, 2000)}`);
       }
       return text ? JSON.parse(text) : undefined;

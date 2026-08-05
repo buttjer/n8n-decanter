@@ -47,4 +47,4 @@ The report also asked for the read-only nature to be documented more prominently
 bullet of the scaffolded `AGENTS.md`'s data-tables section (with the reason: MCP
 can't read rows), inline in `--help`, and in the README verb table. The one place
 it's *missing* is at the moment of failure, which is
-[Plan 63](../open/63-field-feedback-bugfixes.md) task 6's 403 hint.
+[Plan 63](../done/63-field-feedback-bugfixes.md) task 6's 403 hint.

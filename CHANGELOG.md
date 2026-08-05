@@ -104,6 +104,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A 403 from the public API now names the scope you are missing.** n8n answers
+  a valid-but-under-scoped `N8N_API_KEY` with a bare 403 and says nothing about
+  which of eight scopes is absent. Every REST surface — executions, data tables,
+  backup — now gets a per-endpoint hint, including the trap that catches people
+  out: `dataTable:read` does **not** cover `/columns` or `/rows`, which need
+  `dataTableColumn:read` and `dataTableRow:read`. The data-table hints also say
+  outright that decanter only ever **reads** them, so no write scope is needed.
+
+- **`scenario create` prints the file's size, and warns before it lands in git.**
+  A capture-seeded scenario is a verbatim copy of every item of every node; one
+  from a busy production run can be tens of megabytes. Nothing measured it, and
+  `scenarios/` is tracked — so the folder-wide auto-commit on the next `pull` or
+  `push` swept it into history unasked. The success line now carries the size,
+  and anything above 1 MB warns explicitly that it is about to be committed.
+
+- **Three scenario messages pointed somewhere the thing you needed was not.**
+  A pre-rename scenario (`_decanterMock`) was told to look in
+  `_decanterScenario.fill` — a key not in the file; the message now names the key
+  it actually found. A replay gap derives its node list from the **workflow
+  graph**, so those nodes are by definition *not* in `fill`, yet it said "see the
+  `_decanterScenario` block"; it now says they are **not** listed, and points at
+  `--extend`. And a node deliberately written as `"Node": []` was reported as
+  unfilled — it is now told apart from a node with no entry at all, with the
+  spelling for "emits nothing".
+
 - **The agent guard's 401 no longer reads as "this project was never set up".**
   It led with *"run `n8n-decanter init`"*, and a blind field-test round watched an
   agent conclude from it that there was no `.env` and no token at all — then send

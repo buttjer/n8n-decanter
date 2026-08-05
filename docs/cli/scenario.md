@@ -80,6 +80,12 @@ n8n-decanter scenario create order-sync "happy-path" --extend
 #   existing scenario: add the pinnable nodes it is missing, keep every value
 ```
 
+**Watch the size.** A capture-seeded scenario is a **verbatim** copy of every
+item of every node — one from a busy production run can be tens of megabytes.
+`scenario create` prints the size, and warns above 1 MB, because `scenarios/` is
+**tracked**: the folder-wide auto-commit that `pull` and `push` perform sweeps it
+into git history on the next sync, permanently. Trim it before that.
+
 - **`<slug>`** names the scenario (`happy-path`, `empty-cart`, `error-case`) and
   becomes the filename (kebab-cased). **Optional** — omit it and the scenario is
   named after the execution id (`scenarios/4812.json`, or `scenario` for a

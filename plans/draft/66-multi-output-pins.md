@@ -55,7 +55,7 @@ would have caught the reported case. All the information is already local in
 `workflow.json`; nothing in `lib/` handles `onError`/`errorOutput`/output index
 today.
 
-Builds on [Plan 63](../open/63-field-feedback-bugfixes.md) tasks 4 and 5 (output
+Builds on [Plan 63](../done/63-field-feedback-bugfixes.md) tasks 4 and 5 (output
 index plumbed through `forEachConnectionTarget`; `all(n>0)` throwing instead of
 lying). The proper `node run` fix — fixture `nodes` accepting `RunItem[][]` so
 `all(branchIndex)` indexes it — belongs here, not there.

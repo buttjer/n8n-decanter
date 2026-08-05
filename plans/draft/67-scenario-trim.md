@@ -43,7 +43,7 @@ MCP's `get_execution` `truncateData`/`nodeNames` are **not** an option — captu
 ride REST deliberately ([`lib/api.mts:5`](../../lib/api.mts)) because MCP has no
 full-run-data read. Trim client-side in `writeScenario`.
 
-The byte-size **warning** is [Plan 63](../open/63-field-feedback-bugfixes.md)
+The byte-size **warning** is [Plan 63](../done/63-field-feedback-bugfixes.md)
 task 7 (3 lines, precedent in `lib/compile.mts`); this plan is the actual
 trimming. No prior plan touches payload size — Plans 7 and 37 own this code and
 never discuss it.
