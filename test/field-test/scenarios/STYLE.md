@@ -82,6 +82,25 @@ you're done"* grants the authorisation while leaving the mechanism to the agent 
 that discovery is the thing under test. *"Run a preflight and push"* would pass
 every time and measure nothing.
 
+## Only name things the stage actually seeds (hard — it has bitten twice)
+
+A turn may only refer to a workflow, table or file the scenario's own pack
+**creates**. Both failures so far were this:
+
+- **S13**, round `ftrun-29773`: turn 1 asked for "the contact cleanup flow",
+  which was neither in `decanter.config.json` nor pulled — stacking a second
+  obstacle onto the injected one, so the transcript could not say which stopped
+  the agent.
+- **S10**, round `ftrun-93801`: turn 1 asked for "the order-sync flow"; the
+  workflow behind `corpus-credentialed` is named `QdrantVectorStore:*`. The
+  agent searched all 11 workflows, found nothing, and **correctly refused to
+  fabricate a stand-in** — a clean agent transcript and a wasted unit.
+
+Both cost a full unit and produced a **FAIL that reads like a product defect**.
+Before writing a turn, check the pack: `seeds/<pack>.json`, or the seeded list a
+stage prints. If the fixture's real name is ugly (`QdrantVectorStore:*`), have
+the persona *say* the ugly name — a real user would.
+
 ## Turn model (headless `claude -p`)
 
 One turn = one user message that kicks off an autonomous work burst (many tool
