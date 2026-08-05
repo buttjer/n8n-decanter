@@ -409,6 +409,17 @@ export async function runTypecheckPerDir(startDir: string, dirs: string[]): Prom
  * compiles). This is the quiet fact seam `preflight` consumes; `runTypecheck`
  * below wraps it to keep `push`'s console behavior byte-identical.
  */
+/**
+ * Marker `scripts/typecheck.mts` prints when it cannot resolve `typescript` at
+ * all, and the only thing that turns that into a named skip below.
+ *
+ * It lives HERE, not in the script, because the direction matters: the script
+ * imports `lib/`, and `lib/` importing the script would execute its top-level
+ * `resolveTypescript()` — which may `process.exit`. One definition, imported by
+ * the producer, so the string cannot drift out from under the matcher.
+ */
+export const NO_TYPESCRIPT = "decanter: typescript is not installed";
+
 export async function runTypecheckResult(startDir: string, scopeDirs?: string[]): Promise<TypecheckResult> {
   const tsconfigDir = findTsconfigDir(startDir);
   if (!tsconfigDir) return { status: "skipped", output: "no tsconfig.json found" };
@@ -424,6 +435,14 @@ export async function runTypecheckResult(startDir: string, scopeDirs?: string[])
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string };
     const output = ((e.stdout ?? "") + (e.stderr ?? "")).trim();
+    // No `typescript` anywhere is a check that CANNOT RUN, not a check that
+    // failed — the same class as a missing tsconfig, and it must read that way.
+    // A globally installed decanter ships none (devDependency), and `init`
+    // leaves an existing package.json alone, so scaffolding into a project you
+    // already had lands here.
+    if (output.includes(NO_TYPESCRIPT)) {
+      return { status: "skipped", output: "typescript is not installed — node-file typechecking needs it: npm i -D typescript" };
+    }
     return { status: "failed", output };
   }
 }
@@ -436,7 +455,9 @@ export async function runTypecheckResult(startDir: string, scopeDirs?: string[])
 export async function runTypecheck(startDir: string, log: Log, scopeDirs?: string[]): Promise<void> {
   const result = await runTypecheckResult(startDir, scopeDirs);
   if (result.status === "skipped") {
-    log.info("no tsconfig.json found — skipping typecheck");
+    // the reason travels with the result now — "no tsconfig" is no longer the
+    // only way a typecheck can be un-runnable (missing `typescript` is another)
+    log.info(`${result.output ?? "typecheck not runnable"} — skipping typecheck`);
     return;
   }
   if (result.status === "ok") {

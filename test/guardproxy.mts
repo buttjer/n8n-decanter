@@ -31,6 +31,7 @@ const log: Log = {
 // ---------- scripted upstream n8n MCP endpoint ----------
 const seen: Array<{ auth: string | undefined; session: string | undefined; body: string }> = [];
 let upstream401s = 0; // when > 0, that many next requests answer 401
+let upstream403s = 0; // ditto for 403 — a switched-off MCP server (Plan 74)
 const upstream = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
@@ -40,6 +41,10 @@ const upstream = http.createServer((req, res) => {
     if (upstream401s > 0) {
       upstream401s--;
       return void res.writeHead(401).end("unauthorized");
+    }
+    if (upstream403s > 0) {
+      upstream403s--;
+      return void res.writeHead(403, { "content-type": "application/json" }).end(JSON.stringify({ message: "MCP access is disabled" }));
     }
     if (req.method === "DELETE") return void res.writeHead(200).end();
     const msg = body === "" ? {} : JSON.parse(body);
@@ -419,6 +424,40 @@ await step("stdio upstream down: an id'd request gets a JSON-RPC error naming th
   assert.equal(msg.error.code, -32001);
   assert.match(msg.error.message, /unreachable.*127\.0\.0\.1:9/);
   await dead.end();
+});
+
+// The wording of these two is load-bearing, not cosmetic: it is the FIRST thing
+// an agent sees when the instance rejects it, and two blind rounds watched an
+// agent read the old 401 ("run `n8n-decanter init`") and tell its user the
+// project had never been set up — sending them through a pointless init while
+// the .env sat there, correct, with a merely rotated token.
+await step("upstream 401 (stdio): the refusal leads with the CAUSE, not with `init`", async () => {
+  const s = startStdio();
+  upstream401s = 2; // the guard swallows the first with one forced token refresh
+  s.send({ jsonrpc: "2.0", id: 21, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  const msg = JSON.parse(await s.next());
+  assert.equal(msg.id, 21);
+  assert.ok(
+    msg.error.message.startsWith("n8n rejected decanter's existing MCP credentials (401)"),
+    `must open with the cause, got: ${msg.error.message}`,
+  );
+  assert.match(msg.error.message, /NOT a missing-setup error/, "must say outright that this is not a missing setup");
+  assert.match(msg.error.message, /Settings → MCP/, "must name where to mint a fresh token");
+  upstream401s = 0;
+  await s.end();
+});
+
+await step("upstream 403 (stdio): a switched-off MCP server is named, with n8n's own reason", async () => {
+  const s = startStdio();
+  upstream403s = 1;
+  s.send({ jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  const msg = JSON.parse(await s.next());
+  assert.equal(msg.id, 22);
+  assert.match(msg.error.message, /403/);
+  assert.match(msg.error.message, /MCP access is disabled/, "n8n's own reason must survive");
+  assert.match(msg.error.message, /Settings → MCP/, "must point at the switch");
+  upstream403s = 0;
+  await s.end();
 });
 
 await step("publish gate (stdio): identical verdicts — the two transports must not drift", async () => {

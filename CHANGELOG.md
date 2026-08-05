@@ -104,6 +104,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The agent guard's 401 no longer reads as "this project was never set up".**
+  It led with *"run `n8n-decanter init`"*, and a blind field-test round watched an
+  agent conclude from it that there was no `.env` and no token at all — then send
+  its user through a pointless `init`. The `.env` existed; the token had simply
+  been rotated. The guard now leads with the cause (*"n8n rejected decanter's
+  existing MCP credentials … they are configured but no longer valid"*), matching
+  what the CLI already said, and offers `init` only as the OAuth alternative. It
+  also maps **403** now, pointing at n8n → Settings → MCP.
+
+- **A missing `typescript` is reported as a skipped check, not a failed one.**
+  `preflight`'s node-file typecheck needs `typescript` in your project. A
+  globally installed decanter ships none (it is a devDependency), and `init`
+  leaves an existing `package.json` alone — so scaffolding into a project you
+  already had produced a module-resolution stack trace surfacing as a *typecheck
+  failure*, which reads like a type error in your own code. It is now an honest
+  skip, named in the coverage block with the one-command fix
+  (`npm i -D typescript`).
+
+- **The scaffolded `AGENTS.md` tells agents that `.env` is unreadable by policy
+  and that this is not evidence it is missing** — the reasoning trap behind the
+  401 finding above.
+
 - **`node run` no longer answers a branch index with the wrong branch's data.**
   `$('Node').all(1)`, `$items('Node', 1)` and `$input.all(1)` ask for a node's
   *second* output — an `IF`'s false branch, a `Switch`'s other case. A fixture

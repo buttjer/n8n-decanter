@@ -310,7 +310,20 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
       const lines = (r.output ?? "").split("\n").filter((l) => l.trim() !== "");
       return { status: "fail", message: `typecheck failed: ${lines[0] ?? "unknown error"}`, details: lines };
     }
-    if (r.status === "skipped") return { status: "skip", message: "no tsconfig.json — typecheck skipped", reason: "no tsconfig.json found", unlock: "add a tsconfig.json to enable type checks" };
+    if (r.status === "skipped") {
+      // Two ways a typecheck cannot run: no tsconfig, or no `typescript`
+      // installed. Both are honest skips — but the coverage block has to name
+      // WHICH, or "types skipped" reads as a tooling quirk instead of a
+      // one-command fix (round ftrun-73440).
+      const reason = r.output ?? "no tsconfig.json found";
+      const noTs = reason.includes("typescript is not installed");
+      return {
+        status: "skip",
+        message: noTs ? "typescript not installed — typecheck skipped" : "no tsconfig.json — typecheck skipped",
+        reason,
+        unlock: noTs ? "npm i -D typescript to enable type checks" : "add a tsconfig.json to enable type checks",
+      };
+    }
     return { status: "pass", message: "node files typecheck clean" };
   });
 

@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { scanNodeImports } from "../lib/compile.mts";
 import { nodeFileContextDir } from "../lib/state.mts";
+import { NO_TYPESCRIPT } from "../lib/validate.mts";
 
 // `typescript` is a devDependency of *this* package, never a runtime one —
 // a plain `import ts from "typescript"` resolves relative to this script's
@@ -23,7 +24,19 @@ function resolveTypescript(): typeof import("typescript") {
   try {
     return createRequire(path.join(process.cwd(), "package.json"))("typescript");
   } catch {
-    return createRequire(import.meta.url)("typescript");
+    try {
+      return createRequire(import.meta.url)("typescript");
+    } catch {
+      // Neither the sync dir nor the CLI's own install has it. A globally
+      // installed decanter ships no `typescript` (it is a devDependency), and
+      // `init` leaves an EXISTING package.json alone — so a user who scaffolded
+      // into a project they already had lands here. Without this branch the
+      // module-resolution stack trace surfaced as a failed *typecheck*, reading
+      // like a type error in the user's own code (seen in round ftrun-73440,
+      // where the agent guessed its way to `npm i -D typescript`).
+      console.error(`${NO_TYPESCRIPT} in ${process.cwd()} — node-file typechecking needs it: npm i -D typescript`);
+      process.exit(3);
+    }
   }
 }
 const ts = resolveTypescript();
