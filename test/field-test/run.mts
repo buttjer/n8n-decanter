@@ -842,20 +842,28 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
       // configuration a real local-install user's agent gets, and the one that
       // would have caught Task 1's silent-fail.
       //
-      // A noCli stage (Plan 57 / S6) needs BOTH: no prepend, and no ambient
-      // global either. A maintainer machine commonly has a global install (an
-      // `npm link` from this repo), which would sit on the inherited PATH and
-      // quietly defeat the whole condition — the round would "measure" an agent
-      // that could run the CLI all along. So strip every PATH entry that
-      // contains an `n8n-decanter` executable.
+      // Dropping the prepend is NOT enough on its own — a maintainer machine
+      // commonly carries a global `n8n-decanter` (an `npm link` from this repo),
+      // which sits on the inherited PATH and quietly satisfies a bare command.
+      // The first-ever unassisted-PATH round (Plan 62 task 1, 2026-08-05) hit
+      // exactly that: the header printed UNASSISTED PATH, the agent typed a bare
+      // `n8n-decanter list --remote`, and it WORKED — resolving the maintainer's
+      // link, i.e. the main checkout, not the packed tarball the stage installed.
+      // So the round measured neither the condition nor the code under test.
+      //
+      // Both conditions therefore shadow ambient installs: `noCli` (Plan 57 / S6)
+      // and `FIELD_NO_PATH_HELP`. They differ in intent, not mechanism — noCli
+      // removes the project's install too, while this one keeps it and only
+      // makes the agent reach it the way a real local-install user must
+      // (`npx`, or `./node_modules/.bin/…`).
       const localBin = path.join(WORKDIR, "node_modules", ".bin");
       let PATH = process.env.PATH ?? "";
       const extraEnv: Record<string, string> = {};
-      if (manifest.noCli === true) {
+      if (manifest.noCli === true || process.env.FIELD_NO_PATH_HELP === "1") {
         const sane = sanitizedPath(PATH);
         PATH = sane.PATH;
         extraEnv.npm_config_prefix = sane.npmPrefix;
-      } else if (process.env.FIELD_NO_PATH_HELP !== "1") {
+      } else {
         PATH = `${localBin}${path.delimiter}${PATH}`;
       }
       proc = spawn("claude", args, { cwd: WORKDIR, env: { ...process.env, PATH, ...extraEnv } });
