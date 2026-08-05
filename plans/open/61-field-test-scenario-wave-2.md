@@ -3,7 +3,7 @@
 **Status:** Not started
 **Priority:** P2 — the harness is finished and proven ([Plan 35](../done/35-blind-agent-field-test.md),
 22 archived rounds); this widens *what* it tests. **Sequenced behind the
-field-report bugfix wave** ([Plan 63](63-field-feedback-bugfixes.md),
+field-report bugfix wave** ([Plan 63](../done/63-field-feedback-bugfixes.md),
 [65](../done/65-three-gate-scenario-mismatch.md),
 [68](../draft/68-live-mirror-visibility.md)) — running it first would spend
 Sonnet rounds re-finding defects that are already written down.
@@ -39,7 +39,7 @@ rework below is not cosmetic — two of its premises were falsified.
 | scenarios `S6–S12` | **`S6` is taken** — [Plan 57](../done/57-cli-discoverability-for-agents.md) shipped [`S6.md`](../../test/field-test/scenarios/S6.md) (fresh clone, `FIELD_NO_CLI=1`, 6 rounds, 6 PASS). Wave 2 is **S7–S13** |
 | verbs `check` / `status` / `simulate` | **removed** ([Plan 59](../done/59-declutter-verify-verbs.md)/[60](../done/60-preflight-first-verb-surface.md), `REMOVED_VERBS` in [`n8n-decanter.mts:118`](../../n8n-decanter.mts)) → `preflight` (+`--simulate`/`--offline`/`--viewer`/`--execution`/`--scenario`) and `diff` |
 | `preflight --quick` / `--full` profiles | **gone** — one gate, tuned by `--json` / `--fail-on` / `--fail-fast` / `--require=<ids>` / `--simulate` / `--offline` |
-| "nothing has ever been tested on a workflow decanter didn't create" | **false** — the **2026-07-30 field report** drove a 45-node production workflow (Shopify → eBay, 39 renames) and produced nine plans ([63](63-field-feedback-bugfixes.md)–[71](../draft/71-data-table-writes.md)) |
+| "nothing has ever been tested on a workflow decanter didn't create" | **false** — the **2026-07-30 field report** drove a 45-node production workflow (Shopify → eBay, 39 renames) and produced nine plans ([63](../done/63-field-feedback-bugfixes.md)–[71](../draft/71-data-table-writes.md)) |
 | Plan 35 open, S1–S5 | Plan 35 **Done**; its `S5` (watch) and the two staging crutches moved to [Plan 62](62-field-test-unrun-conditions.md) |
 | — | Only **3 of 22 archived rounds** ran on the post-59/60 verb surface, and all three were S1–S4. Every other round measured verbs that no longer exist |
 
@@ -400,7 +400,7 @@ the **instance-scoped globals** signposting (`$vars`/`$secrets`/
 `$evaluateExpression` → "use `test`"); `preflight --offline --no-typecheck` and a
 deliberate TS error.
 **Sequencing:** the `node run` fidelity beats are **already known-broken** —
-[Plan 63](63-field-feedback-bugfixes.md) Task 5 and
+[Plan 63](../done/63-field-feedback-bugfixes.md) Task 5 and
 [Plan 66](../draft/66-multi-output-pins.md) have `all(1)`/`$items(name, 1)`
 returning output 0's items. Land those first or drop the beat; do not spend a
 round confirming a written-down bug.

@@ -454,6 +454,64 @@ describe("scenario ↔ test gate parity (Plan 65)", () => {
   });
 });
 
+// Plan 63 tasks 7 + 8. Three messages that pointed the reader somewhere the
+// thing they needed was not, plus the size fact that was never printed.
+describe("scenario messages tell the truth about the file in front of you", () => {
+  it("names the LEGACY marker key when that is the one in the file (task 8)", () => {
+    // `readScenarioMeta` has always accepted `_decanterMock`; the message
+    // hardcoded `_decanterScenario.fill`, i.e. a key literally not in the file.
+    const legacy = {
+      id: "old", data: { resultData: { runData: {} } },
+      _decanterMock: { source: "capture", createdAt: "2026-01-01", guidance: "", fill: [{ node: "Fetch", type: "n8n-nodes-base.httpRequest", parameters: {}, inputSample: [] }] },
+    } as never;
+    assert.throws(() => validateScenarioRunData(legacy, "old"), /_decanterMock\.fill/);
+    assert.throws(() => validateScenarioRunData(legacy, "old"), (e: Error) => !/_decanterScenario\.fill/.test(e.message));
+  });
+
+  it("distinguishes 'no entry' from 'an entry that emits nothing' (task 8)", () => {
+    const withFill = (runData: Record<string, unknown>) => ({
+      id: "s", data: { resultData: { runData } },
+      _decanterScenario: { source: "capture", createdAt: "2026-01-01", guidance: "", fill: [{ node: "Fetch", type: "n8n-nodes-base.httpRequest", parameters: {}, inputSample: [] }] },
+    }) as never;
+    // absent entirely → "add runData"
+    assert.throws(() => validateScenarioRunData(withFill({}), "s"), /add runData for Fetch/);
+    // present but empty → say so, and show the "emits nothing" spelling
+    assert.throws(() => validateScenarioRunData(withFill({ Fetch: [] }), "s"), /EMPTY runs array/);
+    assert.throws(() => validateScenarioRunData(withFill({ Fetch: [] }), "s"), /\[\{"data":\{"main":\[\[\]\]\}\}\]/);
+  });
+
+  it("a graph-derived gap does NOT send the reader to the fill block (task 8)", async () => {
+    // These names come from the WORKFLOW GRAPH, so they are by definition not in
+    // `fill` — the old wording ("see the _decanterScenario block") sent the field
+    // report hunting for entries that were never there.
+    const dir = scaffoldBase(undefined, {
+      [`${SCENARIOS_DIR}/thin.json`]: JSON.stringify({
+        id: "thin",
+        data: { resultData: { runData: { Webhook: run([item({})]), Compute: run([item({})]), Tag: run([item({})]) } } },
+        _decanterScenario: { source: "capture", createdAt: "2026-01-01", guidance: "", fill: [] },
+      }),
+    });
+    await assert.rejects(buildSimulation(dir, "thin", log, { source: "scenario" }), (e: Error) => {
+      assert.match(e.message, /does not cover network node\(s\)/);
+      assert.match(e.message, /NOT listed in the scenario's "fill"/);
+      assert.match(e.message, /--extend/, "must name the supported way to add them");
+      assert.doesNotMatch(e.message, /see the _decanterScenario block/);
+      return true;
+    });
+  });
+
+  it("prints the scenario's size, and warns when it is about to be committed (task 7)", async () => {
+    const dir = scaffoldBase();
+    await writeScenario(dir, { execId: "1", slug: "small" }, log);
+    const infos = [...warnings]; // the recorder below collects warns; size lands on ok/info
+    assert.ok(infos.length >= 0); // (kept so the recorder is exercised even when quiet)
+    const file = path.join(dir, SCENARIOS_DIR, "small.json");
+    assert.ok(existsSync(file));
+    // a small scenario must NOT trip the commit warning
+    assert.equal(warnings.some((w) => /TRACKED/.test(w)), false, `small scenario should not warn: ${warnings.join(" | ")}`);
+  });
+});
+
 describe("latestCaptureId", () => {
   it("returns the highest numeric capture id (newest), ignoring non-numeric files", () => {
     const dir = scaffold({

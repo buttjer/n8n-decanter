@@ -50,7 +50,7 @@ is structurally incapable of knowing the scenario is insufficient for `test`.
   `PLAN.md:812`. The per-verb pages are each individually correct — it's
   `scenario.md`, the page you land on *while filling pins*, that misleads.
 
-Depends on [Plan 63](../open/63-field-feedback-bugfixes.md) task 4 (branch-aware
+Depends on [Plan 63](../done/63-field-feedback-bugfixes.md) task 4 (branch-aware
 reachability) landing first, or `fill` stays wrong regardless of which gate wins.
 
 ## Resolution (2026-08-04) — keep both rules, stop hiding one
@@ -90,5 +90,5 @@ demands), `template/AGENTS.md.example`, and `PLAN.md`.
 Six unit cases in [`test/unit/simulate.test.mts`](../../test/unit/simulate.test.mts)
 cover `testPinGaps`, the `notExercised` pre-fill, the two-gate report, and
 `--extend` (adds, keeps authored values, no-ops when complete, refuses a missing
-scenario). [Plan 63](../open/63-field-feedback-bugfixes.md) task 4 landed first,
+scenario). [Plan 63](../done/63-field-feedback-bugfixes.md) task 4 landed first,
 as this note required.

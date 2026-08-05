@@ -51,6 +51,6 @@ whole check ladder goes green over content the agent didn't write, which is this
 plan's problem, not `parity`'s.
 
 The mechanical pieces are already split out into
-[Plan 63](../open/63-field-feedback-bugfixes.md) tasks 1–3 (pull's safety commit,
+[Plan 63](../done/63-field-feedback-bugfixes.md) tasks 1–3 (pull's safety commit,
 the un-gated warning, the mirror honouring a failed commit) — this plan is only
 the visibility and contract half.

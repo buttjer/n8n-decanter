@@ -1,6 +1,8 @@
 # Plan 63 — Field-feedback bugfix sweep
 
-**Status:** Not started
+**Status:** **Done** (2026-08-05) — all eight tasks landed; each task carries its
+own "Done" note below. Tasks 1–3 (the silent-data-loss trio) and 4 shipped
+first because 65 depended on 4; 5 followed; 6–8 closed it out.
 **Priority:** P1
 **Source:** the 2026-07-30 field report from an agent driving a 45-node
 production workflow (Shopify → eBay, 39 node renames, two code fixes, one
@@ -179,6 +181,13 @@ for free, since `pathname` already identifies the refused surface. Include the
 read-only fact in the hint — that's where the reporter was standing when they
 needed it.
 
+**Done (2026-08-05).** Exactly that, in `#request`, so executions/data-tables/
+backup all gain it. Five cases in
+[`test/unit/api-scopes.test.mts`](../../test/unit/api-scopes.test.mts) drive the
+real `N8nApi` against a server that 403s everything — including the Plan 25 trap
+that a single generic hint would have papered over (`/columns` and `/rows` are
+distinct scopes).
+
 ### 7. `scenario create` writes an unbounded file with no size signal
 
 `writeScenario` prints a path line, an optional coverage line, a gaps warning and
@@ -196,6 +205,11 @@ line, and warn above a threshold (~1 MB) that the file is about to be committed.
 Also note in [`docs/cli/scenario.md`](../../docs/cli/scenario.md) that the
 folder-scoped auto-commit will pick it up. Trimming itself is
 [Plan 67](../draft/67-scenario-trim.md).
+
+**Done (2026-08-05).** Size on the success line (KB under a megabyte, MB above),
+and a warning past 1 MB that names the mechanism — `scenarios/` is tracked, so
+the next pull/push auto-commits it permanently. `docs/cli/scenario.md` says the
+same.
 
 ### 8. Two scenario messages point at the wrong place
 
@@ -216,6 +230,15 @@ folder-scoped auto-commit will pick it up. Trimming itself is
   didn't fill it. Distinguish "no entry" from "empty entry" in the message. (The
   *semantics* — whether `[]` should count as filled — is
   [Plan 65](../done/65-three-gate-scenario-mismatch.md)'s call, not this one's.)
+
+**Done (2026-08-05).** All three. `readScenarioMarker` now returns *which* key
+carried the block, and the incomplete message interpolates it. The graph-derived
+gap error no longer mentions the marker block at all — it says the nodes are
+**not** in `fill` and points at `scenario create --extend`, which Plan 65 gave it
+as the supported way to add them. And `"Node": []` is reported as an empty runs
+array with the "emits nothing" spelling, distinct from a node with no entry.
+Four cases in [`test/unit/simulate.test.mts`](../../test/unit/simulate.test.mts),
+including one asserting the old wording is **gone**.
 
 ## Acceptance / verification
 
