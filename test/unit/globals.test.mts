@@ -54,6 +54,30 @@ describe("n8n globals surface (Plan 43 parity)", () => {
     assert.deepEqual((g.$items as (n?: string) => Array<{ json: unknown }>)().map((i) => i.json), [{ seed: 1 }], "$items() with no name = current input");
   });
 
+  // Plan 63 task 5. A fixture pins ONE items array per node, so there is no
+  // honest answer for a second branch — and the old code accepted the argument
+  // and returned output 0 anyway. That is WRONG data, not missing data: a node
+  // reading an IF's false branch got the true branch's items and looked correct,
+  // while `n8n-globals.d.ts` declared the parameter and the docs called these
+  // calls fully covered. Signposting is the same pattern `$vars`/`$secrets` use.
+  it("a branch index other than 0 signposts instead of silently returning output 0", async () => {
+    const g = await buildGlobals({ input: [{ json: { seed: 1 } }], nodes: { Fetch: [{ json: { id: 7 } }] } });
+    const node = (g.$ as (n: string) => { all: (b?: number) => unknown[] })("Fetch");
+    const items = g.$items as (n?: string, o?: number) => unknown[];
+    const input = g.$input as { all: (b?: number) => unknown[] };
+
+    // branch 0 (and the bare call) stay emulated — this is the common case
+    assert.equal(node.all().length, 1);
+    assert.equal(node.all(0).length, 1);
+    assert.equal(items("Fetch", 0).length, 1);
+    assert.equal(input.all(0).length, 1);
+
+    // anything else refuses, names the call, and points at the two ways out
+    assert.throws(() => node.all(1), /\$\("Fetch"\)\.all\(1\).*branch other than the first.*n8n-decanter test/s);
+    assert.throws(() => items("Fetch", 1), /\$items\("Fetch", 1\).*branch other than the first/s);
+    assert.throws(() => input.all(2), /\$input\.all\(2\).*branch other than the first/s);
+  });
+
   it("emulated proxies serialize cleanly — returning $node/$vars must not crash run's output", async () => {
     const g = await buildGlobals({ nodes: { Fetch: [{ json: { id: 7 } }] } });
     // runNode ends in JSON.stringify(output); a node returning a proxy must not throw on toJSON.
