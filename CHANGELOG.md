@@ -7,73 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-08-04
-
-### Changed
-
-- **The agent guard now refuses a `publish_workflow` that would take a broken
-  draft live.** `publish` already checked, but the raw MCP tool went straight
-  through the guard — so an agent could go live around the verb and ship exactly
-  the breakage the check exists to catch. Both transports (`mcp connect` and
-  `mcp serve`) run the same check on the same shared code.
-
-  **Fail-closed:** if the check itself cannot run — n8n unreachable — the publish
-  is refused too, and the message says the *check* failed rather than claiming
-  the workflow is broken. A read that fails almost certainly means the publish
-  would have failed anyway, and "couldn't verify, so we shipped it" is not a gate.
-
-- **Dangling-reference checks now cover all four forms n8n rewrites on a rename**
-  — `` $('X') `` (as before) plus `$node["X"]`, `$node.X` and `$items('X')`.
-  Previously only the first was detected, so a rename could strand a `$node[…]`
-  call site that nothing reported: `preflight`, `push`, `test` and `publish` all
-  passed it, and it failed at run time instead. The rule is n8n's own — its
-  rewriter handles exactly these four — so if n8n treats it as a reference, the
-  guard now does too.
-
-  **This can surface errors in workflows that passed before.** A `$node["Old"]`
-  reference to a node that no longer exists is a hard compliance error, which
-  `--force` does not bypass. The message quotes the reference **as written**, so
-  it is clear which form triggered it. Computed references (`$(someVar)`, a
-  template literal with `${…}`) are still left alone — a regex cannot resolve
-  them, and n8n has the same limit.
-
-- **Breaking: `n8n-decanter test <workflow>` no longer executes.** It used to
-  fall back to the newest capture under `executions/` and run the workflow for
-  real on your instance — a directory that is gitignored, so the same commit
-  behaved differently for different people, and a bare verb had real side
-  effects. Bare `test` is now a **static tier**: it reads the instance's draft,
-  reports dangling `$('…')` references, and runs nothing. Pass
-  `--execution <id>` or `--scenario <slug>` for the pinned run, which is
-  otherwise unchanged. There is no deprecation shim — a `test` that still
-  executed *sometimes* would keep exactly the ambiguity this removes.
-
-  The pinned run now also does the static check first, so a draft already known
-  to be broken is never fired at the instance.
-- **`publish` refuses a draft carrying a dangling `$('…')` reference.**
-  Previously nothing checked: the compliance guard runs on `push`, `preflight`
-  and `backup` — not `publish` — so a task that only renamed nodes never hit a
-  gate and the break went live. The check reads **the draft on the instance**
-  (the read `publish` already makes), not your local folder: `workflow.json` is
-  a snapshot, so grading it would pass a broken workflow on a stale mirror and
-  block a legitimate publish from a fresh clone.
-
-### Added
-
-- **`init` now scaffolds a hook that catches stranded `$('…')` references right
-  after a rename.** n8n's `renameNode` MCP op rewrites the node name and the
-  connections only, so the references it leaves behind used to surface at the
-  next `push` — arbitrarily far from the rename that caused them. On Claude Code
-  a PostToolUse hook on `update_workflow` now reports them immediately, split
-  into the two halves and in the order they must be repaired: other nodes'
-  expression parameters in n8n first, then the code files here, then `push`.
-
-  It scans for the old name instead of running `preflight`, deliberately: the
-  hook fires before the background snapshot refresh, and until that lands the
-  snapshot still carries the old name, so every reference still resolves and
-  `preflight` would report clean. Silent when nothing references the renamed
-  node. The checklist in the scaffolded `AGENTS.md` remains the contract for
-  every agent — the hook is a reminder, not a replacement.
-
 ### Added
 
 - **`scenario create <workflow> "<slug>" --extend`** — top an **existing**
@@ -208,6 +141,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Note the ordering trap, now documented in the troubleshooting FAQ: a missing
   or stale token still returns 401 while MCP is off, so the 401 can hide the 403.
+
+## [0.9.0] - 2026-08-04
+
+### Changed
+
+- **The agent guard now refuses a `publish_workflow` that would take a broken
+  draft live.** `publish` already checked, but the raw MCP tool went straight
+  through the guard — so an agent could go live around the verb and ship exactly
+  the breakage the check exists to catch. Both transports (`mcp connect` and
+  `mcp serve`) run the same check on the same shared code.
+
+  **Fail-closed:** if the check itself cannot run — n8n unreachable — the publish
+  is refused too, and the message says the *check* failed rather than claiming
+  the workflow is broken. A read that fails almost certainly means the publish
+  would have failed anyway, and "couldn't verify, so we shipped it" is not a gate.
+
+- **Dangling-reference checks now cover all four forms n8n rewrites on a rename**
+  — `` $('X') `` (as before) plus `$node["X"]`, `$node.X` and `$items('X')`.
+  Previously only the first was detected, so a rename could strand a `$node[…]`
+  call site that nothing reported: `preflight`, `push`, `test` and `publish` all
+  passed it, and it failed at run time instead. The rule is n8n's own — its
+  rewriter handles exactly these four — so if n8n treats it as a reference, the
+  guard now does too.
+
+  **This can surface errors in workflows that passed before.** A `$node["Old"]`
+  reference to a node that no longer exists is a hard compliance error, which
+  `--force` does not bypass. The message quotes the reference **as written**, so
+  it is clear which form triggered it. Computed references (`$(someVar)`, a
+  template literal with `${…}`) are still left alone — a regex cannot resolve
+  them, and n8n has the same limit.
+
+- **Breaking: `n8n-decanter test <workflow>` no longer executes.** It used to
+  fall back to the newest capture under `executions/` and run the workflow for
+  real on your instance — a directory that is gitignored, so the same commit
+  behaved differently for different people, and a bare verb had real side
+  effects. Bare `test` is now a **static tier**: it reads the instance's draft,
+  reports dangling `$('…')` references, and runs nothing. Pass
+  `--execution <id>` or `--scenario <slug>` for the pinned run, which is
+  otherwise unchanged. There is no deprecation shim — a `test` that still
+  executed *sometimes* would keep exactly the ambiguity this removes.
+
+  The pinned run now also does the static check first, so a draft already known
+  to be broken is never fired at the instance.
+- **`publish` refuses a draft carrying a dangling `$('…')` reference.**
+  Previously nothing checked: the compliance guard runs on `push`, `preflight`
+  and `backup` — not `publish` — so a task that only renamed nodes never hit a
+  gate and the break went live. The check reads **the draft on the instance**
+  (the read `publish` already makes), not your local folder: `workflow.json` is
+  a snapshot, so grading it would pass a broken workflow on a stale mirror and
+  block a legitimate publish from a fresh clone.
+
+### Added
+
+- **`init` now scaffolds a hook that catches stranded `$('…')` references right
+  after a rename.** n8n's `renameNode` MCP op rewrites the node name and the
+  connections only, so the references it leaves behind used to surface at the
+  next `push` — arbitrarily far from the rename that caused them. On Claude Code
+  a PostToolUse hook on `update_workflow` now reports them immediately, split
+  into the two halves and in the order they must be repaired: other nodes'
+  expression parameters in n8n first, then the code files here, then `push`.
+
+  It scans for the old name instead of running `preflight`, deliberately: the
+  hook fires before the background snapshot refresh, and until that lands the
+  snapshot still carries the old name, so every reference still resolves and
+  `preflight` would report clean. Silent when nothing references the renamed
+  node. The checklist in the scaffolded `AGENTS.md` remains the contract for
+  every agent — the hook is a reminder, not a replacement.
+
+### Fixed
 
 - **Corrected the rename guidance: n8n's `renameNode` MCP op does NOT rewrite
   `$('…')` references.** The scaffolded agent guide (and the 0.6.0 notes below)
