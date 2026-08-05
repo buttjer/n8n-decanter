@@ -242,6 +242,37 @@ action: a switched-off MCP server answers **403**, never 404, and decanter has
 no message for it → [Plan 74](../done/74-mcp-disabled-403.md) (**since fixed**).
 `AGENTS.md`'s "404 when disabled" claim is corrected in the same change.
 
+### Task 9 — the verifier learns the wave-2 invariants (2026-08-05)
+
+Pulled forward by the **first round** (`ftrun-29773`, S11 PASS / S13 FAIL): its
+only FAIL came from **our own scenario declaration**, not the product, and
+everything usable had to be read out of transcripts by hand. Landed:
+
+- **Fetched caches never committed** — `workflows/<slug>/executions/` and the
+  sync-dir's `data-tables/`. A capture can carry production payloads, so a commit
+  is a *leak*, and `git add -A` past a self-gitignore is a thing agents do.
+- **Committed scenarios are structurally valid** — a hand-rolled shape check, not
+  an import of `lib/simulate.mts`: the oracle stays independent of the code under
+  test, so a bug that makes the CLI accept a malformed scenario cannot also make
+  the verifier accept it.
+- Both are asserted **before the instance is touched**, so a scenario whose whole
+  premise is a broken instance (S13) still gets its local hygiene graded instead
+  of being short-circuited by the failed remote read.
+- **Read-only scenarios prove they wrote nothing** — `readOnly: true` in the
+  spine makes `run.mts` snapshot each verified workflow's draft `versionId`
+  *after* the pre-hook, and `verify.mts --expect-unchanged <id>=<ver>` fails if it
+  moved. `preflight`, `diff` and `executions` all document that they never write;
+  nothing checked it, and "the verb quietly pushed" is invisible in a transcript
+  full of successful-looking output. S9 and S12 declare it.
+- **`verifyWorkflows: "none"`** is now a real answer, distinct from `[]` (which
+  resolves to "verify every folder"). S13 uses it, and its turn 1 now targets a
+  workflow that is actually tracked — the two authoring bugs the round exposed.
+
+Seven cases in [`test/unit/field-verify.test.mts`](../../test/unit/field-verify.test.mts)
+drive the real `verify.mts` as a subprocess against hand-broken fixtures, so each
+new invariant is **demonstrated to fail when violated** — acceptance criterion 4,
+met before a round pays for it.
+
 **Still to build:** the corpus seed-pack loader and its vet/modernize pass
 (Tasks 5 + 6) and `fill-backup-store`, which gate **S7, S10 and S12** — wave 2b.
 

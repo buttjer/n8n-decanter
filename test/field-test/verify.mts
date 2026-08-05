@@ -69,7 +69,21 @@ const outFile = flag("--out");
  * grader's job, from the transcript.
  */
 const expectDrift = flag("--expect-drift");
-const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--scenario" && argv[i - 1] !== "--out" && argv[i - 1] !== "--expect-drift");
+/**
+ * `--expect-unchanged <workflowId>=<versionId>`: this scenario is supposed to be
+ * READ-ONLY on the instance, and this is the draft version it started on
+ * (Plan 61 task 9). `preflight`, `diff` and `executions` all document that they
+ * never write; nothing has ever checked it, and "the verb quietly pushed" is
+ * invisible in a transcript full of successful-looking output. Repeatable so a
+ * scenario can pin several workflows.
+ */
+const expectUnchanged = new Map<string, string>();
+for (const [i, a] of argv.entries()) {
+  if (a !== "--expect-unchanged") continue;
+  const [id, version] = (argv[i + 1] ?? "").split("=");
+  if (id && version) expectUnchanged.set(id, version);
+}
+const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--scenario" && argv[i - 1] !== "--out" && argv[i - 1] !== "--expect-drift" && argv[i - 1] !== "--expect-unchanged");
 const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 const wantedIds = positional.slice(1);
 if (!manifestPath) {
@@ -104,7 +118,7 @@ function splitMarker(code: string): { body: string; markerHash: string | null } 
 }
 
 // ---------- REST read (byte-exact remote jsCode; AGENTS "Node source fidelity is exact") ----------
-async function getRemote(id: string): Promise<{ nodes: Array<{ id: string; name: string; type: string; parameters?: { jsCode?: string } }> }> {
+async function getRemote(id: string): Promise<{ versionId?: string; nodes: Array<{ id: string; name: string; type: string; parameters?: { jsCode?: string } }> }> {
   if (KEY === "") throw new Error("manifest has no apiKey — REST read needs a public API key (stage mints a scoped one)");
   const res = await fetch(`${HOST}/api/v1/workflows/${encodeURIComponent(id)}`, {
     headers: { "X-N8N-API-KEY": KEY, accept: "application/json" },
@@ -148,6 +162,80 @@ async function decanterJsonHandEdited(slug: string): Promise<{ ok: boolean; deta
   }
 }
 
+/**
+ * Did any commit touch the fetched-data caches? (Plan 61 task 9.)
+ *
+ * `workflows/<slug>/executions/` and the sync-dir's `data-tables/` are working
+ * data, self-gitignored. A real capture can carry production payloads, so a
+ * commit is a **leak**, not untidiness — and `git add -A` past an ignore file is
+ * a thing agents do.
+ */
+async function cachesCommitted(slug: string): Promise<{ ok: boolean; detail: string }> {
+  const paths = [path.posix.join(manifest.root ?? "workflows", slug, "executions"), "data-tables"];
+  const offenders: string[] = [];
+  for (const rel of paths) {
+    try {
+      const { stdout } = await execFile("git", ["-C", manifest.workDir, "log", "--format=%h", "--", rel]);
+      if (stdout.trim() !== "") offenders.push(`${rel} (${stdout.trim().split("\n").length} commit(s))`);
+    } catch {
+      // no git, or the path never existed — nothing committed either way
+    }
+  }
+  return offenders.length === 0
+    ? { ok: true, detail: "executions/ and data-tables/ are untracked, as designed" }
+    : { ok: false, detail: `fetched data reached git: ${offenders.join(", ")}` };
+}
+
+/**
+ * Are the COMMITTED scenarios loadable? (Plan 61 task 9.)
+ *
+ * Deliberately a hand-rolled shape check, not an import of `lib/simulate.mts`:
+ * this oracle stays independent of the code under test, so a bug that makes the
+ * CLI accept a malformed scenario cannot also make the verifier accept it.
+ * Returns null when the folder has no scenarios (nothing to assert).
+ */
+function scenariosValid(dir: string): { ok: boolean; detail: string } | null {
+  const scenDir = path.join(dir, "scenarios");
+  if (!existsSync(scenDir)) return null;
+  const files = readdirSync(scenDir).filter((f) => f.endsWith(".json"));
+  if (files.length === 0) return null;
+  const problems: string[] = [];
+  for (const file of files) {
+    let exec: unknown;
+    try {
+      exec = JSON.parse(readFileSync(path.join(scenDir, file), "utf8"));
+    } catch (err) {
+      problems.push(`${file}: not JSON (${(err as Error).message.split("\n")[0]})`);
+      continue;
+    }
+    const runData = (exec as { data?: { resultData?: { runData?: unknown } } })?.data?.resultData?.runData;
+    if (!runData || typeof runData !== "object" || Array.isArray(runData)) {
+      problems.push(`${file}: no data.resultData.runData object`);
+      continue;
+    }
+    for (const [node, runs] of Object.entries(runData as Record<string, unknown>)) {
+      if (!Array.isArray(runs)) { problems.push(`${file}: ${node} is not an array of runs`); continue; }
+      for (const [i, r] of runs.entries()) {
+        const main = (r as { data?: { main?: unknown } })?.data?.main;
+        if (!Array.isArray(main)) { problems.push(`${file}: ${node} run ${i} has no data.main array`); continue; }
+        for (const out of main) {
+          if (out === null) continue; // an unused output is legitimately null
+          if (!Array.isArray(out)) { problems.push(`${file}: ${node} run ${i} output is neither array nor null`); continue; }
+          for (const it of out) {
+            if (!it || typeof it !== "object" || Array.isArray(it) || !("json" in it)) {
+              problems.push(`${file}: ${node} run ${i} has an item without a "json" field`);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  return problems.length === 0
+    ? { ok: true, detail: `${files.length} scenario(s) parse and carry well-formed runData` }
+    : { ok: false, detail: problems.slice(0, 4).join("; ") };
+}
+
 // ---------- checks ----------
 interface Check { name: string; ok: boolean; detail: string }
 interface WorkflowResult { slug: string; workflowId: string; checks: Check[]; evidence: { historyVersions: number | null; historyNote: string } }
@@ -177,7 +265,16 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
     detail: nonPlaceholder.length === 0 ? `${codeNodes.length} Code node(s), all //@file:` : `inline code leaked into workflow.json for: ${nonPlaceholder.map((n) => n.name).join(", ")}`,
   });
 
-  // 2/3/4. remote code vs local file, per state node
+  // 2. LOCAL hygiene, asserted before the instance is touched (Plan 61 task 9).
+  //    Deliberately ahead of the remote read: these are local invariants, and a
+  //    scenario whose whole point is a broken instance (S13) must still have
+  //    them graded rather than short-circuited by an unreachable host.
+  const cached = await cachesCommitted(slug);
+  checks.push({ name: "fetched caches never committed (executions/, data-tables/)", ok: cached.ok, detail: cached.detail });
+  const scen = scenariosValid(dir);
+  if (scen !== null) checks.push({ name: "committed scenarios are structurally valid", ok: scen.ok, detail: scen.detail });
+
+  // 3/4/5. remote code vs local file, per state node
   let remote: Awaited<ReturnType<typeof getRemote>>;
   try {
     remote = await getRemote(id);
@@ -186,6 +283,19 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
     const evidence = await historyEvidence(id);
     return { slug, workflowId: id, checks, evidence: { historyVersions: evidence.versions, historyNote: evidence.note } };
   }
+  // A read-only scenario must leave the draft exactly where it found it.
+  const baseline = expectUnchanged.get(id);
+  if (baseline !== undefined) {
+    const now = remote.versionId ?? "(none)";
+    checks.push({
+      name: "read-only scenario: the instance draft never moved",
+      ok: now === baseline,
+      detail: now === baseline
+        ? `versionId still ${baseline.slice(0, 8)}… — nothing was written`
+        : `versionId moved ${baseline.slice(0, 8)}… → ${now.slice(0, 8)}… — something WROTE during a scenario that only reads`,
+    });
+  }
+
   const remoteById = new Map(remote.nodes.map((n) => [n.id, n]));
   for (const [nodeId, node] of Object.entries(state.nodes)) {
     const localPath = path.join(dir, node.file);
@@ -245,6 +355,7 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
   // 5. .decanter.json never hand-edited (git history)
   const handEdit = await decanterJsonHandEdited(slug);
   checks.push({ name: ".decanter.json only via decanter: auto-commits", ok: handEdit.ok, detail: handEdit.detail });
+
 
   const evidence = await historyEvidence(id);
   return { slug, workflowId: id, checks, evidence: { historyVersions: evidence.versions, historyNote: evidence.note } };

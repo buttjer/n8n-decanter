@@ -84,7 +84,7 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresSeedKinds?: string[] }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresSeedKinds?: string[]; readOnly?: boolean }
 
 /**
  * Which workflow the `remote-drift` preHook edits — kept in one place so the
@@ -654,6 +654,29 @@ function misrouteMcp(): void {
   console.log("  misroute-mcp: .mcp.json now points straight at n8n — the guard is out of the path");
 }
 
+/**
+ * Current draft `versionId` per workflow, read over the public API — the
+ * baseline a read-only scenario is graded against (Plan 61 task 9). Best effort:
+ * a workflow we cannot read is left out rather than failing the round, since the
+ * invariant is "nothing moved", not "everything was readable".
+ */
+async function draftVersions(ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const id of ids) {
+    try {
+      const res = await fetch(`${manifest.host.replace(/\/+$/, "")}/api/v1/workflows/${encodeURIComponent(id)}`, {
+        headers: { "X-N8N-API-KEY": manifest.apiKey, accept: "application/json" },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) continue;
+      const { versionId } = (await res.json()) as { versionId?: string };
+      if (typeof versionId === "string") out.set(id, versionId);
+    } catch { /* unreadable — skip; the check simply won't be asserted for it */ }
+  }
+  if (out.size > 0) console.log(`  read-only baseline: ${[...out].map(([id, v]) => `${id}@${v.slice(0, 8)}`).join(", ")}`);
+  return out;
+}
+
 const PRE_HOOKS: Record<string, () => Promise<void>> = {
   "remote-drift": remoteDrift,
   "seed-capture": seedCapture,
@@ -793,6 +816,11 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
 
   if (scn.preHook !== undefined) await PRE_HOOKS[scn.preHook]();
 
+  // A read-only scenario pins the instance state it starts from, so the verifier
+  // can prove nothing wrote (Plan 61 task 9). Taken AFTER the pre-hook — the hook
+  // is the harness deliberately mutating, and that is not what is under test.
+  const baselines = scn.readOnly === true ? await draftVersions(resolveVerifyScope(scn)) : new Map<string, string>();
+
   // The STAGE now pre-runs `init`, so .claude/ + .mcp.json exist before the agent
   // starts — wire the allow-extension + guard-stderr capture up front (idempotent,
   // so re-running it per scenario is harmless).
@@ -814,6 +842,16 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
   }
 
   // scripted invariant verifier
+  //
+  // `"none"` is a real answer, not a missing one (Plan 61 task 9): a scenario
+  // whose whole point is that the environment is broken cannot leave verifiable
+  // local state, and running the verifier anyway produced a FAIL that read like
+  // a product defect and was an authoring error (S13, round ftrun-29773).
+  // Distinct from `[]`, which resolves to "verify every folder".
+  if (scn.verifyWorkflows === "none") {
+    console.log(`  verify skipped — ${id} declares verifyWorkflows "none" (graded from the transcript)`);
+    return { id, verifyExit: null, turns: turns.length };
+  }
   const verifyOut = path.join(HARNESS, `verify-${id}.json`);
   let verifyExit: number | null = null;
   try {
@@ -825,6 +863,7 @@ async function runScenario(id: string): Promise<{ id: string; verifyExit: number
       const target = driftTargetId();
       if (target) args.push("--expect-drift", target);
     }
+    for (const [id, version] of baselines) args.push("--expect-unchanged", `${id}=${version}`);
     args.push(...resolveVerifyScope(scn));
     const { stdout, stderr } = await execFile(process.execPath, args, { encoding: "utf8" });
     console.log(stdout + stderr);
