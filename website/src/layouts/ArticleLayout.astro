@@ -31,9 +31,11 @@ const dateLabel = date
 
 <BaseLayout title={`${title} · n8n-decanter`} description={description} noindex>
   <div class="mx-auto w-full max-w-2xl px-4 py-12 sm:px-6">
-    <p class="mb-6 text-xs tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-      Unlisted{dateLabel && ` · ${dateLabel}`}
-    </p>
+    {
+      dateLabel && (
+        <p class="mb-6 text-xs tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{dateLabel}</p>
+      )
+    }
     <article
       class="prose prose-zinc dark:prose-invert max-w-none prose-headings:tracking-tight prose-a:text-accent-700 dark:prose-a:text-accent-300 prose-code:before:content-none prose-code:after:content-none"
     >
