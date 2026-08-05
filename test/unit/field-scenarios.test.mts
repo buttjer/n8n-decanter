@@ -82,8 +82,10 @@ describe("field-test scenario pack", () => {
 
       it("declares a verify scope", () => {
         const { verifyWorkflows } = spineOf(file);
-        const ok = verifyWorkflows === "all" || (Array.isArray(verifyWorkflows) && verifyWorkflows.length > 0);
-        assert.ok(ok, `${file}: verifyWorkflows must be "all" or a non-empty array of manifest kinds`);
+        // "none" is an explicit answer for a scenario that leaves no verifiable
+        // local state; `[]` is NOT — it resolves to "verify every folder".
+        const ok = verifyWorkflows === "all" || verifyWorkflows === "none" || (Array.isArray(verifyWorkflows) && verifyWorkflows.length > 0);
+        assert.ok(ok, `${file}: verifyWorkflows must be "all", "none", or a non-empty array of manifest kinds`);
       });
 
       it("only requires scenarios that exist", () => {
