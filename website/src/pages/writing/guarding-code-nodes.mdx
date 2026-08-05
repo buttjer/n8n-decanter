@@ -1,18 +1,18 @@
 ---
 layout: ../../layouts/ArticleLayout.astro
-title: "Your agent can rewire the workflow. It can't own the code."
+title: "Your Code nodes want to be files"
 description: "n8n ships an MCP server, so a coding agent can edit workflows directly. That works right up until it reaches a Code node — and the fix is to take exactly one write away from it."
 standfirst: "n8n ships an MCP server, so a coding agent can edit your workflows directly. That works right up until it reaches a Code node."
 date: "2026-07-27"
 ---
 
-import DiffHero from "../../components/DiffHero.astro";
 import GuardDemo from "../../components/GuardDemo.astro";
+import NodeFileHero from "../../components/NodeFileHero.astro";
 import PublishGateDemo from "../../components/PublishGateDemo.astro";
 import SplitMap from "../../components/SplitMap.astro";
 
 <div class="not-prose mt-2 mb-10">
-  <DiffHero />
+  <NodeFileHero />
 </div>
 
 n8n is the best thing that happened to the boring half of my work. Hundreds of
