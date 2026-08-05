@@ -104,6 +104,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`pull` no longer destroys uncommitted local edits.** It committed the folder
+  *after* overwriting it, so an uncommitted `.js` edit was gone and had never
+  entered git — while the warning printed on that exact path told you to
+  "recover via git". Pull now takes a **snapshot commit before it writes
+  anything** (`watch` and the live mirror already did). If the snapshot cannot be
+  made — no git repo, `commitOnPull: false`, a git error — the pull still runs,
+  but the warning says the overwrite is **not** recoverable instead of promising
+  a safety net that isn't there.
+
+- **`pull`'s clobber warning now fires for a node it has never synced.** It was
+  gated on the node already having a sync baseline, which is backwards on the
+  read side: no baseline means the node isn't in `.decanter.json` yet, so the
+  local file is precisely the one with no protection. The loss path this opened
+  matches the scaffolded agent workflow exactly — an agent adds a Code node over
+  the guard (the guard blocks `jsCode`, so the remote body is empty), writes the
+  source into `code/<node>.js`, and a background mirror pull lands before the
+  first push: fresh file replaced by the empty remote body, silently.
+
+- **The live mirror stops refreshing when its safety commit fails.** It awaited
+  the commit and discarded the result, but that call returns a failure (it never
+  throws) for any git error — unset identity, a mid-merge tree, `index.lock`, a
+  rejecting hook. The documented "a dirty tree is safety-committed before the
+  pull" rail therefore degraded silently into an unrecoverable overwrite. It now
+  skips the refresh and says why, matching `watch`.
+
 - **Scenario gaps are now judged per branch, not per node.** A branching node
   (an `IF`, a `Switch`) emits on **one** output per run, but `preflight
   --simulate` and `scenario create --execution` read its *first* output for every

@@ -3,13 +3,16 @@
 // skip rails — all driven through injected seams (fake clock, stub refresh,
 // stub git probe) so no ports, real git, or MCP are needed.
 import assert from "node:assert/strict";
+import { execFile as execFileCb } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 import { createMirror, type MirrorClock } from "../../lib/mirror.mts";
 import type { Log } from "../../lib/types.mts";
 
+const execFile = promisify(execFileCb);
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-mirror-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
@@ -125,6 +128,43 @@ describe("createMirror", () => {
     await mirror.drain();
     assert.deepEqual(calls, [], "no refresh without git");
     assert.equal(rec.warns.filter((w) => w.includes("no git")).length, 1, "warned once");
+  });
+
+  // Plan 63 task 3. The `isGitRepo` rail above covers "no repo at all"; this is
+  // the other half — a repo whose COMMIT fails (unset identity, index.lock, a
+  // rejecting hook). `commitWorkflowDir` returns "failed" and never throws, and
+  // the result used to be awaited and discarded, so the documented "a dirty tree
+  // is safety-committed before the pull" rail degraded into an unrecoverable
+  // overwrite. Drives the REAL `defaultRefresh` (no `refresh` stub): if the skip
+  // regresses, `pullWorkflow` runs against `mcp: {}` and the test blows up.
+  it("skips the refresh when the safety commit FAILS, not just when git is absent", async () => {
+    const root = mkdtempSync(path.join(TMP, "root-"));
+    const dir = path.join(root, "wf");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, ".decanter.json"), JSON.stringify({ workflowId: "wf-a", nodes: {} }));
+    await execFile("git", ["-C", root, "init", "-q"]);
+    await execFile("git", ["-C", root, "config", "user.email", "t@example.com"]);
+    await execFile("git", ["-C", root, "config", "user.name", "T"]);
+    // a pre-commit hook that always refuses — the deterministic stand-in for
+    // every real way a commit fails
+    const hooks = path.join(root, "refusing-hooks");
+    mkdirSync(hooks, { recursive: true });
+    writeFileSync(path.join(hooks, "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    await execFile("git", ["-C", root, "config", "core.hooksPath", hooks]);
+    writeFileSync(path.join(dir, "dirty.js"), "return [];\n"); // something to commit
+
+    const { clock } = fakeClock();
+    const rec = recordingLog();
+    const mirror = createMirror({
+      mcp: {} as never, root, workflows: ["wf-a"], commitOnPull: true, liveMirror: true,
+      log: rec.log, clock, isGitRepo: async () => true,
+    });
+    mirror.schedule("wf-a");
+    await mirror.drain();
+    assert.ok(
+      rec.warns.some((w) => /no git safety net/.test(w)),
+      `expected the refresh to be skipped with a named reason, got: ${rec.warns.join(" | ")}`,
+    );
   });
 
   it("never runs two refreshes for one workflow at once — a mid-pull burst re-runs once", async () => {
