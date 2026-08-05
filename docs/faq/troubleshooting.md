@@ -82,6 +82,11 @@ The **404** means there is no MCP server at that address at all — check
 (~2.20+) to ship the built-in MCP server. A server that exists but is switched
 off answers **403**, not 404 (see above).
 
+A 401 means the credentials **exist and were rejected** — most often a rotated
+token. It does **not** mean the project was never configured, and being unable to
+read `.env` (the scaffolded deny rules block it) is not evidence either way. If
+you are an agent: ask the user rather than inferring.
+
 The **401** means the token is wrong — note that the **public API key is not a
 valid MCP token**; mint one under n8n → Settings → MCP → API key, or re-run
 [init](/docs/cli/init/) for OAuth.

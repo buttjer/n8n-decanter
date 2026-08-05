@@ -100,6 +100,15 @@ is **wrong** about how Code-node code is stored and edited here. The deviations:
 > If a write is blocked with a `decanter-guard` reason, the edit broke a hard rule —
 > fix the edit, don't work around the guard.
 
+> **`.env` is unreadable to you, and that is not evidence it is missing.**
+> Credentials live in `.env` at the sync-dir root; the deny rules block you from
+> reading *or* editing it, on purpose. So **never conclude "this project was
+> never set up" from being unable to see it** — a blind field-test round watched
+> an agent do exactly that after a 401, and send its user through a pointless
+> `init`. A 401 means the credentials **exist and were rejected** (usually a
+> rotated token: mint a fresh one in n8n → Settings → MCP). If you genuinely need
+> to know whether a credential is present, ask the user — do not infer it.
+
 ## n8n MCP tools & official n8n skills — the boundary
 
 This repo pairs with n8n's own agent surface: the built-in **n8n MCP server**

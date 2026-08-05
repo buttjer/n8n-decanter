@@ -121,9 +121,17 @@ export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input =
     if (sid !== null) sessionId = sid;
     const text = await res.text().catch(() => "");
     if (!res.ok) {
+      // 401/403 lead with the CAUSE, not with `init`. A blind round (ftrun-73440)
+      // watched an agent read the old "run `n8n-decanter init`" wording and tell
+      // its user the project "has never been set up — no .env, no token", when
+      // the .env existed and was correct: the token had merely been rotated. The
+      // CLI's own 401 says the right thing; this one has to match it, because it
+      // is the message an agent sees FIRST.
       const detail = res.status === 401
-        ? "decanter's MCP credentials were rejected (401) — run `n8n-decanter init` (or refresh N8N_MCP_TOKEN)"
-        : `n8n answered ${res.status} ${res.statusText}${text !== "" ? `: ${text.slice(0, 300)}` : ""}`;
+        ? "n8n rejected decanter's existing MCP credentials (401) — they are configured but no longer valid. Mint a fresh token in n8n (Settings → MCP) and update N8N_MCP_TOKEN, or re-run `n8n-decanter init` for OAuth. This is NOT a missing-setup error."
+        : res.status === 403
+          ? `n8n refused the request (403)${text !== "" ? `: ${text.slice(0, 200)}` : ""} — MCP access is switched off for this instance (n8n → Settings → MCP), or this token's user lacks access`
+          : `n8n answered ${res.status} ${res.statusText}${text !== "" ? `: ${text.slice(0, 300)}` : ""}`;
       log.warn(detail);
       for (const id of ids) emit(rpcError(id, UPSTREAM_ERROR, detail));
       return;
