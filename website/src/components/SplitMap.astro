@@ -1,0 +1,110 @@
+---
+// Static map of the split the article argues for: agent → decanter (MCP
+// guard) on the tool plane; git repo → decanter (sync) → the Code node's
+// jsCode field on the file plane. n8n owns structure, git owns code, and the
+// two meet at exactly one field. Deliberately still: the demos animate
+// sequences; this is the topology.
+//
+// One portrait layout for every width. A wider two-plane variant existed,
+// but the article column caps at ~640px, so it always rendered at ~0.7×
+// (~8px text) and fell back to sideways scrolling on tablets — the diamond
+// is the more legible form at any size this page can actually offer.
+---
+
+<div class="mx-auto w-full max-w-3xl rounded-xl border border-zinc-800 bg-zinc-950 p-4 shadow-lg sm:p-6">
+  <svg
+    id="split-map"
+    viewBox="0 0 400 560"
+    role="img"
+    aria-label="Diagram: a coding agent speaks MCP to n8n-decanter, which forwards structure operations to n8n and refuses the one write that sets jsCode, answering with the file path instead. The agent edits code files in the git repo; push compiles them into the Code node's jsCode field on the draft; pull mirrors the structure back into a read-only workflow.json."
+    class="mx-auto h-auto w-full max-w-[460px]"
+  >
+    <defs>
+      <marker id="ah-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0L10,5L0,10z" fill="#71717a"></path>
+      </marker>
+      <marker id="ah-grn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0L10,5L0,10z" fill="#34d399"></path>
+      </marker>
+      <marker id="ah-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0L10,5L0,10z" fill="#f87171"></path>
+      </marker>
+    </defs>
+
+    <!-- agent -->
+    <rect x="100" y="14" width="200" height="56" rx="8" fill="#18181b" stroke="#3f3f46"></rect>
+    <text x="200" y="38" text-anchor="middle" class="pur b s13">coding agent</text>
+    <text x="200" y="56" text-anchor="middle" class="dim s11">any MCP client</text>
+
+    <!-- agent ⇄ decanter, agent → repo -->
+    <line x1="160" y1="72" x2="160" y2="126" stroke="#71717a" stroke-width="1.5" marker-end="url(#ah-dim)"></line>
+    <text x="168" y="102" class="dim s11">MCP</text>
+    <line x1="140" y1="126" x2="140" y2="72" stroke="#f87171" stroke-width="1.5" marker-end="url(#ah-red)"></line>
+    <text x="132" y="102" text-anchor="end" class="red s11">⊘ jsCode write</text>
+    <line x1="280" y1="72" x2="280" y2="126" stroke="#71717a" stroke-width="1.5" marker-end="url(#ah-dim)"></line>
+    <text x="288" y="102" class="dim s11">edits the files</text>
+
+    <!-- decanter -->
+    <rect x="12" y="128" width="190" height="168" rx="8" fill="#18181b" stroke="#3f3f46"></rect>
+    <text x="107" y="150" text-anchor="middle" class="w b s13">n8n-decanter</text>
+    <line x1="12" y1="158" x2="202" y2="158" stroke="#27272a"></line>
+    <text x="107" y="174" text-anchor="middle" class="dim s11">MCP guard</text>
+    <text x="107" y="193" text-anchor="middle" class="grn">✓ forwards everything</text>
+    <text x="107" y="211" text-anchor="middle" class="red">⊘ refuses jsCode writes</text>
+    <text x="107" y="228" text-anchor="middle" class="dim s11">publish gated — read first</text>
+    <line x1="12" y1="236" x2="202" y2="236" stroke="#27272a"></line>
+    <text x="107" y="252" text-anchor="middle" class="dim s11">sync — the files</text>
+    <text x="107" y="270" text-anchor="middle" class="grn s11">push → jsCode</text>
+    <text x="107" y="286" text-anchor="middle" class="dim s11">pull ← mirror</text>
+
+    <!-- repo ⇄ decanter stubs -->
+    <line x1="218" y1="266" x2="206" y2="266" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah-grn)"></line>
+    <line x1="202" y1="282" x2="214" y2="282" stroke="#71717a" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#ah-dim)"></line>
+
+    <!-- repo -->
+    <rect x="218" y="128" width="170" height="168" rx="8" fill="#18181b" stroke="#3f3f46"></rect>
+    <text x="303" y="150" text-anchor="middle" class="blu b s13">git — owns the code</text>
+    <text x="228" y="176" class="w">code/score-risk.ts</text>
+    <text x="228" y="194" class="w">shared/money.ts</text>
+    <text x="228" y="212"><tspan class="w">workflow.json</tspan><tspan class="dim"> · mirror</tspan></text>
+    <text x="228" y="236" class="dim s11">PR review happens here</text>
+
+    <!-- decanter → n8n -->
+    <line x1="56" y1="298" x2="56" y2="350" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah-grn)"></line>
+    <text x="64" y="328" class="grn s11">structure ✓</text>
+    <line x1="150" y1="298" x2="150" y2="350" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah-grn)"></line>
+    <text x="158" y="328" class="grn s11">push → jsCode</text>
+
+    <!-- n8n -->
+    <rect x="12" y="352" width="376" height="192" rx="8" fill="#18181b" stroke="#3f3f46"></rect>
+    <text x="200" y="376" text-anchor="middle" class="w b s13">n8n — owns the structure</text>
+    <rect x="28" y="390" width="70" height="24" rx="5" fill="#27272a" stroke="#52525b"></rect>
+    <text x="63" y="406" text-anchor="middle" class="w s11">Webhook</text>
+    <rect x="112" y="390" width="84" height="24" rx="5" fill="#27272a" stroke="#52525b"></rect>
+    <text x="154" y="406" text-anchor="middle" class="w s11">Normalize</text>
+    <line x1="98" y1="402" x2="112" y2="402" stroke="#52525b"></line>
+    <line x1="154" y1="414" x2="154" y2="432" stroke="#52525b"></line>
+    <rect x="28" y="432" width="344" height="58" rx="6" fill="#1f1f23" stroke="#71717a"></rect>
+    <text x="200" y="450" text-anchor="middle" class="w">Score risk — Code node</text>
+    <rect x="20" y="458" width="344" height="24" rx="4" fill="#09090b" stroke="#34d399" stroke-opacity="0.55"></rect>
+    <text x="30" y="474"><tspan class="grn">[ </tspan><tspan class="w">jsCode</tspan><tspan class="grn"> ]</tspan><tspan class="dim"> — the one field</tspan></text>
+    <text x="200" y="522" text-anchor="middle" class="dim s11">draft first — publish is separate</text>
+  </svg>
+</div>
+
+<style>
+  #split-map text {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    fill: #f4f4f5;
+  }
+  #split-map .b { font-weight: 600; }
+  #split-map .s11 { font-size: 11px; }
+  #split-map .s13 { font-size: 13px; }
+  #split-map .w { fill: #f4f4f5; }
+  #split-map .dim { fill: #71717a; }
+  #split-map .grn { fill: #34d399; }
+  #split-map .red { fill: #f87171; }
+  #split-map .blu { fill: #60a5fa; }
+  #split-map .pur { fill: #c4b5fd; }
+</style>

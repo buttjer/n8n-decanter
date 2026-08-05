@@ -7,11 +7,14 @@ import { href } from "../lib/url";
 interface Props {
   title: string;
   description?: string;
+  /** Keep the page out of search indexes — for unlisted pages shared by link. */
+  noindex?: boolean;
 }
 
 const {
   title,
   description = "The toolkit for building code-heavy n8n workflows — agent-first, MCP-native.",
+  noindex = false,
 } = Astro.props;
 
 // Absolute URL for the social card (needs Astro.site set); 1200×630.
@@ -24,6 +27,9 @@ const ogImage = Astro.site ? new URL(href("/og.png"), Astro.site) : undefined;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    {/* The site deploys under a path on a shared origin, so a repo-owned
+        robots.txt can't reach the crawler — this meta is the real opt-out. */}
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
     <link rel="icon" type="image/svg+xml" href={href("/favicon.svg")} />
     <link rel="sitemap" href={href("/sitemap-index.xml")} />
     <link rel="alternate" type="text/plain" title="llms.txt" href={href("/llms.txt")} />
