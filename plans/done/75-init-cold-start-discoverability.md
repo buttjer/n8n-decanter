@@ -79,8 +79,24 @@ The measurement is turn 1: does the agent reach the non-interactive form while
 still deciding what to tell the user, instead of delegating an interactive
 prompt to a human?
 
-**Not yet run** — the unit/e2e tests prove the messages say the right thing, but
-whether that *changes an agent's turn-1 behaviour* is a blind-round question and
-only a round answers it. Worth carrying along with the next S14 run rather than
-paying for a dedicated one (`plans/done/62` notes these conditions compose at no
-extra turn cost).
+**Run: `ftrun-20442` (2026-08-06), verify PASS — against the packed CLI of this
+branch.** Compare with `ftrun-75467`, the same scenario under the same condition
+before the change.
+
+| | before (`75467`) | after (`20442`) |
+|---|---|---|
+| Turn-1 advice | bare `npx n8n-decanter init`, described as prompting for the host | **both** paths, the second quoted from the new error: `n8n-decanter init . --host <your-n8n-host-url> --token <mcp-token>` |
+| Flag form in turn 1 | absent | present |
+| Where it came from | — | near-verbatim echo of `HOST_UNSET` (`guard.log` shows the two-line message) |
+
+**What did not change, and is worth being honest about:** the agent still hands
+the job back to a human — *"You'll need to run one of these yourself (I can't do
+OAuth or handle secrets)"* — and still lists the interactive path first. It never
+offers to run `init` itself given the values. That last part reads as its own
+policy about secrets rather than a discoverability gap, and the plan's actual
+question ("does it reach the non-interactive form while still deciding what to
+tell the user?") is answered **yes**.
+
+**n = 1.** The verbatim echo makes the causal link hard to argue with, but a
+single Sonnet session cannot establish how reliably it happens. Treat it as one
+consistent data point, not a proven rate.
