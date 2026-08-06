@@ -173,6 +173,31 @@ over a bare `host:port` so the scheme was the agent's to choose.
   `npm pack` is node-tar and never emits one, and `init` from a clean source tree
   produces no such file. Fixed with `COPYFILE_DISABLE=1`.
 
+### Task 3 — S5, the watch loop (`ftrun-78968`, verify PASS)
+
+Kept rather than retired, and the round justified the call: **the agent
+backgrounded `watch` on the first attempt** (`run_in_background: true`, after
+reading `watch --help`) instead of blocking its own tool call. The
+long-running-foreground worry — the whole reason this was a live question — did
+not materialise.
+
+- Full loop worked unaided: `pull` → register in `decanter.config.json` → start
+  `watch` → edit `code/build-digest.js` → read the watch log's
+  `✓ pushed node "Build digest" … unpublished draft` → confirm with `diff`.
+- It offered the **editor deep link** (the checklist item) and never hunted for
+  the removed reload proxy — no stale mental model.
+- Unprompted and correct: the single-writer lock ("if someone else has this open,
+  pushes fail with a lock error — just wait") and draft-vs-published.
+- **One imprecision worth knowing, not a defect:** it told the user "watch pushes
+  verbatim on save — it doesn't run `preflight`, so a broken edit still gets
+  pushed". `pushSingleNode` *does* run the layout-compliance gate
+  (`assertCompliant(validateNodeFile(…))`); what it skips is typecheck and any
+  notion of correctness. The advice it drew from that (`preflight --offline` or
+  `node run` alongside) is sound regardless.
+- **Still unmeasured** — the two checklist items the turns gave it no reason to
+  reach: a `workflow.json` save warning and pushing nothing, and execution after
+  a `publish`. A future S5 variant would have to ask for both explicitly.
+
 ## Notes
 
 - **Cost:** ~3–5 Sonnet sessions plus grading — the small envelope, not a wave.

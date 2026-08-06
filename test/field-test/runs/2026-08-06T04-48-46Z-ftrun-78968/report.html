@@ -1,0 +1,393 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S5" class="navlink pass">S5 <span class="badge pass">PASS</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:49270</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+
+<section id="S5"><h2>S5 <span class="badge pass">PASS</span></h2><div class="persona">same user, wants a live edit→push loop</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">I want to iterate on the 'Build digest' step in 'Weekly digest roll-up' without pushing by hand every time — set it up so my saves just flow through to n8n while I work, then let me know how to see them there.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls -la; echo "---"; find . -maxdepth 2 -iname "*digest*" 2&gt;/dev/null; echo "---"; cat decanter.config.json 2&gt;/dev/null</pre><div class="tres "><span class="tlab">result</span><pre>total 616
+drwxr-xr-x@   23 malte  staff     736 Aug  6 06:48 .
+drwx------@ 2063 malte  staff   66016 Aug  6 06:48 ..
+drwxr-xr-x@    6 malte  staff     192 Aug  6 06:48 .claude
+drwxr-xr-x@    3 malte  staff      96 Aug  6 06:48 .cursor
+-rw-r--r--@    1 malte  staff    1891 Aug  6 06:48 .decanter-template.json
+-rw-r--r--@    1 malte  staff     599 Aug  6 06:48 .env
+drwxr-xr-x@   12 malte  staff     384 Aug  6 06:48 .git
+-rw-r--r--@    1 malte  staff      97 Aug  6 06:48 .gitignore
+-rw-r--r--@    1 malte  staff     341 Aug  6 06:48 .mcp.json
+drwxr-xr-x@    3 malte  staff      96 Aug  6 06:48 .vscode
+-rw-r--r--@    1 malte  staff   39362 Aug  6 06:48 AGENTS.md
+-rw-r--r--@    1 malte  staff    1941 Aug  6 06:48 CLAUDE.md
+drwxr-xr-x@    4 malte  staff     128 Aug  6 06:48 decanter-ts-plugin
+-rw-r--r--@    1 malte  staff      47 Aug  6 06:48 decanter.config.json
+-rw-r--r--@    1 malte  staff  209320 Aug  6 06:48 n8n-decanter-0.9.0.tgz
+-rw-r--r--@    1 malte  staff    7331 Aug  6 06:48 n8n-globals.d.ts
+drwxr-xr-x@    9 malte  staff     288 Aug  6 06:48 node_modules
+-rw-r--r--@    1 malte  staff    1397 Aug  6 06:48 opencode.json
+-rw-r--r--@    1 malte  staff   15270 Aug  6 06:48 package-lock.json
+-rw-r--r--@    1 malte  staff     205 Aug  6 06:48 package.json
+drwxr-xr-x@    4 malte  staff     128 Aug  6 06:48 shared
+-rw-r--r--@    1 malte  staff     613 Aug  6 06:48 tsconfig.json
+drwxr-xr-x@    3 malte  staff      96 Aug  6 06:48 workflows
+---
+---
+{
+  "root": "./workflows",
+  "workflows": []
+}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">find ./workflows -maxdepth 4 | head -100</pre><div class="tres "><span class="tlab">result</span><pre>./workflows
+./workflows/.gitkeep</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">which n8n-decanter 2&gt;/dev/null; echo "---npx check---"; npx n8n-decanter --version 2&gt;&amp;1 | tail -20</pre><div class="tres "><span class="tlab">result</span><pre>/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/node_modules/.bin/n8n-decanter
+---npx check---
+0.9.0</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">The workflow isn't pulled locally yet. Let me find it on the instance and set it up.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter list --remote 2&gt;&amp;1 | head -50</pre><div class="tres "><span class="tlab">result</span><pre>Old contact import  mtg9v9MXkcT8hvTc  (not pulled)
+Weekly digest roll-up  xhpOtLzDGeMtA66n  (not pulled)
+Contact normalizer  xtCF4N9zPvo7dEOt  (not pulled)
+Ad-hoc sandbox  nex8K5gPxiaOeqMg  (not available in MCP)
+to pull a "(not available in MCP)" workflow: enable MCP access from the workflow card in the n8n workflows list (⋯ menu), or from the workflow settings, then retry</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Found it. Pulling it locally now, then I'll add it to the config and check on the "Build digest" node's code file.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter pull xhpOtLzDGeMtA66n 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote weekly-digest-roll-up/code/build-digest.js
+wrote weekly-digest-roll-up/workflow.json
+committed: decanter: pulled "Weekly digest roll-up" (xhpOtLzDGeMtA66n)
+✓ pulled "Weekly digest roll-up" -&gt; /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/workflows/weekly-digest-roll-up (0.1s)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter watch --help 2&gt;&amp;1</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 1
+✗ watch needs exactly one workflow id (pass it, or list a single workflow in decanter.config.json)</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/decanter.config.json</span></summary><pre class="tin diff"><span class="dl ddel">-   <span class="ts">"workflows"</span>: []</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [<span class="ts">"xhpOtLzDGeMtA66n"</span>]</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/workflows/weekly-digest-roll-up/code/build-digest.js</pre><div class="tres "><span class="tlab">result</span><pre>1	// weekly roll-up
+2	return [{ json: { week: 'n/a', total: 0 } }];
+3	</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now starting `watch` in the background so edits to that file sync automatically as you save.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter watch xhpOtLzDGeMtA66n 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>Command running in background with ID: bj0i02mb5. Output is being written to: /private/tmp/claude-501/-private-var-folders--f-2z3htck52yl0j9v4z75lh1080000gn-T-flows-ops-78968/7c42852f-67fc-4752-8d54-7cc7c0b5873a/tasks/bj0i02mb5.output. You will be notified when it completes. To check interim output, use Read on that file path.</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">sleep 2; cat /private/tmp/claude-501/-private-var-folders--f-2z3htck52yl0j9v4z75lh1080000gn-T-flows-ops-78968/7c42852f-67fc-4752-8d54-7cc7c0b5873a/tasks/bj0i02mb5.output 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>pushes update the draft only — run "n8n-decanter publish" to take changes live
+editor: http://127.0.0.1:49270/workflow/xhpOtLzDGeMtA66n
+keep the n8n editor open — it updates live on each push
+watching workflow xhpOtLzDGeMtA66n — 1 Code node in weekly-digest-roll-up/code — Ctrl-C to stop</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">`watch` is running in the background — every save to `code/build-digest.js` now auto-pushes to n8n's draft.
+
+Setup:
+- Pulled **Weekly digest roll-up** (`xhpOtLzDGeMtA66n`) locally — it wasn't synced yet — and registered it in `decanter.config.json`.
+- The one Code node, **Build digest**, is at `workflows/weekly-digest-roll-up/code/build-digest.js`.
+- `n8n-decanter watch xhpOtLzDGeMtA66n` is running in the background (task `bj0i02mb5`); it pushes that file to the workflow's **draft** on every save.
+
+To see your changes land in n8n:
+- Open the editor directly: **http://127.0.0.1:49270/workflow/xhpOtLzDGeMtA66n** — leave it open, it refreshes live as watch pushes.
+- Or run the node from there / use "Test workflow" against the draft to see live output.
+- This only ever touches the **draft**, never what's published — say the word when you want `publish` (or `push --publish`) to make it live.
+
+A couple of things worth knowing while you iterate:
+- Watch pushes verbatim on save — it doesn't run `preflight`, so a broken edit still gets pushed. Worth an occasional `n8n-decanter preflight --offline` alongside it, or `node run workflows/weekly-digest-roll-up/code/build-digest.js` to sanity check output before it goes live for anyone testing the draft.
+- If someone else has this workflow open for editing in n8n, pushes will fail with a lock error — nothing to fix on your end, just wait.
+
+Say the word when you want to stop watching or publish the result.</div></div><div class="msg done"><div class="who">↳ turn result · $0.466</div><div class="bubble">`watch` is running in the background — every save to `code/build-digest.js` now auto-pushes to n8n's draft.
+
+Setup:
+- Pulled **Weekly digest roll-up** (`xhpOtLzDGeMtA66n`) locally — it wasn't synced yet — and registered it in `decanter.config.json`.
+- The one Code node, **Build digest**, is at `workflows/weekly-digest-roll-up/code/build-digest.js`.
+- `n8n-decanter watch xhpOtLzDGeMtA66n` is running in the background (task `bj0i02mb5`); it pushes that file to the workflow's **draft** on every save.
+
+To see your changes land in n8n:
+- Open the editor directly: **http://127.0.0.1:49270/workflow/xhpOtLzDGeMtA66n** — leave it open, it refreshes live as watch pushes.
+- Or run the node from there / use "Test workflow" against the draft to see live output.
+- This only ever touches the **draft**, never what's published — say the word when you want `publish` (or `push --publish`) to make it live.
+
+A couple of things worth knowing while you iterate:
+- Watch pushes verbatim on save — it doesn't run `preflight`, so a broken edit still gets pushed. Worth an occasional `n8n-decanter preflight --offline` alongside it, or `node run workflows/weekly-digest-roll-up/code/build-digest.js` to sanity check output before it goes live for anyone testing the draft.
+- If someone else has this workflow open for editing in n8n, pushes will fail with a lock error — nothing to fix on your end, just wait.
+
+Say the word when you want to stop watching or publish the result.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">change the digest to also include the total record count, save it, and confirm it went through.</div></div><div class="msg done"><div class="who">↳ turn result</div><div class="bubble"></div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat /private/tmp/claude-501/-private-var-folders--f-2z3htck52yl0j9v4z75lh1080000gn-T-flows-ops-78968/7c42852f-67fc-4752-8d54-7cc7c0b5873a/tasks/bj0i02mb5.output 2&gt;&amp;1; echo "---ps check---"; ps aux | grep -i "n8n-decanter watch" | grep -v grep</pre><div class="tres "><span class="tlab">result</span><pre>pushes update the draft only — run "n8n-decanter publish" to take changes live
+editor: http://127.0.0.1:49270/workflow/xhpOtLzDGeMtA66n
+keep the n8n editor open — it updates live on each push
+watching workflow xhpOtLzDGeMtA66n — 1 Code node in weekly-digest-roll-up/code — Ctrl-C to stop
+---ps check---</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">The watch process has died — it's no longer running. I'll restart it, then make the edit and confirm the push goes through (not relying on watch alone since I need positive confirmation anyway).</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter watch xhpOtLzDGeMtA66n 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>Command running in background with ID: bukrc9rw8. Output is being written to: /private/tmp/claude-501/-private-var-folders--f-2z3htck52yl0j9v4z75lh1080000gn-T-flows-ops-78968/7c42852f-67fc-4752-8d54-7cc7c0b5873a/tasks/bukrc9rw8.output. You will be notified when it completes. To check interim output, use Read on that file path.</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/workflows/weekly-digest-roll-up/workflow.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "xhpOtLzDGeMtA66n",
+3	  "name": "Weekly digest roll-up",
+4	  "active": false,
+5	  "isArchived": false,
+6	  "createdAt": "2026-08-06T04:48:41.165Z",
+7	  "updatedAt": "2026-08-06T04:48:41.238Z",
+8	  "nodes": [
+9	    {
+10	      "id": "trig",
+11	      "name": "Schedule",
+12	      "type": "n8n-nodes-base.scheduleTrigger",
+13	      "typeVersion": 1.2,
+14	      "position": [
+15	        0,
+16	        0
+17	      ],
+18	      "parameters": {
+19	        "rule": {
+20	          "interval": [
+21	            {
+22	              "field": "hours"
+23	            }
+24	          ]
+25	        }
+26	      }
+27	    },
+28	    {
+29	      "id": "c1",
+30	      "name": "Build digest",
+31	      "type": "n8n-nodes-base.code",
+32	      "typeVersion": 2,
+33	      "position": [
+34	        220,
+35	        0
+36	      ],
+37	      "parameters": {
+38	        "jsCode": "//@file:code/build-digest.js",
+39	        "mode": "runOnceForAllItems"
+40	      }
+41	    },
+42	    {
+43	      "id": "d1",
+44	      "name": "Done",
+45	      "type": "n8n-nodes-base.noOp",
+46	      "typeVersion": 1,
+47	      "position": [
+48	        440,
+49	        0
+50	      ],
+51	      "parameters": {}
+52	    }
+53	  ],
+54	  "connections": {
+55	    "Build digest": {
+56	      "main": [
+57	        [
+58	          {
+59	            "index": 0,
+60	            "node": "Done",
+61	            "type": "main"
+62	          }
+63	        ]
+64	      ]
+65	    },
+66	    "Schedule": {
+67	      "main": [
+68	        [
+69	          {
+70	            "index": 0,
+71	            "node": "Build digest",
+72	            "type": "main"
+73	          }
+74	        ]
+75	      ]
+76	    }
+77	  },
+78	  "settings": {
+79	    "availableInMCP": true,
+80	    "executionOrder": "v1"
+81	  },
+82	  "meta": null,
+83	  "tags": [],
+84	  "versionId": "c4dbba09-faef-4c7d-9345-4dbbcf928ac9",
+85	  "nodeGroups": [],
+86	  "parentFolderId": null,
+87	  "triggerCount": 0
+88	}
+89	</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/workflows/weekly-digest-roll-up/code/build-digest.js</span></summary><pre class="tin diff"><span class="dl dctx">  <span class="tc">// weekly roll-up</span></span>
+<span class="dl ddel">- <span class="tk">return</span> [{ json: { week: <span class="ts">'n/a'</span>, total: <span class="tn">0</span> } }];</span>
+<span class="dl dadd">+ <span class="tk">const</span> records = $input.all();</span>
+<span class="dl dadd">+ <span class="tk">return</span> [{ json: { week: <span class="ts">'n/a'</span>, total: <span class="tn">0</span>, recordCount: records.length } }];</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-78968/workflows/weekly-digest-roll-up/code/build-digest.js has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">sleep 2; cat /private/tmp/claude-501/-private-var-folders--f-2z3htck52yl0j9v4z75lh1080000gn-T-flows-ops-78968/7c42852f-67fc-4752-8d54-7cc7c0b5873a/tasks/bukrc9rw8.output 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>pushes update the draft only — run "n8n-decanter publish" to take changes live
+editor: http://127.0.0.1:49270/workflow/xhpOtLzDGeMtA66n
+keep the n8n editor open — it updates live on each push
+watching workflow xhpOtLzDGeMtA66n — 1 Code node in weekly-digest-roll-up/code — Ctrl-C to stop
+✓ pushed node "Build digest" -&gt; workflow "Weekly digest roll-up" — unpublished draft
+committed: decanter: pushed "Weekly digest roll-up" / node "Build digest" (xhpOtLzDGeMtA66n)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">The push went through automatically. Let me verify the draft matches with a quick diff check.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter diff xhpOtLzDGeMtA66n 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>Weekly digest roll-up (xhpOtLzDGeMtA66n)  [workflows/weekly-digest-roll-up]
+  no differences — every tracked node matches the draft</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Done — added a `recordCount` field (input item count) to the digest output in `code/build-digest.js`, saved, and watch auto-pushed it. Confirmed:
+
+- Watch log: `✓ pushed node "Build digest" -&gt; workflow "Weekly digest roll-up" — unpublished draft`
+- `diff` shows local code and the instance draft now match exactly.
+
+It's on the draft only, live in the editor at http://127.0.0.1:49270/workflow/xhpOtLzDGeMtA66n — nothing published yet.</div></div><div class="msg done"><div class="who">↳ turn result · $0.391</div><div class="bubble">Done — added a `recordCount` field (input item count) to the digest output in `code/build-digest.js`, saved, and watch auto-pushed it. Confirmed:
+
+- Watch log: `✓ pushed node "Build digest" -&gt; workflow "Weekly digest roll-up" — unpublished draft`
+- `diff` shows local code and the instance draft now match exactly.
+
+It's on the draft only, live in the editor at http://127.0.0.1:49270/workflow/xhpOtLzDGeMtA66n — nothing published yet.</div></div></div><div class="verify"><h4>Scripted invariants — PASS</h4><div class="vwf"><b>weekly-digest-roll-up</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ node "code/build-digest.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/build-digest.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/build-digest.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S5 after turn 0</span> <span class="vdet">2026-08-06 06:48</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly digest roll-up" (xhpOtLzDGeMtA66n)</span> <span class="vdet">2026-08-06 06:49</span></summary><pre class="tin"> workflows/weekly-digest-roll-up/.decanter.json     | 11 +++
+ .../weekly-digest-roll-up/code/build-digest.js     |  2 +
+ workflows/weekly-digest-roll-up/workflow.json      | 88 ++++++++++++++++++++++
+ 3 files changed, 101 insertions(+)
+
+diff --git a/workflows/weekly-digest-roll-up/.decanter.json b/workflows/weekly-digest-roll-up/.decanter.json
+new file mode 100644
+index 0000000..8b313ef
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "xhpOtLzDGeMtA66n",
++  "nodes": {
++    "c1": {
++      "file": "code/build-digest.js",
++      "lastPushedHash": "sha256:438980bb8fdd7576053faab8232353916b5b666a88ddfba117470b425afacdd0",
++      "name": "Build digest"
++    }
++  },
++  "name": "Weekly digest roll-up"
++}
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+new file mode 100644
+index 0000000..0e563fd
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -0,0 +1,2 @@
++// weekly roll-up
++return [{ json: { week: 'n/a', total: 0 } }];
+diff --git a/workflows/weekly-digest-roll-up/workflow.json b/workflows/weekly-digest-roll-up/workflow.json
+new file mode 100644
+index 0000000..e99afe4
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/workflow.json
+@@ -0,0 +1,88 @@
++{
++  "id": "xhpOtLzDGeMtA66n",
++  "name": "Weekly digest roll-up",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-06T04:48:41.165Z",
++  "updatedAt": "2026-08-06T04:48:41.238Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "Schedule",
++      "type": "n8n-nodes-base.scheduleTrigger",
++      "typeVersion": 1.2,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {
++        "rule": {
++          "interval": [
++            {
++              "field": "hours"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "c1",
++      "name": "Build digest",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/build-digest.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Build digest": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Schedule": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Build digest",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "c4dbba09-faef-4c7d-9345-4dbbcf928ac9",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pushed "Weekly digest roll-up" / node "Build digest" (xhpOtLzDGeMtA66n)</span> <span class="vdet">2026-08-06 06:50</span></summary><pre class="tin"> workflows/weekly-digest-roll-up/.decanter.json       | 2 +-
+ workflows/weekly-digest-roll-up/code/build-digest.js | 3 ++-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/workflows/weekly-digest-roll-up/.decanter.json b/workflows/weekly-digest-roll-up/.decanter.json
+index 8b313ef..da8ab84 100644
+--- a/workflows/weekly-digest-roll-up/.decanter.json
++++ b/workflows/weekly-digest-roll-up/.decanter.json
+@@ -3,7 +3,7 @@
+   "nodes": {
+     "c1": {
+       "file": "code/build-digest.js",
+-      "lastPushedHash": "sha256:438980bb8fdd7576053faab8232353916b5b666a88ddfba117470b425afacdd0",
++      "lastPushedHash": "sha256:bf7749caa4a68ff9edf622e36168ed8154801f37f0253f53cc550c70443dc8c6",
+       "name": "Build digest"
+     }
+   },
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+index 0e563fd..3fff997 100644
+--- a/workflows/weekly-digest-roll-up/code/build-digest.js
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -1,2 +1,3 @@
+ // weekly roll-up
+-return [{ json: { week: 'n/a', total: 0 } }];
++const records = $input.all();
++return [{ json: { week: 'n/a', total: 0, recordCount: records.length } }];
+</pre></details></section>
+<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">guard: connected to http://127.0.0.1:49270 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: connected to http://127.0.0.1:49270 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+</pre></section>
+</main>
