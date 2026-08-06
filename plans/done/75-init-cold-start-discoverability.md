@@ -1,6 +1,6 @@
 # Plan 75 — `init`'s non-interactive path is present but not discoverable
 
-**Status:** Draft
+**Status:** Done — shipped 2026-08-06 (see "What shipped")
 **Priority:** P2
 **Source:** [Plan 62](../done/62-field-test-unrun-conditions.md) task 2, blind
 rounds `ftrun-71346` + `ftrun-75467` (2026-08-06) — the first rounds ever staged
@@ -48,9 +48,56 @@ wrong and not how to fix it without a human at a prompt.
 - Not an auto-configuration path. The agent **correctly** refused to write `.env`
   itself; that boundary stays.
 
+## What shipped
+
+- **One shared `HOST_UNSET` message** (`lib/config.mts`), used by `loadConfig`
+  *and* `createMcpClient` — the two had carried byte-identical private copies.
+  It now reads:
+
+  ```
+  ✗ N8N_HOST must be set (via .env next to decanter.config.json or the environment)
+    set it without prompts: n8n-decanter init . --host <host-url> --token <mcp-token>
+  ```
+
+- **The no-credentials error leads with the flag form** and keeps OAuth and
+  `N8N_MCP_TOKEN` as the alternatives, instead of naming bare `init` first.
+- **`init --host` alone** now names `--token <mcp-token>` in its "no MCP
+  credentials yet" warning — this is the exact state a blind agent reaches first.
+- **`--mcp-token` accepted as an alias** for `--token`; the log line no longer
+  echoes a flag spelling ("using the MCP token given on the command line"), since
+  both reach the same place.
+- Usage string says which credential each flag carries
+  (`--token <mcp-token> --api-key <public-api-key>`).
+- Tests: unit coverage that both cold-start errors carry a non-interactive fix
+  and that `mcp.mts` throws the *shared* message rather than a copy; the e2e
+  init-flags step now also drives `--mcp-token`.
+
 ## Verification
 
 Re-run S14 (`FIELD_NO_SEED_ENV=1 node test/field-test/run.mts --isolate S14`).
 The measurement is turn 1: does the agent reach the non-interactive form while
 still deciding what to tell the user, instead of delegating an interactive
 prompt to a human?
+
+**Run: `ftrun-20442` (2026-08-06), verify PASS — against the packed CLI of this
+branch.** Compare with `ftrun-75467`, the same scenario under the same condition
+before the change.
+
+| | before (`75467`) | after (`20442`) |
+|---|---|---|
+| Turn-1 advice | bare `npx n8n-decanter init`, described as prompting for the host | **both** paths, the second quoted from the new error: `n8n-decanter init . --host <your-n8n-host-url> --token <mcp-token>` |
+| Flag form in turn 1 | absent | present |
+| Where it came from | — | near-verbatim echo of `HOST_UNSET` (`guard.log` shows the two-line message) |
+
+**No residual gap.** Turn 1 hands the setup back to the human — but at that
+point it does not yet know whether a token exists, and **OAuth genuinely
+requires a browser** (there is no headless consent flow; `docs/cli/init.md` says
+so). Offering *both* paths is the correct answer there, and it is exactly what
+was missing before. The token path it did **not** delegate: handed the value in
+turn 2, it ran `init --host … --token …` itself. What remains is cosmetic — it
+lists the interactive path first, and its "I can't handle secrets" aside was
+stricter than its own behaviour two turns later.
+
+**n = 1.** The verbatim echo makes the causal link hard to argue with, but a
+single Sonnet session cannot establish how reliably it happens. Treat it as one
+consistent data point, not a proven rate.

@@ -695,10 +695,19 @@ await step("init --host/--token/--api-key: fully non-interactive, no stdin (Plan
   const out = stdout + stderr;
   assert.equal(read(target, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_API_KEY=test-key\nN8N_MCP_TOKEN=${MCP_TOKEN}\n`, "flags populate .env; scheme-less local host normalized to http");
   assert.match(out, /using --host/);
-  assert.match(out, /using MCP token from --token/);
+  assert.match(out, /using the MCP token given on the command line/);
   assert.match(out, /MCP connection verified/, "the MCP probe still runs with flag creds");
   assert.match(out, /API key verified/, "the API probe still runs with the flag key");
   assert.ok(!/n8n host:/.test(out) && !/public API key \(optional/.test(out), "flag mode issues no prompts");
+
+  // `--mcp-token` is an accepted alias (Plan 75): two blind rounds probed for
+  // the spelling before committing to one. Same value, same .env.
+  const aliasTarget = path.join(TMP, "init-flags-alias");
+  const aliasRun = execFile(process.execPath, [CLI, "init", aliasTarget, "--host", schemeless, "--mcp-token", MCP_TOKEN], { encoding: "utf8" });
+  aliasRun.child.stdin!.end();
+  const alias = await aliasRun;
+  assert.match(read(aliasTarget, ".env"), new RegExp(`N8N_MCP_TOKEN=${MCP_TOKEN}`), "--mcp-token populates .env exactly like --token");
+  assert.match(alias.stdout + alias.stderr, /using the MCP token given on the command line/, "the log names no flag spelling — both reach the same place");
 });
 
 await step("init: credential probes — skipped MCP, non-2xx and unreachable API outcomes get their own log lines", async () => {

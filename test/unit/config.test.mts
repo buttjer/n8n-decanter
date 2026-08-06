@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, beforeEach, describe, it } from "node:test";
-import { loadConfig, loadEnv, parseEnvFile, requireApiKey } from "../../lib/config.mts";
+import { HOST_UNSET, loadConfig, loadEnv, parseEnvFile, requireApiKey } from "../../lib/config.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-config-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -162,6 +162,19 @@ describe("loadConfig", () => {
     const cfg2 = loadConfig(withHost);
     assert.equal(cfg2.host, "http://n8n.local");
     assert.equal(cfg2.apiKey, "");
+  });
+
+  // Plan 75: a blind agent diagnosed the missing .env in one command and then
+  // sent its human to the INTERACTIVE `init`, because the only message it read
+  // said what was wrong and not how to fix it without a prompt. This message is
+  // the cold-start entry point — it has to carry the flag form.
+  it("the missing-host error names the non-interactive init (the cold-start entry point)", () => {
+    assert.match(HOST_UNSET, /--host <host-url>/);
+    assert.match(HOST_UNSET, /--token <mcp-token>/);
+    assert.throws(() => loadConfig(configDir({})), (err: Error) => {
+      assert.equal(err.message, HOST_UNSET, "loadConfig throws the shared message, not a private copy");
+      return true;
+    });
   });
 
   it("requireApiKey guards the REST-only verbs, naming the verb", () => {
