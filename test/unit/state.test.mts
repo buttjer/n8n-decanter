@@ -91,6 +91,18 @@ describe("findWorkflowDir", () => {
     assert.match(warnings[0], /corrupt \.decanter\.json .*skipping this folder/);
     assert.equal(findWorkflowDir(root, "wf-missing", log), null);
   });
+
+  // Plan 61 D6: the folder slug is STICKY — set from the name at first pull and
+  // never re-derived, so a remote rename leaves the folder where it was. The id
+  // in `.decanter.json` is the identity; the slug is just a label. S7 adopts
+  // workflows someone else renamed, so pin the mechanism offline and let the
+  // round grade only whether the agent explains the mismatch it sees.
+  it("finds a workflow by id even when its folder slug no longer matches the name", () => {
+    const root = path.join(TMP, "sticky");
+    const dir = workflowDir("sticky/old-report-name", JSON.stringify({ workflowId: "wf-renamed", name: "Brand New Name", nodes: {} }));
+    assert.equal(findWorkflowDir(root, "wf-renamed"), dir, "identity is the id, not the slug");
+    assert.equal(path.basename(dir), "old-report-name", "and nothing re-slugs the folder behind your back");
+  });
 });
 
 describe("listWorkflowRefs", () => {

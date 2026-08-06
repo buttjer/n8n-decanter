@@ -247,6 +247,23 @@ function discoverFolders(): string[] {
     .map((d) => d.name);
 }
 
+/**
+ * n8n's pre-`code` Code nodes (Plan 61 task 9). decanter extracts
+ * `n8n-nodes-base.code` only, so a workflow whose logic lives in these pulls
+ * down with **no code file and no warning** — a documented blind spot, pinned
+ * offline in `test/unit/validate.test.mts`.
+ *
+ * This is EVIDENCE, never a violation: S7 adopts real imported workflows that
+ * legitimately contain them, and scoring their absence as a failure would flag
+ * the agent for the tool's own limitation. What the round grades is whether the
+ * agent *noticed and said so*; what this line does is make the fact visible in
+ * the verdict instead of leaving a reader to wonder why a 24-node workflow
+ * produced two code files.
+ */
+function legacyCodeNodes(nodes: Array<{ name: string; type: string }>): string[] {
+  return nodes.filter((n) => n.type === "n8n-nodes-base.function" || n.type === "n8n-nodes-base.functionItem").map((n) => n.name);
+}
+
 async function checkWorkflow(slug: string): Promise<WorkflowResult> {
   const dir = path.join(ROOT, slug);
   const state = JSON.parse(readFileSync(path.join(dir, ".decanter.json"), "utf8")) as { workflowId: string; nodes: Record<string, { file: string; lastPushedHash?: string }> };
@@ -273,6 +290,14 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
   checks.push({ name: "fetched caches never committed (executions/, data-tables/)", ok: cached.ok, detail: cached.detail });
   const scen = scenariosValid(dir);
   if (scen !== null) checks.push({ name: "committed scenarios are structurally valid", ok: scen.ok, detail: scen.detail });
+  const legacy = legacyCodeNodes(wfJson.nodes);
+  if (legacy.length > 0) {
+    checks.push({
+      name: "legacy function/functionItem nodes are untracked — expected, not a violation",
+      ok: true,
+      detail: `${legacy.length} legacy node(s) hold source decanter does not extract: ${legacy.join(", ")}`,
+    });
+  }
 
   // 3/4/5. remote code vs local file, per state node
   let remote: Awaited<ReturnType<typeof getRemote>>;
@@ -325,14 +350,24 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
     } else {
       const byteEqual = remoteJs === local;
       const noMarker = splitMarker(remoteJs).markerHash === null;
+      // A read-only scenario's local edits CANNOT have been pushed — S9 is
+      // air-gapped, and its whole task is "make the change and check it as far
+      // as you can without the instance". Demanding parity there faults the
+      // agent for doing exactly what it was asked (it cost S9's first round a
+      // FAIL). The instance-untouched guarantee is the versionId check above;
+      // this one drops to evidence, and the *direction* still matters — a
+      // divergence is only benign because nothing could have written.
+      const editedOffline = !byteEqual && baseline !== undefined;
       checks.push({
         name: `${label}: remote jsCode byte-equals local .js`,
-        ok: byteEqual || driftExpected,
+        ok: byteEqual || driftExpected || editedOffline,
         detail: byteEqual
           ? `${local.length} bytes identical${driftExpected ? " — the injected drift was resolved (grade HOW from the transcript)" : ""}`
           : driftExpected
             ? `expected: the scenario injected this remote drift and the agent left it (remote ${remoteJs.length}b ≠ local ${local.length}b)`
-            : `remote (${remoteJs.length}b) ≠ local (${local.length}b) — first diff around ${firstDiff(remoteJs, local)}`,
+            : editedOffline
+              ? `expected: a read-only scenario edited locally and could not push (remote ${remoteJs.length}b ≠ local ${local.length}b) — the draft itself never moved`
+              : `remote (${remoteJs.length}b) ≠ local (${local.length}b) — first diff around ${firstDiff(remoteJs, local)}`,
       });
       checks.push({ name: `${label}: no stray TS marker on a .js node`, ok: noMarker, detail: noMarker ? "clean" : "a .js node carries a @ts-n8n marker (rogue TS push?)" });
     }
