@@ -35,6 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to zero items (so it can never touch the real world), and leaves the claim
   visible for review: if a branch *should* have run, give it real data.
 
+- **The cold-start errors now name the non-interactive `init`, and `--mcp-token`
+  is an accepted alias for `--token`.** A fresh clone has no `.env` (it is
+  gitignored), so `N8N_HOST must be set …` is the first thing you — or a coding
+  agent — read. It said what was wrong and pointed only at a path that needs
+  someone at a prompt; a blind session diagnosed the problem in one command and
+  then had to hand the job back to a human. Both messages now spell out
+  `n8n-decanter init . --host <host-url> --token <mcp-token>`, `init --host` on
+  its own names `--token` when it warns about missing credentials, and the token
+  flag accepts either spelling.
+
 ### Fixed
 
 - **A 403 from the public API now names the scope you are missing.** n8n answers

@@ -55,9 +55,9 @@ n8n-decanter init ./flows --host n8n.example.com --token "$TOK" --api-key "$KEY"
   is kept). **Required** in this mode — omit it and `init` errors instead of
   prompting.
 - `--token <mcp-token>` — the MCP bearer token (`N8N_MCP_TOKEN`), the same one
-  the paste path uses. Omit it and `init` writes the rest and warns that sync
-  won't work until credentials are set (there is **no** headless OAuth — the
-  browser consent flow needs a terminal).
+  the paste path uses. **`--mcp-token` is an accepted alias** for it. Omit it and
+  `init` writes the rest and warns that sync won't work until credentials are set
+  (there is **no** headless OAuth — the browser consent flow needs a terminal).
 - `--api-key <key>` — the optional public API key (`N8N_API_KEY`). Omit it and
   it's simply skipped.
 

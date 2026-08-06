@@ -6,6 +6,7 @@
 // (plans/OPEN-32 spike).
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { HOST_UNSET } from "./config.mts";
 import type { Log, Workflow } from "./types.mts";
 import { CODE_NODE_TYPE } from "./util.mts";
 
@@ -639,11 +640,14 @@ export class McpClient {
  */
 export function createMcpClient(config: { host: string; configDir: string; requestTimeoutMs: number }, log?: Log): McpClient {
   if (config.host === "") {
-    throw new Error("N8N_HOST must be set (via .env next to decanter.config.json or the environment)");
+    throw new Error(HOST_UNSET);
   }
   const auth = resolveMcpAuth(config.configDir, config.host, log);
   if (auth === null) {
-    throw new Error("no MCP credentials — run `n8n-decanter init` to connect via OAuth, or set N8N_MCP_TOKEN (n8n → Settings → MCP → API key)");
+    throw new Error(
+      "no MCP credentials — run `n8n-decanter init . --token <mcp-token>` (n8n → Settings → MCP → API key),\n" +
+        "  or bare `n8n-decanter init` to connect via OAuth in a browser, or set N8N_MCP_TOKEN",
+    );
   }
   return new McpClient({ host: config.host, auth, requestTimeoutMs: config.requestTimeoutMs, log });
 }

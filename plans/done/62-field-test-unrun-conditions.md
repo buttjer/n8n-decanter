@@ -201,7 +201,7 @@ not materialise.
 ### Task 4 — findings routed
 
 - **Product, 1 finding:** `init`'s non-interactive path is present but not
-  discoverable when it matters → [Plan 75](../draft/75-init-cold-start-discoverability.md).
+  discoverable when it matters → [Plan 75](../done/75-init-cold-start-discoverability.md).
 - **Harness, 4 defects, all fixed here** (none is a product issue): the two
   condition flags that never staged their condition (`FIELD_NO_PATH_HELP`,
   `FIELD_NO_SEED_ENV`), `{{HOST}}` removing the scheme choice the #142 beat

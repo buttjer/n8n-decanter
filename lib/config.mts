@@ -2,6 +2,19 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { DecanterConfig } from "./types.mts";
 
+/**
+ * The one message every cold start hits — a fresh clone has no `.env`, so this
+ * is the first thing a user (or their agent) reads. It names the **flag** form
+ * on purpose: [Plan 75](../plans/done/75-init-cold-start-discoverability.md)
+ * came out of a blind round where the agent diagnosed the missing `.env` in one
+ * command and then sent its human to the *interactive* `init`, because nothing
+ * here mentioned that `init` takes the values as arguments. Shared with
+ * `createMcpClient`, which used to carry its own copy of the same string.
+ */
+export const HOST_UNSET =
+  "N8N_HOST must be set (via .env next to decanter.config.json or the environment)\n" +
+  "  set it without prompts: n8n-decanter init . --host <host-url> --token <mcp-token>";
+
 /** Parse KEY=VALUE lines (optional `export`, quotes stripped) from an env file. */
 export function parseEnvFile(file: string): Record<string, string> {
   const values: Record<string, string> = {};
@@ -68,7 +81,7 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
       const host = (process.env.N8N_HOST ?? "").replace(/\/+$/, "");
       const apiKey = process.env.N8N_API_KEY ?? "";
       if (requireHost && !host) {
-        throw new Error("N8N_HOST must be set (via .env next to decanter.config.json or the environment)");
+        throw new Error(HOST_UNSET);
       }
       return {
         configDir: dir,

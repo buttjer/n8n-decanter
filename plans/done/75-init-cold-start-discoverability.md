@@ -1,6 +1,6 @@
 # Plan 75 — `init`'s non-interactive path is present but not discoverable
 
-**Status:** Draft
+**Status:** Done — shipped 2026-08-06 (see "What shipped")
 **Priority:** P2
 **Source:** [Plan 62](../done/62-field-test-unrun-conditions.md) task 2, blind
 rounds `ftrun-71346` + `ftrun-75467` (2026-08-06) — the first rounds ever staged
@@ -48,9 +48,39 @@ wrong and not how to fix it without a human at a prompt.
 - Not an auto-configuration path. The agent **correctly** refused to write `.env`
   itself; that boundary stays.
 
+## What shipped
+
+- **One shared `HOST_UNSET` message** (`lib/config.mts`), used by `loadConfig`
+  *and* `createMcpClient` — the two had carried byte-identical private copies.
+  It now reads:
+
+  ```
+  ✗ N8N_HOST must be set (via .env next to decanter.config.json or the environment)
+    set it without prompts: n8n-decanter init . --host <host-url> --token <mcp-token>
+  ```
+
+- **The no-credentials error leads with the flag form** and keeps OAuth and
+  `N8N_MCP_TOKEN` as the alternatives, instead of naming bare `init` first.
+- **`init --host` alone** now names `--token <mcp-token>` in its "no MCP
+  credentials yet" warning — this is the exact state a blind agent reaches first.
+- **`--mcp-token` accepted as an alias** for `--token`; the log line no longer
+  echoes a flag spelling ("using the MCP token given on the command line"), since
+  both reach the same place.
+- Usage string says which credential each flag carries
+  (`--token <mcp-token> --api-key <public-api-key>`).
+- Tests: unit coverage that both cold-start errors carry a non-interactive fix
+  and that `mcp.mts` throws the *shared* message rather than a copy; the e2e
+  init-flags step now also drives `--mcp-token`.
+
 ## Verification
 
 Re-run S14 (`FIELD_NO_SEED_ENV=1 node test/field-test/run.mts --isolate S14`).
 The measurement is turn 1: does the agent reach the non-interactive form while
 still deciding what to tell the user, instead of delegating an interactive
 prompt to a human?
+
+**Not yet run** — the unit/e2e tests prove the messages say the right thing, but
+whether that *changes an agent's turn-1 behaviour* is a blind-round question and
+only a round answers it. Worth carrying along with the next S14 run rather than
+paying for a dedicated one (`plans/done/62` notes these conditions compose at no
+extra turn cost).

@@ -8,8 +8,10 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
+import { HOST_UNSET } from "../../lib/config.mts";
 import {
   authFilePath,
+  createMcpClient,
   isUnavailableInMcp,
   McpClient,
   McpToolError,
@@ -885,6 +887,36 @@ describe("oauthDiscovery", () => {
       assert.equal(d.registration_endpoint, `${srv.host}/mcp-oauth/register`);
     } finally {
       await srv.close();
+    }
+  });
+});
+
+// The two errors a cold start hits. Plan 75: both used to describe the problem
+// and point at an INTERACTIVE fix, which a headless agent cannot take.
+describe("createMcpClient — the cold-start errors name a non-interactive fix", () => {
+  it("no host: throws the shared message, not a private copy of it", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "decanter-coldstart-"));
+    try {
+      assert.throws(() => createMcpClient({ host: "", configDir: dir, requestTimeoutMs: 1000 }), (err: Error) => {
+        assert.equal(err.message, HOST_UNSET, "config.mts owns the wording; mcp.mts must not drift from it");
+        return true;
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("host but no credentials: names `init . --token`, and OAuth as the alternative", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "decanter-coldstart-"));
+    try {
+      assert.throws(() => createMcpClient({ host: "http://n8n.local", configDir: dir, requestTimeoutMs: 1000 }), (err: Error) => {
+        assert.match(err.message, /init \. --token <mcp-token>/, "the flag form comes first — it is the one a headless agent can take");
+        assert.match(err.message, /OAuth in a browser/);
+        assert.match(err.message, /N8N_MCP_TOKEN/);
+        return true;
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

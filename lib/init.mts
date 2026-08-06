@@ -404,7 +404,9 @@ export async function init(
     // --token / any setup flag suppresses every prompt (non-interactive mode).
     const auth = readAuthFileTolerant(dir, log);
     if (mcpToken !== "") {
-      log.info(tokenFlag !== undefined ? "using MCP token from --token" : "using existing MCP token from .env (N8N_MCP_TOKEN)");
+      // Doesn't name the flag: `--token` and `--mcp-token` both land here, and
+      // echoing a spelling the user didn't type reads like a correction.
+      log.info(tokenFlag !== undefined ? "using the MCP token given on the command line" : "using existing MCP token from .env (N8N_MCP_TOKEN)");
     } else if (auth !== null && auth.host === host) {
       log.info(`using existing MCP OAuth credentials (${AUTH_FILE})`);
     } else if (interactive) {
@@ -420,7 +422,9 @@ export async function init(
       mcpToken = await ask("n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
     }
     if (mcpToken === "" && !(auth !== null && auth.host === host)) {
-      log.warn("no MCP credentials yet — sync verbs (pull/push/watch/…) will not work until you re-run init or set N8N_MCP_TOKEN");
+      // Names the flag, not just "re-run init": this fires on exactly the
+      // host-only `init --host …` a blind agent reaches first (Plan 75).
+      log.warn("no MCP credentials yet — sync verbs (pull/push/watch/…) will not work until you re-run init with `--token <mcp-token>` (n8n → Settings → MCP → API key) or set N8N_MCP_TOKEN");
     }
 
     // --- optional public API key (the REST-only surfaces)
