@@ -810,8 +810,41 @@ async function fillBackupStore(): Promise<void> {
   console.log(`  fill-backup-store: wrote 22 prior backups for "${target.name}" — the next \`backup create\` must prune to backupLimit`);
 }
 
+/**
+ * S9's air-gap, actually staged. The scenario's turns *claim* the instance is
+ * unreachable; nothing made it so, and its own checklist ("nothing reached the
+ * network") was unverifiable against a live stage — the same shape as the two
+ * condition flags Plan 62 found believing themselves.
+ *
+ * Two steps, in the order a real day has them:
+ *  1. **Pull while still online.** Offline work needs local files, and a fresh
+ *     stage has none. This is the pull the persona ran yesterday.
+ *  2. **Cut the wire.** `.env`'s host moves to a closed port, so every CLI call
+ *     and the guard itself fail to connect — while the token stays, so the
+ *     failure reads "unreachable", not "unconfigured". `verify.mts` reads the
+ *     manifest, never the workDir `.env`, so grading is unaffected.
+ */
+async function goOffline(): Promise<void> {
+  const bin = path.join(WORKDIR, "node_modules", ".bin", "n8n-decanter");
+  const targets = ["s8-ladder", "loop-preview"].map(seedOfKind);
+  for (const t of targets) {
+    try {
+      await execFile(bin, ["pull", t.id], { cwd: WORKDIR });
+      console.log(`  go-offline: pulled "${t.name}" while the instance was still reachable`);
+    } catch (err) {
+      console.warn(`  go-offline: could not pull "${t.name}" (${(err as Error).message.split("\n")[0]}) — the agent will have nothing local to work on`);
+    }
+  }
+  const envFile = path.join(WORKDIR, ".env");
+  const dead = "http://127.0.0.1:1"; // nothing listens: connection refused, no hang
+  const before = readFileSync(envFile, "utf8");
+  writeFileSync(envFile, before.replace(/^N8N_HOST=.*$/m, `N8N_HOST=${dead}`));
+  console.log(`  go-offline: .env host -> ${dead}; credentials left in place, so failures read as unreachable rather than unconfigured`);
+}
+
 const PRE_HOOKS: Record<string, () => Promise<void>> = {
   "remote-drift": remoteDrift,
+  "go-offline": goOffline,
   "seed-capture": seedCapture,
   "publish-then-drift": publishThenDrift,
   "break-published-draft": breakPublishedDraft,

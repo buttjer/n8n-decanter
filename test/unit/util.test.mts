@@ -110,6 +110,15 @@ describe("kebabCase", () => {
     assert.equal(kebabCase(""), "unnamed");
     assert.equal(kebabCase("!!!"), "unnamed");
   });
+  // Plan 61 D6: the corpus workflows S7 adopts carry `:` and `*` in their names
+  // (`SummarizationChain: Refine`, `Sync * All`). What they slug to is a
+  // mechanical fact — pin it here so the blind round only has to grade what the
+  // agent *says* about the folder it gets.
+  it("collapses the corpus's `:` and `*` names to clean slugs", () => {
+    assert.equal(kebabCase("SummarizationChain: Refine"), "summarization-chain-refine");
+    assert.equal(kebabCase("Sync * All"), "sync-all", "`*` is dropped, not transliterated — and it leaves no double dash");
+    assert.equal(kebabCase("Chain*QA: v2"), "chain-qa-v2");
+  });
 });
 
 describe("findNodeRefs", () => {

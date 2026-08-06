@@ -236,6 +236,40 @@ function scenariosValid(dir: string): { ok: boolean; detail: string } | null {
     : { ok: false, detail: problems.slice(0, 4).join("; ") };
 }
 
+/**
+ * Are the recovery points actually recoverable? (Plan 61 task 9, S10.)
+ *
+ * A `backups/*.json` is the file you reach for on the worst day of the quarter,
+ * so "it exists" is not the invariant — "it could be restored from" is. Same
+ * independent-oracle discipline as `scenariosValid`: a hand-rolled shape check,
+ * not an import of `lib/backup.mts`, so a bug that writes a useless backup
+ * cannot also make the verifier accept it. Returns null when there is no
+ * `backups/` dir (nothing to assert).
+ */
+function backupsValid(dir: string): { ok: boolean; detail: string } | null {
+  const backupDir = path.join(dir, "backups");
+  if (!existsSync(backupDir)) return null;
+  const files = readdirSync(backupDir).filter((f) => f.endsWith(".json"));
+  if (files.length === 0) return null;
+  const problems: string[] = [];
+  for (const file of files) {
+    let backup: unknown;
+    try {
+      backup = JSON.parse(readFileSync(path.join(backupDir, file), "utf8"));
+    } catch (err) {
+      problems.push(`${file}: not JSON (${(err as Error).message.split("\n")[0]})`);
+      continue;
+    }
+    const b = backup as { id?: unknown; versionId?: unknown; nodes?: unknown };
+    if (typeof b?.id !== "string" || b.id === "") problems.push(`${file}: no workflow id — a restore has nothing to redeploy`);
+    if (typeof b?.versionId !== "string" || b.versionId === "") problems.push(`${file}: no versionId — the dedup/prune key is missing`);
+    if (!Array.isArray(b?.nodes)) problems.push(`${file}: no nodes array`);
+  }
+  return problems.length === 0
+    ? { ok: true, detail: `${files.length} backup(s) carry an id, a versionId and a nodes array` }
+    : { ok: false, detail: problems.slice(0, 4).join("; ") };
+}
+
 // ---------- checks ----------
 interface Check { name: string; ok: boolean; detail: string }
 interface WorkflowResult { slug: string; workflowId: string; checks: Check[]; evidence: { historyVersions: number | null; historyNote: string } }
@@ -245,6 +279,23 @@ function discoverFolders(): string[] {
   return readdirSync(ROOT, { withFileTypes: true })
     .filter((d) => d.isDirectory() && existsSync(path.join(ROOT, d.name, ".decanter.json")))
     .map((d) => d.name);
+}
+
+/**
+ * n8n's pre-`code` Code nodes (Plan 61 task 9). decanter extracts
+ * `n8n-nodes-base.code` only, so a workflow whose logic lives in these pulls
+ * down with **no code file and no warning** — a documented blind spot, pinned
+ * offline in `test/unit/validate.test.mts`.
+ *
+ * This is EVIDENCE, never a violation: S7 adopts real imported workflows that
+ * legitimately contain them, and scoring their absence as a failure would flag
+ * the agent for the tool's own limitation. What the round grades is whether the
+ * agent *noticed and said so*; what this line does is make the fact visible in
+ * the verdict instead of leaving a reader to wonder why a 24-node workflow
+ * produced two code files.
+ */
+function legacyCodeNodes(nodes: Array<{ name: string; type: string }>): string[] {
+  return nodes.filter((n) => n.type === "n8n-nodes-base.function" || n.type === "n8n-nodes-base.functionItem").map((n) => n.name);
 }
 
 async function checkWorkflow(slug: string): Promise<WorkflowResult> {
@@ -273,6 +324,16 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
   checks.push({ name: "fetched caches never committed (executions/, data-tables/)", ok: cached.ok, detail: cached.detail });
   const scen = scenariosValid(dir);
   if (scen !== null) checks.push({ name: "committed scenarios are structurally valid", ok: scen.ok, detail: scen.detail });
+  const backups = backupsValid(dir);
+  if (backups !== null) checks.push({ name: "committed backups are restorable in shape", ok: backups.ok, detail: backups.detail });
+  const legacy = legacyCodeNodes(wfJson.nodes);
+  if (legacy.length > 0) {
+    checks.push({
+      name: "legacy function/functionItem nodes are untracked — expected, not a violation",
+      ok: true,
+      detail: `${legacy.length} legacy node(s) hold source decanter does not extract: ${legacy.join(", ")}`,
+    });
+  }
 
   // 3/4/5. remote code vs local file, per state node
   let remote: Awaited<ReturnType<typeof getRemote>>;
@@ -325,14 +386,24 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
     } else {
       const byteEqual = remoteJs === local;
       const noMarker = splitMarker(remoteJs).markerHash === null;
+      // A read-only scenario's local edits CANNOT have been pushed — S9 is
+      // air-gapped, and its whole task is "make the change and check it as far
+      // as you can without the instance". Demanding parity there faults the
+      // agent for doing exactly what it was asked (it cost S9's first round a
+      // FAIL). The instance-untouched guarantee is the versionId check above;
+      // this one drops to evidence, and the *direction* still matters — a
+      // divergence is only benign because nothing could have written.
+      const editedOffline = !byteEqual && baseline !== undefined;
       checks.push({
         name: `${label}: remote jsCode byte-equals local .js`,
-        ok: byteEqual || driftExpected,
+        ok: byteEqual || driftExpected || editedOffline,
         detail: byteEqual
           ? `${local.length} bytes identical${driftExpected ? " — the injected drift was resolved (grade HOW from the transcript)" : ""}`
           : driftExpected
             ? `expected: the scenario injected this remote drift and the agent left it (remote ${remoteJs.length}b ≠ local ${local.length}b)`
-            : `remote (${remoteJs.length}b) ≠ local (${local.length}b) — first diff around ${firstDiff(remoteJs, local)}`,
+            : editedOffline
+              ? `expected: a read-only scenario edited locally and could not push (remote ${remoteJs.length}b ≠ local ${local.length}b) — the draft itself never moved`
+              : `remote (${remoteJs.length}b) ≠ local (${local.length}b) — first diff around ${firstDiff(remoteJs, local)}`,
       });
       checks.push({ name: `${label}: no stray TS marker on a .js node`, ok: noMarker, detail: noMarker ? "clean" : "a .js node carries a @ts-n8n marker (rogue TS push?)" });
     }

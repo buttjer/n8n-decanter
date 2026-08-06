@@ -1,0 +1,1772 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S11" class="navlink pass">S11 <span class="badge pass">PASS</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:62555</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+
+<section id="S11"><h2>S11 <span class="badge pass">PASS</span></h2><div class="persona">same user, shipping to production and then rolling back</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">The weekly digest is done sitting in limbo — I want it actually running on its hourly schedule from now on. Go ahead and make that happen.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls /work &amp;&amp; echo --- &amp;&amp; cat /work/decanter.config.json 2&gt;/dev/null</pre><div class="tres "><span class="tlab">result</span><pre>AGENTS.md
+CLAUDE.md
+decanter-ts-plugin
+decanter.config.json
+n8n-decanter-0.9.0.tgz
+n8n-globals.d.ts
+node_modules
+opencode.json
+package-lock.json
+package.json
+shared
+tsconfig.json
+workflows
+---
+{
+  "root": "./workflows",
+  "workflows": []
+}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls /work/workflows</pre><div class="tres "><span class="tlab">result</span><pre>(Bash completed with no output)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter list --remote 2&gt;&amp;1 | head -100</pre><div class="tres "><span class="tlab">result</span><pre>Weekly digest roll-up  0zWvw5LQwwZDxDf0  (not pulled)
+Order backlog in chunks  3SOgzsSdoCP4OaMu  (not pulled)
+Weekly revenue totals  Bjli8Y0apD5FaawH  (not pulled)
+Contact normalizer  F5pvpplXnmNWcAWh  (not pulled)
+Old contact import  VvtL6VZTYKOJsoZb  (not pulled)
+Ad-hoc sandbox  yVZitlYDUtufXW3f  (not available in MCP)
+to pull a "(not available in MCP)" workflow: enable MCP access from the workflow card in the n8n workflows list (⋯ menu), or from the workflow settings, then retry</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Found it — "Weekly digest roll-up" (`0zWvw5LQwwZDxDf0`). Let me pull it locally and inspect its trigger/publish state.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull 0zWvw5LQwwZDxDf0 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote weekly-digest-roll-up/code/build-digest.js
+wrote weekly-digest-roll-up/workflow.json
+committed: decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)
+✓ pulled "Weekly digest roll-up" -&gt; /work/workflows/weekly-digest-roll-up (0.1s)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-digest-roll-up/workflow.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "0zWvw5LQwwZDxDf0",
+3	  "name": "Weekly digest roll-up",
+4	  "active": true,
+5	  "isArchived": false,
+6	  "createdAt": "2026-08-06T14:12:14.313Z",
+7	  "updatedAt": "2026-08-06T14:12:24.666Z",
+8	  "nodes": [
+9	    {
+10	      "id": "trig",
+11	      "name": "Schedule",
+12	      "type": "n8n-nodes-base.scheduleTrigger",
+13	      "typeVersion": 1.2,
+14	      "position": [
+15	        0,
+16	        0
+17	      ],
+18	      "parameters": {
+19	        "rule": {
+20	          "interval": [
+21	            {
+22	              "field": "hours"
+23	            }
+24	          ]
+25	        }
+26	      }
+27	    },
+28	    {
+29	      "id": "c1",
+30	      "name": "Build digest",
+31	      "type": "n8n-nodes-base.code",
+32	      "typeVersion": 2,
+33	      "position": [
+34	        220,
+35	        0
+36	      ],
+37	      "parameters": {
+38	        "jsCode": "//@file:code/build-digest.js",
+39	        "mode": "runOnceForAllItems"
+40	      }
+41	    },
+42	    {
+43	      "id": "d1",
+44	      "name": "Done",
+45	      "type": "n8n-nodes-base.noOp",
+46	      "typeVersion": 1,
+47	      "position": [
+48	        440,
+49	        0
+50	      ],
+51	      "parameters": {}
+52	    }
+53	  ],
+54	  "connections": {
+55	    "Build digest": {
+56	      "main": [
+57	        [
+58	          {
+59	            "index": 0,
+60	            "node": "Done",
+61	            "type": "main"
+62	          }
+63	        ]
+64	      ]
+65	    },
+66	    "Schedule": {
+67	      "main": [
+68	        [
+69	          {
+70	            "index": 0,
+71	            "node": "Build digest",
+72	            "type": "main"
+73	          }
+74	        ]
+75	      ]
+76	    }
+77	  },
+78	  "settings": {
+79	    "availableInMCP": true,
+80	    "executionOrder": "v1"
+81	  },
+82	  "meta": {
+83	    "aiBuilderAssisted": true,
+84	    "builderVariant": "mcp"
+85	  },
+86	  "tags": [],
+87	  "versionId": "716b0c95-70d4-4628-ae86-fbeb9b832239",
+88	  "nodeGroups": [],
+89	  "parentFolderId": null,
+90	  "triggerCount": 1
+91	}
+92	</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__get_workflow_details,mcp__n8n-instance__test_workflow,mcp__n8n-instance__get_workflow_history,mcp__n8n-instance__publish_workflow",
+  "max_results": 10
+}</pre><div class="tres "><span class="tlab">result</span><pre>
+
+
+</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_details</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"workflow":{"id":"0zWvw5LQwwZDxDf0","name":"Weekly digest roll-up","active":true,"isArchived":false,"versionId":"716b0c95-70d4-4628-ae86-fbeb9b832239","activeVersionId":"51367bf2-e284-41cd-9a08-dab60c05c778","triggerCount":1,"createdAt":"2026-08-06T14:12:14.313Z","updatedAt":"2026-08-06T14:12:24.666Z","settings":{"executionOrder":"v1","availableInMCP":true},"connections":{"Schedule":{"main":[[{"node":"Build digest","type":"main","index":0}]]},"Build digest":{"main":[[{"node":"Done","type":"main","index":0}]]}},"nodes":[{"id":"trig","name":"Schedule","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.2,"position":[0,0],"parameters":{"rule":{"interval":[{"field":"hours"}]}}},{"id":"c1","name":"Build digest","type":"n8n-nodes-base.code","typeVersion":2,"position":[220,0],"parameters":{"mode":"runOnceForAllItems","jsCode":"// Sam was here\n// weekly roll-up\nreturn [{ json: { week: 'n/a', total: 0 } }];\n"}},{"id":"d1","name":"Done","type":"n8n-nodes-base.noOp","typeVersion":1,"position":[440,0],"parameters":{}}],"nodeGroups":[],"activeVersion":{"nodes":[{"id":"trig","name":"Schedule","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.2,"position":[0,0],"parameters":{"rule":{"interval":[{"field":"hours"}]}}},{"id":"c1","name":"Build digest","type":"n8n-nodes-base.code","typeVersion":2,"position":[220,0],"parameters":{"mode":"runOnceForAllItems","jsCode":"// weekly roll-up\nreturn [{ json: { week: 'n/a', total: 0 } }];\n"}},{"id":"d1","name":"Done","type":"n8n-nodes-base.noOp","typeVersion":1,"position":[440,0],"parameters":{}}],"connections":{"Schedule":{"main":[[{"node":"Build digest","type":"main","index":0}]]},"Build digest":{"main":[[{"node":"Done","type":"main","index":0}]]}},"nodeGroups":[]},"tags":[],"meta":{"aiBuilderAssisted":true,"builderVariant":"mcp"},"parentFolderId":null,"scopes":["execution:reveal","workflow:create","workflow:delete","workflow:disableRedaction","workflow:enableRedaction","workflow:execute","workflow:execute-chat","workflow:export","workflow:import","workflow:list","workflow:move","workflow:publish","workflow:read","workflow:share","workflow:unpublish","workflow:unshare","workflow:update"],"canExecute":true},"triggerInfo":"This workflow has the following trigger(s):\n\n\nSchedule trigger(s):\n\n\n\t\t\t\t&lt;trigger 1&gt;\n\t\t\t\t\t - Node name: Schedule\n\t\t\t\t&lt;/trigger 1&gt;\n\nScheduled workflows can be executed directly through MCP clients and do not require external inputs."}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_history</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0",
+  "limit": 10
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"0zWvw5LQwwZDxDf0","versions":[{"versionId":"716b0c95-70d4-4628-ae86-fbeb9b832239","authors":"Priya Ops (via MCP)","name":null,"description":null,"autosaved":false,"createdAt":"2026-08-06T14:12:24.667Z","updatedAt":"2026-08-06T14:12:24.667Z"},{"versionId":"51367bf2-e284-41cd-9a08-dab60c05c778","authors":"Priya Ops","name":null,"description":null,"autosaved":false,"createdAt":"2026-08-06T14:12:14.314Z","updatedAt":"2026-08-06T14:12:14.314Z"}],"count":2}</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-digest-roll-up/code/build-digest.js</pre><div class="tres "><span class="tlab">result</span><pre>1	// Sam was here
+2	// weekly roll-up
+3	return [{ json: { week: 'n/a', total: 0 } }];
+4	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight weekly-digest-roll-up --json 2&gt;&amp;1 | head -150</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "workflow": "Weekly digest roll-up",
+  "id": "0zWvw5LQwwZDxDf0",
+  "flags": {
+    "simulate": false,
+    "offline": false
+  },
+  "subject": {
+    "parity": "match",
+    "draftVersionId": "716b0c95-70d4-4628-ae86-fbeb9b832239",
+    "publishedVersionId": "51367bf2-e284-41cd-9a08-dab60c05c778"
+  },
+  "checks": [
+    {
+      "id": "layout",
+      "tier": "static",
+      "durationMs": 2,
+      "status": "pass",
+      "message": "layout compliant"
+    },
+    {
+      "id": "types",
+      "tier": "static",
+      "durationMs": 0,
+      "status": "pass",
+      "message": "node files typecheck clean"
+    },
+    {
+      "id": "connect",
+      "tier": "sync",
+      "durationMs": 97,
+      "status": "pass",
+      "message": "MCP reachable, auth valid"
+    },
+    {
+      "id": "access",
+      "tier": "sync",
+      "durationMs": 0,
+      "status": "pass",
+      "message": "workflow available in MCP"
+    },
+    {
+      "id": "parity",
+      "tier": "sync",
+      "durationMs": 0,
+      "status": "pass",
+      "message": "local code matches the draft"
+    },
+    {
+      "id": "drift",
+      "tier": "sync",
+      "durationMs": 0,
+      "status": "pass",
+      "message": "no remote code drift"
+    },
+    {
+      "id": "snapshot",
+      "tier": "sync",
+      "durationMs": 0,
+      "status": "pass",
+      "message": "structure snapshot current"
+    },
+    {
+      "id": "lifecycle",
+      "tier": "sync",
+      "durationMs": 0,
+      "status": "info",
+      "message": "published — the live version is older than the draft (publish to go live)"
+    },
+    {
+      "id": "history",
+      "tier": "sync",
+      "durationMs": 23,
+      "status": "info",
+      "message": "no recent production runs"
+    },
+    {
+      "id": "capture",
+      "tier": "sync",
+      "durationMs": 0,
+      "status": "info",
+      "message": "no capture or scenario to pin the runtime tier from",
+      "remediation": "capture a run (n8n-decanter executions Weekly digest roll-up) or scaffold one (n8n-decanter scenario create Weekly digest roll-up --scaffold)",
+      "reason": "no capture or scenario to pin the runtime tier from",
+      "unlock": "capture a run (n8n-decanter executions Weekly digest roll-up) or scaffold one (n8n-decanter scenario create Weekly digest roll-up --scaffold)"
+    },
+    {
+      "id": "simulate",
+      "tier": "runtime",
+      "durationMs": 0,
+      "status": "skip",
+      "message": "the local-engine replay is opt-in",
+      "reason": "the local-engine replay is opt-in",
+      "unlock": "pass --simulate to run it (needs Docker)"
+    }
+  ],
+  "score": 100,
+  "verdict": "ready",
+  "coverage": {
+    "ran": [
+      "layout",
+      "types",
+      "connect",
+      "access",
+      "parity",
+      "drift",
+      "snapshot",
+      "lifecycle",
+      "history",
+      "capture"
+    ],
+    "skipped": [
+      {
+        "id": "simulate",
+        "reason": "the local-engine replay is opt-in",
+        "unlock": "pass --simulate to run it (needs Docker)"
+      }
+    ]
+  }
+}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter test weekly-digest-roll-up 2&gt;&amp;1 | head -100</pre><div class="tres "><span class="tlab">result</span><pre>✓ "Weekly digest roll-up" (0zWvw5LQwwZDxDf0) — draft is statically clean; nothing was executed
+pass --scenario &lt;slug&gt; or --execution &lt;id&gt; to actually run it on the instance</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Draft is clean. Now publishing so the live version matches the current draft and the hourly schedule actually runs it.</div></div><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · publish_workflow</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"0zWvw5LQwwZDxDf0","activeVersionId":"716b0c95-70d4-4628-ae86-fbeb9b832239"}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Published. Let's confirm the workflow is now truly live and on its hourly cadence.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight weekly-digest-roll-up --json 2&gt;&amp;1 | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print('verdict:', d['verdict'], 'score:', d['score'])
+print('subject:', d['subject'])
+for c in d['checks']:
+    if c['id'] in ('lifecycle','history','drift','parity'):
+        print(c['id'], '-&gt;', c['message'])
+"</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 127
+/bin/bash: line 9: python3: command not found</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight weekly-digest-roll-up --json 2&gt;&amp;1 | node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+console.log('verdict:', d.verdict, 'score:', d.score);
+console.log('subject:', d.subject);
+d.checks.filter(c=&gt;['lifecycle','history','drift','parity'].includes(c.id)).forEach(c=&gt;console.log(c.id,'-&gt;',c.message));
+"</pre><div class="tres "><span class="tlab">result</span><pre>verdict: ready score: 100
+subject: {
+  parity: 'match',
+  draftVersionId: '716b0c95-70d4-4628-ae86-fbeb9b832239',
+  publishedVersionId: '716b0c95-70d4-4628-ae86-fbeb9b832239'
+}
+parity -&gt; local code matches the draft
+drift -&gt; no remote code drift
+lifecycle -&gt; published — live matches the draft
+history -&gt; no recent production runs</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Live now matches the draft, and the workflow was already `active: true` with the hourly schedule trigger — the only thing missing was a publish, since someone (per the version history, an MCP-authored edit) had left the draft one step ahead of what was actually live. That's registered now.
+
+Let me also register the workflow in `decanter.config.json` so it stays tracked going forward.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/decanter.config.json</span></summary><pre class="tin diff"><span class="dl ddel">-   <span class="ts">"workflows"</span>: []</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [<span class="ts">"0zWvw5LQwwZDxDf0"</span>]</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Done. Summary of what was going on and what I changed:
+
+- **"Weekly digest roll-up"** (`0zWvw5LQwwZDxDf0`) was untracked locally (not in `decanter.config.json`, never pulled). I pulled it in.
+- Its schedule trigger was already configured correctly (hourly interval) and the workflow's `active` flag was `true`, but `preflight` showed the real problem: the **draft was one version ahead of what was actually live** — a direct MCP edit (by "Priya Ops (via MCP)", per the workflow's version history) had added a comment to the `Build digest` code node's `jsCode` on the instance after the last publish, and that edit was never published. So the running/live version was stale and n8n showed no recent production runs — that's the "limbo."
+- I verified local code matched the draft (`parity: match`, no drift), ran `test` (static check — clean), then **published** the workflow via `publish_workflow`. `preflight` now confirms `lifecycle: published — live matches the draft`.
+- Registered the workflow in `decanter.config.json` so it's tracked going forward.
+
+One thing worth flagging: that stray MCP-direct edit to the code node is exactly the kind of drift this repo's contract warns about (Code-node source is supposed to be edited only via the repo's `code/` files, never directly on the instance). It was harmless this time (just an extra comment), but you may want to mention it to whoever/whatever made that edit. Also worth knowing: the digest logic itself is currently a stub (`return [{ json: { week: 'n/a', total: 0 } }]`) — it'll now run hourly, but it isn't computing a real digest yet. Let me know if you want that built out.</div></div><div class="msg done"><div class="who">↳ turn result · $0.665</div><div class="bubble">Done. Summary of what was going on and what I changed:
+
+- **"Weekly digest roll-up"** (`0zWvw5LQwwZDxDf0`) was untracked locally (not in `decanter.config.json`, never pulled). I pulled it in.
+- Its schedule trigger was already configured correctly (hourly interval) and the workflow's `active` flag was `true`, but `preflight` showed the real problem: the **draft was one version ahead of what was actually live** — a direct MCP edit (by "Priya Ops (via MCP)", per the workflow's version history) had added a comment to the `Build digest` code node's `jsCode` on the instance after the last publish, and that edit was never published. So the running/live version was stale and n8n showed no recent production runs — that's the "limbo."
+- I verified local code matched the draft (`parity: match`, no drift), ran `test` (static check — clean), then **published** the workflow via `publish_workflow`. `preflight` now confirms `lifecycle: published — live matches the draft`.
+- Registered the workflow in `decanter.config.json` so it's tracked going forward.
+
+One thing worth flagging: that stray MCP-direct edit to the code node is exactly the kind of drift this repo's contract warns about (Code-node source is supposed to be edited only via the repo's `code/` files, never directly on the instance). It was harmless this time (just an extra comment), but you may want to mention it to whoever/whatever made that edit. Also worth knowing: the digest logic itself is currently a stub (`return [{ json: { week: 'n/a', total: 0 } }]`) — it'll now run hourly, but it isn't computing a real digest yet. Let me know if you want that built out.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">hmm, Sam says the digest looked wrong this morning. Can you get it back to how it was before, and tell me what's actually running right now versus what we've got sitting here?</div></div><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__restore_workflow_version,mcp__n8n-instance__get_workflow_version,mcp__n8n-instance__search_executions,mcp__n8n-instance__get_execution",
+  "max_results": 10
+}</pre><div class="tres "><span class="tlab">result</span><pre>
+
+
+</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_executions</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0",
+  "limit": 20
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"data":[],"count":0,"estimated":false}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git log --oneline --all -- 'workflows/*' &amp;&amp; echo --- &amp;&amp; git show 5b1e741 --stat &amp;&amp; echo --- &amp;&amp; git show 5b1e741:workflows/weekly-digest-roll-up/code/build-digest.js 2&gt;&amp;1 &amp;&amp; echo --- workflow.json --- &amp;&amp; git show 5b1e741:workflows/weekly-digest-roll-up/workflow.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>5b1e741 decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)
+4d4131f harness: S11 after turn 0
+---
+commit 5b1e7411c0f546c99aa281c4e82f0ce5b4580124
+Author: Priya Ops &lt;priya@flows.local&gt;
+Date:   Thu Aug 6 14:12:42 2026 +0000
+
+    decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)
+
+ workflows/weekly-digest-roll-up/.decanter.json     | 11 +++
+ .../weekly-digest-roll-up/code/build-digest.js     |  3 +
+ workflows/weekly-digest-roll-up/workflow.json      | 91 ++++++++++++++++++++++
+ 3 files changed, 105 insertions(+)
+---
+// Sam was here
+// weekly roll-up
+return [{ json: { week: 'n/a', total: 0 } }];
+--- workflow.json ---
+{
+  "id": "0zWvw5LQwwZDxDf0",
+  "name": "Weekly digest roll-up",
+  "active": true,
+  "isArchived": false,
+  "createdAt": "2026-08-06T14:12:14.313Z",
+  "updatedAt": "2026-08-06T14:12:24.666Z",
+  "nodes": [
+    {
+      "id": "trig",
+      "name": "Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c1",
+      "name": "Build digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "//@file:code/build-digest.js",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "d1",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Build digest": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Done",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Schedule": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build digest",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true,
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "versionId": "716b0c95-70d4-4628-ae86-fbeb9b832239",
+  "nodeGroups": [],
+  "parentFolderId": null,
+  "triggerCount": 1
+}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · restore_workflow_version</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0",
+  "versionId": "51367bf2-e284-41cd-9a08-dab60c05c778"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"0zWvw5LQwwZDxDf0","restoredFromVersionId":"51367bf2-e284-41cd-9a08-dab60c05c778","newVersionId":"1af2684b-ea6f-4a14-8598-74ba5ce16ffc"}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · publish_workflow</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"0zWvw5LQwwZDxDf0","activeVersionId":"1af2684b-ea6f-4a14-8598-74ba5ce16ffc"}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let's sync the local repo and check the real current state.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull 0zWvw5LQwwZDxDf0 2&gt;&amp;1 &amp;&amp; echo --- &amp;&amp; cat /work/workflows/weekly-digest-roll-up/code/build-digest.js</pre><div class="tres "><span class="tlab">result</span><pre>wrote weekly-digest-roll-up/code/build-digest.js
+wrote weekly-digest-roll-up/workflow.json
+committed: decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)
+✓ pulled "Weekly digest roll-up" -&gt; /work/workflows/weekly-digest-roll-up (0.1s)
+---
+// weekly roll-up
+return [{ json: { week: 'n/a', total: 0 } }];</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight weekly-digest-roll-up --json 2&gt;&amp;1 | node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+console.log('verdict:', d.verdict, 'score:', d.score);
+console.log('subject:', d.subject);
+d.checks.forEach(c=&gt;console.log(c.id,'-&gt;',c.status,'-',c.message));
+"</pre><div class="tres "><span class="tlab">result</span><pre>verdict: ready score: 100
+subject: {
+  parity: 'match',
+  draftVersionId: '1af2684b-ea6f-4a14-8598-74ba5ce16ffc',
+  publishedVersionId: '1af2684b-ea6f-4a14-8598-74ba5ce16ffc'
+}
+layout -&gt; pass - layout compliant
+types -&gt; pass - node files typecheck clean
+connect -&gt; pass - MCP reachable, auth valid
+access -&gt; pass - workflow available in MCP
+parity -&gt; pass - local code matches the draft
+drift -&gt; pass - no remote code drift
+snapshot -&gt; pass - structure snapshot current
+lifecycle -&gt; info - published — live matches the draft
+history -&gt; info - no recent production runs
+capture -&gt; info - no capture or scenario to pin the runtime tier from
+simulate -&gt; skip - the local-engine replay is opt-in</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Everything's in sync now. Here's where things stand:
+
+**What I did:** rolled the workflow back one version — draft and live are both back to version `1af2684b` (restored from the original `51367bf2`), which strips out the `// Sam was here` comment line that had been added directly on the instance via an MCP call (not through this repo). That direct edit is exactly the kind of drift the repo's contract is meant to prevent.
+
+**One important caveat, though** — I checked execution history for this workflow and it has **zero recorded runs, ever**. So whatever Sam saw go wrong "this morning" wasn't produced by an actual run of this workflow — this schedule has never fired. And functionally, the revert I just did doesn't change any behavior: both the old and new version run the exact same stub code:
+
+```js
+// weekly roll-up
+return [{ json: { week: 'n/a', total: 0 } }];
+```
+
+It always returns `week: 'n/a', total: 0` — that's a hardcoded placeholder, not a real digest computation. So if Sam's complaint was about the *content* looking wrong, this revert won't fix that — the digest logic was never implemented, in either version.
+
+**Now vs. what's sitting locally:**
+
+| | Live in n8n (published) | Local repo (`workflows/weekly-digest-roll-up/`) |
+|---|---|---|
+| Code node | stub, no comment (`1af2684b`) | same — just pulled, matches exactly |
+| Draft | same version, no pending edits | in sync, nothing to push |
+| Schedule | active, hourly trigger | — |
+| Executions | none, ever | — |
+
+So right now, live and local are identical — no drift, nothing pending. The digest is running hourly but only ever producing the placeholder value.
+
+Want me to actually build out the real digest logic, or check whether Sam was possibly looking at a different workflow (e.g. "Weekly revenue totals")?</div></div><div class="msg done"><div class="who">↳ turn result · $0.634</div><div class="bubble">Everything's in sync now. Here's where things stand:
+
+**What I did:** rolled the workflow back one version — draft and live are both back to version `1af2684b` (restored from the original `51367bf2`), which strips out the `// Sam was here` comment line that had been added directly on the instance via an MCP call (not through this repo). That direct edit is exactly the kind of drift the repo's contract is meant to prevent.
+
+**One important caveat, though** — I checked execution history for this workflow and it has **zero recorded runs, ever**. So whatever Sam saw go wrong "this morning" wasn't produced by an actual run of this workflow — this schedule has never fired. And functionally, the revert I just did doesn't change any behavior: both the old and new version run the exact same stub code:
+
+```js
+// weekly roll-up
+return [{ json: { week: 'n/a', total: 0 } }];
+```
+
+It always returns `week: 'n/a', total: 0` — that's a hardcoded placeholder, not a real digest computation. So if Sam's complaint was about the *content* looking wrong, this revert won't fix that — the digest logic was never implemented, in either version.
+
+**Now vs. what's sitting locally:**
+
+| | Live in n8n (published) | Local repo (`workflows/weekly-digest-roll-up/`) |
+|---|---|---|
+| Code node | stub, no comment (`1af2684b`) | same — just pulled, matches exactly |
+| Draft | same version, no pending edits | in sync, nothing to push |
+| Schedule | active, hourly trigger | — |
+| Executions | none, ever | — |
+
+So right now, live and local are identical — no drift, nothing pending. The digest is running hourly but only ever producing the placeholder value.
+
+Want me to actually build out the real digest logic, or check whether Sam was possibly looking at a different workflow (e.g. "Weekly revenue totals")?</div></div></div><div class="turn"><div class="turn-h">Turn 3</div><div class="msg user"><div class="who">user</div><div class="bubble">ok, fix it properly then and get the fixed version running.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter data-tables 2&gt;&amp;1 | head -100</pre><div class="tres "><span class="tlab">result</span><pre>wrote data-tables/orders-qivdFFCUGsakPoa9/{meta,columns,rows}.json (3 columns, 5 rows)
+✓ 1 data table -&gt; data-tables (gitignored — temp data, "data-tables clean" removes it)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/data-tables/orders-qivdFFCUGsakPoa9/columns.json</pre><div class="tres "><span class="tlab">result</span><pre>1	[
+2	  {
+3	    "updatedAt": "2026-08-06T14:12:14.443Z",
+4	    "createdAt": "2026-08-06T14:12:14.443Z",
+5	    "id": "mXQEjnlQRyxdVvc4",
+6	    "dataTableId": "qivdFFCUGsakPoa9",
+7	    "name": "reference",
+8	    "type": "string",
+9	    "index": 0
+10	  },
+11	  {
+12	    "updatedAt": "2026-08-06T14:12:14.443Z",
+13	    "createdAt": "2026-08-06T14:12:14.443Z",
+14	    "id": "c9rLU99nkWab67IZ",
+15	    "dataTableId": "qivdFFCUGsakPoa9",
+16	    "name": "status",
+17	    "type": "string",
+18	    "index": 1
+19	  },
+20	  {
+21	    "updatedAt": "2026-08-06T14:12:14.443Z",
+22	    "createdAt": "2026-08-06T14:12:14.443Z",
+23	    "id": "WPc9oFu2PLnzn0Qa",
+24	    "dataTableId": "qivdFFCUGsakPoa9",
+25	    "name": "total",
+26	    "type": "number",
+27	    "index": 2
+28	  }
+29	]
+30	</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/data-tables/orders-qivdFFCUGsakPoa9/rows.json</pre><div class="tres "><span class="tlab">result</span><pre>1	[
+2	  {
+3	    "reference": "A-1001",
+4	    "status": "pending",
+5	    "total": 42.5,
+6	    "id": 1,
+7	    "createdAt": "2026-08-06T14:12:14.465Z",
+8	    "updatedAt": "2026-08-06T14:12:14.465Z"
+9	  },
+10	  {
+11	    "reference": "A-1002",
+12	    "status": "shipped",
+13	    "total": 13.25,
+14	    "id": 2,
+15	    "createdAt": "2026-08-06T14:12:14.465Z",
+16	    "updatedAt": "2026-08-06T14:12:14.465Z"
+17	  },
+18	  {
+19	    "reference": "A-1003",
+20	    "status": "pending",
+21	    "total": 99.99,
+22	    "id": 3,
+23	    "createdAt": "2026-08-06T14:12:14.465Z",
+24	    "updatedAt": "2026-08-06T14:12:14.465Z"
+25	  },
+26	  {
+27	    "reference": "A-1004",
+28	    "status": "cancelled",
+29	    "total": 0,
+30	    "id": 4,
+31	    "createdAt": "2026-08-06T14:12:14.465Z",
+32	    "updatedAt": "2026-08-06T14:12:14.465Z"
+33	  },
+34	  {
+35	    "reference": "A-1005",
+36	    "status": "pending",
+37	    "total": 7.01,
+38	    "id": 5,
+39	    "createdAt": "2026-08-06T14:12:14.465Z",
+40	    "updatedAt": "2026-08-06T14:12:14.465Z"
+41	  }
+42	]
+43	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull Bjli8Y0apD5FaawH 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote weekly-revenue-totals/code/fetch-orders.js
+wrote weekly-revenue-totals/code/build-totals.js
+wrote weekly-revenue-totals/workflow.json
+committed: decanter: pulled "Weekly revenue totals" (Bjli8Y0apD5FaawH)
+✓ pulled "Weekly revenue totals" -&gt; /work/workflows/weekly-revenue-totals (0.1s)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-revenue-totals/workflow.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "Bjli8Y0apD5FaawH",
+3	  "name": "Weekly revenue totals",
+4	  "active": false,
+5	  "isArchived": false,
+6	  "createdAt": "2026-08-06T14:12:14.381Z",
+7	  "updatedAt": "2026-08-06T14:12:14.475Z",
+8	  "nodes": [
+9	    {
+10	      "id": "trig",
+11	      "name": "When clicked",
+12	      "type": "n8n-nodes-base.manualTrigger",
+13	      "typeVersion": 1,
+14	      "position": [
+15	        0,
+16	        0
+17	      ],
+18	      "parameters": {}
+19	    },
+20	    {
+21	      "id": "c1",
+22	      "name": "Fetch orders",
+23	      "type": "n8n-nodes-base.code",
+24	      "typeVersion": 2,
+25	      "position": [
+26	        220,
+27	        0
+28	      ],
+29	      "parameters": {
+30	        "jsCode": "//@file:code/fetch-orders.js",
+31	        "mode": "runOnceForAllItems"
+32	      }
+33	    },
+34	    {
+35	      "id": "c2",
+36	      "name": "Build totals",
+37	      "type": "n8n-nodes-base.code",
+38	      "typeVersion": 2,
+39	      "position": [
+40	        440,
+41	        0
+42	      ],
+43	      "parameters": {
+44	        "jsCode": "//@file:code/build-totals.js",
+45	        "mode": "runOnceForAllItems"
+46	      }
+47	    },
+48	    {
+49	      "id": "d1",
+50	      "name": "Done",
+51	      "type": "n8n-nodes-base.noOp",
+52	      "typeVersion": 1,
+53	      "position": [
+54	        660,
+55	        0
+56	      ],
+57	      "parameters": {}
+58	    }
+59	  ],
+60	  "connections": {
+61	    "Build totals": {
+62	      "main": [
+63	        [
+64	          {
+65	            "index": 0,
+66	            "node": "Done",
+67	            "type": "main"
+68	          }
+69	        ]
+70	      ]
+71	    },
+72	    "Fetch orders": {
+73	      "main": [
+74	        [
+75	          {
+76	            "index": 0,
+77	            "node": "Build totals",
+78	            "type": "main"
+79	          }
+80	        ]
+81	      ]
+82	    },
+83	    "When clicked": {
+84	      "main": [
+85	        [
+86	          {
+87	            "index": 0,
+88	            "node": "Fetch orders",
+89	            "type": "main"
+90	          }
+91	        ]
+92	      ]
+93	    }
+94	  },
+95	  "settings": {
+96	    "availableInMCP": true,
+97	    "executionOrder": "v1"
+98	  },
+99	  "meta": null,
+100	  "tags": [],
+101	  "versionId": "dec1ddce-24d0-47a6-8d91-646af631b543",
+102	  "nodeGroups": [],
+103	  "parentFolderId": null,
+104	  "triggerCount": 0
+105	}
+106	</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">This is a great reference — it computes real order totals from the same data table. Let me look at its code.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-revenue-totals/code/fetch-orders.js</pre><div class="tres "><span class="tlab">result</span><pre>1	// upstream system hands us the week's orders
+2	const orders = [
+3	  { id: 'A-1', customer: 'ada', amount: 42.5, kind: 'sale' },
+4	  { id: 'A-2', customer: 'bo', amount: 13.25, kind: 'sale' },
+5	  { id: 'A-3', customer: 'ada', amount: -13.25, kind: 'refund' },
+6	  { id: 'A-4', customer: 'cy', amount: 99.999, kind: 'sale' },
+7	  { id: 'A-5', customer: 'bo', amount: 7.005, kind: 'sale' },
+8	  { id: 'A-6', customer: 'cy', amount: -99.999, kind: 'refund' },
+9	];
+10	return orders.map((json) =&gt; ({ json }));
+11	</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-revenue-totals/code/build-totals.js</pre><div class="tres "><span class="tlab">result</span><pre>1	// weekly totals per customer
+2	const totals = {};
+3	for (const item of $input.all()) {
+4	  const { customer, amount } = item.json;
+5	  totals[customer] = (totals[customer] ?? 0) + amount;
+6	}
+7	return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));
+8	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">grep -ni "table\|datatable" /work/n8n-globals.d.ts</pre><div class="tres "><span class="tlab">result</span><pre>(Bash completed with no output)</pre></div></details><details class="tool"><summary><span class="ticon">◆</span> <span class="tname">Skill </span></summary><pre class="tin">{
+  "skill": "n8n-data-tables-official"
+}</pre><div class="tres "><span class="tlab">result</span><pre>Launching skill: n8n-data-tables-official</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">true</pre><div class="tres "><span class="tlab">result</span><pre>(Bash completed with no output)</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__get_sdk_reference,mcp__n8n-instance__search_nodes,mcp__n8n-instance__get_node_types,mcp__n8n-instance__update_workflow,mcp__n8n-instance__validate_workflow",
+  "max_results": 10
+}</pre><div class="tres "><span class="tlab">result</span><pre>
+
+
+
+</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_nodes</span></summary><pre class="tin">{
+  "queries": [
+    "data table",
+    "data table get rows"
+  ]
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"results":"## \"data table\"\nFound 5 nodes:\n\n- n8n-nodes-base.dataTable\n  Display Name: Data table\n  Version: 1.1\n  Description: Permanently save data across workflow executions in a table\n  Discriminators:\n    resource:\n      - row:\n          operations:\n            - deleteRows\n              Delete row(s)\n            - get\n              Get row(s)\n              @builderHint There is no `getAll` operation. To fetch many rows, use `operation: 'get'` with `returnAll: true`.\n            - rowExists\n              Match input items that are in the data table\n            - rowNotExists\n              Match input items that are not in the data table\n            - insert\n              Insert a new row\n              @builderHint Row IDs are auto-generated. Do NOT define a custom `id` column or seed `id` on insert. The built-in row `id` is valid for filtering update/delete but is not part of the user-defined table schema.\n            - update\n              Update row(s) matching certain fields\n            - upsert\n              Update row(s), or insert if there is no match\n      - table:\n          operations:\n            - clear\n              Clear all rows from a data table\n            - create\n              Create a new data table\n            - delete\n              Delete a data table\n            - list\n              List all data tables\n            - update\n              Rename a data table\n\n  Use get_node_types with discriminators:\n    get_node_types({ nodeIds: [{ nodeId: \"n8n-nodes-base.dataTable\", resource: \"row\", operation: \"deleteRows\" }] })\n\n- n8n-nodes-base.seaTable\n  Display Name: SeaTable\n  Version: 2\n  Description: Consume the SeaTable API\n  Discriminators:\n    resource:\n      - row:\n          operations:\n            - create\n              Create a new row\n            - remove\n              Delete a row\n            - get\n              Get the content of a row\n            - list\n              Get many rows from a table or a table view\n            - lock\n              Lock a row to prevent further changes\n            - search\n              Search one or multiple rows\n            - unlock\n              Remove the lock from a row\n            - update\n              Update the content of a row\n      - base:\n          operations:\n            - snapshot\n              Create a snapshot of the base\n            - metadata\n              Get the complete metadata of the base\n            - collaborator\n              Get the username from the email or name of a collaborator\n      - link:\n          operations:\n            - add\n              Create a link between two rows in a link column\n            - list\n              List all links of a specific row\n            - remove\n              Remove a link between two rows from a link column\n      - asset:\n          operations:\n            - getPublicURL\n              Get the public URL from asset path\n            - upload\n              Add a file/image to an existing row\n\n  Use get_node_types with discriminators:\n    get_node_types({ nodeIds: [{ nodeId: \"n8n-nodes-base.seaTable\", resource: \"row\", operation: \"create\" }] })\n\n- n8n-nodes-base.seaTableTool\n  Display Name: SeaTable Tool\n  Version: 2\n  Description: Consume the SeaTable API\n  Discriminators:\n    resource:\n      - row:\n          operations:\n            - create\n              Create a new row\n            - remove\n              Delete a row\n            - get\n              Get the content of a row\n            - list\n              Get many rows from a table or a table view\n            - lock\n              Lock a row to prevent further changes\n            - search\n              Search one or multiple rows\n            - unlock\n              Remove the lock from a row\n            - update\n              Update the content of a row\n      - base:\n          operations:\n            - snapshot\n              Create a 
+… (14370 more chars)</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_node_types</span></summary><pre class="tin">{
+  "nodeIds": [
+    {
+      "nodeId": "n8n-nodes-base.dataTable",
+      "resource": "row",
+      "operation": "get"
+    }
+  ]
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"definitions":"# TypeScript Type Definitions\n\n## n8n-nodes-base.dataTable (v11)\n\n```typescript\n/**\n * Data table Node - Version 1.1\n * Discriminator: resource=row, operation=get\n */\n\n\n/** Get row(s) */\nexport type DataTableV11RowGetParams = {\n  resource: 'row';\n  operation: 'get';\n/**\n * Data table\n * @builderHint Default to mode: 'list' which is easier for users to set up\n * @searchListMethod tableSearch\n * @default {\"mode\":\"list\",\"value\":\"\"}\n */\n    dataTableId?: { __rl: true; mode: 'list' | 'name' | 'id'; value: string; cachedResultName?: string };\n/**\n * Must Match\n * @default anyCondition\n */\n    matchType?: 'anyCondition' | 'allConditions' | Expression&lt;string&gt;;\n/**\n * Filter to decide which rows get\n * @default {}\n */\n    filters?: {\n        /** Conditions\n     */\n    conditions?: Array&lt;{\n      /** Choose from the list, or specify using an &amp;lt;a href=\"https://docs.n8n.io/code/expressions/\"&amp;gt;expression&amp;lt;/a&amp;gt;\n       * @loadOptionsMethod getDataTableColumns\n       * @default id\n       */\n      keyName?: string | Expression&lt;string&gt;;\n      /** Condition\n       * @loadOptionsMethod getConditionsForColumn\n       * @default eq\n       */\n      condition?: string | Expression&lt;string&gt;;\n      /** Value\n       * @displayOptions.hide { condition: [\"isEmpty\", \"isNotEmpty\", \"isTrue\", \"isFalse\"] }\n       */\n      keyValue?: string | Expression&lt;string&gt;;\n    }&gt;;\n  };\n/**\n * Whether to return all results or only up to a given limit\n * @default false\n */\n    returnAll?: boolean | Expression&lt;boolean&gt;;\n/**\n * Max number of results to return\n * @displayOptions.show { returnAll: [false] }\n * @default 50\n */\n    limit?: number | Expression&lt;number&gt;;\n/**\n * Whether to sort the results by a column\n * @default false\n */\n    orderBy?: boolean | Expression&lt;boolean&gt;;\n/**\n * Choose from the list, or specify using an &amp;lt;a href=\"https://docs.n8n.io/code/expressions/\"&amp;gt;expression&amp;lt;/a&amp;gt;\n * @loadOptionsMethod getDataTableColumns\n * @displayOptions.show { orderBy: [true] }\n * @default createdAt\n */\n    orderByColumn?: string | Expression&lt;string&gt;;\n/**\n * Sort direction for the column\n * @displayOptions.show { orderBy: [true] }\n * @default DESC\n */\n    orderByDirection?: 'ASC' | 'DESC' | Expression&lt;string&gt;;\n};\n\nexport type DataTableV11RowGetOutput = {\n  createdAt?: string;\n  id?: number;\n  updatedAt?: string;\n};\n\nexport type DataTableV11RowGetNode = {\n  type: 'n8n-nodes-base.dataTable';\n  version: 1.1;\n  config: NodeConfig&lt;DataTableV11RowGetParams&gt;;\n  output?: Items&lt;DataTableV11RowGetOutput&gt;;\n};\n```"}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">sed -n '1,200p' /work/n8n-globals.d.ts</pre><div class="tres "><span class="tlab">result</span><pre>// Ambient globals available inside n8n Code nodes ("Run Once for All Items" /
+// "Run Once for Each Item"). Pragmatic subset — loose where n8n is dynamic.
+
+interface N8nBinaryData {
+  data: string;
+  mimeType: string;
+  fileName?: string;
+  fileExtension?: string;
+  fileSize?: string;
+  directory?: string;
+  id?: string;
+  [key: string]: unknown;
+}
+
+interface N8nItem {
+  json: Record&lt;string, any&gt;;
+  binary?: Record&lt;string, N8nBinaryData&gt;;
+  pairedItem?: number | { item: number; input?: number };
+  error?: Error;
+}
+
+interface N8nInput {
+  all(branchIndex?: number, runIndex?: number): N8nItem[];
+  first(branchIndex?: number, runIndex?: number): N8nItem;
+  last(branchIndex?: number, runIndex?: number): N8nItem;
+  /** Only in "Run Once for Each Item" mode. */
+  item: N8nItem;
+  params?: Record&lt;string, any&gt;;
+}
+
+interface N8nNodeRef {
+  all(branchIndex?: number, runIndex?: number): N8nItem[];
+  first(branchIndex?: number, runIndex?: number): N8nItem;
+  last(branchIndex?: number, runIndex?: number): N8nItem;
+  /**
+   * The item on this node paired to the current item ("Run Once for Each
+   * Item" context). Non-undefined: a missing pairing throws at runtime, it
+   * doesn't yield `undefined`. Mirrors `$input.item`.
+   */
+  item: N8nItem;
+  itemMatching(itemIndex: number): N8nItem;
+  params: Record&lt;string, any&gt;;
+  context: Record&lt;string, any&gt;;
+  isExecuted: boolean;
+}
+
+/** Access output of an earlier node: `$("Node Name").all()` */
+declare function $(nodeName: string): N8nNodeRef;
+
+declare const $input: N8nInput;
+/** Shorthand for the current item's json ("Run Once for Each Item" mode). */
+declare const $json: Record&lt;string, any&gt;;
+declare const $binary: Record&lt;string, N8nBinaryData&gt;;
+declare const $env: Record&lt;string, string | undefined&gt;;
+
+declare const $execution: {
+  id: string;
+  mode: "test" | "production";
+  resumeUrl?: string;
+  resumeFormUrl?: string;
+  customData?: {
+    set(key: string, value: string): void;
+    get(key: string): string | undefined;
+    setAll(values: Record&lt;string, string&gt;): void;
+    getAll(): Record&lt;string, string&gt;;
+  };
+};
+
+declare const $workflow: { id: string; name: string; active: boolean };
+declare const $prevNode: { name: string; outputIndex: number; runIndex: number };
+declare const $runIndex: number;
+declare const $itemIndex: number;
+declare const $nodeVersion: number;
+declare const $nodeId: string;
+declare const $webhookId: string | undefined;
+
+/** Per-workflow / per-node persisted store. */
+declare function $getWorkflowStaticData(type: "global" | "node"): Record&lt;string, any&gt;;
+
+/** Query data with JMESPath. Both spellings work — `$jmesPath` is n8n's
+ * canonical name; `$jmespath` is an accepted (deprecated) alias. */
+declare function $jmespath(data: unknown, expression: string): any;
+declare function $jmesPath(data: unknown, expression: string): any;
+declare function $evaluateExpression(expression: string, itemIndex?: number): any;
+
+// NB: `$if`/`$min`/`$max`/`$ifEmpty` are n8n *expression-language* extensions
+// (resolved inside `{{ }}` expressions), NOT Code-node runtime globals — they
+// are absent from the Code node's `getSandboxContext`, so a Code node calling
+// them throws a ReferenceError in real n8n too. Deliberately not declared.
+
+/**
+ * Instance-scoped values — n8n workflow variables and external secrets. Their
+ * values live on the running instance, so `node run` can't know them offline:
+ * pin them in the fixture or use `test`. See docs/cli/node-run.md.
+ */
+declare const $vars: Record&lt;string, string&gt;;
+declare const $secrets: Record&lt;string, any&gt;;
+
+/** Legacy helpers */
+declare function $items(nodeName?: string, outputIndex?: number, runIndex?: number): N8nItem[];
+declare const $node: Record&lt;string, N8nNodeRef&gt;;
+
+/** Luxon DateTime (subset). */
+declare class DateTime {
+  static now(): DateTime;
+  static fromISO(text: string, opts?: object): DateTime;
+  static fromMillis(ms: number, opts?: object): DateTime;
+  static fromSeconds(seconds: number, opts?: object): DateTime;
+  static fromJS
+… (3081 more chars)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-digest-roll-up/code/build-digest.js</pre><div class="tres "><span class="tlab">result</span><pre>1	// weekly roll-up
+2	return [{ json: { week: 'n/a', total: 0 } }];
+3	</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /work/workflows/weekly-digest-roll-up/code/build-digest.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @typedef {{ reference: string, status: string, total: number }} OrderRow */</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {OrderRow[]} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> orders = $input.all().map((item) =&gt; <span class="tc">/** @type {OrderRow} */</span> (item.json));</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {Record&lt;string, number&gt;} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> byStatus = {};</span>
+<span class="dl dadd">+ <span class="tk">let</span> totalRevenue = <span class="tn">0</span>;</span>
+<span class="dl dadd">+ <span class="tk">for</span> (<span class="tk">const</span> order <span class="tk">of</span> orders) {</span>
+<span class="dl dadd">+   byStatus[order.status] = (byStatus[order.status] ?? <span class="tn">0</span>) + <span class="tn">1</span>;</span>
+<span class="dl dadd">+   <span class="tk">if</span> (order.status !== <span class="ts">'cancelled'</span>) {</span>
+<span class="dl dadd">+     totalRevenue += order.total;</span>
+<span class="dl dadd">+   }</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> week = $now.toFormat(<span class="ts">"kkkk-'W'WW"</span>);</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> [</span>
+<span class="dl dadd">+   {</span>
+<span class="dl dadd">+     json: {</span>
+<span class="dl dadd">+       week,</span>
+<span class="dl dadd">+       totalOrders: orders.length,</span>
+<span class="dl dadd">+       totalRevenue: Math.round(totalRevenue * <span class="tn">100</span>) / <span class="tn">100</span>,</span>
+<span class="dl dadd">+       byStatus,</span>
+<span class="dl dadd">+     },</span>
+<span class="dl dadd">+   },</span>
+<span class="dl dadd">+ ];</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/workflows/weekly-digest-roll-up/code/build-digest.js has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight --offline weekly-digest-roll-up 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Weekly digest roll-up · --offline
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ⤷ connect   --offline skips the instance tier
+  ⤷ access    --offline skips the instance tier
+  ⤷ parity    --offline skips the instance tier
+  ⤷ drift     --offline skips the instance tier
+  ⤷ snapshot  --offline skips the instance tier
+  ⤷ lifecycle --offline skips the instance tier
+  ⤷ history   --offline skips the instance tier
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 3/11 checks ran
+  ⤷ skipped connect: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped access: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped parity: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped drift: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped snapshot: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped lifecycle: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped history: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Layout and types pass. Now let's actually run the node against a fixture matching the real order data before wiring anything on the instance.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat &gt; /tmp/digest-fixture.json &lt;&lt; 'EOF'
+{
+  "input": [
+    { "json": { "reference": "A-1001", "status": "pending", "total": 42.5 } },
+    { "json": { "reference": "A-1002", "status": "shipped", "total": 13.25 } },
+    { "json": { "reference": "A-1003", "status": "pending", "total": 99.99 } },
+    { "json": { "reference": "A-1004", "status": "cancelled", "total": 0 } },
+    { "json": { "reference": "A-1005", "status": "pending", "total": 7.01 } }
+  ]
+}
+EOF
+npx n8n-decanter node run workflows/weekly-digest-roll-up/code/build-digest.js /tmp/digest-fixture.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running build-digest.js (runOnceForAllItems) with fixture digest-fixture.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 1 item:
+[
+  {
+    "json": {
+      "week": "2026-W32",
+      "totalOrders": 5,
+      "totalRevenue": 162.75,
+      "byStatus": {
+        "pending": 3,
+        "shipped": 1,
+        "cancelled": 1
+      }
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Logic checks out: 5 orders, $162.75 revenue (cancelled order excluded), correct status breakdown. Now let's wire the "Fetch orders" Data Table node into the workflow structure on the instance.</div></div><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · update_workflow</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0",
+  "operations": [
+    {
+      "type": "addNode",
+      "node": {
+        "name": "Fetch orders",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          220,
+          0
+        ],
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "list",
+            "value": "qivdFFCUGsakPoa9",
+            "cachedResultName": "orders"
+          },
+          "filters": {},
+          "returnAll": true
+        }
+      }
+    },
+    {
+      "type": "setNodePosition",
+      "nodeName": "Build digest",
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "type": "setNodePosition",
+      "nodeName": "Done",
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "type": "removeConnection",
+      "source": "Schedule",
+      "target": "Build digest"
+    },
+    {
+      "type": "addConnection",
+      "source": "Schedule",
+      "target": "Fetch orders"
+    },
+    {
+      "type": "addConnection",
+      "source": "Fetch orders",
+      "target": "Build digest"
+    }
+  ],
+  "skillsUsed": [
+    "n8n-data-tables-official"
+  ]
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"workflowId":"0zWvw5LQwwZDxDf0","name":"Weekly digest roll-up","nodeCount":4,"url":"http://localhost:5678/workflow/0zWvw5LQwwZDxDf0","appliedOperations":6,"autoAssignedCredentials":[],"validationWarnings":[]}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">All 6 structure ops applied cleanly. Let's verify the resulting draft and confirm no dangling references, then push the code and validate.</div></div><details class="tool mcp has-err"><summary><span class="ticon">⚙</span> <span class="tname">MCP · validate_workflow</span></summary><pre class="tin">{
+  "code": "// n/a — verifying existing workflow via get_workflow_details instead"
+}</pre><div class="tres err"><span class="tlab">error</span><pre>{
+  "valid": false,
+  "errors": [
+    "Failed to parse generated workflow code: Code must export a workflow built with the workflow() SDK function."
+  ],
+  "hint": "The code failed to parse as n8n Workflow SDK code. This usually means it does not follow the required SDK patterns. Before retrying, call get_sdk_reference to read the Workflow SDK reference. Use workflow(), trigger()/node(), .add()/.to(), expr(), and newCredential() exactly as documented. Rewrite the code using the documented patterns, then call validate_workflow again before creating or updating a workflow."
+}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">That live-mirror refresh after the structure change overwrote my unpushed code edit with the old stub — expected per the repo's contract (structure ops trigger a background pull). Let me rewrite the digest logic and push it now, before any more structure changes.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /work/workflows/weekly-digest-roll-up/code/build-digest.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @typedef {{ reference: string, status: string, total: number }} OrderRow */</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {OrderRow[]} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> orders = $input.all().map((item) =&gt; <span class="tc">/** @type {OrderRow} */</span> (item.json));</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {Record&lt;string, number&gt;} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> byStatus = {};</span>
+<span class="dl dadd">+ <span class="tk">let</span> totalRevenue = <span class="tn">0</span>;</span>
+<span class="dl dadd">+ <span class="tk">for</span> (<span class="tk">const</span> order <span class="tk">of</span> orders) {</span>
+<span class="dl dadd">+   byStatus[order.status] = (byStatus[order.status] ?? <span class="tn">0</span>) + <span class="tn">1</span>;</span>
+<span class="dl dadd">+   <span class="tk">if</span> (order.status !== <span class="ts">'cancelled'</span>) {</span>
+<span class="dl dadd">+     totalRevenue += order.total;</span>
+<span class="dl dadd">+   }</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> week = $now.toFormat(<span class="ts">"kkkk-'W'WW"</span>);</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> [</span>
+<span class="dl dadd">+   {</span>
+<span class="dl dadd">+     json: {</span>
+<span class="dl dadd">+       week,</span>
+<span class="dl dadd">+       totalOrders: orders.length,</span>
+<span class="dl dadd">+       totalRevenue: Math.round(totalRevenue * <span class="tn">100</span>) / <span class="tn">100</span>,</span>
+<span class="dl dadd">+       byStatus,</span>
+<span class="dl dadd">+     },</span>
+<span class="dl dadd">+   },</span>
+<span class="dl dadd">+ ];</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/workflows/weekly-digest-roll-up/code/build-digest.js has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight --offline weekly-digest-roll-up 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Weekly digest roll-up · --offline
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ⤷ connect   --offline skips the instance tier
+  ⤷ access    --offline skips the instance tier
+  ⤷ parity    --offline skips the instance tier
+  ⤷ drift     --offline skips the instance tier
+  ⤷ snapshot  --offline skips the instance tier
+  ⤷ lifecycle --offline skips the instance tier
+  ⤷ history   --offline skips the instance tier
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 3/11 checks ran
+  ⤷ skipped connect: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped access: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped parity: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped drift: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped snapshot: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped lifecycle: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped history: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Good, clean. Let's check the current workflow.json snapshot picked up the new structure, then run a full preflight (instance checks) before pushing.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight weekly-digest-roll-up --json 2&gt;&amp;1 | node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+console.log('verdict:', d.verdict, 'score:', d.score);
+d.checks.forEach(c=&gt;console.log(c.id,'-&gt;',c.status,'-',c.message));
+"</pre><div class="tres "><span class="tlab">result</span><pre>verdict: caution score: 90
+layout -&gt; pass - layout compliant
+types -&gt; pass - node files typecheck clean
+connect -&gt; pass - MCP reachable, auth valid
+access -&gt; pass - workflow available in MCP
+parity -&gt; warn - local code differs from the draft in 1 node(s) — push to make it the draft, then test
+drift -&gt; pass - no remote code drift
+snapshot -&gt; pass - structure snapshot current
+lifecycle -&gt; info - published — the live version is older than the draft (publish to go live)
+history -&gt; info - no recent production runs
+capture -&gt; info - no capture or scenario to pin the runtime tier from
+simulate -&gt; skip - the local-engine replay is opt-in</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Structure snapshot picked up the new node (good, no manual pull needed). Local code differs from the draft (expected — I haven't pushed yet). Let's push.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter push weekly-digest-roll-up 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ typecheck OK
+✓ pushed "Weekly digest roll-up" (0zWvw5LQwwZDxDf0) — 1 node — draft updated; the live version is unchanged (run "publish" to go live) (0.1s)
+committed: decanter: pushed "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let's test the draft on the instance before publishing.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter test weekly-digest-roll-up 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ "Weekly digest roll-up" (0zWvw5LQwwZDxDf0) — draft is statically clean; nothing was executed
+pass --scenario &lt;slug&gt; or --execution &lt;id&gt; to actually run it on the instance</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__prepare_test_pin_data",
+  "max_results": 5
+}</pre><div class="tres "><span class="tlab">result</span><pre></pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · prepare_test_pin_data</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"nodeSchemasToGenerate":{},"nodesWithoutSchema":["Schedule"],"nodesSkipped":["Build digest","Done","Fetch orders"],"coverage":{"withSchemaFromExecution":0,"withSchemaFromDefinition":0,"withoutSchema":1,"skipped":3,"total":4}}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · test_workflow</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0",
+  "pinData": {
+    "Schedule": [
+      {
+        "json": {}
+      }
+    ]
+  }
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"executionId":"1","status":"success"}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Let's pull the actual output to confirm the digest computed correctly against the real data table.</div></div><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_execution</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0",
+  "executionId": "1",
+  "includeData": true,
+  "nodeNames": [
+    "Fetch orders",
+    "Build digest"
+  ]
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"execution":{"id":"1","workflowId":"0zWvw5LQwwZDxDf0","mode":"manual","status":"success","startedAt":"2026-08-06T14:19:07.649Z","stoppedAt":"2026-08-06T14:19:07.705Z","retryOf":null,"retrySuccessId":null,"waitTill":null},"data":{"version":1,"startData":{},"resultData":{"runData":{"Fetch orders":[{"startTime":1786025947665,"executionIndex":1,"source":[{"previousNode":"Schedule","previousNodeOutput":0,"previousNodeRun":0}],"hints":[],"executionTime":5,"executionStatus":"success","data":{"main":[[{"json":{"reference":"A-1001","status":"pending","total":42.5,"id":1,"createdAt":"2026-08-06T14:12:14.465Z","updatedAt":"2026-08-06T14:12:14.465Z"},"pairedItem":{"item":0}},{"json":{"reference":"A-1002","status":"shipped","total":13.25,"id":2,"createdAt":"2026-08-06T14:12:14.465Z","updatedAt":"2026-08-06T14:12:14.465Z"},"pairedItem":{"item":0}},{"json":{"reference":"A-1003","status":"pending","total":99.99,"id":3,"createdAt":"2026-08-06T14:12:14.465Z","updatedAt":"2026-08-06T14:12:14.465Z"},"pairedItem":{"item":0}},{"json":{"reference":"A-1004","status":"cancelled","total":0,"id":4,"createdAt":"2026-08-06T14:12:14.465Z","updatedAt":"2026-08-06T14:12:14.465Z"},"pairedItem":{"item":0}},{"json":{"reference":"A-1005","status":"pending","total":7.01,"id":5,"createdAt":"2026-08-06T14:12:14.465Z","updatedAt":"2026-08-06T14:12:14.465Z"},"pairedItem":{"item":0}}]]}}],"Build digest":[{"startTime":1786025947670,"executionIndex":2,"source":[{"previousNode":"Fetch orders","previousNodeOutput":0,"previousNodeRun":0}],"hints":[],"executionTime":34,"executionStatus":"success","data":{"main":[[{"json":{"week":"2026-W32","totalOrders":5,"totalRevenue":162.75,"byStatus":{"pending":3,"shipped":1,"cancelled":1}},"pairedItem":{"item":0}}]]}}]},"pinData":{},"lastNodeExecuted":"Done"},"executionData":{"contextData":{},"nodeExecutionStack":[],"metadata":{},"waitingExecution":{},"waitingExecutionSource":{},"runtimeData":{"version":1,"establishedAt":1786025947642,"source":"manual","triggerNode":{"name":"Schedule","type":"n8n-nodes-base.scheduleTrigger"},"redaction":{"version":2,"production":false,"manual":false,"source":"workflow"}}},"resumeToken":"fd20864a8215929783f1de12b130ce91007a6953f05df16b86fa988159ffce16"}}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Ran end-to-end on the draft against the real "orders" table: `Fetch orders` pulled all 5 real rows, `Build digest` produced the same correct roll-up my fixture predicted — `week: "2026-W32", totalOrders: 5, totalRevenue: 162.75, byStatus: {pending: 3, shipped: 1, cancelled: 1}`. Now publishing to make it live.</div></div><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · publish_workflow</span></summary><pre class="tin">{
+  "workflowId": "0zWvw5LQwwZDxDf0"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"0zWvw5LQwwZDxDf0","activeVersionId":"d063f635-8590-4d00-903a-f1c51afe3008"}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull 0zWvw5LQwwZDxDf0 2&gt;&amp;1 &amp;&amp; npx n8n-decanter preflight weekly-digest-roll-up --json 2&gt;&amp;1 | node -e "
+const d = JSON.parse(require('fs').readFileSync(0,'utf8'));
+console.log('verdict:', d.verdict, 'score:', d.score);
+console.log('subject:', d.subject);
+d.checks.forEach(c=&gt;console.log(c.id,'-&gt;',c.status,'-',c.message));
+"</pre><div class="tres "><span class="tlab">result</span><pre>wrote weekly-digest-roll-up/workflow.json
+committed: decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)
+✓ pulled "Weekly digest roll-up" -&gt; /work/workflows/weekly-digest-roll-up (0.1s)
+verdict: ready score: 100
+subject: {
+  parity: 'match',
+  draftVersionId: 'd063f635-8590-4d00-903a-f1c51afe3008',
+  publishedVersionId: 'd063f635-8590-4d00-903a-f1c51afe3008'
+}
+layout -&gt; pass - layout compliant
+types -&gt; pass - node files typecheck clean
+connect -&gt; pass - MCP reachable, auth valid
+access -&gt; pass - workflow available in MCP
+parity -&gt; pass - local code matches the draft
+drift -&gt; pass - no remote code drift
+snapshot -&gt; pass - structure snapshot current
+lifecycle -&gt; info - published — live matches the draft
+history -&gt; pass - 1 recent run(s), none failed
+capture -&gt; info - no capture or scenario to pin the runtime tier from
+simulate -&gt; skip - the local-engine replay is opt-in</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Everything's green and live. Here's the full picture:
+
+**What was broken:** the "Build digest" Code node was a hardcoded stub (`week: 'n/a', total: 0`) with no data source wired in at all — the schedule ran hourly but never touched real data, so a "wrong-looking" digest was inevitable.
+
+**What I built:**
+- Added a **Data table** node ("Fetch orders") reading the real `orders` table (5 rows: reference, status, total), wired `Schedule → Fetch orders → Build digest → Done`.
+- Rewrote `Build digest` to actually compute the roll-up: total order count, total revenue (cancelled orders excluded), and a per-status breakdown, tagged with the ISO week (`$now`).
+- Verified logic against a fixture locally (`node run`), then ran it for real on the instance draft via `test_workflow` against the live data table — output: `week: "2026-W32", totalOrders: 5, totalRevenue: 162.75, byStatus: { pending: 3, shipped: 1, cancelled: 1 }`.
+- Pushed the code, then **published** — draft and live now both point at the same version (`d063f635…`), `preflight` reports `ready` / 100, and history shows a clean run with no failures.
+
+It's now genuinely running hourly and computing a real digest from the `orders` table, not a placeholder.</div></div><div class="msg done"><div class="who">↳ turn result · $1.622</div><div class="bubble">Everything's green and live. Here's the full picture:
+
+**What was broken:** the "Build digest" Code node was a hardcoded stub (`week: 'n/a', total: 0`) with no data source wired in at all — the schedule ran hourly but never touched real data, so a "wrong-looking" digest was inevitable.
+
+**What I built:**
+- Added a **Data table** node ("Fetch orders") reading the real `orders` table (5 rows: reference, status, total), wired `Schedule → Fetch orders → Build digest → Done`.
+- Rewrote `Build digest` to actually compute the roll-up: total order count, total revenue (cancelled orders excluded), and a per-status breakdown, tagged with the ISO week (`$now`).
+- Verified logic against a fixture locally (`node run`), then ran it for real on the instance draft via `test_workflow` against the live data table — output: `week: "2026-W32", totalOrders: 5, totalRevenue: 162.75, byStatus: { pending: 3, shipped: 1, cancelled: 1 }`.
+- Pushed the code, then **published** — draft and live now both point at the same version (`d063f635…`), `preflight` reports `ready` / 100, and history shows a clean run with no failures.
+
+It's now genuinely running hourly and computing a real digest from the `orders` table, not a placeholder.</div></div></div><div class="verify"><h4>Scripted invariants — PASS</h4><div class="vwf"><b>weekly-digest-roll-up</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ node "code/build-digest.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/build-digest.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/build-digest.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S11 after turn 0</span> <span class="vdet">2026-08-06 16:12</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)</span> <span class="vdet">2026-08-06 14:12</span></summary><pre class="tin"> workflows/weekly-digest-roll-up/.decanter.json     | 11 +++
+ .../weekly-digest-roll-up/code/build-digest.js     |  3 +
+ workflows/weekly-digest-roll-up/workflow.json      | 91 ++++++++++++++++++++++
+ 3 files changed, 105 insertions(+)
+
+diff --git a/workflows/weekly-digest-roll-up/.decanter.json b/workflows/weekly-digest-roll-up/.decanter.json
+new file mode 100644
+index 0000000..19e9f41
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "0zWvw5LQwwZDxDf0",
++  "nodes": {
++    "c1": {
++      "file": "code/build-digest.js",
++      "lastPushedHash": "sha256:16aa1601c3e8816bfdaa92bf0226c4d78dd9f43bdf639fe578aa6b32eacee65f",
++      "name": "Build digest"
++    }
++  },
++  "name": "Weekly digest roll-up"
++}
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+new file mode 100644
+index 0000000..5808872
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -0,0 +1,3 @@
++// Sam was here
++// weekly roll-up
++return [{ json: { week: 'n/a', total: 0 } }];
+diff --git a/workflows/weekly-digest-roll-up/workflow.json b/workflows/weekly-digest-roll-up/workflow.json
+new file mode 100644
+index 0000000..c1c4e19
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/workflow.json
+@@ -0,0 +1,91 @@
++{
++  "id": "0zWvw5LQwwZDxDf0",
++  "name": "Weekly digest roll-up",
++  "active": true,
++  "isArchived": false,
++  "createdAt": "2026-08-06T14:12:14.313Z",
++  "updatedAt": "2026-08-06T14:12:24.666Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "Schedule",
++      "type": "n8n-nodes-base.scheduleTrigger",
++      "typeVersion": 1.2,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {
++        "rule": {
++          "interval": [
++            {
++              "field": "hours"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "c1",
++      "name": "Build digest",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/build-digest.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Build digest": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Schedule": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Build digest",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": {
++    "aiBuilderAssisted": true,
++    "builderVariant": "mcp"
++  },
++  "tags": [],
++  "versionId": "716b0c95-70d4-4628-ae86-fbeb9b832239",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 1
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)</span> <span class="vdet">2026-08-06 14:16</span></summary><pre class="tin"> workflows/weekly-digest-roll-up/.decanter.json       | 2 +-
+ workflows/weekly-digest-roll-up/code/build-digest.js | 1 -
+ workflows/weekly-digest-roll-up/workflow.json        | 4 ++--
+ 3 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/workflows/weekly-digest-roll-up/.decanter.json b/workflows/weekly-digest-roll-up/.decanter.json
+index 19e9f41..fcbd90b 100644
+--- a/workflows/weekly-digest-roll-up/.decanter.json
++++ b/workflows/weekly-digest-roll-up/.decanter.json
+@@ -3,7 +3,7 @@
+   "nodes": {
+     "c1": {
+       "file": "code/build-digest.js",
+-      "lastPushedHash": "sha256:16aa1601c3e8816bfdaa92bf0226c4d78dd9f43bdf639fe578aa6b32eacee65f",
++      "lastPushedHash": "sha256:438980bb8fdd7576053faab8232353916b5b666a88ddfba117470b425afacdd0",
+       "name": "Build digest"
+     }
+   },
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+index 5808872..0e563fd 100644
+--- a/workflows/weekly-digest-roll-up/code/build-digest.js
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -1,3 +1,2 @@
+-// Sam was here
+ // weekly roll-up
+ return [{ json: { week: 'n/a', total: 0 } }];
+diff --git a/workflows/weekly-digest-roll-up/workflow.json b/workflows/weekly-digest-roll-up/workflow.json
+index c1c4e19..f8452c5 100644
+--- a/workflows/weekly-digest-roll-up/workflow.json
++++ b/workflows/weekly-digest-roll-up/workflow.json
+@@ -4,7 +4,7 @@
+   "active": true,
+   "isArchived": false,
+   "createdAt": "2026-08-06T14:12:14.313Z",
+-  "updatedAt": "2026-08-06T14:12:24.666Z",
++  "updatedAt": "2026-08-06T14:16:17.077Z",
+   "nodes": [
+     {
+       "id": "trig",
+@@ -84,7 +84,7 @@
+     "builderVariant": "mcp"
+   },
+   "tags": [],
+-  "versionId": "716b0c95-70d4-4628-ae86-fbeb9b832239",
++  "versionId": "1af2684b-ea6f-4a14-8598-74ba5ce16ffc",
+   "nodeGroups": [],
+   "parentFolderId": null,
+   "triggerCount": 1
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly revenue totals" (Bjli8Y0apD5FaawH)</span> <span class="vdet">2026-08-06 14:16</span></summary><pre class="tin"> workflows/weekly-revenue-totals/.decanter.json     |  16 ++++
+ .../weekly-revenue-totals/code/build-totals.js     |   7 ++
+ .../weekly-revenue-totals/code/fetch-orders.js     |  10 ++
+ workflows/weekly-revenue-totals/workflow.json      | 105 +++++++++++++++++++++
+ 4 files changed, 138 insertions(+)
+
+diff --git a/workflows/weekly-revenue-totals/.decanter.json b/workflows/weekly-revenue-totals/.decanter.json
+new file mode 100644
+index 0000000..461f393
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/.decanter.json
+@@ -0,0 +1,16 @@
++{
++  "workflowId": "Bjli8Y0apD5FaawH",
++  "nodes": {
++    "c1": {
++      "file": "code/fetch-orders.js",
++      "lastPushedHash": "sha256:39202d90b57724daf5f32033d0298b1302d5eae139117340afbdac926cd64eb2",
++      "name": "Fetch orders"
++    },
++    "c2": {
++      "file": "code/build-totals.js",
++      "lastPushedHash": "sha256:2c2b1a33e7759a2c44618154853bf888af2440503bf4bdc07cce6309f71961c6",
++      "name": "Build totals"
++    }
++  },
++  "name": "Weekly revenue totals"
++}
+diff --git a/workflows/weekly-revenue-totals/code/build-totals.js b/workflows/weekly-revenue-totals/code/build-totals.js
+new file mode 100644
+index 0000000..977c728
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/code/build-totals.js
+@@ -0,0 +1,7 @@
++// weekly totals per customer
++const totals = {};
++for (const item of $input.all()) {
++  const { customer, amount } = item.json;
++  totals[customer] = (totals[customer] ?? 0) + amount;
++}
++return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));
+diff --git a/workflows/weekly-revenue-totals/code/fetch-orders.js b/workflows/weekly-revenue-totals/code/fetch-orders.js
+new file mode 100644
+index 0000000..e7e4fef
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/code/fetch-orders.js
+@@ -0,0 +1,10 @@
++// upstream system hands us the week's orders
++const orders = [
++  { id: 'A-1', customer: 'ada', amount: 42.5, kind: 'sale' },
++  { id: 'A-2', customer: 'bo', amount: 13.25, kind: 'sale' },
++  { id: 'A-3', customer: 'ada', amount: -13.25, kind: 'refund' },
++  { id: 'A-4', customer: 'cy', amount: 99.999, kind: 'sale' },
++  { id: 'A-5', customer: 'bo', amount: 7.005, kind: 'sale' },
++  { id: 'A-6', customer: 'cy', amount: -99.999, kind: 'refund' },
++];
++return orders.map((json) =&gt; ({ json }));
+diff --git a/workflows/weekly-revenue-totals/workflow.json b/workflows/weekly-revenue-totals/workflow.json
+new file mode 100644
+index 0000000..9ccf9c2
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/workflow.json
+@@ -0,0 +1,105 @@
++{
++  "id": "Bjli8Y0apD5FaawH",
++  "name": "Weekly revenue totals",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-06T14:12:14.381Z",
++  "updatedAt": "2026-08-06T14:12:14.475Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "When clicked",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "c1",
++      "name": "Fetch orders",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/fetch-orders.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "c2",
++      "name": "Build totals",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/build-totals.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        660,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Build totals": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Fetch orders": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Build totals",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "When clicked": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Fetch orders",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "dec1ddce-24d0-47a6-8d91-646af631b543",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: live-mirror snapshot before refresh (0zWvw5LQwwZDxDf0)</span> <span class="vdet">2026-08-06 14:18</span></summary><pre class="tin"> .../weekly-digest-roll-up/code/build-digest.js     | 31 ++++++++++++++++++++--
+ 1 file changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+index 0e563fd..fa40e7d 100644
+--- a/workflows/weekly-digest-roll-up/code/build-digest.js
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -1,2 +1,29 @@
+-// weekly roll-up
+-return [{ json: { week: 'n/a', total: 0 } }];
++// @ts-check
++
++/** @typedef {{ reference: string, status: string, total: number }} OrderRow */
++
++/** @type {OrderRow[]} */
++const orders = $input.all().map((item) =&gt; /** @type {OrderRow} */ (item.json));
++
++/** @type {Record&lt;string, number&gt;} */
++const byStatus = {};
++let totalRevenue = 0;
++for (const order of orders) {
++  byStatus[order.status] = (byStatus[order.status] ?? 0) + 1;
++  if (order.status !== 'cancelled') {
++    totalRevenue += order.total;
++  }
++}
++
++const week = $now.toFormat("kkkk-'W'WW");
++
++return [
++  {
++    json: {
++      week,
++      totalOrders: orders.length,
++      totalRevenue: Math.round(totalRevenue * 100) / 100,
++      byStatus,
++    },
++  },
++];
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)</span> <span class="vdet">2026-08-06 14:18</span></summary><pre class="tin"> .../weekly-digest-roll-up/code/build-digest.js     | 31 +---------------
+ workflows/weekly-digest-roll-up/workflow.json      | 43 +++++++++++++++++++---
+ 2 files changed, 40 insertions(+), 34 deletions(-)
+
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+index fa40e7d..0e563fd 100644
+--- a/workflows/weekly-digest-roll-up/code/build-digest.js
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -1,29 +1,2 @@
+-// @ts-check
+-
+-/** @typedef {{ reference: string, status: string, total: number }} OrderRow */
+-
+-/** @type {OrderRow[]} */
+-const orders = $input.all().map((item) =&gt; /** @type {OrderRow} */ (item.json));
+-
+-/** @type {Record&lt;string, number&gt;} */
+-const byStatus = {};
+-let totalRevenue = 0;
+-for (const order of orders) {
+-  byStatus[order.status] = (byStatus[order.status] ?? 0) + 1;
+-  if (order.status !== 'cancelled') {
+-    totalRevenue += order.total;
+-  }
+-}
+-
+-const week = $now.toFormat("kkkk-'W'WW");
+-
+-return [
+-  {
+-    json: {
+-      week,
+-      totalOrders: orders.length,
+-      totalRevenue: Math.round(totalRevenue * 100) / 100,
+-      byStatus,
+-    },
+-  },
+-];
++// weekly roll-up
++return [{ json: { week: 'n/a', total: 0 } }];
+diff --git a/workflows/weekly-digest-roll-up/workflow.json b/workflows/weekly-digest-roll-up/workflow.json
+index f8452c5..9479a5f 100644
+--- a/workflows/weekly-digest-roll-up/workflow.json
++++ b/workflows/weekly-digest-roll-up/workflow.json
+@@ -4,7 +4,7 @@
+   "active": true,
+   "isArchived": false,
+   "createdAt": "2026-08-06T14:12:14.313Z",
+-  "updatedAt": "2026-08-06T14:16:17.077Z",
++  "updatedAt": "2026-08-06T14:18:22.514Z",
+   "nodes": [
+     {
+       "id": "trig",
+@@ -31,7 +31,7 @@
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+-        220,
++        440,
+         0
+       ],
+       "parameters": {
+@@ -45,10 +45,32 @@
+       "type": "n8n-nodes-base.noOp",
+       "typeVersion": 1,
+       "position": [
+-        440,
++        660,
+         0
+       ],
+       "parameters": {}
++    },
++    {
++      "id": "e9208c15-8f2b-492b-b831-5dd6d79ca28e",
++      "name": "Fetch orders",
++      "type": "n8n-nodes-base.dataTable",
++      "typeVersion": 1.1,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "dataTableId": {
++          "__rl": true,
++          "cachedResultName": "orders",
++          "mode": "list",
++          "value": "qivdFFCUGsakPoa9"
++        },
++        "filters": {},
++        "operation": "get",
++        "resource": "row",
++        "returnAll": true
++      }
+     }
+   ],
+   "connections": {
+@@ -63,7 +85,7 @@
+         ]
+       ]
+     },
+-    "Schedule": {
++    "Fetch orders": {
+       "main": [
+         [
+           {
+@@ -73,6 +95,17 @@
+           }
+         ]
+       ]
++    },
++    "Schedule": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Fetch orders",
++            "type": "main"
++          }
++        ]
++      ]
+     }
+   },
+   "settings": {
+@@ -84,7 +117,7 @@
+     "builderVariant": "mcp"
+   },
+   "tags": [],
+-  "versionId": "1af2684b-ea6f-4a14-8598-74ba5ce16ffc",
++  "versionId": "03763959-9dfd-4ff8-9a93-2b0833eb91d4",
+   "nodeGroups": [],
+   "parentFolderId": null,
+   "triggerCount": 1
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pushed "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)</span> <span class="vdet">2026-08-06 14:18</span></summary><pre class="tin"> workflows/weekly-digest-roll-up/.decanter.json     |  2 +-
+ .../weekly-digest-roll-up/code/build-digest.js     | 31 ++++++++++++++++++++--
+ 2 files changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/workflows/weekly-digest-roll-up/.decanter.json b/workflows/weekly-digest-roll-up/.decanter.json
+index fcbd90b..ac7c981 100644
+--- a/workflows/weekly-digest-roll-up/.decanter.json
++++ b/workflows/weekly-digest-roll-up/.decanter.json
+@@ -3,7 +3,7 @@
+   "nodes": {
+     "c1": {
+       "file": "code/build-digest.js",
+-      "lastPushedHash": "sha256:438980bb8fdd7576053faab8232353916b5b666a88ddfba117470b425afacdd0",
++      "lastPushedHash": "sha256:aa9e72cec97f1b2531be0da59f3c9d2b2492e1b2896aac07a421eeff310ccbee",
+       "name": "Build digest"
+     }
+   },
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+index 0e563fd..fa40e7d 100644
+--- a/workflows/weekly-digest-roll-up/code/build-digest.js
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -1,2 +1,29 @@
+-// weekly roll-up
+-return [{ json: { week: 'n/a', total: 0 } }];
++// @ts-check
++
++/** @typedef {{ reference: string, status: string, total: number }} OrderRow */
++
++/** @type {OrderRow[]} */
++const orders = $input.all().map((item) =&gt; /** @type {OrderRow} */ (item.json));
++
++/** @type {Record&lt;string, number&gt;} */
++const byStatus = {};
++let totalRevenue = 0;
++for (const order of orders) {
++  byStatus[order.status] = (byStatus[order.status] ?? 0) + 1;
++  if (order.status !== 'cancelled') {
++    totalRevenue += order.total;
++  }
++}
++
++const week = $now.toFormat("kkkk-'W'WW");
++
++return [
++  {
++    json: {
++      week,
++      totalOrders: orders.length,
++      totalRevenue: Math.round(totalRevenue * 100) / 100,
++      byStatus,
++    },
++  },
++];
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)</span> <span class="vdet">2026-08-06 14:19</span></summary><pre class="tin"> workflows/weekly-digest-roll-up/workflow.json | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/workflows/weekly-digest-roll-up/workflow.json b/workflows/weekly-digest-roll-up/workflow.json
+index 9479a5f..70267e5 100644
+--- a/workflows/weekly-digest-roll-up/workflow.json
++++ b/workflows/weekly-digest-roll-up/workflow.json
+@@ -4,7 +4,7 @@
+   "active": true,
+   "isArchived": false,
+   "createdAt": "2026-08-06T14:12:14.313Z",
+-  "updatedAt": "2026-08-06T14:18:22.514Z",
++  "updatedAt": "2026-08-06T14:18:52.610Z",
+   "nodes": [
+     {
+       "id": "trig",
+@@ -117,7 +117,7 @@
+     "builderVariant": "mcp"
+   },
+   "tags": [],
+-  "versionId": "03763959-9dfd-4ff8-9a93-2b0833eb91d4",
++  "versionId": "d063f635-8590-4d00-903a-f1c51afe3008",
+   "nodeGroups": [],
+   "parentFolderId": null,
+   "triggerCount": 1
+</pre></details></section>
+<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">guard: connected to http://flows-ops-n8n-68095:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: forwarded get_workflow_details
+guard: forwarded get_workflow_history
+guard: forwarded publish_workflow
+guard: connected to http://flows-ops-n8n-68095:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: forwarded search_executions
+guard: forwarded restore_workflow_version
+guard: forwarded publish_workflow
+guard: connected to http://flows-ops-n8n-68095:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: forwarded search_nodes
+guard: forwarded get_node_types
+guard: forwarded update_workflow
+committed: decanter: live-mirror snapshot before refresh (0zWvw5LQwwZDxDf0)
+! Weekly digest roll-up / Build digest: overwriting unpushed local changes in code/build-digest.js with the remote code (recover via git — snapshotted just now)
+wrote weekly-digest-roll-up/code/build-digest.js
+wrote weekly-digest-roll-up/workflow.json
+committed: decanter: pulled "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)
+mirrored "Weekly digest roll-up" (0zWvw5LQwwZDxDf0)
+guard: forwarded validate_workflow
+guard: forwarded prepare_test_pin_data
+guard: forwarded test_workflow
+guard: forwarded get_execution
+guard: forwarded publish_workflow
+</pre></section>
+</main>

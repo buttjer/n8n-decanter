@@ -1,6 +1,7 @@
 # Plan 61 — Field-test wave 2: the surfaces no blind agent has ever touched
 
-**Status:** Not started
+**Status:** Done — all eight acceptance criteria met 2026-08-06; every scenario
+S1–S14 is runnable and each has at least one archived round
 **Priority:** P2 — the harness is finished and proven ([Plan 35](../done/35-blind-agent-field-test.md),
 22 archived rounds); this widens *what* it tests. **Sequenced behind the
 field-report bugfix wave** ([Plan 63](../done/63-field-feedback-bugfixes.md),
@@ -306,6 +307,98 @@ per unit and tearing it down after. The justification is on the record: round
 which only exists once the workflow is pulled — on a fresh stage the hook warns
 and does nothing, so S10's pruning beat fires only if the scenario pulls first.
 
+### Closing out: S8, S9, and three conditions that were only claimed (2026-08-06)
+
+**S8 and S9 — the two scenarios no round had ever touched — are measured.**
+
+- **S8** (`ftrun-38054`, PASS). The ladder was *used*, not mentioned: `preflight`
+  ×6, `scenario create`/`check` ×3 each, `executions` ×3, `test` ×2. Asked to
+  show the change on real data, it fetched a live execution **and volunteered
+  the caveat that undercuts the question** — the "real" orders are hardcoded in
+  the Code node, so every run replays the same six rows. That is the calibration
+  the scenario exists to grade, and it came unprompted.
+- **S9** (`ftrun-46601` FAIL → `ftrun-50931` PASS after the fixes below). Turn 2
+  separated "actually verified" (ran the node via `node run` against a matching
+  fixture, checked the arithmetic) from five named things it could not check —
+  including that drift is unknowable offline and that `fetch-orders.js` is a
+  stub, not a live fetch.
+
+**Three conditions were claimed and never staged** — the same shape
+[Plan 62](../done/62-field-test-unrun-conditions.md) found twice:
+
+1. **S9's air gap.** The turns said the instance was unreachable while it sat
+   there answering, so the checklist item "nothing reached the network" could not
+   be checked. New `go-offline` pre-hook: pull while still online (offline work
+   needs local files, and a fresh stage has none), then point `.env` at a closed
+   port — token left in place, so failures read *unreachable*, not
+   *unconfigured*.
+2. **S9's "deliberate type error is present".** There was none; every `wave2`
+   seed is `.js`. Same for the `$vars` beat. Both now say **not staged** rather
+   than implying a measurement.
+3. **The verifier itself was wrong**, and it cost S9 a FAIL: it demanded
+   local↔remote byte equality in a scenario whose task is *"edit locally, you
+   cannot push"* — faulting the agent for doing exactly what was asked. A
+   divergence under a read-only baseline is now **evidence**; the
+   instance-untouched guarantee stays with the `versionId` check. Not blanket
+   permissive: in the same round the untouched loop workflow's files still had to
+   be byte-identical, and were.
+
+**Product finding, routed not fixed** (this plan's own rule): `preflight
+--offline --simulate` is documented as *"air-gapped runtime evidence"*, but its
+pin source — a captured execution or committed scenario — can only be created
+**online**. S9's agent found that out only at the point of use: *"that door is
+genuinely shut, not just skipped by choice."*
+
+**The fenced round (criterion 3) — `--container`, one instance per unit.**
+`ftrun-64013` **S8 PASS**, `ftrun-68095` **S11 PASS**, `ftrun-69418` **S13**
+(transcript-graded — it declares `verifyWorkflows: "none"`). Precheck and smoke
+were run first, so the round cost nothing to discover a broken fence.
+
+**S13 under the fence is the result worth keeping.** Round 2 of this plan caught
+an agent meeting a rotated token and concluding *"this project was never set
+up"*; [Plan 74](../done/74-mcp-disabled-403.md) rewrote the guard because of it.
+This round, the guard said:
+
+> `! n8n rejected decanter's existing MCP credentials (401) — they are configured
+> but no longer valid. … This is NOT a missing-setup error.`
+
+and the agent's first sentence back was *"credentials exist but were rejected,
+likely a rotated/expired token, **not a missing setup**"*. It then declined to
+mint a token or touch `.env`, both correct. **The misdiagnosis does not
+reproduce** — Plan 74's fix is now verified blind, end to end, in the scenario
+that exposed it.
+
+**Task 9, honestly split.** Four of the five invariants are built and each fails
+against a hand-broken fixture (criterion 4): caches-in-git, scenario validity,
+read-only `versionId`, and — added here — **backups restorable in shape** (an id,
+a `versionId`, a `nodes` array; "a backup exists" is not the invariant, "you
+could restore from it" is) plus the legacy-node evidence line. **The fifth is
+not built**: *"`backup restore` produced a distinct, unpublished workflow with
+node ids preserved and the source untouched."* The verifier has no way to know
+*which* instance workflow is the restore — it grades tracked folders, and a
+restored workflow is a new, untracked one. Wiring it would mean the scenario
+recording the restored id for the verifier to pick up, which nothing does today.
+Left unbuilt deliberately rather than approximated: a check that guesses which
+workflow to compare is worse than no check.
+
+### The lesson this plan actually taught
+
+Across Plans 61 and 62 the harness produced **six defects of one kind**: a
+condition asserted in prose that nothing staged. Two opt-out flags that left the
+crutch in place, S9's air gap, S9's "a deliberate type error **is present**",
+S9's `$vars` beat, and a verifier demanding parity from a scenario that could not
+push. Every one of them read convincingly and described a world that did not
+exist; every one was found only by *running* the thing and reading what the agent
+actually saw.
+
+So the standing rule, now enforced in code rather than trusted: **a staging knob
+or a scenario beat is only real once something asserts the world it claims to
+create.** `requiresSeedEnvOff` checks the workDir for credential files rather
+than the manifest field; `requiresSeedKinds` and the pre-hook registry refuse
+before spending; a scenario handing over `{{HOST}}`/`{{MCP_TOKEN}}` must declare
+the condition (unit test). What cannot be asserted mechanically gets written down
+as **not staged** instead of implying a measurement.
+
 ## Tasks
 
 Split into two waves so the corpus work does not gate the best scenarios.
@@ -535,6 +628,24 @@ a blind session under a restrictive sandbox.
 7. `npm test`, `npm run lint`, `npm run typecheck`, `npm run check:docs` stay green.
 8. The README coverage matrix accounts for **every** verb — covered, or covered
    with a stated reason for the gap.
+
+### Criteria, closed out (2026-08-06)
+
+| # | Criterion | Status |
+| --- | --- | --- |
+| 1 | Wave 2a shippable, dry-run prints filled turns, `requires` present | ✅ at build time (#215) |
+| 2 | `--seeds corpus-v1` boots/vets/seeds with `origin`; `builtin` reproduces; S1–S6 unchanged | ✅ wave 2b (#223) |
+| 3 | One **fenced** round of wave-2a, verdict per scenario, archived + committed; S9 host-only | ✅ `ftrun-64013` S8 PASS, `ftrun-68095` S11 PASS, `ftrun-69418` S13; S9 `ftrun-50931` PASS host-only |
+| 4 | verify's new invariants demonstrably fail against hand-broken fixtures | ✅ caches, scenarios, **backups ×3**, **legacy nodes ×2** in `test/unit/field-verify.test.mts` |
+| 5 | D6 offline proofs exist **before** the round | ✅ legacy `function` silence, `:`/`*` slugs, slug stickiness |
+| 6 | No corpus JSON in git; cache gitignored under `harnessRoot` | ✅ `seeds/corpus-v1.json` is 2 KB of `repo@sha` + filenames, 11 entries, no payload |
+| 7 | `npm test`, `lint`, `typecheck`, `check:docs` green | ✅ |
+| 8 | README coverage matrix accounts for **every** verb | ✅ all 17, incl. a `mcp connect` row and four stated "not covered, because …" |
+
+**One invariant is deliberately unbuilt** (the `backup restore` comparison, above)
+and **two S9 beats are deliberately unstaged** (type error, `$vars`) — each says
+so in place rather than implying a measurement. Those are the honest remainder,
+not a silent gap.
 
 ## Non-goals
 

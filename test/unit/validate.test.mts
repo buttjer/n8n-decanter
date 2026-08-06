@@ -206,6 +206,31 @@ describe("validateWorkflowDir", () => {
     ]);
   });
 
+  // Plan 61 D6 — a KNOWN BLIND SPOT, pinned so a blind round never has to
+  // discover it: decanter extracts `n8n-nodes-base.code` only. A workflow whose
+  // logic lives in n8n's legacy `function`/`functionItem` nodes pulls down with
+  // **zero code files and no warning at all** — unlike the Python case directly
+  // above, which at least says its source stays inline. This test asserts the
+  // silence on purpose. If extraction or a warning is ever added, it fails, and
+  // that is the point: change it deliberately, not by accident.
+  it("says NOTHING about legacy function/functionItem nodes — the documented blind spot", () => {
+    const dir = scaffold({
+      state: JSON.stringify({ workflowId: "wf1", nodes: {} }),
+      workflow: {
+        nodes: [
+          { id: "n7", name: "Legacy Transform", type: "n8n-nodes-base.function", parameters: { functionCode: "items[0].json.total = 42;\nreturn items;" } } as any,
+          { id: "n8", name: "Legacy Per Item", type: "n8n-nodes-base.functionItem", parameters: { functionCode: "item.seen = true;\nreturn item;" } } as any,
+        ],
+      },
+    });
+    // …and an EMPTY code/ dir, which is what pulling such a workflow leaves
+    // behind: the scaffold's default node file would otherwise be an orphan.
+    rmSync(path.join(dir, "code", "main.js"));
+    const { errors, warnings } = validateWorkflowDir(dir);
+    assert.deepEqual(errors, [], "legacy nodes are not a compliance failure — they are simply invisible");
+    assert.deepEqual(warnings, [], "no warning names them, so nothing tells you the logic in this workflow is untracked");
+  });
+
   it("warns on a scenario embedding inline jsCode under workflowData; clean and placeholder scenarios pass", () => {
     const dir = scaffold();
     mkdirSync(path.join(dir, "scenarios"), { recursive: true });

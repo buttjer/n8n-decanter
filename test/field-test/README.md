@@ -42,32 +42,51 @@ through it, so verify scoping, archiving and pre-hooks stay byte-identical to a
 hand-driven single run — and each unit archives on its own, so a later failure
 never costs the earlier units' evidence.
 
+### Picking a round
+
+- **Budget.** ~1.5 min of stage boot per unit, plus the turns themselves —
+  figure 5–15 min per scenario. Three or four scenarios is a comfortable round;
+  more is better split across sittings, since each unit archives independently.
+- **Host-only scenarios.** S5 (`fs.watch` dies sandboxed *and* on container
+  bind-mounts), S6 and S9 (`--container` bakes the CLI in globally, so the
+  no-CLI condition cannot exist there). Everything else runs either way.
+- **Conditions ride along at no extra turn cost.** `FIELD_NO_PATH_HELP=1`
+  composes with any scenario; `FIELD_NO_SEED_ENV=1` is required by S14 and
+  harmless elsewhere. Run the *first* measurement of a condition on its own,
+  though — otherwise a finding is ambiguous about which crutch removal caused it
+  ([Plan 62](../../plans/done/62-field-test-unrun-conditions.md)).
+- **A staging flag is only real once something asserts the world it claims to
+  create.** Two of them silently stopped staging their condition and were only
+  caught by running them; both now check the workDir, not their own setting.
+
 ## Scenario × surface coverage
 
 Which scenario exercises which part of the product, and — as importantly — what
-nothing covers and why. S1–S6 and the wave-2a scenarios (S8, S9, S11, S13) are
-**runnable today**; the corpus-dependent rest of S7–S13 are
-[Plan 61](../../plans/open/61-field-test-scenario-wave-2.md)'s wave 2, written
-ahead of the staging machinery they need (`run.mts` refuses a scenario whose
-pre-hook or seed kind does not exist, so an unbuilt one cannot silently
-"measure" an untouched environment).
+nothing covers and why. **Every scenario S1–S14 is runnable**: wave 2b built the
+corpus seed pack, so nothing is waiting on staging machinery any more. `run.mts`
+still refuses a scenario whose pre-hook, seed kind or stage shape does not exist,
+so a scenario can never silently "measure" an untouched environment.
+
+Pick the pack the row names: `builtin` (default) covers S1–S6 and S14, `wave2`
+adds the ladder/loop workflows, `corpus-v1` adds the real-world imports.
 
 | Surface | Covered by | Status |
 | --- | --- | --- |
 | `pull` / `push` / `diff` / drift guard / TS conversion / MCP structure + reconcile | S1–S4 | runnable (only 3 archived rounds on the post-Plan-59 verb surface) |
 | CLI discoverability from a fresh clone | S6 (`FIELD_NO_CLI=1`) | runnable — 6 rounds, 6 PASS |
-| `watch` | S5 | written, **never run** → [Plan 62](../../plans/open/62-field-test-unrun-conditions.md) |
+| `watch` | S5 | **runnable** — 1 round (`ftrun-78968`, PASS): the agent backgrounds it unprompted. A `workflow.json` save and post-`publish` execution stay unmeasured |
 | `preflight` (`--json`, `--require`, `--fail-on`, `--fail-fast`, coverage block) | **S8** | **runnable** — stage `--seeds wave2` |
 | `scenario create --execution` / `check`, `executions`, `test` after push | **S8** | **runnable** ([Plan 65](../../plans/done/65-three-gate-scenario-mismatch.md) landed) |
 | `preflight --simulate` / `--offline` / `--viewer`, loop preview, `node run` | **S9** | **runnable** host-only, `--seeds wave2` — land [Plan 63](../../plans/done/63-field-feedback-bugfixes.md)/[66](../../plans/draft/66-multi-output-pins.md) first |
-| `backup create` / `restore` / `list`, `backupLimit` | **S10** | needs the corpus pack + `fill-backup-store` |
+| `backup create` / `restore` / `list`, `backupLimit` | **S10** | **runnable** — `--seeds corpus-v1` + the `fill-backup-store` hook |
 | `publish` / `push --publish` / `unpublish`, live-vs-draft, guard publish gate (#200) | **S11** | **runnable** |
-| bulk no-ref verbs, non-TTY no-picker contract, `list --json`, `data-tables`, git hygiene | **S12** | needs the corpus pack + a seeded data table |
+| bulk no-ref verbs, non-TTY no-picker contract, `list --json`, `data-tables`, git hygiene | **S12** | **runnable** — `--seeds corpus-v1` seeds the `Orders` data table |
 | error-message routing: MCP unavailable / 401 / 403 / layout violation / misrouted config | **S13** | **runnable** (the 403 message landed with [Plan 74](../../plans/done/74-mcp-disabled-403.md)) |
-| workflows decanter did not create (legacy nodes, credentials, punctuation, scale) | **S7** | needs the corpus seed pack |
+| workflows decanter did not create (legacy nodes, credentials, punctuation, scale) | **S7** | **runnable** — `--seeds corpus-v1`; the legacy-`function` blind spot, the `:`/`*` slugs and slug stickiness are pinned offline (D6) so the round grades only what the agent *says* |
 | `init` OAuth browser consent | — | **not covered, deliberately**: e2e + unit own it; a browser consent flow is not gradeable headless |
-| `init` cold path (no pre-seeded `.env`) | — | **not covered yet**: `FIELD_NO_SEED_ENV=1` exists, no round has used it → Plan 62 |
+| `init` cold path (no pre-seeded `.env`), non-interactive flags, scheme handling | **S14** | **runnable** — 3 rounds under `FIELD_NO_SEED_ENV=1`; the round that closed [Plan 75](../../plans/done/75-init-cold-start-discoverability.md) |
 | `completion` | — | **not covered, deliberately**: shell-integration surface, no agent-facing behaviour to grade |
+| `mcp connect` (stdio guard — the transport every scenario actually uses) | **all of them**, plus S11/S13 on its refusals | **runnable** — the scaffolded `.mcp.json` spawns it, so every round exercises it; `guard.log` is captured per round |
 | `mcp serve` (HTTP guard transport) | — | **not covered**: the scaffold wires `mcp connect`; the HTTP variant has no blind-agent path today |
 
 ### Seed packs and pre-hooks
@@ -277,7 +296,10 @@ try: node test/field-test/run.mts <manifest> S2 S4
 | `FIELD_N8N_TAG` | n8n image (default matches `test/smoke-n8n.mts`). |
 | `FIELD_N8N_URL` / `FIELD_MCP_TOKEN` / `FIELD_API_KEY` | target an existing instance instead of booting one. |
 | `FIELD_DECANTER_SPEC` | install a published version / tarball / git ref instead of packing the local repo. |
-| `FIELD_NO_SEED_ENV=1` | omit the pre-seeded `.env` to exercise `init`'s cold host-prompt path (reproduces the https finding). |
+| `FIELD_NO_SEED_ENV=1` | stage the **cold start**: no `.env`, no `.decanter-auth.json` — the scaffold is there, the credentials are not (removed *after* the stage's own `init`, which would otherwise write them back). Required by S14. |
+| `FIELD_NO_PATH_HELP=1` | drop the `node_modules/.bin` prepend **and** shadow any ambient install, so `n8n-decanter` genuinely is not on PATH. |
+| `FIELD_NO_CLI=1` | fresh-clone condition: full committed evidence, `node_modules` removed. Required by S6, host-mode only. |
+| `FIELD_SEED_PACK` | seed pack (`builtin` \| `wave2` \| `corpus-v1`); same as `stage.mts --seeds`. |
 | `FIELD_TURN_TIMEOUT_MS` | per-turn kill timeout (default 15 min). |
 | `FIELD_KEEP=1` | keep the container on `--down`. |
 
