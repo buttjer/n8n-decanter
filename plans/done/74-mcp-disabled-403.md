@@ -2,7 +2,7 @@
 
 **Status:** Done (2026-08-04)
 **Priority:** P2
-**Source:** fell out of building [Plan 61](../open/61-field-test-scenario-wave-2.md)'s
+**Source:** fell out of building [Plan 61](61-field-test-scenario-wave-2.md)'s
 `disable-mcp` pre-hook; reproduced against real n8n 2.30.7 on 2026-08-04.
 **Snapshot:** 2026-08-04T19:40Z @ e227e7f
 
