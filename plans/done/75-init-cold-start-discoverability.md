@@ -89,13 +89,14 @@ before the change.
 | Flag form in turn 1 | absent | present |
 | Where it came from | — | near-verbatim echo of `HOST_UNSET` (`guard.log` shows the two-line message) |
 
-**What did not change, and is worth being honest about:** the agent still hands
-the job back to a human — *"You'll need to run one of these yourself (I can't do
-OAuth or handle secrets)"* — and still lists the interactive path first. It never
-offers to run `init` itself given the values. That last part reads as its own
-policy about secrets rather than a discoverability gap, and the plan's actual
-question ("does it reach the non-interactive form while still deciding what to
-tell the user?") is answered **yes**.
+**No residual gap.** Turn 1 hands the setup back to the human — but at that
+point it does not yet know whether a token exists, and **OAuth genuinely
+requires a browser** (there is no headless consent flow; `docs/cli/init.md` says
+so). Offering *both* paths is the correct answer there, and it is exactly what
+was missing before. The token path it did **not** delegate: handed the value in
+turn 2, it ran `init --host … --token …` itself. What remains is cosmetic — it
+lists the interactive path first, and its "I can't handle secrets" aside was
+stricter than its own behaviour two turns later.
 
 **n = 1.** The verbatim echo makes the causal link hard to argue with, but a
 single Sonnet session cannot establish how reliably it happens. Treat it as one
