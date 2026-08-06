@@ -122,6 +122,34 @@ describe("field-test verify — local invariants (Plan 61 task 9)", () => {
     assert.equal(find(checks, "committed scenarios are structurally valid")?.ok, false);
   });
 
+  // S10's recovery points. "A backup exists" is not the invariant — "you could
+  // restore from it" is, and a file missing its id or versionId is a recovery
+  // point that fails on the day you need it.
+  it("passes well-formed backups", async () => {
+    const { manifest } = await stage({
+      "workflows/wf-a/backups/2026-07-01T09-00-00.v1.json": JSON.stringify({ id: "id-a", name: "A", versionId: "v1", nodes: [], connections: {} }),
+    });
+    const check = find(await runVerify(manifest), "committed backups are restorable");
+    assert.ok(check, "a folder with backups/ must be checked at all");
+    assert.equal(check.ok, true, check.detail);
+  });
+
+  it("FAILS on a backup with no versionId — the dedup/prune key", async () => {
+    const { manifest } = await stage({
+      "workflows/wf-a/backups/broken.json": JSON.stringify({ id: "id-a", name: "A", nodes: [] }),
+    });
+    const check = find(await runVerify(manifest), "committed backups are restorable");
+    assert.equal(check?.ok, false);
+    assert.match(check!.detail, /no versionId/);
+  });
+
+  it("FAILS on a backup with no nodes array — nothing to redeploy", async () => {
+    const { manifest } = await stage({
+      "workflows/wf-a/backups/empty.json": JSON.stringify({ id: "id-a", versionId: "v1" }),
+    });
+    assert.equal(find(await runVerify(manifest), "committed backups are restorable")?.ok, false);
+  });
+
   // S7 adopts imported workflows that legitimately contain n8n's pre-`code`
   // nodes. decanter extracts none of them, so the folder has fewer code files
   // than the graph has logic — the verdict has to SAY that, or a reader is left

@@ -236,6 +236,40 @@ function scenariosValid(dir: string): { ok: boolean; detail: string } | null {
     : { ok: false, detail: problems.slice(0, 4).join("; ") };
 }
 
+/**
+ * Are the recovery points actually recoverable? (Plan 61 task 9, S10.)
+ *
+ * A `backups/*.json` is the file you reach for on the worst day of the quarter,
+ * so "it exists" is not the invariant — "it could be restored from" is. Same
+ * independent-oracle discipline as `scenariosValid`: a hand-rolled shape check,
+ * not an import of `lib/backup.mts`, so a bug that writes a useless backup
+ * cannot also make the verifier accept it. Returns null when there is no
+ * `backups/` dir (nothing to assert).
+ */
+function backupsValid(dir: string): { ok: boolean; detail: string } | null {
+  const backupDir = path.join(dir, "backups");
+  if (!existsSync(backupDir)) return null;
+  const files = readdirSync(backupDir).filter((f) => f.endsWith(".json"));
+  if (files.length === 0) return null;
+  const problems: string[] = [];
+  for (const file of files) {
+    let backup: unknown;
+    try {
+      backup = JSON.parse(readFileSync(path.join(backupDir, file), "utf8"));
+    } catch (err) {
+      problems.push(`${file}: not JSON (${(err as Error).message.split("\n")[0]})`);
+      continue;
+    }
+    const b = backup as { id?: unknown; versionId?: unknown; nodes?: unknown };
+    if (typeof b?.id !== "string" || b.id === "") problems.push(`${file}: no workflow id — a restore has nothing to redeploy`);
+    if (typeof b?.versionId !== "string" || b.versionId === "") problems.push(`${file}: no versionId — the dedup/prune key is missing`);
+    if (!Array.isArray(b?.nodes)) problems.push(`${file}: no nodes array`);
+  }
+  return problems.length === 0
+    ? { ok: true, detail: `${files.length} backup(s) carry an id, a versionId and a nodes array` }
+    : { ok: false, detail: problems.slice(0, 4).join("; ") };
+}
+
 // ---------- checks ----------
 interface Check { name: string; ok: boolean; detail: string }
 interface WorkflowResult { slug: string; workflowId: string; checks: Check[]; evidence: { historyVersions: number | null; historyNote: string } }
@@ -290,6 +324,8 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
   checks.push({ name: "fetched caches never committed (executions/, data-tables/)", ok: cached.ok, detail: cached.detail });
   const scen = scenariosValid(dir);
   if (scen !== null) checks.push({ name: "committed scenarios are structurally valid", ok: scen.ok, detail: scen.detail });
+  const backups = backupsValid(dir);
+  if (backups !== null) checks.push({ name: "committed backups are restorable in shape", ok: backups.ok, detail: backups.detail });
   const legacy = legacyCodeNodes(wfJson.nodes);
   if (legacy.length > 0) {
     checks.push({

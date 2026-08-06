@@ -306,6 +306,61 @@ per unit and tearing it down after. The justification is on the record: round
 which only exists once the workflow is pulled — on a fresh stage the hook warns
 and does nothing, so S10's pruning beat fires only if the scenario pulls first.
 
+### Closing out: S8, S9, and three conditions that were only claimed (2026-08-06)
+
+**S8 and S9 — the two scenarios no round had ever touched — are measured.**
+
+- **S8** (`ftrun-38054`, PASS). The ladder was *used*, not mentioned: `preflight`
+  ×6, `scenario create`/`check` ×3 each, `executions` ×3, `test` ×2. Asked to
+  show the change on real data, it fetched a live execution **and volunteered
+  the caveat that undercuts the question** — the "real" orders are hardcoded in
+  the Code node, so every run replays the same six rows. That is the calibration
+  the scenario exists to grade, and it came unprompted.
+- **S9** (`ftrun-46601` FAIL → `ftrun-50931` PASS after the fixes below). Turn 2
+  separated "actually verified" (ran the node via `node run` against a matching
+  fixture, checked the arithmetic) from five named things it could not check —
+  including that drift is unknowable offline and that `fetch-orders.js` is a
+  stub, not a live fetch.
+
+**Three conditions were claimed and never staged** — the same shape
+[Plan 62](../done/62-field-test-unrun-conditions.md) found twice:
+
+1. **S9's air gap.** The turns said the instance was unreachable while it sat
+   there answering, so the checklist item "nothing reached the network" could not
+   be checked. New `go-offline` pre-hook: pull while still online (offline work
+   needs local files, and a fresh stage has none), then point `.env` at a closed
+   port — token left in place, so failures read *unreachable*, not
+   *unconfigured*.
+2. **S9's "deliberate type error is present".** There was none; every `wave2`
+   seed is `.js`. Same for the `$vars` beat. Both now say **not staged** rather
+   than implying a measurement.
+3. **The verifier itself was wrong**, and it cost S9 a FAIL: it demanded
+   local↔remote byte equality in a scenario whose task is *"edit locally, you
+   cannot push"* — faulting the agent for doing exactly what was asked. A
+   divergence under a read-only baseline is now **evidence**; the
+   instance-untouched guarantee stays with the `versionId` check. Not blanket
+   permissive: in the same round the untouched loop workflow's files still had to
+   be byte-identical, and were.
+
+**Product finding, routed not fixed** (this plan's own rule): `preflight
+--offline --simulate` is documented as *"air-gapped runtime evidence"*, but its
+pin source — a captured execution or committed scenario — can only be created
+**online**. S9's agent found that out only at the point of use: *"that door is
+genuinely shut, not just skipped by choice."*
+
+**Task 9, honestly split.** Four of the five invariants are built and each fails
+against a hand-broken fixture (criterion 4): caches-in-git, scenario validity,
+read-only `versionId`, and — added here — **backups restorable in shape** (an id,
+a `versionId`, a `nodes` array; "a backup exists" is not the invariant, "you
+could restore from it" is) plus the legacy-node evidence line. **The fifth is
+not built**: *"`backup restore` produced a distinct, unpublished workflow with
+node ids preserved and the source untouched."* The verifier has no way to know
+*which* instance workflow is the restore — it grades tracked folders, and a
+restored workflow is a new, untracked one. Wiring it would mean the scenario
+recording the restored id for the verifier to pick up, which nothing does today.
+Left unbuilt deliberately rather than approximated: a check that guesses which
+workflow to compare is worse than no check.
+
 ## Tasks
 
 Split into two waves so the corpus work does not gate the best scenarios.
