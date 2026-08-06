@@ -30,6 +30,7 @@ interface Spine {
   preHook?: unknown;
   requires?: unknown;
   requiresNoCli?: unknown;
+  requiresSeedEnvOff?: unknown;
   requiresSeedKinds?: unknown;
   persona?: unknown;
   unsandboxedOnly?: unknown;
@@ -86,6 +87,18 @@ describe("field-test scenario pack", () => {
         // local state; `[]` is NOT — it resolves to "verify every folder".
         const ok = verifyWorkflows === "all" || verifyWorkflows === "none" || (Array.isArray(verifyWorkflows) && verifyWorkflows.length > 0);
         assert.ok(ok, `${file}: verifyWorkflows must be "all", "none", or a non-empty array of manifest kinds`);
+      });
+
+      // Handing over a host + token only means something if the stage withheld
+      // them. A scenario that pastes credentials into an already-configured
+      // project measures nothing — the failure mode that voided S14's first
+      // round, one layer up from the workDir check `run.mts` now does.
+      it("declares requiresSeedEnvOff if its turns hand over credentials", () => {
+        const spine = spineOf(file);
+        const usesSecret = (spine.turns as string[]).some((t) => /\{\{(HOST|HOST_BARE|MCP_TOKEN)\}\}/.test(t));
+        if (usesSecret) {
+          assert.equal(spine.requiresSeedEnvOff, true, `${file}: turns supply {{HOST}}/{{MCP_TOKEN}}, so the stage must withhold credentials (requiresSeedEnvOff: true) or the scenario measures nothing`);
+        }
       });
 
       it("only requires scenarios that exist", () => {

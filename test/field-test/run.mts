@@ -101,7 +101,7 @@ const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
 
-interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
+interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedEnv?: boolean; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const WORKDIR = manifest.workDir;
 const HARNESS = manifest.harnessRoot;
@@ -131,7 +131,7 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresSeedKinds?: string[]; readOnly?: boolean }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresSeedEnvOff?: boolean; requiresSeedKinds?: string[]; readOnly?: boolean }
 
 /**
  * Which workflow the `remote-drift` preHook edits — kept in one place so the
@@ -322,6 +322,20 @@ function assertPrerequisites(ids: string[]): void {
     if (sc.requiresNoCli === true && containerMode) {
       problems.push(`${id} cannot run in --container mode: the image installs the CLI globally, so it stays on PATH and the no-CLI condition cannot be staged. Run it host-mode (unsandboxed).`);
     }
+    // Same argument as requiresNoCli: a cold-start scenario against a stage that
+    // pre-seeded `.env` measures nothing at all — `init` would just reuse the
+    // credentials and the whole condition evaporates (Plan 62 task 2).
+    if (sc.requiresSeedEnvOff === true && manifest.seedEnv !== false) {
+      problems.push(`${id} needs a stage created with FIELD_NO_SEED_ENV=1 (this manifest has seedEnv=${JSON.stringify(manifest.seedEnv)}); with a pre-seeded .env there is no cold start to measure`);
+    }
+    // …and check the WORLD, not just the flag. seedEnv=false only records that the
+    // pre-seed was skipped; `init` used to write its own .env right afterwards, so
+    // a whole S14 round graded a fully configured project while the manifest said
+    // the condition was staged. The flag can lie; the file cannot.
+    if (sc.requiresSeedEnvOff === true) {
+      const leaked = [".env", ".decanter-auth.json"].filter((f) => existsSync(path.join(manifest.workDir, f)));
+      if (leaked.length) problems.push(`${id} needs a workDir with no credentials, but ${leaked.join(" + ")} exist(s) in ${manifest.workDir}; the cold start is not staged`);
+    }
     // A scenario may declare a pre-hook before the hook exists (Plan 61 writes
     // the scenario specs ahead of the staging machinery). Refuse rather than
     // run the turns against an environment nothing was done to.
@@ -353,7 +367,14 @@ function assertPrerequisites(ids: string[]): void {
 // emits them in clear text.
 function fillPublic(text: string): string {
   const oldFlow = manifest.seeded.find((s) => s.kind === "s4-archive-target")?.name ?? "Old contact import";
-  return text.replaceAll("{{HOST}}", manifest.host).replaceAll("{{OLD_FLOW_NAME}}", oldFlow);
+  return text
+    .replaceAll("{{HOST}}", manifest.host)
+    // Scheme-LESS host:port. `{{HOST}}` hands over a complete URL, which silently
+    // removes the choice the #142 bug was about (init writing https:// for a local
+    // http instance) — S14's first valid round claimed to watch for it and could
+    // not have seen it. A bare host makes the agent pick the scheme.
+    .replaceAll("{{HOST_BARE}}", manifest.host.replace(/^https?:\/\//, ""))
+    .replaceAll("{{OLD_FLOW_NAME}}", oldFlow);
 }
 // Credential placeholders — substituted ONLY at the moment of spawning claude,
 // on a string that is never logged or stored (avoids clear-text-logging of the
@@ -842,20 +863,28 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
       // configuration a real local-install user's agent gets, and the one that
       // would have caught Task 1's silent-fail.
       //
-      // A noCli stage (Plan 57 / S6) needs BOTH: no prepend, and no ambient
-      // global either. A maintainer machine commonly has a global install (an
-      // `npm link` from this repo), which would sit on the inherited PATH and
-      // quietly defeat the whole condition — the round would "measure" an agent
-      // that could run the CLI all along. So strip every PATH entry that
-      // contains an `n8n-decanter` executable.
+      // Dropping the prepend is NOT enough on its own — a maintainer machine
+      // commonly carries a global `n8n-decanter` (an `npm link` from this repo),
+      // which sits on the inherited PATH and quietly satisfies a bare command.
+      // The first-ever unassisted-PATH round (Plan 62 task 1, 2026-08-05) hit
+      // exactly that: the header printed UNASSISTED PATH, the agent typed a bare
+      // `n8n-decanter list --remote`, and it WORKED — resolving the maintainer's
+      // link, i.e. the main checkout, not the packed tarball the stage installed.
+      // So the round measured neither the condition nor the code under test.
+      //
+      // Both conditions therefore shadow ambient installs: `noCli` (Plan 57 / S6)
+      // and `FIELD_NO_PATH_HELP`. They differ in intent, not mechanism — noCli
+      // removes the project's install too, while this one keeps it and only
+      // makes the agent reach it the way a real local-install user must
+      // (`npx`, or `./node_modules/.bin/…`).
       const localBin = path.join(WORKDIR, "node_modules", ".bin");
       let PATH = process.env.PATH ?? "";
       const extraEnv: Record<string, string> = {};
-      if (manifest.noCli === true) {
+      if (manifest.noCli === true || process.env.FIELD_NO_PATH_HELP === "1") {
         const sane = sanitizedPath(PATH);
         PATH = sane.PATH;
         extraEnv.npm_config_prefix = sane.npmPrefix;
-      } else if (process.env.FIELD_NO_PATH_HELP !== "1") {
+      } else {
         PATH = `${localBin}${path.delimiter}${PATH}`;
       }
       proc = spawn("claude", args, { cwd: WORKDIR, env: { ...process.env, PATH, ...extraEnv } });

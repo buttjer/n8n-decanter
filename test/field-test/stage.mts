@@ -510,8 +510,14 @@ async function unblindTarball(tgz: string): Promise<string[]> {
     if (removed.length === 0) return [];
     for (const s of removed) delete pkg.scripts![s];
     writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + "\n");
-    // repack with the same `package/` root npm expects
-    await execFile("tar", ["-czf", tgz, "-C", work, "package"]);
+    // Repack with the same `package/` root npm expects. COPYFILE_DISABLE=1 keeps
+    // macOS `tar` from serialising extended attributes as AppleDouble sidecars:
+    // `template/.env.example` carries `com.apple.provenance` here, so the repack
+    // shipped a `template/._.env.example`, which `init` then dutifully installed
+    // into the blind project as `._.env` ("added ._.env from the template"). Two
+    // cold rounds' agents spent a command working out it was junk. npm's own pack
+    // is node-tar and never does this — the artifact was ours, not the product's.
+    await execFile("tar", ["-czf", tgz, "-C", work, "package"], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
     return removed;
   } catch (err) {
     // never fail a stage over blinding hygiene — say so and carry on
@@ -523,7 +529,7 @@ async function unblindTarball(tgz: string): Promise<string[]> {
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean }> {
+async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean }> {
   const base = os.tmpdir();
   const workDir = path.join(base, `flows-ops-${PID}`);
   const harnessRoot = path.join(base, `ftrun-${PID}`);
@@ -555,8 +561,11 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   // re-prompting. This sidesteps round-1a's product FINDING that `init` writes
   // https:// for a local http instance (breaking the guard, which reads .env
   // directly) — that finding is logged for triage, not masked. `FIELD_NO_SEED_ENV=1`
-  // omits this to exercise init's cold host-prompt path (and reproduce the bug).
-  if (process.env.FIELD_NO_SEED_ENV !== "1") {
+  // omits this to stage the COLD-START condition (S14): no credentials anywhere,
+  // the agent has to obtain them. See the matching removal after `init` below —
+  // skipping the pre-seed alone does not stage it, because init writes a .env too.
+  const seedEnv = process.env.FIELD_NO_SEED_ENV !== "1";
+  if (seedEnv) {
     writeFileSync(path.join(workDir, ".env"), `N8N_HOST=${HOST}\nN8N_MCP_TOKEN=${MCP}\nN8N_API_KEY=${KEY}\n`);
   }
 
@@ -623,6 +632,20 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
       // mode the container is the real boundary, so this is belt-and-braces.
       // Merged into the LOCAL layer, never the template's settings.json.
       mergeLocalSettings(workDir, { sandbox: { enabled: false } });
+      // FIELD_NO_SEED_ENV=1 — take the credentials back OUT. The stage runs init
+      // with the non-interactive flags, so init WRITES a working .env; skipping
+      // the pre-seed above is not enough on its own (the flag silently stopped
+      // staging its condition when the stage took init over — a whole S14 round
+      // graded a fully configured project before this was caught). Deleting the
+      // credential files after the scaffold is exactly a fresh clone: the
+      // template files are committed, .env and .decanter-auth.json are not.
+      if (!seedEnv) {
+        // `._.env` too: a macOS AppleDouble sidecar survives the .env removal and
+        // the first cold round's agent spent a command working out that it was an
+        // artifact, not a config file. Don't leave a distractor in the condition.
+        for (const f of [".env", "._.env", ".decanter-auth.json"]) rmSync(path.join(workDir, f), { force: true });
+        console.log("FIELD_NO_SEED_ENV=1 — removed .env + .decanter-auth.json after init: scaffold present, NO credentials (cold start)");
+      }
     } catch (err) {
       console.warn(`init failed (${(err as Error).message.split("\n")[0]}) — the blind agent would have to run it itself`);
     }
@@ -691,7 +714,7 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
     console.log("FIELD_NO_CLI=1 — removed node_modules (fresh-clone state): the project's decanter evidence is committed, the CLI is NOT runnable");
   }
 
-  return { workDir, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli };
+  return { workDir, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -721,7 +744,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli } = await scaffold();
+  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -745,6 +768,11 @@ try {
     // is NOT installed (fresh-clone state) — the Plan 57 discoverability
     // condition. Recorded so a round's archive states which world it measured.
     noCli,
+    // FIELD_NO_SEED_ENV=1: no pre-seeded `.env`, so the project has NO
+    // credentials and `init` must actually be driven — the Plan 62 task 2
+    // condition. Recorded so a scenario can refuse a stage that would make it
+    // measure nothing (S14), and so a round's archive states which world it saw.
+    seedEnv,
     // the stage pre-ran init, so scenarios start from a configured project
     inited,
     // Container mode (run.mts --container) bakes one of these into the fenced

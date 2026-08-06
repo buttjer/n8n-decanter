@@ -4,7 +4,7 @@
 plus [Plan 61](61-field-test-scenario-wave-2.md); 33 archived units); these are
 staging *conditions* it supports but has never been run under. Each one hides a
 claim we currently make without evidence.
-**Status:** Not started
+**Status:** Done — all three conditions measured 2026-08-06 (see Round reports)
 **Snapshot:** 2026-08-05T19:20Z @ 08e61dc *(previous: 2026-07-27T12:05Z @ 0be700c)*
 **Theme:** Every archived round so far handed the blind agent two things a real
 user's agent does not get: a **resolvable bare `n8n-decanter`** on PATH and a
@@ -69,12 +69,17 @@ reworked here so an executing agent does not drive the harness of a week ago.
 
    *(Env reaches the inner run by construction: `--isolate` re-execs without an
    `env` override, so the child inherits it.)*
-2. **Cold-`init` round** — `FIELD_NO_SEED_ENV=1`, S1, with the MCP token handed
-   over in-character the way a user pastes one:
+2. **Cold-`init` round** — `FIELD_NO_SEED_ENV=1`, **S14**, with the MCP token
+   handed over in-character the way a user pastes one:
 
    ```sh
-   FIELD_NO_SEED_ENV=1 node test/field-test/run.mts --isolate S1
+   FIELD_NO_SEED_ENV=1 node test/field-test/run.mts --isolate S14
    ```
+
+   S1's turns assume a working project, so the condition needed a scenario whose
+   *turns* carry the credentials — `scenarios/S14.md`, added by this plan. It is
+   the only scenario using the spawn-time-only `{{HOST}}`/`{{MCP_TOKEN}}`
+   placeholders.
 
    The flag is read by **`stage.mts`**, which `--isolate` spawns — so the
    isolated form is the one that carries it. First blind exercise of #144's
@@ -120,6 +125,96 @@ reworked here so an executing agent does not drive the harness of a week ago.
 - **No re-grading of Plan 35's archived rounds.** They measured the CLI of their
   day; three of them (`90305`, `92069`, `99503`) already cover the current
   `preflight`/`diff` surface.
+
+## Round reports
+
+### Task 1 — unassisted PATH (`FIELD_NO_PATH_HELP=1`, S1 + S2)
+
+`ftrun-42006` (S1), `ftrun-45450` (S2). **The agent recovers unaided via `npx`** —
+no bare `n8n-decanter` succeeds anywhere in either transcript, and both units
+completed their work. The condition only became real after a fix: the flag left
+the maintainer's global install on PATH, so the first attempt measured the main
+checkout's CLI (`bbbf65d`). Findings sit in `2fd01c7`.
+
+### Task 2 — cold `init` (`FIELD_NO_SEED_ENV=1`, S14)
+
+Two valid rounds. `ftrun-71346` handed over a complete URL; `ftrun-75467` handed
+over a bare `host:port` so the scheme was the agent's to choose.
+
+- **Plan 74 did not over-correct** — the question this round existed to answer.
+  After **one** command (`list --remote` → `N8N_HOST must be set …`) the agent
+  concluded *"This repo has no `.env` yet — expected on a fresh clone since it's
+  git-ignored"*. It reaches "not configured" when that is the right answer, and
+  the 401 rewording did not train it out of the diagnosis.
+- **#142 holds under the condition that exposes it.** Handed `127.0.0.1:65214`
+  with no scheme, the agent passed it through verbatim (`init --host
+  127.0.0.1:65214`); `init` printed `using --host http://127.0.0.1:65214` and the
+  guard came up on `http://` (`guard.log`). No `https://` for a local host.
+- **Finding — #144's flags are not discoverable at the moment they matter.**
+  Turn 1's advice to the user was bare `npx n8n-decanter init` — the *interactive*
+  path ("this will prompt for your n8n instance's host") — and it handed the job
+  back. It only found `--host`/`--token` in turn 2, once it held the values, and
+  then needed `--help` plus two probes (`--token FAKE`, `--mcp-token FAKE`) to
+  settle the flag name. The flags exist and work; nothing points an agent at them
+  while it is still deciding what to tell the user. **Route: an `init` ergonomics
+  item** — the cold-start error path should name the non-interactive form.
+- **Deny rules held**: the agent refused to write `.env` itself ("blocked from
+  edits by design"). Draft-vs-live was answered exactly right in turn 3.
+- Two harness defects fixed on the way, both the same shape as task 1's:
+  `FIELD_NO_SEED_ENV=1` never staged its condition (the stage's own `init` wrote
+  the `.env` back; the first round graded a fully configured project), and
+  `{{HOST}}` interpolated a scheme-complete URL, so the `https://` beat the
+  scenario advertised could not fire. `{{HOST_BARE}}` now exists and the
+  prerequisite gate checks the **workDir** instead of the manifest field.
+- Also traced to ground: the `._.env` the agents kept noticing came from
+  `unblindTarball` repacking with macOS `tar`, which serialises
+  `template/.env.example`'s `com.apple.provenance` xattr as an AppleDouble
+  sidecar that `init` then installs. **Harness artifact, not a product bug** —
+  `npm pack` is node-tar and never emits one, and `init` from a clean source tree
+  produces no such file. Fixed with `COPYFILE_DISABLE=1`.
+
+### Task 3 — S5, the watch loop (`ftrun-78968`, verify PASS)
+
+Kept rather than retired, and the round justified the call: **the agent
+backgrounded `watch` on the first attempt** (`run_in_background: true`, after
+reading `watch --help`) instead of blocking its own tool call. The
+long-running-foreground worry — the whole reason this was a live question — did
+not materialise.
+
+- Full loop worked unaided: `pull` → register in `decanter.config.json` → start
+  `watch` → edit `code/build-digest.js` → read the watch log's
+  `✓ pushed node "Build digest" … unpublished draft` → confirm with `diff`.
+- It offered the **editor deep link** (the checklist item) and never hunted for
+  the removed reload proxy — no stale mental model.
+- Unprompted and correct: the single-writer lock ("if someone else has this open,
+  pushes fail with a lock error — just wait") and draft-vs-published.
+- **One imprecision worth knowing, not a defect:** it told the user "watch pushes
+  verbatim on save — it doesn't run `preflight`, so a broken edit still gets
+  pushed". `pushSingleNode` *does* run the layout-compliance gate
+  (`assertCompliant(validateNodeFile(…))`); what it skips is typecheck and any
+  notion of correctness. The advice it drew from that (`preflight --offline` or
+  `node run` alongside) is sound regardless.
+- **Still unmeasured** — the two checklist items the turns gave it no reason to
+  reach: a `workflow.json` save warning and pushing nothing, and execution after
+  a `publish`. A future S5 variant would have to ask for both explicitly.
+
+### Task 4 — findings routed
+
+- **Product, 1 finding:** `init`'s non-interactive path is present but not
+  discoverable when it matters → [Plan 75](../draft/75-init-cold-start-discoverability.md).
+- **Harness, 4 defects, all fixed here** (none is a product issue): the two
+  condition flags that never staged their condition (`FIELD_NO_PATH_HELP`,
+  `FIELD_NO_SEED_ENV`), `{{HOST}}` removing the scheme choice the #142 beat
+  claimed to watch, and the `._.env` AppleDouble sidecar from repacking with
+  macOS `tar`.
+- **Explicit "nothing found"** for the conditions themselves: the unassisted
+  PATH, the cold start, and the watch loop each produced a *working* session.
+  The crutches were hiding nothing.
+
+**The pattern worth keeping.** Three of those four harness defects are the same
+failure: a staging knob that was believed rather than checked. Each was found
+only by running the condition and reading what the agent actually saw. Both
+opt-out flags now assert the world they claim to create, not their own setting.
 
 ## Notes
 
