@@ -328,6 +328,14 @@ function assertPrerequisites(ids: string[]): void {
     if (sc.requiresSeedEnvOff === true && manifest.seedEnv !== false) {
       problems.push(`${id} needs a stage created with FIELD_NO_SEED_ENV=1 (this manifest has seedEnv=${JSON.stringify(manifest.seedEnv)}); with a pre-seeded .env there is no cold start to measure`);
     }
+    // …and check the WORLD, not just the flag. seedEnv=false only records that the
+    // pre-seed was skipped; `init` used to write its own .env right afterwards, so
+    // a whole S14 round graded a fully configured project while the manifest said
+    // the condition was staged. The flag can lie; the file cannot.
+    if (sc.requiresSeedEnvOff === true) {
+      const leaked = [".env", ".decanter-auth.json"].filter((f) => existsSync(path.join(manifest.workDir, f)));
+      if (leaked.length) problems.push(`${id} needs a workDir with no credentials, but ${leaked.join(" + ")} exist(s) in ${manifest.workDir}; the cold start is not staged`);
+    }
     // A scenario may declare a pre-hook before the hook exists (Plan 61 writes
     // the scenario specs ahead of the staging machinery). Refuse rather than
     // run the turns against an environment nothing was done to.

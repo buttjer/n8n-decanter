@@ -69,12 +69,17 @@ reworked here so an executing agent does not drive the harness of a week ago.
 
    *(Env reaches the inner run by construction: `--isolate` re-execs without an
    `env` override, so the child inherits it.)*
-2. **Cold-`init` round** — `FIELD_NO_SEED_ENV=1`, S1, with the MCP token handed
-   over in-character the way a user pastes one:
+2. **Cold-`init` round** — `FIELD_NO_SEED_ENV=1`, **S14**, with the MCP token
+   handed over in-character the way a user pastes one:
 
    ```sh
-   FIELD_NO_SEED_ENV=1 node test/field-test/run.mts --isolate S1
+   FIELD_NO_SEED_ENV=1 node test/field-test/run.mts --isolate S14
    ```
+
+   S1's turns assume a working project, so the condition needed a scenario whose
+   *turns* carry the credentials — `scenarios/S14.md`, added by this plan. It is
+   the only scenario using the spawn-time-only `{{HOST}}`/`{{MCP_TOKEN}}`
+   placeholders.
 
    The flag is read by **`stage.mts`**, which `--isolate` spawns — so the
    isolated form is the one that carries it. First blind exercise of #144's

@@ -555,8 +555,11 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   // re-prompting. This sidesteps round-1a's product FINDING that `init` writes
   // https:// for a local http instance (breaking the guard, which reads .env
   // directly) — that finding is logged for triage, not masked. `FIELD_NO_SEED_ENV=1`
-  // omits this to exercise init's cold host-prompt path (and reproduce the bug).
-  if (process.env.FIELD_NO_SEED_ENV !== "1") {
+  // omits this to stage the COLD-START condition (S14): no credentials anywhere,
+  // the agent has to obtain them. See the matching removal after `init` below —
+  // skipping the pre-seed alone does not stage it, because init writes a .env too.
+  const seedEnv = process.env.FIELD_NO_SEED_ENV !== "1";
+  if (seedEnv) {
     writeFileSync(path.join(workDir, ".env"), `N8N_HOST=${HOST}\nN8N_MCP_TOKEN=${MCP}\nN8N_API_KEY=${KEY}\n`);
   }
 
@@ -623,6 +626,17 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
       // mode the container is the real boundary, so this is belt-and-braces.
       // Merged into the LOCAL layer, never the template's settings.json.
       mergeLocalSettings(workDir, { sandbox: { enabled: false } });
+      // FIELD_NO_SEED_ENV=1 — take the credentials back OUT. The stage runs init
+      // with the non-interactive flags, so init WRITES a working .env; skipping
+      // the pre-seed above is not enough on its own (the flag silently stopped
+      // staging its condition when the stage took init over — a whole S14 round
+      // graded a fully configured project before this was caught). Deleting the
+      // credential files after the scaffold is exactly a fresh clone: the
+      // template files are committed, .env and .decanter-auth.json are not.
+      if (!seedEnv) {
+        for (const f of [".env", ".decanter-auth.json"]) rmSync(path.join(workDir, f), { force: true });
+        console.log("FIELD_NO_SEED_ENV=1 — removed .env + .decanter-auth.json after init: scaffold present, NO credentials (cold start)");
+      }
     } catch (err) {
       console.warn(`init failed (${(err as Error).message.split("\n")[0]}) — the blind agent would have to run it itself`);
     }
@@ -691,7 +705,7 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
     console.log("FIELD_NO_CLI=1 — removed node_modules (fresh-clone state): the project's decanter evidence is committed, the CLI is NOT runnable");
   }
 
-  return { workDir, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv: process.env.FIELD_NO_SEED_ENV !== "1" };
+  return { workDir, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
