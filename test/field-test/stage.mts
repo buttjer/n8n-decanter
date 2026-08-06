@@ -510,8 +510,14 @@ async function unblindTarball(tgz: string): Promise<string[]> {
     if (removed.length === 0) return [];
     for (const s of removed) delete pkg.scripts![s];
     writeFileSync(pkgFile, JSON.stringify(pkg, null, 2) + "\n");
-    // repack with the same `package/` root npm expects
-    await execFile("tar", ["-czf", tgz, "-C", work, "package"]);
+    // Repack with the same `package/` root npm expects. COPYFILE_DISABLE=1 keeps
+    // macOS `tar` from serialising extended attributes as AppleDouble sidecars:
+    // `template/.env.example` carries `com.apple.provenance` here, so the repack
+    // shipped a `template/._.env.example`, which `init` then dutifully installed
+    // into the blind project as `._.env` ("added ._.env from the template"). Two
+    // cold rounds' agents spent a command working out it was junk. npm's own pack
+    // is node-tar and never does this — the artifact was ours, not the product's.
+    await execFile("tar", ["-czf", tgz, "-C", work, "package"], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
     return removed;
   } catch (err) {
     // never fail a stage over blinding hygiene — say so and carry on
@@ -634,7 +640,10 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
       // credential files after the scaffold is exactly a fresh clone: the
       // template files are committed, .env and .decanter-auth.json are not.
       if (!seedEnv) {
-        for (const f of [".env", ".decanter-auth.json"]) rmSync(path.join(workDir, f), { force: true });
+        // `._.env` too: a macOS AppleDouble sidecar survives the .env removal and
+        // the first cold round's agent spent a command working out that it was an
+        // artifact, not a config file. Don't leave a distractor in the condition.
+        for (const f of [".env", "._.env", ".decanter-auth.json"]) rmSync(path.join(workDir, f), { force: true });
         console.log("FIELD_NO_SEED_ENV=1 — removed .env + .decanter-auth.json after init: scaffold present, NO credentials (cold start)");
       }
     } catch (err) {

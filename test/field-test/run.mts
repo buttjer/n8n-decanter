@@ -367,7 +367,14 @@ function assertPrerequisites(ids: string[]): void {
 // emits them in clear text.
 function fillPublic(text: string): string {
   const oldFlow = manifest.seeded.find((s) => s.kind === "s4-archive-target")?.name ?? "Old contact import";
-  return text.replaceAll("{{HOST}}", manifest.host).replaceAll("{{OLD_FLOW_NAME}}", oldFlow);
+  return text
+    .replaceAll("{{HOST}}", manifest.host)
+    // Scheme-LESS host:port. `{{HOST}}` hands over a complete URL, which silently
+    // removes the choice the #142 bug was about (init writing https:// for a local
+    // http instance) — S14's first valid round claimed to watch for it and could
+    // not have seen it. A bare host makes the agent pick the scheme.
+    .replaceAll("{{HOST_BARE}}", manifest.host.replace(/^https?:\/\//, ""))
+    .replaceAll("{{OLD_FLOW_NAME}}", oldFlow);
 }
 // Credential placeholders — substituted ONLY at the moment of spawning claude,
 // on a string that is never logged or stored (avoids clear-text-logging of the

@@ -126,6 +126,53 @@ reworked here so an executing agent does not drive the harness of a week ago.
   day; three of them (`90305`, `92069`, `99503`) already cover the current
   `preflight`/`diff` surface.
 
+## Round reports
+
+### Task 1 — unassisted PATH (`FIELD_NO_PATH_HELP=1`, S1 + S2)
+
+`ftrun-42006` (S1), `ftrun-45450` (S2). **The agent recovers unaided via `npx`** —
+no bare `n8n-decanter` succeeds anywhere in either transcript, and both units
+completed their work. The condition only became real after a fix: the flag left
+the maintainer's global install on PATH, so the first attempt measured the main
+checkout's CLI (`bbbf65d`). Findings sit in `2fd01c7`.
+
+### Task 2 — cold `init` (`FIELD_NO_SEED_ENV=1`, S14)
+
+Two valid rounds. `ftrun-71346` handed over a complete URL; `ftrun-75467` handed
+over a bare `host:port` so the scheme was the agent's to choose.
+
+- **Plan 74 did not over-correct** — the question this round existed to answer.
+  After **one** command (`list --remote` → `N8N_HOST must be set …`) the agent
+  concluded *"This repo has no `.env` yet — expected on a fresh clone since it's
+  git-ignored"*. It reaches "not configured" when that is the right answer, and
+  the 401 rewording did not train it out of the diagnosis.
+- **#142 holds under the condition that exposes it.** Handed `127.0.0.1:65214`
+  with no scheme, the agent passed it through verbatim (`init --host
+  127.0.0.1:65214`); `init` printed `using --host http://127.0.0.1:65214` and the
+  guard came up on `http://` (`guard.log`). No `https://` for a local host.
+- **Finding — #144's flags are not discoverable at the moment they matter.**
+  Turn 1's advice to the user was bare `npx n8n-decanter init` — the *interactive*
+  path ("this will prompt for your n8n instance's host") — and it handed the job
+  back. It only found `--host`/`--token` in turn 2, once it held the values, and
+  then needed `--help` plus two probes (`--token FAKE`, `--mcp-token FAKE`) to
+  settle the flag name. The flags exist and work; nothing points an agent at them
+  while it is still deciding what to tell the user. **Route: an `init` ergonomics
+  item** — the cold-start error path should name the non-interactive form.
+- **Deny rules held**: the agent refused to write `.env` itself ("blocked from
+  edits by design"). Draft-vs-live was answered exactly right in turn 3.
+- Two harness defects fixed on the way, both the same shape as task 1's:
+  `FIELD_NO_SEED_ENV=1` never staged its condition (the stage's own `init` wrote
+  the `.env` back; the first round graded a fully configured project), and
+  `{{HOST}}` interpolated a scheme-complete URL, so the `https://` beat the
+  scenario advertised could not fire. `{{HOST_BARE}}` now exists and the
+  prerequisite gate checks the **workDir** instead of the manifest field.
+- Also traced to ground: the `._.env` the agents kept noticing came from
+  `unblindTarball` repacking with macOS `tar`, which serialises
+  `template/.env.example`'s `com.apple.provenance` xattr as an AppleDouble
+  sidecar that `init` then installs. **Harness artifact, not a product bug** —
+  `npm pack` is node-tar and never emits one, and `init` from a clean source tree
+  produces no such file. Fixed with `COPYFILE_DISABLE=1`.
+
 ## Notes
 
 - **Cost:** ~3–5 Sonnet sessions plus grading — the small envelope, not a wave.

@@ -95,7 +95,7 @@ describe("field-test scenario pack", () => {
       // round, one layer up from the workDir check `run.mts` now does.
       it("declares requiresSeedEnvOff if its turns hand over credentials", () => {
         const spine = spineOf(file);
-        const usesSecret = (spine.turns as string[]).some((t) => /\{\{(HOST|MCP_TOKEN)\}\}/.test(t));
+        const usesSecret = (spine.turns as string[]).some((t) => /\{\{(HOST|HOST_BARE|MCP_TOKEN)\}\}/.test(t));
         if (usesSecret) {
           assert.equal(spine.requiresSeedEnvOff, true, `${file}: turns supply {{HOST}}/{{MCP_TOKEN}}, so the stage must withhold credentials (requiresSeedEnvOff: true) or the scenario measures nothing`);
         }
