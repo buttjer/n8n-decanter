@@ -4,7 +4,7 @@
 plus [Plan 61](61-field-test-scenario-wave-2.md); 33 archived units); these are
 staging *conditions* it supports but has never been run under. Each one hides a
 claim we currently make without evidence.
-**Status:** Not started
+**Status:** Done — all three conditions measured 2026-08-06 (see Round reports)
 **Snapshot:** 2026-08-05T19:20Z @ 08e61dc *(previous: 2026-07-27T12:05Z @ 0be700c)*
 **Theme:** Every archived round so far handed the blind agent two things a real
 user's agent does not get: a **resolvable bare `n8n-decanter`** on PATH and a
@@ -197,6 +197,24 @@ not materialise.
 - **Still unmeasured** — the two checklist items the turns gave it no reason to
   reach: a `workflow.json` save warning and pushing nothing, and execution after
   a `publish`. A future S5 variant would have to ask for both explicitly.
+
+### Task 4 — findings routed
+
+- **Product, 1 finding:** `init`'s non-interactive path is present but not
+  discoverable when it matters → [Plan 75](../draft/75-init-cold-start-discoverability.md).
+- **Harness, 4 defects, all fixed here** (none is a product issue): the two
+  condition flags that never staged their condition (`FIELD_NO_PATH_HELP`,
+  `FIELD_NO_SEED_ENV`), `{{HOST}}` removing the scheme choice the #142 beat
+  claimed to watch, and the `._.env` AppleDouble sidecar from repacking with
+  macOS `tar`.
+- **Explicit "nothing found"** for the conditions themselves: the unassisted
+  PATH, the cold start, and the watch loop each produced a *working* session.
+  The crutches were hiding nothing.
+
+**The pattern worth keeping.** Three of those four harness defects are the same
+failure: a staging knob that was believed rather than checked. Each was found
+only by running the condition and reading what the agent actually saw. Both
+opt-out flags now assert the world they claim to create, not their own setting.
 
 ## Notes
 

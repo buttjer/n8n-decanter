@@ -9,7 +9,7 @@ before further releases build on it untested.
 complete and **every finding triaged** to a merged fix or a plan. The three
 *conditions* this plan never got around to measuring (unassisted PATH, cold
 `init`, `watch`) are future rounds on a finished harness, not unfinished build
-work — they moved to [Plan 62](../open/62-field-test-unrun-conditions.md). See
+work — they moved to [Plan 62](../done/62-field-test-unrun-conditions.md). See
 **"Close-out"** immediately below for the round index and the task-by-task
 verdict; everything after it is the historical record, kept as written.
 **Snapshot:** 2026-07-27T12:05Z @ 0be700c
@@ -52,7 +52,7 @@ re-render any of them with `npm run field-test:report -- --from <raw.tgz>`.
 | S3 remote drift | 5 | 4 PASS / 1 FAIL *(the deliberate drift scored as failure — a verifier bug, fixed in #171)* |
 | S4 refactor + lifecycle | 5 | 1 PASS / 2 FAIL / **2 unscored** (`ftrun-93355` has no verify file; `ftrun-90305` lacks its S4 verdict) |
 | S6 fresh clone, no CLI | 6 | 6 PASS |
-| S5 watch | **0** | never run — moved to [Plan 62](../open/62-field-test-unrun-conditions.md) |
+| S5 watch | **0** | never run — moved to [Plan 62](../done/62-field-test-unrun-conditions.md) |
 
 **The close-out evidence is [`ftrun-99503`](../../test/field-test/runs/2026-07-27T10-48-15Z-ftrun-99503/)**
 (2026-07-27): the **only round that sweeps S1–S4 in one go, all four PASS** —
@@ -110,7 +110,7 @@ as **superseded, not delivered** — no report is fabricated here.
 ### Deferred — three conditions, not three tasks
 
 Never measured, and each one a *round* on a finished harness rather than
-missing machinery — spun out as [Plan 62](../open/62-field-test-unrun-conditions.md):
+missing machinery — spun out as [Plan 62](../done/62-field-test-unrun-conditions.md):
 `FIELD_NO_PATH_HELP=1` (unassisted Bash PATH), `FIELD_NO_SEED_ENV=1` (the cold
 `init` path — #144's flags have still never met a blind agent), and **S5**
 (`watch`, host-only). Plan 61 *(unmerged — PR #160)* widens *what* is tested;
@@ -902,7 +902,7 @@ direction 4). It shadows any ambient `n8n-decanter` off the session PATH and
 empties the npm prefix, so a maintainer's global install cannot satisfy the
 round; `run.mts` refuses S6 against a normal stage or in `--container` mode.
 
-Remaining *(moved to [Plan 62](../open/62-field-test-unrun-conditions.md) at close-out —
+Remaining *(moved to [Plan 62](../done/62-field-test-unrun-conditions.md) at close-out —
 never run under this plan)*: a round with `FIELD_NO_PATH_HELP=1` to measure the
 unassisted Bash surface. **The fix is an invocation-form change, not an
 install-shape one**
@@ -1102,7 +1102,7 @@ end-to-end**.
 - **#144 (non-interactive init flags): not exercised** — the stage pre-seeds a
   correct `.env`, so `init` reused it without prompting (a `FIELD_NO_SEED_ENV`
   variant would exercise the flags). *(Still true at close-out: no round has ever
-  run the cold-`init` path → [Plan 62](../open/62-field-test-unrun-conditions.md).)*
+  run the cold-`init` path → [Plan 62](../done/62-field-test-unrun-conditions.md).)*
 
 **Findings (ranked):**
 1. **`.js`→`.ts` conversion left unregistered — agent ran `check`, not `push`

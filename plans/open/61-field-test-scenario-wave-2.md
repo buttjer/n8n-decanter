@@ -40,7 +40,7 @@ rework below is not cosmetic — two of its premises were falsified.
 | verbs `check` / `status` / `simulate` | **removed** ([Plan 59](../done/59-declutter-verify-verbs.md)/[60](../done/60-preflight-first-verb-surface.md), `REMOVED_VERBS` in [`n8n-decanter.mts:118`](../../n8n-decanter.mts)) → `preflight` (+`--simulate`/`--offline`/`--viewer`/`--execution`/`--scenario`) and `diff` |
 | `preflight --quick` / `--full` profiles | **gone** — one gate, tuned by `--json` / `--fail-on` / `--fail-fast` / `--require=<ids>` / `--simulate` / `--offline` |
 | "nothing has ever been tested on a workflow decanter didn't create" | **false** — the **2026-07-30 field report** drove a 45-node production workflow (Shopify → eBay, 39 renames) and produced nine plans ([63](../done/63-field-feedback-bugfixes.md)–[71](../draft/71-data-table-writes.md)) |
-| Plan 35 open, S1–S5 | Plan 35 **Done**; its `S5` (watch) and the two staging crutches moved to [Plan 62](62-field-test-unrun-conditions.md) |
+| Plan 35 open, S1–S5 | Plan 35 **Done**; its `S5` (watch) and the two staging crutches moved to [Plan 62](../done/62-field-test-unrun-conditions.md) |
 | — | Only **3 of 22 archived rounds** ran on the post-59/60 verb surface, and all three were S1–S4. Every other round measured verbs that no longer exist |
 
 **Consequence for scope.** The corpus is no longer the *realism* argument — a
@@ -140,7 +140,7 @@ vendoring. Fetching happens on the **host during staging**, never inside the
 | --- | --- | --- |
 | `pull` / `push` / `diff` / `node run` / `test` / guard / drift guard / TS conversion / MCP structure + `pull` reconcile | ✅ S1–S4 *(only 3 rounds on the current verb surface)* | re-measured incidentally by all of S7–S13 |
 | CLI discoverability from a fresh clone | ✅ S6 (6 rounds) | — |
-| `watch` | ❌ written, **never run** | [Plan 62](62-field-test-unrun-conditions.md), not this plan |
+| `watch` | ❌ written, **never run** | [Plan 62](../done/62-field-test-unrun-conditions.md), not this plan |
 | `preflight` (`--json`, `--require`, `--fail-on`, `--fail-fast`, coverage honesty) | ❌ **never run, in any shape** | S8 |
 | `preflight --simulate` / `--offline` / `--viewer` / `--n8n-version`, loop preview | ❌ | S9 |
 | `executions` (fetch, published-version warning, `clean`) | ❌ | S8, S12 |
@@ -370,7 +370,7 @@ Split into two waves so the corpus work does not gate the best scenarios.
     "historical record, kept as written".
 11. **Round ergonomics** — document the subset runs (`run.mts <manifest> S8 S10`),
     which scenarios are **host-only** (S9 needs Docker for `--simulate`), the
-    `FIELD_RUN_BUDGET_MIN` guidance, and which [Plan 62](62-field-test-unrun-conditions.md)
+    `FIELD_RUN_BUDGET_MIN` guidance, and which [Plan 62](../done/62-field-test-unrun-conditions.md)
     conditions compose with which scenario (e.g. `FIELD_NO_SEED_ENV=1` rides
     along with any wave-2a round at no extra turn cost).
 
@@ -543,7 +543,7 @@ a blind session under a restrictive sandbox.
   fixes are separate plans.
 - **Not re-finding Plans 63–71.** Anything already written down as a defect is
   out of scope for a blind round; land the fix, then measure the fixed surface.
-- Not `watch` — that is [Plan 62](62-field-test-unrun-conditions.md)'s S5, along
+- Not `watch` — that is [Plan 62](../done/62-field-test-unrun-conditions.md)'s S5, along
   with the unassisted-PATH and cold-`init` conditions.
 - Not vendoring the corpus, and not depending on it at runtime — a pack that
   can't be fetched fails the stage with a clear message, and `builtin` still works
