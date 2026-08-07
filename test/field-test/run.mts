@@ -41,7 +41,14 @@ const REPORT = path.join(HERE, "report.mts");
 // ---------- args ----------
 const argv = process.argv.slice(2);
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log("usage: node test/field-test/run.mts <manifest.json> [S1 S2 …] [--dry-run]");
+  console.log([
+    "usage: node test/field-test/run.mts <manifest.json> [S1 S2 …] [--dry-run]",
+    "       node test/field-test/run.mts --isolate [S1 S2 …]   one fresh instance per unit",
+    "       node test/field-test/run.mts --isolate --all       every scenario, each isolated",
+    "",
+    "  --seeds <pack>  pin every unit to one pack; omit it and each unit gets the",
+    "                  smallest pack covering its own requiresSeedKinds",
+  ].join("\n"));
   process.exit(0);
 }
 const dryRun = argv.includes("--dry-run");
@@ -49,9 +56,39 @@ const dryRun = argv.includes("--dry-run");
 // fenced to Anthropic-only — the safe way to run them UNATTENDED (see the
 // container-mode design in the plan + test/field-test/docker/).
 const containerMode = argv.includes("--container");
-/** `--seeds <pack>`, passed through to each stage `--isolate` creates. */
+/** `--seeds <pack>`: pins every unit to one pack. Omit it and each unit gets the
+ * smallest pack that covers its own `requiresSeedKinds` (Plan 77). */
 const SEED_PACK_ARG = argv.includes("--seeds") ? argv[argv.indexOf("--seeds") + 1] : undefined;
 const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--seeds");
+
+/** Every scenario in the pack, numerically — `S2` before `S10`. */
+function allScenarioIds(): string[] {
+  return readdirSync(SCENARIO_DIR)
+    .filter((f) => /^S\d+\.md$/.test(f))
+    .map((f) => f.replace(/\.md$/, ""))
+    .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+}
+
+/**
+ * Which seed pack does this unit need? (Plan 77.)
+ *
+ * `--isolate` stages once per unit, so the pack is a per-unit choice — that is
+ * what makes a full sweep possible at all: S8/S9 want `wave2`'s kinds and
+ * S7/S10/S12 want the corpus ones, and no single pack has to carry everything.
+ * Picks the SMALLEST pack covering the unit's declared kinds, so an ordinary
+ * scenario still gets `builtin` and does not pay for a corpus fetch.
+ */
+function packFor(unit: string[], packs: Record<string, string[]>): string {
+  const needed = new Set(unit.flatMap((id) => loadScenario(id).requiresSeedKinds ?? []));
+  if (needed.size === 0) return "builtin";
+  const covering = Object.entries(packs)
+    .filter(([, kinds]) => [...needed].every((k) => kinds.includes(k)))
+    .sort((a, b) => a[1].length - b[1].length);
+  if (covering.length === 0) {
+    throw new Error(`no seed pack covers ${unit.join("+")}'s kinds (${[...needed].join(", ")}); known packs: ${Object.keys(packs).join(", ")}`);
+  }
+  return covering[0][0];
+}
 
 /**
  * `--isolate S7 S10 …`: one FRESH instance + scratch project per scenario (or
@@ -66,15 +103,60 @@ const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== 
  * earlier units' evidence.
  */
 if (argv.includes("--isolate")) {
-  const ids = positional.length > 0 ? positional : ["S1", "S2", "S3", "S4"];
+  let ids = argv.includes("--all") ? allScenarioIds() : positional.length > 0 ? positional : ["S1", "S2", "S3", "S4"];
+  // A fenced sweep cannot include the host-only scenarios (fs.watch on a bind
+  // mount; the image installs the CLI globally, so the no-CLI condition cannot
+  // exist). Drop them by NAME rather than refusing the whole sweep — but never
+  // silently: a skipped scenario that reads as "covered" is the failure this
+  // harness keeps finding in itself.
+  if (argv.includes("--all") && containerMode) {
+    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true; });
+    if (hostOnly.length > 0) {
+      console.log(`--container: ${hostOnly.join(", ")} are host-only and are NOT part of this sweep — run them separately:\n    node test/field-test/run.mts --isolate ${hostOnly.join(" ")}\n`);
+      ids = ids.filter((id) => !hostOnly.includes(id));
+    }
+  }
   const units = groupScenarios(ids);
   const passthrough = argv.filter((a) => a === "--dry-run" || a === "--container");
-  console.log(`isolating ${ids.length} scenario(s) into ${units.length} unit(s): ${units.map((u) => u.join("+")).join(", ")}`);
+  // One `stage.mts --list-packs` for the whole sweep; the packs cannot change
+  // mid-run, and a per-unit call would just re-read the same files.
+  const packs = JSON.parse((await execFile(process.execPath, [path.join(HERE, "stage.mts"), "--list-packs"], { encoding: "utf8" })).stdout) as Record<string, string[]>;
+  const packOf = new Map(units.map((u) => [u.join("+"), SEED_PACK_ARG ?? packFor(u, packs)]));
+  console.log(`isolating ${ids.length} scenario(s) into ${units.length} unit(s): ${units.map((u) => `${u.join("+")} [${packOf.get(u.join("+"))}]`).join(", ")}`);
+  // `--isolate --dry-run` prints the PLAN and boots nothing. Passing --dry-run
+  // through to the children would still stage an instance per unit — thirteen
+  // container boots to answer "what would you run?" (Plan 77).
+  if (dryRun) {
+    for (const [i, unit] of units.entries()) {
+      const scns = unit.map((id) => loadScenario(id));
+      const turns = scns.reduce((n, s) => n + s.turns.length, 0);
+      const notes = [
+        scns.some((s) => s.unsandboxedOnly) ? "host-only" : "",
+        scns.some((s) => s.requiresNoCli) ? "needs FIELD_NO_CLI=1" : "",
+        scns.some((s) => s.requiresSeedEnvOff) ? "needs FIELD_NO_SEED_ENV=1" : "",
+        ...scns.flatMap((s) => (s.preHook ? [`preHook ${s.preHook}`] : [])),
+      ].filter((n) => n !== "");
+      console.log(`  ${String(i + 1).padStart(2)}. ${unit.join("+").padEnd(8)} seeds ${packOf.get(unit.join("+"))!.padEnd(10)} ${turns} turn(s)${notes.length ? `  — ${notes.join(", ")}` : ""}`);
+    }
+    console.log(`\ndry run: nothing staged, nothing spent. Drop --dry-run to execute.`);
+    process.exit(0);
+  }
   let failed = 0;
   for (const [i, unit] of units.entries()) {
-    console.log(`\n===== unit ${i + 1}/${units.length}: ${unit.join(" ")} — staging a fresh instance =====`);
-    const stageArgs = SEED_PACK_ARG !== undefined ? ["--seeds", SEED_PACK_ARG] : [];
-    const staged = await execFile(process.execPath, [path.join(HERE, "stage.mts"), ...stageArgs], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    const pack = packOf.get(unit.join("+"))!;
+    // Stage SHAPE is per-unit too (Plan 77). S6 needs FIELD_NO_CLI=1 and S14
+    // FIELD_NO_SEED_ENV=1 — as global env vars they would either be missing (the
+    // prerequisite gate refuses the scenario) or applied to every other unit,
+    // which is worse. `--isolate` stages per unit, so derive them from the
+    // scenario's own declaration and set them for that one stage.
+    const shape = unit.map((id) => loadScenario(id));
+    const stageEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (shape.some((s) => s.requiresNoCli)) stageEnv.FIELD_NO_CLI = "1";
+    if (shape.some((s) => s.requiresSeedEnvOff)) stageEnv.FIELD_NO_SEED_ENV = "1";
+    const shapeNote = [stageEnv.FIELD_NO_CLI ? "FIELD_NO_CLI=1" : "", stageEnv.FIELD_NO_SEED_ENV ? "FIELD_NO_SEED_ENV=1" : ""].filter((s) => s !== "").join(" ");
+    console.log(`\n===== unit ${i + 1}/${units.length}: ${unit.join(" ")} — staging a fresh instance (seeds: ${pack}${shapeNote ? `, ${shapeNote}` : ""}) =====`);
+    const stageArgs = ["--seeds", pack];
+    const staged = await execFile(process.execPath, [path.join(HERE, "stage.mts"), ...stageArgs], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, env: stageEnv });
     const mf = (staged.stdout.match(/^MANIFEST=(.+)$/m) ?? [])[1];
     if (mf === undefined) { console.error(`unit ${unit.join("+")}: stage printed no MANIFEST= line`); failed++; continue; }
     console.log(`  stage ${mf}`);
