@@ -903,6 +903,12 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
       // The first cut of this only handled `host === ""`, and S9's round found
       // it immediately — `scenario create --scaffold` died on `✗ fetch failed`
       // with an unreachable host still configured (Plan 76).
+      //
+      // The catch is deliberately broad: a 401, an n8n too old for
+      // `prepare_test_pin_data`, or no route at all are all "no schemas today",
+      // and none of them makes the scaffold itself impossible. The trade is that
+      // a genuinely misconfigured token now warns instead of failing — the cause
+      // is in the warning, and `scenario check` still has to pass afterwards.
       let scaffold: Awaited<ReturnType<typeof prepareTestPinData>> | undefined;
       if (scaffoldFlag) {
         if (config.host === "") {
