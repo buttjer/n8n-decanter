@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-07
+
 ### Added
 
 - **`scenario create <workflow> "<slug>" --extend`** — top an **existing**
@@ -29,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **A slug-less `scenario create --scaffold` now writes `scenarios/scaffold.json`,
-  not `scenarios/scenario.json`.** The old default collided with the `scenario`
+- **Breaking:** **a slug-less `scenario create --scaffold` now writes
+  `scenarios/scaffold.json`, not `scenarios/scenario.json`.** The old default collided with the `scenario`
   verb, and the flag parser refuses to read a verb name as a flag value — so
   `preflight --simulate --scenario scenario` failed with `--scenario needs a
   value`, leaving the default file referenceable only as `--scenario=scenario`.
