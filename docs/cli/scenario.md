@@ -88,7 +88,7 @@ into git history on the next sync, permanently. Trim it before that.
 
 - **`<slug>`** names the scenario (`happy-path`, `empty-cart`, `error-case`) and
   becomes the filename (kebab-cased). **Optional** — omit it and the scenario is
-  named after the execution id (`scenarios/4812.json`, or `scenario` for a
+  named after the execution id (`scenarios/4812.json`, or `scaffold` for a
   slug-less pure scaffold). Keep a library of scenarios per workflow.
 - **`--execution <id>`** seeds the scenario from a captured execution
   (`executions/<id>.json`); nodes with captured output are recorded as

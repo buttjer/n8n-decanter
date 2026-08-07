@@ -2123,6 +2123,15 @@ await step("scenario create --scaffold: an unreachable instance degrades the sca
     const fill = scenario._decanterScenario.fill as Array<{ node: string; expectedSchema?: unknown }>;
     assert.ok(fill.length > 0, "every pinnable node still becomes a fill entry");
     assert.ok(fill.every((f) => f.expectedSchema === undefined), "…and none carries a schema, so the difference stays visible in the file");
+
+    // The slug-less default must not be a VERB name: the value-flag lookahead
+    // refuses to consume one, so `--scenario scenario` used to die with
+    // "--scenario needs a value" — the file naming itself unreferenceable.
+    const unslugged = await cli("scenario", "create", "wf123", "--scaffold");
+    assert.equal(unslugged.code, 0, unslugged.out);
+    assert.match(unslugged.out, /scenarios\/scaffold\.json/);
+    const referenced = await cli("preflight", "wf123", "--offline", "--scenario", "scaffold");
+    assert.ok(!/--scenario needs a value/.test(referenced.out), "the default slug must be passable in the space-separated form: " + referenced.out);
   } finally {
     env = savedEnv;
     rmSync(scenarioDir, { recursive: true, force: true });

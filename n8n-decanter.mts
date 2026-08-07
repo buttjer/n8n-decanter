@@ -915,7 +915,13 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
           }
         }
       }
-      const slug = refs[1] ?? execId ?? "scenario";
+      // A pure scaffold's default slug is "scaffold", not "scenario": the
+      // value-flag lookahead refuses to consume a token that is a known VERB, so
+      // the old default made its own file unreferenceable in the space-separated
+      // form — `preflight --simulate --scenario scenario` died with "--scenario
+      // needs a value". S9's round hit it the moment the offline scaffold started
+      // working and had to retry with `=` (Plan 76). It also just reads better.
+      const slug = refs[1] ?? execId ?? "scaffold";
       const result = await writeScenario(dir, { execId, slug, scaffold, scaffoldRequested: scaffoldFlag }, log);
       if (jsonFlag) console.log(JSON.stringify({ slug: result.slug, file: path.relative(process.cwd(), result.file), gaps: result.gaps, coverage: result.coverage }, null, 2));
       break;

@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that route you to a pin source now lead with the offline-viable ones, and
   `docs/cli/preflight.md` states which of the four need the instance.
 
+- **A slug-less `scenario create --scaffold` now writes `scenarios/scaffold.json`,
+  not `scenarios/scenario.json`.** The old default collided with the `scenario`
+  verb, and the flag parser refuses to read a verb name as a flag value — so
+  `preflight --simulate --scenario scenario` failed with `--scenario needs a
+  value`, leaving the default file referenceable only as `--scenario=scenario`.
+
 ### Changed
 
 - **`scenario check` now reports the `test` gate too, not just the

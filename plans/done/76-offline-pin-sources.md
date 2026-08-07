@@ -93,6 +93,32 @@ Unit-pinned in `test/unit/simulate.test.mts`: a schema-less scaffold still turns
 every pinnable node into a fill entry, carries no `expectedSchema`, and the bare
 no-flags call is still refused.
 
+## Verified (round `ftrun-55234`, 2026-08-07)
+
+**The full chain ran, twice — with no instance at all.** For both seeded
+workflows the agent went `preflight --offline --simulate` (skips: no pin) →
+`scenario create --scaffold` (succeeds, unannotated) → `scenario check` (valid,
+complete) → and then a **real local-engine replay**:
+
+```
+✓ simulate  local engine ran clean — synthetic pins: proves executability,
+            not output correctness (no per-node diff) (5.9s)
+score 100/100 · verdict: ready · 3/11 checks ran
+```
+
+Baseline for the same scenario before this plan: *"that door is genuinely shut,
+not just skipped by choice."*
+
+**A second finding fell out the moment the door opened.** The slug-less default
+was `"scenario"` — a **verb name** — and the value-flag lookahead refuses to
+consume a token that is a known verb. So `preflight --simulate --scenario
+scenario` died with `--scenario needs a value`, i.e. the default file could not
+be referenced in the space-separated form. The agent recovered with `=`; the
+default is now `scaffold`, which is not a verb and reads better anyway. Pinned in
+the e2e step.
+
+## The first cut was wrong, and only the round showed it
+
 **The verification round caught the first cut handling the wrong case.** It keyed
 on `N8N_HOST === ""` — but an air-gapped user has a perfectly good `.env` and no
 network, which is the *common* shape and the one S9 stages. So
