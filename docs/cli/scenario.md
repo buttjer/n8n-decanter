@@ -88,7 +88,7 @@ into git history on the next sync, permanently. Trim it before that.
 
 - **`<slug>`** names the scenario (`happy-path`, `empty-cart`, `error-case`) and
   becomes the filename (kebab-cased). **Optional** — omit it and the scenario is
-  named after the execution id (`scenarios/4812.json`, or `scenario` for a
+  named after the execution id (`scenarios/4812.json`, or `scaffold` for a
   slug-less pure scaffold). Keep a library of scenarios per workflow.
 - **`--execution <id>`** seeds the scenario from a captured execution
   (`executions/<id>.json`); nodes with captured output are recorded as
@@ -102,8 +102,15 @@ into git history on the next sync, permanently. Trim it before that.
   scenario edit. Composes with `--execution`: the capture seeds what it
   covers, `--scaffold` annotates the remaining gaps. **A bare `--scaffold` with
   no `--execution`** builds a from-scratch set where *every* pinnable node is
-  a fill entry. Needs MCP; offline or on an older n8n it errors naming the
-  capture-based alternative.
+  a fill entry.
+
+  **It works with no instance.** The fill entries come from your local
+  `workflow.json`; the schemas are an *annotation* on top. With no `N8N_HOST`
+  configured, `--scaffold` says so and scaffolds anyway — every node lands as
+  provenance `authored` instead of `scaffolded`, and `_decanterScenario.source`
+  still reads `scaffold`. That is the difference between a less-annotated
+  scenario and no scenario at all, and it is what makes
+  `preflight --offline --simulate` reachable from a train.
 - Neither `--execution` nor `--scaffold` given → defaults to the newest capture
   under `executions/` (same as the replays' default).
 - **`--json`** prints `{ slug, file, gaps, coverage }` for tooling (`coverage`

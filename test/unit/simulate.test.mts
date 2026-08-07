@@ -452,6 +452,32 @@ describe("scenario ↔ test gate parity (Plan 65)", () => {
     const dir = scaffold({ "workflow.json": JSON.stringify(branchWf()) });
     await assert.rejects(writeScenario(dir, { slug: "nope", extend: true }, log), /no scenario "nope" to extend/);
   });
+
+  // Plan 76: the gaps come from the LOCAL workflow.json; the instance only ever
+  // supplied the per-node JSON Schemas, and those are an annotation. A scaffold
+  // with no schemas is a less-annotated scenario, not an invalid one — which is
+  // what makes `preflight --offline --simulate` reachable with no instance.
+  it("scaffolds with no schema oracle at all — every pinnable node still becomes a fill entry", async () => {
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(branchWf()),
+      ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: {} }),
+    });
+    const res = await writeScenario(dir, { slug: "train", scaffoldRequested: true }, log);
+    assert.deepEqual(res.gaps, ["Webhook", "Taken", "NotTaken"], "the IF node is not pinnable; the three network/trigger nodes are");
+    const written = JSON.parse(readFileSync(path.join(dir, SCENARIOS_DIR, "train.json"), "utf8")) as {
+      _decanterScenario: { source: string; fill: Array<{ node: string; expectedSchema?: unknown }> };
+    };
+    assert.equal(written._decanterScenario.source, "scaffold");
+    assert.ok(
+      written._decanterScenario.fill.every((f) => f.expectedSchema === undefined),
+      "no instance means no expectedSchema — the difference stays visible in the file, not hidden",
+    );
+  });
+
+  it("still refuses a bare call that asked for neither a capture nor a scaffold", async () => {
+    const dir = scaffold({ "workflow.json": JSON.stringify(branchWf()) });
+    await assert.rejects(writeScenario(dir, { slug: "empty" }, log), /needs --scaffold/);
+  });
 });
 
 // Plan 63 tasks 7 + 8. Three messages that pointed the reader somewhere the

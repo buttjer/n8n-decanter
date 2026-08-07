@@ -5,7 +5,7 @@ import { backupCreate, backupList, backupRestore } from "./lib/backup.mts";
 import { loadConfig, requireApiKey } from "./lib/config.mts";
 import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
-import { assertNoLegacyFixtures, cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId, migrateScenariosDir } from "./lib/executions.mts";
+import { assertNoLegacyFixtures, cleanExecutions, EXECUTIONS_DIR, fetchExecutionById, fetchExecutions, latestCaptureId, migrateScenariosDir } from "./lib/executions.mts";
 import { cliVersion, init, printBanner } from "./lib/init.mts";
 import { checkScenarios, listScenarioSlugs, writeScenario } from "./lib/simulate.mts";
 import { publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
@@ -491,7 +491,11 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   // Plan 59: `preflight --offline` is the credential-free gate — including with
   // `--simulate`, which drives a local throwaway engine and never calls n8n. A
   // bare `preflight --simulate` still runs the instance tier, so it needs a host.
-  const offline = command === "scenario:check" || (command === "scenario:create" && !scaffoldFlag)
+  // Plan 76: `scenario create` is offline in ALL its forms. `--scaffold` used to
+  // demand a host for the JSON Schemas alone; those are an annotation, and the
+  // gaps themselves come from the local workflow.json — so it now degrades to an
+  // unannotated scaffold when no host is configured, instead of refusing.
+  const offline = command === "scenario:check" || command === "scenario:create"
     || command === "backup:list"
     || (command === "preflight" && offlineFlag)
     || (command === "list" && !remoteFlag)
@@ -884,12 +888,47 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         execId = explicitExec;
       } else if (!scaffoldFlag) {
         execId = latestCaptureId(dir) ?? undefined;
-        if (execId === undefined) throw new Error(`no execution to seed the scenario: pass --execution <id>, add --scaffold to build from the workflow's schemas, or fetch a capture first with \`n8n-decanter executions ${refs[0]}\``);
+        // Routes sorted by what the reader can act on RIGHT NOW (Plan 76): the
+        // first two need nothing but this folder; the last one needs the
+        // instance, and says so rather than leaving you to find out.
+        if (execId === undefined) throw new Error(`no execution to seed the scenario. Without an instance: pass --execution <id> if a capture is already under ${EXECUTIONS_DIR}/, or add --scaffold to build the fill from this workflow's own nodes. With an instance: fetch a capture first — \`n8n-decanter executions ${refs[0]}\``);
         log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
       }
-      const scaffold = scaffoldFlag ? await prepareTestPinData(mcp(), refs[0]) : undefined;
-      const slug = refs[1] ?? execId ?? "scenario";
-      const result = await writeScenario(dir, { execId, slug, scaffold }, log);
+      // Schemas are an annotation on the fill, not a prerequisite for it — so a
+      // schema fetch that cannot happen degrades the scaffold instead of killing
+      // it, and says why.
+      //
+      // BOTH ways it cannot happen matter, and the second is the common one: an
+      // air-gapped user has a perfectly good `.env`, they just have no network.
+      // The first cut of this only handled `host === ""`, and S9's round found
+      // it immediately — `scenario create --scaffold` died on `✗ fetch failed`
+      // with an unreachable host still configured (Plan 76).
+      //
+      // The catch is deliberately broad: a 401, an n8n too old for
+      // `prepare_test_pin_data`, or no route at all are all "no schemas today",
+      // and none of them makes the scaffold itself impossible. The trade is that
+      // a genuinely misconfigured token now warns instead of failing — the cause
+      // is in the warning, and `scenario check` still has to pass afterwards.
+      let scaffold: Awaited<ReturnType<typeof prepareTestPinData>> | undefined;
+      if (scaffoldFlag) {
+        if (config.host === "") {
+          log.warn("no N8N_HOST configured — scaffolding from workflow.json alone; the fill carries no expectedSchema annotations (they come from the instance)");
+        } else {
+          try {
+            scaffold = await prepareTestPinData(mcp(), refs[0]);
+          } catch (err) {
+            log.warn(`could not reach n8n for the output schemas (${(err as Error).message.split("\n")[0]}) — scaffolding from workflow.json alone; the fill carries no expectedSchema annotations`);
+          }
+        }
+      }
+      // A pure scaffold's default slug is "scaffold", not "scenario": the
+      // value-flag lookahead refuses to consume a token that is a known VERB, so
+      // the old default made its own file unreferenceable in the space-separated
+      // form — `preflight --simulate --scenario scenario` died with "--scenario
+      // needs a value". S9's round hit it the moment the offline scaffold started
+      // working and had to retry with `=` (Plan 76). It also just reads better.
+      const slug = refs[1] ?? execId ?? "scaffold";
+      const result = await writeScenario(dir, { execId, slug, scaffold, scaffoldRequested: scaffoldFlag }, log);
       if (jsonFlag) console.log(JSON.stringify({ slug: result.slug, file: path.relative(process.cwd(), result.file), gaps: result.gaps, coverage: result.coverage }, null, 2));
       break;
     }

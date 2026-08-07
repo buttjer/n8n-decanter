@@ -2104,6 +2104,40 @@ await step("scenario create --scaffold: schema-annotated fills from prepare_test
   }
 });
 
+// Plan 76. The schemas ANNOTATE the fill; the fill itself comes from the local
+// workflow.json. So an unreachable instance must not take the scaffold down with
+// it — that is the air-gapped case, and it is the common one: a user on a train
+// has a perfectly good .env and no network. S9's round caught the first cut of
+// this handling only `N8N_HOST=""` and dying on `✗ fetch failed`.
+await step("scenario create --scaffold: an unreachable instance degrades the scaffold, it does not kill it", async () => {
+  const scenarioDir = path.join(dirF, "scenarios");
+  const savedEnv = env;
+  env = { ...savedEnv, N8N_HOST: "http://127.0.0.1:1" }; // nothing listens: connection refused
+  try {
+    const r = await cli("scenario", "create", "wf123", "air-gapped", "--scaffold");
+    assert.equal(r.code, 0, "a scaffold that needs no instance must not exit non-zero because one is absent: " + r.out);
+    assert.match(r.out, /could not reach n8n for the output schemas/);
+    assert.match(r.out, /no schemas — offline/, "the write line must not claim schemas it never fetched");
+    const scenario = JSON.parse(read(scenarioDir, "air-gapped.json"));
+    assert.equal(scenario._decanterScenario.source, "scaffold");
+    const fill = scenario._decanterScenario.fill as Array<{ node: string; expectedSchema?: unknown }>;
+    assert.ok(fill.length > 0, "every pinnable node still becomes a fill entry");
+    assert.ok(fill.every((f) => f.expectedSchema === undefined), "…and none carries a schema, so the difference stays visible in the file");
+
+    // The slug-less default must not be a VERB name: the value-flag lookahead
+    // refuses to consume one, so `--scenario scenario` used to die with
+    // "--scenario needs a value" — the file naming itself unreferenceable.
+    const unslugged = await cli("scenario", "create", "wf123", "--scaffold");
+    assert.equal(unslugged.code, 0, unslugged.out);
+    assert.match(unslugged.out, /scenarios\/scaffold\.json/);
+    const referenced = await cli("preflight", "wf123", "--offline", "--scenario", "scaffold");
+    assert.ok(!/--scenario needs a value/.test(referenced.out), "the default slug must be passable in the space-separated form: " + referenced.out);
+  } finally {
+    env = savedEnv;
+    rmSync(scenarioDir, { recursive: true, force: true });
+  }
+});
+
 await step("scenario migration + mock/--mock hard errors", async () => {
   const savedEnv = env;
   env = { ...savedEnv };

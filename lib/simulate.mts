@@ -648,7 +648,7 @@ function notExercisedRun(): NodeRun[] {
  */
 export async function writeScenario(
   dir: string,
-  opts: { execId?: string; slug: string; scaffold?: PinDataScaffold; extend?: boolean },
+  opts: { execId?: string; slug: string; scaffold?: PinDataScaffold; scaffoldRequested?: boolean; extend?: boolean },
   log: Log,
 ): Promise<{ slug: string; file: string; gaps: string[]; coverage?: PinDataScaffold["coverage"] }> {
   const name = kebabCase(opts.slug);
@@ -686,7 +686,14 @@ export async function writeScenario(
     overallSource = opts.scaffold ? "capture+scaffold" : "capture";
   } else {
     // Pure scaffold: no capture — every pinnable node is a gap to author.
-    if (!opts.scaffold) {
+    //
+    // The gaps come from `pinnableNodes(wf)`, i.e. the LOCAL workflow.json. The
+    // instance only ever contributed the per-node JSON Schemas, and those are
+    // attached optionally below — so a scaffold with no schemas is a *less
+    // annotated* scenario, not an invalid one, and it needs no instance at all
+    // (Plan 76). `scaffoldRequested` keeps the old guard honest: it still
+    // refuses a bare call that asked for neither a capture nor a scaffold.
+    if (!opts.scaffold && opts.scaffoldRequested !== true) {
       throw new Error("scenario create with no --execution needs --scaffold — or fetch a capture first with `n8n-decanter executions <ref>`");
     }
     baseExec = { id: name, mode: "manual", workflowVersionId: typeof wf.versionId === "string" ? wf.versionId : undefined, data: { resultData: { runData: {} } } } as unknown as Execution;
@@ -735,7 +742,14 @@ export async function writeScenario(
   const bytes = Buffer.byteLength(payload);
 
   const rel = path.relative(process.cwd(), scenarioFile);
-  const seededFrom = opts.execId !== undefined ? `capture ${opts.execId}` : "workflow schemas";
+  // Say which of the three it actually was. "workflow schemas" would be a lie
+  // for an unannotated offline scaffold, where the fill came from the local
+  // workflow.json and no schema was ever fetched (Plan 76).
+  const seededFrom = opts.execId !== undefined
+    ? `capture ${opts.execId}`
+    : opts.scaffold
+      ? "workflow schemas"
+      : "this workflow's own nodes (no schemas — offline)";
   // Size is a first-class fact here (Plan 63 task 7): a capture-seeded scenario
   // is a verbatim copy of every item of every node, `scenarios/` is tracked on
   // purpose, and the folder-scoped auto-commit sweeps it into history on the
