@@ -93,6 +93,15 @@ Unit-pinned in `test/unit/simulate.test.mts`: a schema-less scaffold still turns
 every pinnable node into a fill entry, carries no `expectedSchema`, and the bare
 no-flags call is still refused.
 
+**The verification round caught the first cut handling the wrong case.** It keyed
+on `N8N_HOST === ""` — but an air-gapped user has a perfectly good `.env` and no
+network, which is the *common* shape and the one S9 stages. So
+`scenario create --scaffold` still died on `✗ fetch failed`, and the round's
+agent never got a scaffold. Now a failed schema fetch degrades with the reason
+named, and an e2e step drives it against a dead port. This is exactly why the
+plan's verification is a round and not a test: the unit tests all passed over
+the hole.
+
 ## Non-goals
 
 - Not changing what `--simulate` *is* — the engine replay, the pinning, the diff

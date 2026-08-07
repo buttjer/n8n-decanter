@@ -894,14 +894,25 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         if (execId === undefined) throw new Error(`no execution to seed the scenario. Without an instance: pass --execution <id> if a capture is already under ${EXECUTIONS_DIR}/, or add --scaffold to build the fill from this workflow's own nodes. With an instance: fetch a capture first — \`n8n-decanter executions ${refs[0]}\``);
         log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
       }
-      // Schemas are an annotation on the fill, not a prerequisite for it — with
-      // no host configured, scaffold anyway and say what is missing.
+      // Schemas are an annotation on the fill, not a prerequisite for it — so a
+      // schema fetch that cannot happen degrades the scaffold instead of killing
+      // it, and says why.
+      //
+      // BOTH ways it cannot happen matter, and the second is the common one: an
+      // air-gapped user has a perfectly good `.env`, they just have no network.
+      // The first cut of this only handled `host === ""`, and S9's round found
+      // it immediately — `scenario create --scaffold` died on `✗ fetch failed`
+      // with an unreachable host still configured (Plan 76).
       let scaffold: Awaited<ReturnType<typeof prepareTestPinData>> | undefined;
       if (scaffoldFlag) {
         if (config.host === "") {
           log.warn("no N8N_HOST configured — scaffolding from workflow.json alone; the fill carries no expectedSchema annotations (they come from the instance)");
         } else {
-          scaffold = await prepareTestPinData(mcp(), refs[0]);
+          try {
+            scaffold = await prepareTestPinData(mcp(), refs[0]);
+          } catch (err) {
+            log.warn(`could not reach n8n for the output schemas (${(err as Error).message.split("\n")[0]}) — scaffolding from workflow.json alone; the fill carries no expectedSchema annotations`);
+          }
         }
       }
       const slug = refs[1] ?? execId ?? "scenario";
