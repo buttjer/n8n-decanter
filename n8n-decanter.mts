@@ -5,7 +5,7 @@ import { backupCreate, backupList, backupRestore } from "./lib/backup.mts";
 import { loadConfig, requireApiKey } from "./lib/config.mts";
 import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
-import { assertNoLegacyFixtures, cleanExecutions, fetchExecutionById, fetchExecutions, latestCaptureId, migrateScenariosDir } from "./lib/executions.mts";
+import { assertNoLegacyFixtures, cleanExecutions, EXECUTIONS_DIR, fetchExecutionById, fetchExecutions, latestCaptureId, migrateScenariosDir } from "./lib/executions.mts";
 import { cliVersion, init, printBanner } from "./lib/init.mts";
 import { checkScenarios, listScenarioSlugs, writeScenario } from "./lib/simulate.mts";
 import { publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
@@ -491,7 +491,11 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
   // Plan 59: `preflight --offline` is the credential-free gate — including with
   // `--simulate`, which drives a local throwaway engine and never calls n8n. A
   // bare `preflight --simulate` still runs the instance tier, so it needs a host.
-  const offline = command === "scenario:check" || (command === "scenario:create" && !scaffoldFlag)
+  // Plan 76: `scenario create` is offline in ALL its forms. `--scaffold` used to
+  // demand a host for the JSON Schemas alone; those are an annotation, and the
+  // gaps themselves come from the local workflow.json — so it now degrades to an
+  // unannotated scaffold when no host is configured, instead of refusing.
+  const offline = command === "scenario:check" || command === "scenario:create"
     || command === "backup:list"
     || (command === "preflight" && offlineFlag)
     || (command === "list" && !remoteFlag)
@@ -884,12 +888,24 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
         execId = explicitExec;
       } else if (!scaffoldFlag) {
         execId = latestCaptureId(dir) ?? undefined;
-        if (execId === undefined) throw new Error(`no execution to seed the scenario: pass --execution <id>, add --scaffold to build from the workflow's schemas, or fetch a capture first with \`n8n-decanter executions ${refs[0]}\``);
+        // Routes sorted by what the reader can act on RIGHT NOW (Plan 76): the
+        // first two need nothing but this folder; the last one needs the
+        // instance, and says so rather than leaving you to find out.
+        if (execId === undefined) throw new Error(`no execution to seed the scenario. Without an instance: pass --execution <id> if a capture is already under ${EXECUTIONS_DIR}/, or add --scaffold to build the fill from this workflow's own nodes. With an instance: fetch a capture first — \`n8n-decanter executions ${refs[0]}\``);
         log.info(style.dim(`no --execution given; using the latest capture ${execId}`));
       }
-      const scaffold = scaffoldFlag ? await prepareTestPinData(mcp(), refs[0]) : undefined;
+      // Schemas are an annotation on the fill, not a prerequisite for it — with
+      // no host configured, scaffold anyway and say what is missing.
+      let scaffold: Awaited<ReturnType<typeof prepareTestPinData>> | undefined;
+      if (scaffoldFlag) {
+        if (config.host === "") {
+          log.warn("no N8N_HOST configured — scaffolding from workflow.json alone; the fill carries no expectedSchema annotations (they come from the instance)");
+        } else {
+          scaffold = await prepareTestPinData(mcp(), refs[0]);
+        }
+      }
       const slug = refs[1] ?? execId ?? "scenario";
-      const result = await writeScenario(dir, { execId, slug, scaffold }, log);
+      const result = await writeScenario(dir, { execId, slug, scaffold, scaffoldRequested: scaffoldFlag }, log);
       if (jsonFlag) console.log(JSON.stringify({ slug: result.slug, file: path.relative(process.cwd(), result.file), gaps: result.gaps, coverage: result.coverage }, null, 2));
       break;
     }

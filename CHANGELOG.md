@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the tool had never named. Also covers the ordinary case of a workflow that
   gained a node after its scenario was written.
 
+- **`scenario create --scaffold` now works with no instance.** The fill entries
+  were always built from your local `workflow.json`; the instance only supplied
+  the per-node output **JSON Schemas**, which annotate the fill rather than
+  enable it. With no `N8N_HOST` configured it now says the annotations are
+  missing and scaffolds anyway — each node lands as provenance `authored`
+  instead of `scaffolded`, so the difference stays visible in the file. This is
+  what makes `preflight --offline --simulate` reachable on a plane: of the four
+  pin sources, only *fetching a fresh capture* actually needs n8n. The messages
+  that route you to a pin source now lead with the offline-viable ones, and
+  `docs/cli/preflight.md` states which of the four need the instance.
+
 ### Changed
 
 - **`scenario check` now reports the `test` gate too, not just the

@@ -66,7 +66,7 @@ n8n-decanter preflight --offline --simulate  # static + local engine, still no i
 | `preflight` | static + sync | the pre-push gate |
 | `preflight --simulate` | static + sync + runtime | maximum coverage before a push |
 | `preflight --offline` | static | an edit hook, an air-gapped CI lint |
-| `preflight --offline --simulate` | static + runtime | air-gapped runtime evidence |
+| `preflight --offline --simulate` | static + runtime | air-gapped runtime evidence — needs a pin source you already have or can scaffold (below) |
 
 > **`--offline` no longer implies the engine replay.** It used to; now it does
 > exactly one thing — drop the instance tier. The old `--offline` behaviour
@@ -210,6 +210,20 @@ a pin source. It is the one thing an instance run can't give you: verification
 of **uncommitted local code** ([`test`](/docs/cli/test/) can only run what's on
 the draft), CI without an instance or credentials or the per-workflow MCP
 opt-in, hard network isolation, and engine-version rehearsal.
+
+### Where the pin source comes from (and which need an instance)
+
+This is what decides whether `--offline --simulate` really is air-gapped:
+
+| Pin source | Needs the instance? |
+| --- | --- |
+| A committed `scenarios/<slug>.json` | **No** — it is in git; that is why you commit it |
+| A capture already under `executions/` | **No** — `scenario create <workflow>` seeds from the newest one, entirely locally |
+| `scenario create <workflow> --scaffold` | **No** — the fill is built from your local `workflow.json`. With a host configured it also annotates each node with its output JSON Schema; without one it scaffolds anyway and says the annotations are missing |
+| `executions <workflow>` (fetch a fresh capture) | **Yes** — this is the only route that must reach n8n |
+
+So an air-gapped run works whenever you brought a pin with you **or** are willing
+to author one: only fetching a *new* capture is impossible without the instance.
 
 **How it works:** transform a copy of the workflow (materialize `//@file:`
 sources, replace the trigger and every network node with a name-preserving node

@@ -468,7 +468,10 @@ interface ResolvedSource {
  * gitignored). Returns the source plus the `capture` check finding.
  */
 async function resolveSource(ctx: PreflightContext, remote: Workflow | undefined, runtimeActive: boolean): Promise<ResolvedSource> {
-  const bothPaths = "capture a run (n8n-decanter executions " + ctx.name + ") or scaffold one (n8n-decanter scenario create " + ctx.name + " --scaffold)";
+  // Offline-viable route FIRST (Plan 76). A blind agent on a train read the old
+  // wording, saw `executions` at the front, and concluded the door was shut —
+  // when `scenario create --scaffold` needs nothing but this folder.
+  const bothPaths = "scaffold one without an instance (n8n-decanter scenario create " + ctx.name + " --scaffold), or capture a real run (n8n-decanter executions " + ctx.name + ")";
   if (ctx.scenarioSlug !== undefined) {
     const file = sourceFile(ctx.dir, ctx.scenarioSlug, "scenario");
     if (file === null || !existsSync(file)) {
@@ -553,7 +556,9 @@ async function runtimeCheck(
     return;
   }
   if (src.ref === undefined) {
-    await run(id, "runtime", async () => ({ status: "skip", message: "no capture or scenario to pin from", reason: "no capture or scenario to pin from", unlock: src.finding.unlock ?? "n8n-decanter executions " + ctx.name }));
+    // The one an air-gapped reader hits, so its unlock must lead with the route
+    // that works air-gapped (Plan 76).
+    await run(id, "runtime", async () => ({ status: "skip", message: "no capture or scenario to pin from", reason: "no capture or scenario to pin from", unlock: src.finding.unlock ?? `n8n-decanter scenario create ${ctx.name} --scaffold  (no instance needed)` }));
     return;
   }
   await run(id, "runtime", stage);

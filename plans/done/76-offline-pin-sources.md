@@ -1,6 +1,6 @@
 # Plan 76 — the air-gapped promise is mostly true; make it say when, and close the one real gap
 
-**Status:** Draft
+**Status:** Done — shipped 2026-08-07 (see "What shipped")
 **Priority:** P2
 **Source:** [Plan 61](../done/61-field-test-scenario-wave-2.md)'s S9 round
 (`ftrun-46601`, 2026-08-06). The blind agent concluded it could not manufacture a
@@ -63,6 +63,35 @@ fills the values either way.
 4. **Say it where it bites.** The `--simulate` skip reason ("no pin source") is
    what an agent on a train reads; that message deserves the same treatment
    as [Plan 75](../done/75-init-cold-start-discoverability.md)'s cold-start error.
+
+## What shipped
+
+All four directions, in the order they matter to someone with no connectivity:
+
+1. **`--scaffold` works offline, unannotated.** `scenario create` is now offline
+   in *all* its forms (the dispatcher no longer excludes `--scaffold`). With no
+   `N8N_HOST` it warns that the `expectedSchema` annotations are missing and
+   scaffolds from `workflow.json` alone; with a host it fetches schemas exactly
+   as before. `writeScenario` gained `scaffoldRequested` so the old guard still
+   refuses a bare call that asked for neither a capture nor a scaffold.
+2. **The difference stays visible, not hidden.** `_decanterScenario.source` is
+   `scaffold` either way, but with no schemas every node's provenance is
+   `authored` rather than `scaffolded`, and the write line says
+   `written from this workflow's own nodes (no schemas — offline)` instead of
+   claiming schemas it never had.
+3. **Messages lead with what works here.** The "no execution to seed the
+   scenario" error is split into *Without an instance* / *With an instance*, and
+   the `--simulate` skip's unlock is now
+   `scenario create <wf> --scaffold  (no instance needed)` — the line an agent on
+   a train actually reads.
+4. **Docs state the condition instead of dropping the promise.**
+   `docs/cli/preflight.md` gains a four-row table of pin sources marking which
+   need the instance (only *fetching a fresh capture* does), and the mode table's
+   "air-gapped runtime evidence" row points at it.
+
+Unit-pinned in `test/unit/simulate.test.mts`: a schema-less scaffold still turns
+every pinnable node into a fill entry, carries no `expectedSchema`, and the bare
+no-flags call is still refused.
 
 ## Non-goals
 
