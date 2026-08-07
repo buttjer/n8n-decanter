@@ -25,10 +25,31 @@ on the workflow S2 creates, so those two share one stage); everything else is
 staged fresh and torn down after.
 
 ```sh
-node test/field-test/run.mts --isolate --seeds corpus-v1 S7 S10 S12
-#   isolating 3 scenario(s) into 3 unit(s): S7, S10, S12
+node test/field-test/run.mts --isolate S7 S10 S12
+#   isolating 3 scenario(s) into 3 unit(s): S7 [corpus-v1], S10 [corpus-v1], S12 [corpus-v1]
 #   …stages, runs, archives and tears down each in turn
 ```
+
+### The full sweep — `--isolate --all`
+
+Every scenario, each in its own world. **Start with `--dry-run`: it prints the
+plan and boots nothing**, so you see the cost before paying it.
+
+```sh
+node test/field-test/run.mts --isolate --all --dry-run   # the plan, $0
+node test/field-test/run.mts --isolate --all             # ~13 units, 1.5–2.5 h
+```
+
+Each unit gets **the pack its scenario needs** and **the stage shape it
+declares** — `--seeds` is no longer one global value, and `FIELD_NO_CLI=1` /
+`FIELD_NO_SEED_ENV=1` are derived per unit from `requiresNoCli` /
+`requiresSeedEnvOff` instead of having to be set for the whole run (which would
+apply them to every other unit). Pass `--seeds <pack>` to pin everything to one
+pack anyway.
+
+`--all --container` drops the host-only scenarios **by name, out loud**, and
+tells you how to run them: a skipped scenario that reads as "covered" is the
+exact failure this harness keeps finding in itself.
 
 Passing several independent scenarios to **one** manifest is now **refused
 before anything is spent**. This is not tidiness: round `ftrun-29773` ran S13

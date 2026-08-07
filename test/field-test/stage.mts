@@ -304,6 +304,26 @@ if (SEED_PACKS[SEED_PACK] === undefined && !existsSync(PACK_FILE)) {
 const BUILTIN_BY_KIND = new Map(BUILTIN_SEEDS.concat(WAVE2_SEEDS).map((s) => [s.kind, s]));
 
 /**
+ * `--list-packs`: which kinds each pack seeds, as JSON, without booting anything.
+ *
+ * Plan 77. `--isolate` stages once PER UNIT, so each unit can have the pack its
+ * scenario actually needs — but only if the caller can find out what a pack
+ * contains. This keeps that knowledge here, where the packs are defined, instead
+ * of duplicating a kind→pack table into `run.mts` for it to drift from.
+ */
+if (process.argv.includes("--list-packs")) {
+  const packs: Record<string, string[]> = {};
+  for (const [name, seeds] of Object.entries(SEED_PACKS)) packs[name] = seeds.map((s) => s.kind);
+  for (const file of readdirSync(path.join(HERE, "seeds")).filter((f: string) => f.endsWith(".json"))) {
+    const name = file.slice(0, -5);
+    const manifest = JSON.parse(readFileSync(path.join(HERE, "seeds", file), "utf8")) as { seeds?: Array<{ kind?: string; inline?: string }> };
+    packs[name] = (manifest.seeds ?? []).map((e) => e.kind ?? e.inline ?? "").filter((k) => k !== "");
+  }
+  console.log(JSON.stringify(packs, null, 2));
+  process.exit(0);
+}
+
+/**
  * Resolve the selected pack to concrete seeds. A code pack is returned as-is; a
  * `seeds/<pack>.json` manifest is expanded — inline entries map back to the
  * hand-built builders by `kind`, corpus entries are fetched, vetted and

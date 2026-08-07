@@ -16,6 +16,7 @@
 //
 // All offline: this reads the markdown, nothing else. No n8n, no claude, no spend.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,6 +40,11 @@ interface Spine {
 
 const files = readdirSync(SCENARIO_DIR).filter((f) => /^S\d+\.md$/.test(f)).sort();
 const ids = new Set(files.map((f) => f.replace(/\.md$/, "")));
+
+/** What each seed pack seeds — the same oracle `run.mts` asks for at sweep time. */
+const PACK_KINDS = JSON.parse(
+  execFileSync(process.execPath, [path.join(SCENARIO_DIR, "..", "stage.mts"), "--list-packs"], { encoding: "utf8" }),
+) as Record<string, string[]>;
 
 /** The same extraction `run.mts` does — if this regex misses, the runner throws. */
 function spineOf(file: string): Spine {
@@ -119,6 +125,16 @@ describe("field-test scenario pack", () => {
         if (kinds === undefined) return;
         assert.ok(Array.isArray(kinds) && kinds.length > 0, `${file}: requiresSeedKinds must be a non-empty array`);
         for (const k of kinds as unknown[]) assert.match(String(k), /^[a-z][a-z0-9-]*$/, `${file}: seed kind ${JSON.stringify(k)}`);
+      });
+
+      // Plan 77: `--isolate` picks each unit's seed pack from these kinds, so a
+      // kind no pack seeds makes the whole sweep refuse — offline, before
+      // anything boots, which is the point. Catch it here instead.
+      it("every declared seed kind is seeded by some pack", () => {
+        const kinds = (spineOf(file).requiresSeedKinds ?? []) as string[];
+        if (kinds.length === 0) return;
+        const packed = new Set(Object.values(PACK_KINDS).flat());
+        for (const k of kinds) assert.ok(packed.has(k), `${file}: no seed pack provides "${k}" (packs seed: ${[...packed].sort().join(", ")})`);
       });
 
       it("keeps evaluation-signalling vocabulary out of the turns (STYLE.md, hard rule)", () => {
