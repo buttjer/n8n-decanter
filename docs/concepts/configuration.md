@@ -57,9 +57,14 @@ In order of resolution:
    [data-tables](/docs/cli/data-tables/), and
    [backup](/docs/cli/backup/). Scope it minimally:
    `execution:read`, `execution:list`, `workflow:list` (init's connection
-   check), the `dataTable:*` read scopes (only while `dataTables` is on), and
-   `workflow:read` + `workflow:create` (only for `backup`
-   create/restore's full-fidelity GET/POST).
+   check), and `workflow:read` + `workflow:create` (only for `backup`
+   create/restore's full-fidelity GET/POST). While `dataTables` is on, add
+   **three** separate read scopes — `dataTable:list`, `dataTable:read`,
+   `dataTableColumn:read` **and** `dataTableRow:read`: `dataTable:read` does
+   *not* cover a table's columns or rows, which is the split that catches people
+   out. decanter only ever **reads** data tables, so no write scope is needed.
+   A 403 from any REST verb names the missing scope for you —
+   [the table in troubleshooting](/docs/faq/troubleshooting/) lists them all.
 
 The instance needs **MCP access enabled** once (n8n → Settings → MCP;
 requires an n8n with the built-in MCP server, ~2.20+), and each synced
