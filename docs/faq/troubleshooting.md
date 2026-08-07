@@ -91,6 +91,28 @@ The **401** means the token is wrong — note that the **public API key is not a
 valid MCP token**; mint one under n8n → Settings → MCP → API key, or re-run
 [init](/docs/cli/init/) for OAuth.
 
+## A REST verb fails with 403 — which scope is missing?
+
+`executions`, `data-tables` and `backup` use n8n's **public REST API**, not MCP,
+so they need `N8N_API_KEY`. n8n answers a valid-but-under-scoped key with a bare
+**403** that names no scope, so decanter adds the one you need per endpoint:
+
+| Verb / call | Scope to add |
+| --- | --- |
+| `executions <workflow>` (the list) | `execution:list` — plus `execution:read` to fetch one |
+| `executions <workflow> <id>` | `execution:read` |
+| `data-tables` (listing tables) | `dataTable:list` **and** `dataTable:read` |
+| a table's **columns** | `dataTableColumn:read` — **not** covered by `dataTable:read` |
+| a table's **rows** | `dataTableRow:read` — separate again |
+| `backup restore` | `workflow:create` (it redeploys the backup as a new workflow) |
+| `init`'s connection check | `workflow:read`, `workflow:list` |
+
+The data-table split is the one that catches people out: three separate scopes
+for what looks like one resource. **decanter only ever reads data tables**, so no
+write scope is ever needed.
+
+Scopes live under n8n → **Settings → n8n API**, on the key itself.
+
 ## "MCP session expired … re-run: n8n-decanter init"
 
 The stored OAuth refresh token was invalidated (they rotate on every use — a
