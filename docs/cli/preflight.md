@@ -186,6 +186,14 @@ line lands in the finding's `details`. `--no-typecheck` skips the check (it
 reports as a skip with the unlock, so the coverage line stays honest), and a
 sync dir with no `tsconfig.json` skips it automatically.
 
+**It needs `typescript` in *your* project.** A globally installed decanter ships
+none — it is a devDependency — and `init` leaves an existing `package.json`
+alone, so scaffolding into a project you already had can leave the check with no
+compiler. That is reported as a **skip** naming the one-command fix
+(`npm i -D typescript`), not as a typecheck *failure*: a module-resolution stack
+trace under a red `types` line reads like a type error in your own code, and it
+is not one.
+
 > **Green means well-formed, not live.** `preflight --offline` never contacts
 > the instance, so a `ready` verdict there says your files are valid — not that
 > n8n is running them, and not that the draft matches. Drop `--offline` to add

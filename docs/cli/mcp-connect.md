@@ -60,6 +60,11 @@ no git it's skipped), and tracked-only (a brand-new, untracked workflow is left
 for an explicit `pull`). On by default; set `"liveMirror": false` in
 `decanter.config.json` to turn it off (CI / deterministic setups).
 
+**If that safety commit fails, the refresh does not happen.** The commit is what
+makes the mirror safe to run behind your back, so a failed commit is treated as
+"do not touch the tree" rather than as a warning to pull anyway — the mirror
+skips and says so, and the snapshot stays stale until you `pull` yourself.
+
 Failure posture matches the HTTP guard: unparseable input is refused
 (**fail closed**), and an unreachable instance answers the agent with a
 JSON-RPC error naming the host instead of hanging. Logs go to stderr; stdout
