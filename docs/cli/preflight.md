@@ -194,11 +194,12 @@ compiler. That is reported as a **skip** naming the one-command fix
 stack trace under a red `types` line reads like a type error in your own code,
 and it is not one.
 
-**Pin the major.** A bare `npm i -D typescript` installs **7.x**, whose compiler
-is the native rewrite and no longer exposes the programmatic `CompilerHost` API
-this check drives — so it replaces a skip with a harder break. `init`'s scaffold
-already pins `^5`; the `@^5` matters when you are adding TypeScript to a project
-that `init` left alone.
+**Pin the major.** A bare `npm i -D typescript` installs **7.x**, where
+`require("typescript")` returns only `{ version, versionMajorMinor }` — the
+package's `exports` maps `"."` to `lib/version.cjs`, and the compiler API this
+check drives now lives behind `typescript/unstable/*`. So an unpinned install
+replaces a skipped check with a broken one. `init`'s scaffold already pins `^5`;
+the `@^5` matters when you are adding TypeScript to a project `init` left alone.
 
 > **Green means well-formed, not live.** `preflight --offline` never contacts
 > the instance, so a `ready` verdict there says your files are valid — not that

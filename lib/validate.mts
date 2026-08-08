@@ -424,11 +424,17 @@ export const NO_TYPESCRIPT = "decanter: typescript is not installed";
  * The install command we hand a user whose project has no `typescript`.
  *
  * **The `@^5` is load-bearing.** A bare `npm i -D typescript` installs 7.x,
- * whose compiler is the native rewrite and no longer exposes the programmatic
- * `CompilerHost` API `scripts/typecheck.mts` drives — so unpinned advice would
- * replace a skipped check with a broken one. A blind round walked into exactly
- * that and had to pin `5.9.3` by hand. One definition, shared by the skip
- * message and preflight's unlock, so the two cannot drift apart.
+ * whose package `exports` maps `"."` to `lib/version.cjs`: `require("typescript")`
+ * yields `{ version, versionMajorMinor }` and nothing else, so the
+ * `createCompilerHost`/`createProgram` pair this typecheck drives is `undefined`
+ * (verified on 7.0.2, 2026-08-08). The API is not gone — it moved behind
+ * `typescript/unstable/{sync,async}`, and the name is the point. So unpinned
+ * advice would replace a skipped check with a broken one; a blind round walked
+ * into exactly that and pinned `5.9.3` by hand.
+ *
+ * 6.x would work — 6.0.0-beta still exports both functions — but it is
+ * beta-only today (`latest` is 7.x), so `^5` is what a user should be told.
+ * One definition, shared by the skip message and preflight's unlock.
  */
 export const TS_INSTALL_HINT = "npm i -D typescript@^5";
 
