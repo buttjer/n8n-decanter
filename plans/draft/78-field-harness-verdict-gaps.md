@@ -125,6 +125,62 @@ is not worth the argument.
 
 **Fix:** add `ownerCookie` to the redaction, and re-pack the existing archives.
 
+### 6. Finding 1 keeps costing, and the Opus round shows what it hides
+
+The `--model opus` round (2026-08-08) produced the **first two FAILs the harness
+has ever recorded on a round that was not itself broken** — and they landed on
+opposite sides of finding 1:
+
+- **S4 wrote a verdict** (`violations: 1`, the missing-file check), so the defect
+  is legible from the archive alone.
+- **S12 did not.** The console said `verify FAIL`; the archive says nothing.
+  Diagnosing it needed the run's stdout, which lives in a scratch file that is
+  not part of the round.
+
+Two FAILs, one readable in six months and one not. That is the cost of finding 1
+stated as cheaply as it will ever be stated, and it argues for fixing it before
+the next model or version round rather than after.
+
+### 7. The verifier faults a deliberately-designed intermediate state
+
+The Opus round's S4 FAIL was **not a product defect**, and this plan is where
+that correction belongs, because the defect is the verifier's.
+
+Opus converted a node to TypeScript and did not push — the workflow is published
+and active, so it asked first, which is what the scaffolded `AGENTS.md` tells it
+to do. `verify.mts:365` then failed the round on *"`code/…js` in `.decanter.json`
+but missing on disk"*.
+
+**Reproduced at the CLI surface against a mock instance** (write the `.ts`, delete
+the `.js`, re-point the `//@file:` placeholder, don't push) — decanter reports it
+correctly at every surface:
+
+| | |
+| --- | --- |
+| `preflight` | **80/100, caution** — layout warning *"…the placeholder now points at code/build-digest.ts — push to register the change with n8n"*, plus a parity warning routing to `n8n-decanter push` |
+| `diff` | `! Build digest: local file code/build-digest.js missing` |
+| `push` | succeeds and **self-heals** `.decanter.json` → `code/build-digest.ts` |
+| `preflight` after | **100/100, ready** |
+| `pull` instead of push | safety-commits first, **keeps the `.ts`**, and says so: *"…keeping your .ts; the next push overwrites the remote code"* |
+
+So: nothing silent, nothing lost, heals on the next push either way. And
+[`lib/validate.mts:251`](../../lib/validate.mts) states outright that this **must
+stay a warning** — `push` runs the guard *before* it reconciles the map, so an
+error would refuse the command that fixes it. Round-1 finding #4 is closed; that
+comment cites the incident that closed it.
+
+**This is the second time the oracle has punished correct behaviour** — Plan 61
+records the first, where it demanded local↔remote byte equality in a scenario
+whose whole task was "edit locally, you cannot push". A verifier that fails an
+agent for doing the right thing is worse than no verifier: it manufactures
+product defects out of good conduct, and someone has to spend an hour disproving
+each one.
+
+**Fix:** treat "placeholder moved off the recorded file, and the file it now
+names exists" as the **converted-not-yet-pushed** state — evidence, not a
+violation — exactly as `--expect-drift` already does for S3's deliberate drift.
+Record which of the two it saw.
+
 ## Tasks
 
 1. `verify.mts` / `run.mts` — always emit a verdict file; missing verdict ⇒
@@ -137,6 +193,8 @@ is not worth the argument.
 5. `run.mts` — credential check once, before the first stage; one readable line
    per failed unit instead of a stack.
 6. `run.mts` — redact `ownerCookie`; re-pack the archives that carry one.
+7. `verify.mts` — the converted-not-yet-pushed state is evidence, not a
+   violation; record which side it saw.
 
 ## Acceptance
 

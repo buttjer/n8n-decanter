@@ -1,0 +1,207 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S13" class="navlink na">S13 <span class="badge na">—</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:62396</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>opus</code> · n8n <code>n8nio/n8n:2.30.7</code> · seeds <code>builtin</code>. Two rounds are only comparable when these match.</p>
+
+<section id="S13"><h2>S13 <span class="badge na">—</span></h2><div class="persona">same user, ordinary requests against a setup that is broken underneath her</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Quick one: the weekly digest step should round its total to two decimals. Get that change in and make sure it's actually over in n8n, not just sitting here.</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll start by finding the weekly digest workflow and the node in question.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls /work &amp;&amp; cat /work/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>AGENTS.md
+CLAUDE.md
+decanter-ts-plugin
+decanter.config.json
+n8n-decanter-0.10.0.tgz
+n8n-globals.d.ts
+node_modules
+opencode.json
+package-lock.json
+package.json
+shared
+tsconfig.json
+workflows
+{
+  "root": "./workflows",
+  "workflows": []
+}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">find /work/workflows -maxdepth 3 -not -path "*/node_modules/*" 2&gt;/dev/null | head -50</pre><div class="tres "><span class="tlab">result</span><pre>/work/workflows
+/work/workflows/.gitkeep</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">The local mirror is empty — no workflows pulled yet. Let me check the CLI and what's on the instance.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">(which n8n-decanter || echo "not on PATH") &amp;&amp; npx n8n-decanter --version 2&gt;&amp;1 | tail -5</pre><div class="tres "><span class="tlab">result</span><pre>/usr/local/bin/n8n-decanter
+0.10.0</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat package.json &amp;&amp; cat .mcp.json 2&gt;/dev/null</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "name": "flows-ops",
+  "private": true,
+  "dependencies": {
+    "n8n-decanter": "file:../../../../../../../var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-39318/n8n-decanter-0.10.0.tgz"
+  }
+}
+{
+  "mcpServers": {
+    "n8n-instance": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec npx --no-install n8n-decanter mcp connect 2&gt;&gt;/harness/guard.log"
+      ]
+    },
+    "n8n-docs": {
+      "type": "http",
+      "url": "https://docs.n8n.io/~gitbook/mcp"
+    }
+  }
+}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">CLI is installed. Let me see what's on the instance.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter list --remote 2&gt;&amp;1 | head -40</pre><div class="tres "><span class="tlab">result</span><pre>✗ the MCP token was rejected (401) — mint a fresh one in n8n (Settings → MCP) and update N8N_MCP_TOKEN (the public API key is not a valid MCP token)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">grep -ril "digest" --exclude-dir=node_modules . 2&gt;/dev/null | head -20; echo "--- shared ---"; ls -la shared/ 2&gt;/dev/null; echo "--- git log ---"; git log --oneline -5</pre><div class="tres "><span class="tlab">result</span><pre>./.claude/skills/n8n-binary-and-data-official/references/BINARY_BASICS.md
+./.claude/skills/n8n-code-nodes-official/references/JAVASCRIPT_PATTERNS.md
+./.claude/skills/n8n-code-nodes-official/SKILL.md
+./.claude/skills/n8n-loops-official/SKILL.md
+--- shared ---
+total 4
+drwxr-xr-x  4 agent agent 128 Aug  8 14:41 .
+drwxr-xr-x 23 agent agent 736 Aug  8 14:41 ..
+-rw-r--r--  1 agent agent   0 Aug  8 14:41 .gitkeep
+-rw-r--r--  1 agent agent 495 Aug  8 14:41 example-helpers.ts
+--- git log ---
+b5dbb4b harness: S13 after turn 0</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "n8n workflow list get update",
+  "max_results": 10
+}</pre><div class="tres "><span class="tlab">result</span><pre>
+
+
+
+
+
+
+
+
+</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "+n8n workflow",
+  "max_results": 10
+}</pre><div class="tres "><span class="tlab">result</span><pre>No matching deferred tools found</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter list 2&gt;&amp;1 | head -20; echo "=== guard log ==="; tail -20 /harness/guard.log 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>no pulled workflows under /work/workflows — try: n8n-decanter list --remote
+=== guard log ===
+guard: connected to http://flows-ops-n8n-39318:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+! n8n rejected decanter's existing MCP credentials (401) — they are configured but no longer valid. Mint a fresh token in n8n (Settings → MCP) and update N8N_MCP_TOKEN, or re-run `n8n-decanter init` for OAuth. This is NOT a missing-setup error.</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">I'm blocked on credentials, and there's nothing I can do locally in the meantime. Here's exactly where things stand.
+
+**The instance rejected decanter's MCP token (401).**
+
+```
+✗ the MCP token was rejected (401) — mint a fresh one in n8n (Settings → MCP)
+```
+
+The guard-proxy log confirms the shape of it:
+
+&gt; guard: connected to http://flows-ops-n8n-39318:5678 — forwarding all n8n MCP tools…
+&gt; `!` n8n rejected decanter's existing MCP credentials (401) — they are configured but no longer valid… **This is NOT a missing-setup error.**
+
+So the project *is* set up — the credentials exist and the proxy reaches n8n fine. The token has just gone stale (rotated/expired). I have not run `init`, and you shouldn't need to.
+
+**Why I can't work around it.** Normally I'd edit the node source locally and push later, but there's no local copy to edit:
+
+- `workflows/` contains only `.gitkeep` — nothing has been pulled
+- `decanter.config.json` has `"workflows": []` — no workflow ids registered
+- `grep -ri digest` across the repo hits only skill documentation, no node source
+
+Every route to the weekly digest node needs that token: `pull` to get the code, `list --remote` to even find the workflow, and `push` to land the change. The n8n MCP tools didn't load into this session either, for the same reason. Writing a rounding change against a file I've never seen would be guesswork, not the change you asked for.
+
+**What unblocks it:** mint a fresh token in n8n → **Settings → MCP**, and set it as `N8N_MCP_TOKEN` in the `.env` at the sync-dir root (I'm blocked from reading or writing that file by design — it needs to be you). Re-running `n8n-decanter init` for OAuth works too.
+
+Once that's in, say the word and I'll run the full loop end to end: `pull` the workflow → round the total to two decimals in `code/&lt;node&gt;` → `preflight` → `push`, so it's actually the draft in n8n and not just sitting here. Two things I'll want from you at that point:
+
+- **Which workflow** — I'll `list --remote` and pick out the weekly digest, but if more than one looks plausible I'll check with you rather than guess.
+- **Publish or not** — `push` lands on the *draft*; the live version keeps running the old code. Your "make sure it's actually over in n8n" reads to me as *get it into n8n*, which push does. If you also want it live, that's an explicit `publish` and I'll wait for you to say so.</div></div><div class="msg done"><div class="who">↳ turn result · $0.585</div><div class="bubble">I'm blocked on credentials, and there's nothing I can do locally in the meantime. Here's exactly where things stand.
+
+**The instance rejected decanter's MCP token (401).**
+
+```
+✗ the MCP token was rejected (401) — mint a fresh one in n8n (Settings → MCP)
+```
+
+The guard-proxy log confirms the shape of it:
+
+&gt; guard: connected to http://flows-ops-n8n-39318:5678 — forwarding all n8n MCP tools…
+&gt; `!` n8n rejected decanter's existing MCP credentials (401) — they are configured but no longer valid… **This is NOT a missing-setup error.**
+
+So the project *is* set up — the credentials exist and the proxy reaches n8n fine. The token has just gone stale (rotated/expired). I have not run `init`, and you shouldn't need to.
+
+**Why I can't work around it.** Normally I'd edit the node source locally and push later, but there's no local copy to edit:
+
+- `workflows/` contains only `.gitkeep` — nothing has been pulled
+- `decanter.config.json` has `"workflows": []` — no workflow ids registered
+- `grep -ri digest` across the repo hits only skill documentation, no node source
+
+Every route to the weekly digest node needs that token: `pull` to get the code, `list --remote` to even find the workflow, and `push` to land the change. The n8n MCP tools didn't load into this session either, for the same reason. Writing a rounding change against a file I've never seen would be guesswork, not the change you asked for.
+
+**What unblocks it:** mint a fresh token in n8n → **Settings → MCP**, and set it as `N8N_MCP_TOKEN` in the `.env` at the sync-dir root (I'm blocked from reading or writing that file by design — it needs to be you). Re-running `n8n-decanter init` for OAuth works too.
+
+Once that's in, say the word and I'll run the full loop end to end: `pull` the workflow → round the total to two decimals in `code/&lt;node&gt;` → `preflight` → `push`, so it's actually the draft in n8n and not just sitting here. Two things I'll want from you at that point:
+
+- **Which workflow** — I'll `list --remote` and pick out the weekly digest, but if more than one looks plausible I'll check with you rather than guess.
+- **Publish or not** — `push` lands on the *draft*; the live version keeps running the old code. Your "make sure it's actually over in n8n" reads to me as *get it into n8n*, which push does. If you also want it live, that's an explicit `publish` and I'll wait for you to say so.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">that doesn't sound good — what's actually wrong, and what do you need from me to get it working?</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">Short version: nothing is broken. It's an expired password, not damage.
+
+**What's wrong:** decanter talks to n8n over a token. That token is still there in config, and n8n is still reachable — but n8n is now answering "I don't accept this token anymore" (a 401). Tokens get rotated or expire; that's the normal cause. Nothing in your repo or your workflows is damaged, and no code was lost.
+
+The reason it blocks the whole task rather than just part of it: that one token is the only door. It's how I'd *find* the weekly digest workflow, how I'd *download* the node's code to edit, and how I'd *send it back*. And this repo has nothing pulled down yet — `workflows/` is empty — so there's no local copy of the digest code for me to edit while we sort the token out. No token, no code to touch.
+
+**What I need from you** — one thing:
+
+1. In n8n, go to **Settings → MCP** and mint a fresh token.
+2. Put it in the `.env` file at the root of this sync directory, as `N8N_MCP_TOKEN=...`
+
+It has to be you — I'm deliberately blocked from reading or writing `.env`, which is the right setup for a file holding credentials.
+
+(If your setup uses OAuth rather than a pasted token, `n8n-decanter init` in your terminal does the same job via a browser login.)
+
+Then tell me it's done, and I'll take it from there: find the workflow, make the rounding change, verify it, and push it to the draft in n8n. I'll flag anything ambiguous — like if several workflows could be "the weekly digest" — rather than guess.</div></div><div class="msg done"><div class="who">↳ turn result · $0.061</div><div class="bubble">Short version: nothing is broken. It's an expired password, not damage.
+
+**What's wrong:** decanter talks to n8n over a token. That token is still there in config, and n8n is still reachable — but n8n is now answering "I don't accept this token anymore" (a 401). Tokens get rotated or expire; that's the normal cause. Nothing in your repo or your workflows is damaged, and no code was lost.
+
+The reason it blocks the whole task rather than just part of it: that one token is the only door. It's how I'd *find* the weekly digest workflow, how I'd *download* the node's code to edit, and how I'd *send it back*. And this repo has nothing pulled down yet — `workflows/` is empty — so there's no local copy of the digest code for me to edit while we sort the token out. No token, no code to touch.
+
+**What I need from you** — one thing:
+
+1. In n8n, go to **Settings → MCP** and mint a fresh token.
+2. Put it in the `.env` file at the root of this sync directory, as `N8N_MCP_TOKEN=...`
+
+It has to be you — I'm deliberately blocked from reading or writing `.env`, which is the right setup for a file holding credentials.
+
+(If your setup uses OAuth rather than a pasted token, `n8n-decanter init` in your terminal does the same job via a browser login.)
+
+Then tell me it's done, and I'll take it from there: find the workflow, make the rounding change, verify it, and push it to the draft in n8n. I'll flag anything ambiguous — like if several workflows could be "the weekly digest" — rather than guess.</div></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S13 after turn 0</span> <span class="vdet">2026-08-08 16:41</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details></section>
+<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">guard: connected to http://flows-ops-n8n-39318:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+! n8n rejected decanter's existing MCP credentials (401) — they are configured but no longer valid. Mint a fresh token in n8n (Settings → MCP) and update N8N_MCP_TOKEN, or re-run `n8n-decanter init` for OAuth. This is NOT a missing-setup error.
+guard: connected to http://flows-ops-n8n-39318:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+! n8n rejected decanter's existing MCP credentials (401) — they are configured but no longer valid. Mint a fresh token in n8n (Settings → MCP) and update N8N_MCP_TOKEN, or re-run `n8n-decanter init` for OAuth. This is NOT a missing-setup error.
+</pre></section>
+</main>

@@ -1,0 +1,2474 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S7" class="navlink pass">S7 <span class="badge pass">PASS</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:52787</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>opus</code> · n8n <code>n8nio/n8n:2.30.7</code> · seeds <code>corpus-v1</code>. Two rounds are only comparable when these match.</p>
+
+<section id="S7"><h2>S7 <span class="badge pass">PASS</span></h2><div class="persona">taking over a colleague's workflows, sight unseen</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Sam left and I've inherited his flows — they're all sitting in n8n and I've never looked inside them. Get them into this folder so I can actually read the code, and then tell me straight: what's editable here and what isn't?</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll start by looking at what's already configured here and what's actually on the instance.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls -la /work &amp;&amp; echo "---" &amp;&amp; cat /work/package.json</pre><div class="tres "><span class="tlab">result</span><pre>total 324
+drwxr-xr-x 23 agent agent    736 Aug  8 14:10 .
+drwxr-xr-x  1 root  root    4096 Aug  8 14:10 ..
+drwxr-xr-x  6 agent agent    192 Aug  8 14:10 .claude
+drwxr-xr-x  3 agent agent     96 Aug  8 14:10 .cursor
+-rw-r--r--  1 agent agent   1892 Aug  8 14:10 .decanter-template.json
+-rw-r--r--  1 agent agent    608 Aug  8 14:10 .env
+drwxr-xr-x 12 agent agent    384 Aug  8 14:10 .git
+-rw-r--r--  1 agent agent     97 Aug  8 14:10 .gitignore
+-rw-r--r--  1 agent agent    289 Aug  8 14:10 .mcp.json
+drwxr-xr-x  3 agent agent     96 Aug  8 14:10 .vscode
+-rw-r--r--  1 agent agent  39362 Aug  8 14:10 AGENTS.md
+-rw-r--r--  1 agent agent   1941 Aug  8 14:10 CLAUDE.md
+drwxr-xr-x  4 agent agent    128 Aug  8 14:10 decanter-ts-plugin
+-rw-r--r--  1 agent agent     47 Aug  8 14:10 decanter.config.json
+-rw-r--r--  1 agent agent 218605 Aug  8 14:10 n8n-decanter-0.10.0.tgz
+-rw-r--r--  1 agent agent   7331 Aug  8 14:10 n8n-globals.d.ts
+drwxr-xr-x  3 agent agent   4096 Aug  8 14:10 node_modules
+-rw-r--r--  1 agent agent   1397 Aug  8 14:10 opencode.json
+-rw-r--r--  1 agent agent  15273 Aug  8 14:10 package-lock.json
+-rw-r--r--  1 agent agent    206 Aug  8 14:10 package.json
+drwxr-xr-x  4 agent agent    128 Aug  8 14:10 shared
+-rw-r--r--  1 agent agent    613 Aug  8 14:10 tsconfig.json
+drwxr-xr-x  3 agent agent     96 Aug  8 14:10 workflows
+---
+{
+  "name": "flows-ops",
+  "private": true,
+  "dependencies": {
+    "n8n-decanter": "file:../../../../../../../var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/flows-ops-32258/n8n-decanter-0.10.0.tgz"
+  }
+}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">(which n8n-decanter || echo "not on PATH") &amp;&amp; npx n8n-decanter --version 2&gt;&amp;1 | tail -3 &amp;&amp; echo "--- workflows dir:" &amp;&amp; ls -la workflows/</pre><div class="tres "><span class="tlab">result</span><pre>/usr/local/bin/n8n-decanter
+0.10.0
+--- workflows dir:
+total 0
+drwxr-xr-x  3 agent agent  96 Aug  8 14:10 .
+drwxr-xr-x 23 agent agent 736 Aug  8 14:10 ..
+-rw-r--r--  1 agent agent   0 Aug  8 14:10 .gitkeep</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter list --remote 2&gt;&amp;1 | head -60</pre><div class="tres "><span class="tlab">result</span><pre>Weekly digest roll-up  DbDjSyVA0IJZXsnb  (not pulled)
+ChainQA  Dd5JuHUcX49XjqUm  (not pulled)
+Contact normalizer  LEjrm7IwJlYUDiYl  (not pulled)
+Old contact import  U1mOiWnZTdO1Z11u  (not pulled)
+SummarizationChain:Simpe:Refine  eSpUl2Yy6RsLwUeE  (not pulled)
+IF  eeAci3L1vgpftwLG  (not pulled)
+QdrantVectorStore:*  haMc2rOWNcbB5apt  (not pulled)
+vectorStorePGVector:*  rbAP9dYP5kgZio7j  (not pulled)
+SummarizationChain:Simple:Map  y8aor5Y3e2l5xP3H  (not pulled)
+SummarizationChain:Advanced:Map  AS5PrL1xnPWjipeU  (not available in MCP)
+Ad-hoc sandbox  eu4JvDwgPowm3jPR  (not available in MCP)
+to pull a "(not available in MCP)" workflow: enable MCP access from the workflow card in the n8n workflows list (⋯ menu), or from the workflow settings, then retry</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Twelve workflows on the instance. Ten are MCP-enabled and pullable; two aren't. Let me register the ten and pull them.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /work/decanter.config.json</span></summary><pre class="tin diff"><span class="dl dadd">+ {</span>
+<span class="dl dadd">+   <span class="ts">"root"</span>: <span class="ts">"./workflows"</span>,</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [</span>
+<span class="dl dadd">+     <span class="ts">"DbDjSyVA0IJZXsnb"</span>,</span>
+<span class="dl dadd">+     <span class="ts">"Dd5JuHUcX49XjqUm"</span>,</span>
+<span class="dl dadd">+     <span class="ts">"LEjrm7IwJlYUDiYl"</span>,</span>
+<span class="dl dadd">+     <span class="ts">"U1mOiWnZTdO1Z11u"</span>,</span>
+<span class="dl dadd">+     <span class="ts">"eSpUl2Yy6RsLwUeE"</span>,</span>
+<span class="dl dadd">+     <span class="ts">"eeAci3L1vgpftwLG"</span>,</span>
+<span class="dl dadd">+     <span class="ts">"haMc2rOWNcbB5apt"</span>,</span>
+<span class="dl dadd">+     <span class="ts">"rbAP9dYP5kgZio7j"</span>,</span>
+<span class="dl dadd">+     <span class="ts">"y8aor5Y3e2l5xP3H"</span></span>
+<span class="dl dadd">+   ]</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter pull 2&gt;&amp;1 | tail -60</pre><div class="tres "><span class="tlab">result</span><pre>[1/9] wrote weekly-digest-roll-up/code/build-digest.js
+[1/9] wrote weekly-digest-roll-up/workflow.json
+[1/9] committed: decanter: pulled "Weekly digest roll-up" (DbDjSyVA0IJZXsnb)
+✓ [1/9] pulled "Weekly digest roll-up" -&gt; /work/workflows/weekly-digest-roll-up (0.1s)
+[2/9] wrote chain-qa/code/code.js
+[2/9] wrote chain-qa/workflow.json
+[2/9] committed: decanter: pulled "ChainQA" (Dd5JuHUcX49XjqUm)
+✓ [2/9] pulled "ChainQA" -&gt; /work/workflows/chain-qa (0.1s)
+[3/9] wrote contact-normalizer/code/normalize.js
+[3/9] wrote contact-normalizer/workflow.json
+[3/9] committed: decanter: pulled "Contact normalizer" (LEjrm7IwJlYUDiYl)
+✓ [3/9] pulled "Contact normalizer" -&gt; /work/workflows/contact-normalizer (0.1s)
+[4/9] wrote old-contact-import/code/import.js
+[4/9] wrote old-contact-import/workflow.json
+[4/9] committed: decanter: pulled "Old contact import" (U1mOiWnZTdO1Z11u)
+✓ [4/9] pulled "Old contact import" -&gt; /work/workflows/old-contact-import (0.1s)
+[5/9] wrote summarization-chain-simpe-refine/code/set-article.js
+[5/9] wrote summarization-chain-simpe-refine/workflow.json
+[5/9] committed: decanter: pulled "SummarizationChain:Simpe:Refine" (eSpUl2Yy6RsLwUeE)
+✓ [5/9] pulled "SummarizationChain:Simpe:Refine" -&gt; /work/workflows/summarization-chain-simpe-refine (0.1s)
+[6/9] wrote if/workflow.json
+[6/9] committed: decanter: pulled "IF" (eeAci3L1vgpftwLG)
+✓ [6/9] pulled "IF" -&gt; /work/workflows/if (0.1s)
+[7/9] wrote qdrant-vector-store/code/code.js
+[7/9] wrote qdrant-vector-store/workflow.json
+[7/9] committed: decanter: pulled "QdrantVectorStore:*" (haMc2rOWNcbB5apt)
+✓ [7/9] pulled "QdrantVectorStore:*" -&gt; /work/workflows/qdrant-vector-store (0.1s)
+[8/9] wrote vector-store-pg-vector/code/code.js
+[8/9] wrote vector-store-pg-vector/workflow.json
+[8/9] committed: decanter: pulled "vectorStorePGVector:*" (rbAP9dYP5kgZio7j)
+✓ [8/9] pulled "vectorStorePGVector:*" -&gt; /work/workflows/vector-store-pg-vector (0.1s)
+[9/9] wrote summarization-chain-simple-map/code/set-article.js
+[9/9] wrote summarization-chain-simple-map/workflow.json
+[9/9] committed: decanter: pulled "SummarizationChain:Simple:Map" (y8aor5Y3e2l5xP3H)
+✓ [9/9] pulled "SummarizationChain:Simple:Map" -&gt; /work/workflows/summarization-chain-simple-map (0.1s)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">All nine landed. Let me survey what's actually in them.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cd /work/workflows &amp;&amp; find . -type f -name "*.js" -o -name "*.ts" | sort | while read f; do printf "%-60s %5s lines\n" "$f" "$(wc -l &lt; "$f")"; done &amp;&amp; echo &amp;&amp; echo "=== node inventory per workflow ===" &amp;&amp; for d in */; do echo "--- ${d%/}"; python3 -c "
+import json,sys
+w=json.load(open('$d/workflow.json'))
+print('   active/published:', w.get('active'))
+for n in w.get('nodes',[]):
+    t=n['type'].split('.')[-1]
+    print(f\"   {n['name']!r:40} {t}\")
+"; done</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 127
+./chain-qa/code/code.js                                          2 lines
+./contact-normalizer/code/normalize.js                           0 lines
+./old-contact-import/code/import.js                              2 lines
+./qdrant-vector-store/code/code.js                               2 lines
+./summarization-chain-simpe-refine/code/set-article.js          41 lines
+./summarization-chain-simple-map/code/set-article.js            41 lines
+./vector-store-pg-vector/code/code.js                            2 lines
+./weekly-digest-roll-up/code/build-digest.js                     2 lines
+
+=== node inventory per workflow ===
+--- chain-qa
+/bin/bash: line 8: python3: command not found
+--- contact-normalizer
+/bin/bash: line 8: python3: command not found
+--- if
+/bin/bash: line 8: python3: command not found
+--- old-contact-import
+/bin/bash: line 8: python3: command not found
+--- qdrant-vector-store
+/bin/bash: line 8: python3: command not found
+--- summarization-chain-simpe-refine
+/bin/bash: line 8: python3: command not found
+--- summarization-chain-simple-map
+/bin/bash: line 8: python3: command not found
+--- vector-store-pg-vector
+/bin/bash: line 8: python3: command not found
+--- weekly-digest-roll-up
+/bin/bash: line 8: python3: command not found</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cd /work/workflows &amp;&amp; node -e "
+const fs=require('fs');
+for(const d of fs.readdirSync('.').sort()){
+  if(!fs.statSync(d).isDirectory())continue;
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  console.log('--- '+d+'   active='+w.active+'  nodes='+(w.nodes||[]).length);
+  for(const n of (w.nodes||[])){
+    const t=n.type.split('.').pop();
+    let extra='';
+    if(n.parameters&amp;&amp;typeof n.parameters.jsCode==='string')extra='   jsCode='+JSON.stringify(n.parameters.jsCode).slice(0,60);
+    if(n.parameters&amp;&amp;typeof n.parameters.pythonCode==='string')extra='   pythonCode(!)';
+    console.log('    '+JSON.stringify(n.name).padEnd(38)+' '+t.padEnd(28)+extra);
+  }
+}
+"</pre><div class="tres "><span class="tlab">result</span><pre>--- chain-qa   active=false  nodes=16
+    "Embeddings OpenAI6"                   embeddingsOpenAi            
+    "Default Data Loader2"                 documentDefaultDataLoader   
+    "Token Splitter2"                      textSplitterTokenSplitter   
+    "OpenAI Chat Model2"                   lmChatOpenAi                
+    "Vector Store Retriever2"              retrieverVectorStore        
+    "Embeddings OpenAI7"                   embeddingsOpenAi            
+    "Edit Fields2"                         set                         
+    "In-Memory Vector Store2"              vectorStoreInMemory         
+    "When clicking \"Test workflow\""      manualTrigger               
+    "Code"                                 code                           jsCode="//@file:code/code.js"
+    "In-Memory Vector Store"               vectorStoreInMemory         
+    "Question and Answer Chain 1.3"        chainRetrievalQa            
+    "Question and Answer Chain 1.4"        chainRetrievalQa            
+    "Question and Answer Chain 1.5"        chainRetrievalQa            
+    "Merge"                                merge                       
+    "Check Vector Store Populated2"        set                         
+--- contact-normalizer   active=false  nodes=3
+    "When clicked"                         manualTrigger               
+    "Normalize"                            code                           jsCode="//@file:code/normalize.js"
+    "Done"                                 noOp                        
+--- if   active=false  nodes=24
+    "Start"                                manualTrigger               
+    "IF"                                   if                          
+    "IF1"                                  if                          
+    "IF2"                                  if                          
+    "IF3"                                  if                          
+    "IF4"                                  if                          
+    "IF5"                                  if                          
+    "IF6"                                  if                          
+    "IF7"                                  if                          
+    "IF8"                                  if                          
+    "IF9"                                  if                          
+    "IF10"                                 if                          
+    "IF11"                                 if                          
+    "IF12"                                 if                          
+    "IF13"                                 if                          
+    "IF14"                                 if                          
+    "IF15"                                 if                          
+    "IF16"                                 if                          
+    "IF17"                                 if                          
+    "IF18"                                 if                          
+    "Function"                             function                    
+    "Function1"                            function                    
+    "Function2"                            function                    
+    "Function3"                            function                    
+--- old-contact-import   active=false  nodes=3
+    "When clicked"                         manualTrigger               
+    "Import"                               code                           jsCode="//@file:code/import.js"
+    "Done"                                 noOp                        
+--- qdrant-vector-store   active=false  nodes=18
+    "When clicking \"Test workflow\""      manualTrigger               
+    "Code"                                 code                           jsCode="//@file:code/code.js"
+    "Embeddings OpenAI4"                   embeddingsOpenAi            
+    "Default Data Loader1"                 documentDefaultDataLoader   
+    "Token Splitter1"                      textSplit
+… (4615 more chars)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Several Code-type nodes didn't produce a file. Let me find out why before I report anything.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const fs=require('fs');
+for(const d of fs.readdirSync('.').sort()){
+  if(!fs.statSync(d).isDirectory())continue;
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  for(const n of (w.nodes||[])){
+    const t=n.type;
+    const isCodey=/\.(code|function|functionItem)\$/.test(t)||t.includes('code')||t.includes('unction');
+    if(!isCodey)continue;
+    const p=n.parameters||{};
+    const keys=Object.keys(p);
+    const codeKey=keys.filter(k=&gt;/code|Code|language|mode/.test(k));
+    console.log(d+'  |  '+n.name);
+    console.log('      type='+t+'  typeVersion='+n.typeVersion);
+    for(const k of codeKey){
+      const v=typeof p[k]==='string'?p[k]:JSON.stringify(p[k]);
+      console.log('      '+k+' = '+JSON.stringify(String(v)).slice(0,90));
+    }
+  }
+}
+"</pre><div class="tres "><span class="tlab">result</span><pre>chain-qa  |  Code
+      type=n8n-nodes-base.code  typeVersion=2
+      jsCode = "//@file:code/code.js"
+contact-normalizer  |  Normalize
+      type=n8n-nodes-base.code  typeVersion=2
+      jsCode = "//@file:code/normalize.js"
+      mode = "runOnceForAllItems"
+if  |  Function
+      type=n8n-nodes-base.function  typeVersion=1
+      functionCode = "throw Error('Problem in boolean statement');\n"
+if  |  Function1
+      type=n8n-nodes-base.function  typeVersion=1
+      functionCode = "throw Error('Problem in Date&amp;Time statement');\n"
+if  |  Function2
+      type=n8n-nodes-base.function  typeVersion=1
+      functionCode = "throw Error('Problem in Number statement');\n"
+if  |  Function3
+      type=n8n-nodes-base.function  typeVersion=1
+      functionCode = "throw Error('Problem in String comparison statement');\n"
+old-contact-import  |  Import
+      type=n8n-nodes-base.code  typeVersion=2
+      jsCode = "//@file:code/import.js"
+      mode = "runOnceForAllItems"
+qdrant-vector-store  |  Code
+      type=n8n-nodes-base.code  typeVersion=2
+      jsCode = "//@file:code/code.js"
+summarization-chain-simpe-refine  |  Set Article
+      type=n8n-nodes-base.code  typeVersion=2
+      jsCode = "//@file:code/set-article.js"
+summarization-chain-simpe-refine  |  Evaluate to Baseline4
+      type=@n8n/n8n-nodes-langchain.code  typeVersion=1
+      code = "{\"execute\":{\"code\":\"const { loadEvaluator } = require(\\\"langchain/evaluation\\\");
+summarization-chain-simple-map  |  Set Article
+      type=n8n-nodes-base.code  typeVersion=2
+      jsCode = "//@file:code/set-article.js"
+summarization-chain-simple-map  |  Evaluate to Baseline
+      type=@n8n/n8n-nodes-langchain.code  typeVersion=1
+      code = "{\"execute\":{\"code\":\"const { loadEvaluator } = require(\\\"langchain/evaluation\\\");
+vector-store-pg-vector  |  Code
+      type=n8n-nodes-base.code  typeVersion=2
+      jsCode = "//@file:code/code.js"
+vector-store-pg-vector  |  LangChain Code
+      type=@n8n/n8n-nodes-langchain.code  typeVersion=1
+      code = "{\"execute\":{\"code\":\"const { PromptTemplate } = require('@langchain/core/prompts');\\
+weekly-digest-roll-up  |  Build digest
+      type=n8n-nodes-base.code  typeVersion=2
+      jsCode = "//@file:code/build-digest.js"
+      mode = "runOnceForAllItems"</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">for f in $(find . -path ./node_modules -prune -o -name "*.js" -print | sort); do echo "════ $f  ($(wc -c &lt; $f) bytes)"; cat "$f"; echo; done</pre><div class="tres "><span class="tlab">result</span><pre>&lt;persisted-output&gt;
+Output too large (77.2KB). Full output saved to: /home/agent/.claude/projects/-work/9b5eae14-07bc-42a8-8ce9-13318c0956f8/tool-results/bs391t3gh.txt
+
+Preview (first 2KB):
+════ ./chain-qa/code/code.js  (21327 bytes)
+return {
+  text: `Bitcoin: A Peer-to-Peer Electronic Cash System Satoshi Nakamoto satoshin@gmx.com www.bitcoin.org Abstract. A purely peer-to-peer version of electronic cash would allow online payments to be sent directly from one party to another without going through a financial institution. Digital signatures provide part of the solution, but the main benefits are lost if a trusted third party is still required to prevent double-spending. We propose a solution to the double-spending problem using a peer-to-peer network. The network timestamps transactions by hashing them into an ongoing chain of hash-based proof-of-work, forming a record that cannot be changed without redoing the proof-of-work. The longest chain not only serves as proof of the sequence of events witnessed, but proof that it came from the largest pool of CPU power. As long as a majority of CPU power is controlled by nodes that are not cooperating to attack the network, they'll generate the longest chain and outpace attackers. The network itself requires minimal structure. Messages are broadcast on a best effort basis, and nodes can leave and rejoin the network at will, accepting the longest proof-of-work chain as proof of what happened while they were gone. 1. Introduction Commerce on the Internet has come to rely almost exclusively on financial institutions serving as trusted third parties to process electronic payments. While the system works well enough for most transactions, it still suffers from the inherent weaknesses of the trust based model. Completely non-reversible transactions are not really possible, since financial institutions cannot avoid mediating disputes. The cost of mediation increases transaction costs, limiting the minimum practical transaction size and cutting off the possibility for small casual transactions, and there is a broader cost in the loss of ability to make non-reversible payments for non- reversible services. With the po
+...
+&lt;/persisted-output&gt;</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">for f in ./contact-normalizer/code/normalize.js ./old-contact-import/code/import.js ./weekly-digest-roll-up/code/build-digest.js; do echo "════ $f  ($(wc -c &lt; $f) bytes)"; cat "$f"; echo; echo; done</pre><div class="tres "><span class="tlab">result</span><pre>════ ./contact-normalizer/code/normalize.js  (0 bytes)
+
+
+════ ./old-contact-import/code/import.js  (59 bytes)
+// legacy importer — no longer used
+return $input.all();
+
+
+════ ./weekly-digest-roll-up/code/build-digest.js  (64 bytes)
+// weekly roll-up
+return [{ json: { week: 'n/a', total: 0 } }];</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">echo "=== diff (local vs instance) ===" &amp;&amp; n8n-decanter diff 2&gt;&amp;1 | tail -30 &amp;&amp; echo &amp;&amp; echo "=== preflight --offline ===" &amp;&amp; n8n-decanter preflight --offline 2&gt;&amp;1 | tail -40</pre><div class="tres "><span class="tlab">result</span><pre>=== diff (local vs instance) ===
+[1/9] Weekly digest roll-up (DbDjSyVA0IJZXsnb)  [weekly-digest-roll-up]
+[1/9]   no differences — every tracked node matches the draft
+[2/9] ChainQA (Dd5JuHUcX49XjqUm)  [chain-qa]
+[2/9]   no differences — every tracked node matches the draft
+[3/9] Contact normalizer (LEjrm7IwJlYUDiYl)  [contact-normalizer]
+[3/9]   no differences — every tracked node matches the draft
+[4/9] Old contact import (U1mOiWnZTdO1Z11u)  [old-contact-import]
+[4/9]   no differences — every tracked node matches the draft
+[5/9] SummarizationChain:Simpe:Refine (eSpUl2Yy6RsLwUeE)  [summarization-chain-simpe-refine]
+[5/9]   no differences — every tracked node matches the draft
+[6/9] IF (eeAci3L1vgpftwLG)  [if]
+[6/9]   no differences — every tracked node matches the draft
+[7/9] QdrantVectorStore:* (haMc2rOWNcbB5apt)  [qdrant-vector-store]
+[7/9]   no differences — every tracked node matches the draft
+[8/9] vectorStorePGVector:* (rbAP9dYP5kgZio7j)  [vector-store-pg-vector]
+[8/9]   no differences — every tracked node matches the draft
+[9/9] SummarizationChain:Simple:Map (y8aor5Y3e2l5xP3H)  [summarization-chain-simple-map]
+[9/9]   no differences — every tracked node matches the draft
+
+=== preflight --offline ===
+  ⤷ access    --offline skips the instance tier
+  ⤷ parity    --offline skips the instance tier
+  ⤷ drift     --offline skips the instance tier
+  ⤷ snapshot  --offline skips the instance tier
+  ⤷ lifecycle --offline skips the instance tier
+  ⤷ history   --offline skips the instance tier
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 3/11 checks ran
+  ⤷ skipped connect: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped access: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped parity: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped drift: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped snapshot: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped lifecycle: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped history: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)
+
+[9/9] preflight: SummarizationChain:Simple:Map · --offline
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ⤷ connect   --offline skips the instance tier
+  ⤷ access    --offline skips the instance tier
+  ⤷ parity    --offline skips the instance tier
+  ⤷ drift     --offline skips the instance tier
+  ⤷ snapshot  --offline skips the instance tier
+  ⤷ lifecycle --offline skips the instance tier
+  ⤷ history   --offline skips the instance tier
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 3/11 checks ran
+  ⤷ skipped connect: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped access: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped parity: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped drift: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped snapshot: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped lifecycle: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped history: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter preflight 2&gt;&amp;1 | grep -E "^\[|verdict|✗|⚠|lifecycle|history|access" | head -70</pre><div class="tres "><span class="tlab">result</span><pre>[1/9] preflight: Weekly digest roll-up · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran
+[2/9] preflight: ChainQA · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran
+[3/9] preflight: Contact normalizer · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran
+[4/9] preflight: Old contact import · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran
+[5/9] preflight: SummarizationChain:Simpe:Refine · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran
+[6/9] preflight: IF · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran
+[7/9] preflight: QdrantVectorStore:* · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran
+[8/9] preflight: vectorStorePGVector:* · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran
+[9/9] preflight: SummarizationChain:Simple:Map · static + instance reads
+  ✓ access    workflow available in MCP
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+score 100/100 · verdict: ready · 10/11 checks ran</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git -C /work log --oneline | head -12 &amp;&amp; echo "--- status ---" &amp;&amp; git -C /work status --short</pre><div class="tres "><span class="tlab">result</span><pre>229614c decanter: pulled "SummarizationChain:Simple:Map" (y8aor5Y3e2l5xP3H)
+8427395 decanter: pulled "vectorStorePGVector:*" (rbAP9dYP5kgZio7j)
+a3289ae decanter: pulled "QdrantVectorStore:*" (haMc2rOWNcbB5apt)
+4e6431f decanter: pulled "IF" (eeAci3L1vgpftwLG)
+f3f19bb decanter: pulled "SummarizationChain:Simpe:Refine" (eSpUl2Yy6RsLwUeE)
+22a81bc decanter: pulled "Old contact import" (U1mOiWnZTdO1Z11u)
+cc02d3e decanter: pulled "Contact normalizer" (LEjrm7IwJlYUDiYl)
+57c32dc decanter: pulled "ChainQA" (Dd5JuHUcX49XjqUm)
+ce44b8e decanter: pulled "Weekly digest roll-up" (DbDjSyVA0IJZXsnb)
+af65588 harness: S7 after turn 0
+--- status ---
+?? .claude/
+?? .cursor/
+?? .decanter-template.json
+?? .gitignore
+?? .mcp.json
+?? .vscode/
+?? AGENTS.md
+?? CLAUDE.md
+?? decanter-ts-plugin/
+?? decanter.config.json
+?? n8n-decanter-0.10.0.tgz
+?? n8n-globals.d.ts
+?? opencode.json
+?? package-lock.json
+?? package.json
+?? shared/
+?? tsconfig.json</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">for f in chain-qa/code/code.js qdrant-vector-store/code/code.js vector-store-pg-vector/code/code.js; do echo "── $f ($(wc -c &lt;$f) bytes)"; head -c 90 "$f"; echo " …"; tail -c 60 "$f"; echo; done; echo; echo "── set-article.js (both identical?)"; diff -q summarization-chain-simple-map/code/set-article.js summarization-chain-simpe-refine/code/set-article.js &amp;&amp; echo "identical"; head -8 summarization-chain-simple-map/code/set-article.js</pre><div class="tres "><span class="tlab">result</span><pre>── chain-qa/code/code.js (21327 bytes)
+return {
+  text: `Bitcoin: A Peer-to-Peer Electronic Cash System Satoshi Nakamoto satoshin …
+tion to probability theory and its applications," 1957. 9`
+}
+── qdrant-vector-store/code/code.js (21327 bytes)
+return {
+  text: `Bitcoin: A Peer-to-Peer Electronic Cash System Satoshi Nakamoto satoshin …
+tion to probability theory and its applications," 1957. 9`
+}
+── vector-store-pg-vector/code/code.js (21327 bytes)
+return {
+  text: `Bitcoin: A Peer-to-Peer Electronic Cash System Satoshi Nakamoto satoshin …
+tion to probability theory and its applications," 1957. 9`
+}
+
+── set-article.js (both identical?)
+identical
+return {
+  text: `The dancing plague of 1518, or dance epidemic of 1518 (French: Épidémie dansante de 1518), was a case of dancing mania that occurred in Strasbourg, Alsace (modern-day France), in the Holy Roman Empire from July 1518 to September 1518. Somewhere between 50 and 400 people took to dancing for weeks. There are many theories behind the phenomenon, the most popular being stress-induced mass hysteria, suggested by John Waller. Other theories include ergot and religious explanations. There is controversy concerning the number of deaths.
+
+History
+Events
+The outbreak began in July 1518 when a woman called Frau Troffea began to dance fervently and uncontrollably in a street in Strasbourg. Troffea kept up the constant dancing for a week. Soon, three dozen others joined in. By August, the "dancing plague" had claimed 400 victims. Dancers were beginning to collapse. It is said some even died from a stroke or heart attack. No one knew what caused this reaction, which meant no one understood how to remedy it. By early September, the outbreak began to subside, when the dancers were sent to a mountain shrine to pray for absolution.
+
+Historical documents, including "physician notes, cathedral sermons, local and regional chronicles, and even notes issued by the Strasbourg city council" are clear that the victims danced; it is not known why. Historical sources agree that there was an outbreak of dancing after a single woman started dancing, and the dancing did not seem to die down. It lasted for such a long time that it even attracted the attention of the authorities; until the council gave up authority to the physicians, who prescribed the afflicted to "dance themselves free of it." There are claims that guild halls were refurbished to accommodate the dancing, as well as musicians and strong people to help keep those dealing with the dancing mania to stay upright. This backfired, and the council was forced to ban public dancing as people danced in fear it was a punishment from Saint Vitus; and to be "free of sin" many joined in on the dancing epidemic. The council went as far as to ban music, as well. Those who danced were then ordered to go to the shrine of Saint Vitus, wore red shoes that were sprinkled with holy water and had painted crosses on the tops and soles. They also had to hold small crosses in their hands; and incense and Latin incantations were part of this "ritual." Apparently "forgiven by Vitus," word was spread of a successful ritual and the Dancing Plague had ended.</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Done — nine of eleven workflows are now in `workflows/`, each auto-committed by the pull.
+
+## What came down
+
+```
+workflows/
+  chain-qa/                          16 nodes   code/code.js
+  contact-normalizer/                 3 nodes   code/normalize.js
+  if/                                24 nodes   (no code/ dir)
+  old-contact-import/                 3 nodes   code/import.js
+  qdrant-vector-store/               18 nodes   code/code.js
+  summarization-chain-simpe-refine/   7 nodes   code/set-article.js
+  summarization-chain-simple-map/     7 nodes   code/set-article.js
+  vector-store-pg-vector/            29 nodes   code/code.js
+  weekly-digest-roll-up/              3 nodes   code/build-digest.js
+```
+
+`n8n-decanter diff` reports every tracked node matches the instance, and full `preflight` scores 9/9 `ready`. So what you see locally is what n8n holds.
+
+## Straight answer: editable vs not
+
+| Thing | Editable here? |
+|---|---|
+| `workflows/*/code/*.js` — 8 files | **Yes.** Edit, `preflight`, `push`. This is the whole point of the folder. |
+| `//@file:` placeholder lines in `workflow.json` | Yes, but only to re-point a file (e.g. `.js` → `.ts`). |
+| `decanter.config.json`, `n8n-globals.d.ts`, `shared/` | Yes. |
+| Everything else in `workflow.json` (nodes, wiring, parameters, positions) | **No.** Read-only snapshot. Editing it changes nothing in n8n and the next pull reverts it — structure lives in n8n. |
+| 4 legacy `Function` nodes in `IF` | **No.** Old `n8n-nodes-base.function` type; code sits inline in `functionCode` and decanter doesn't decant it. |
+| 3 LangChain Code nodes | **No.** `@n8n/n8n-nodes-langchain.code` stores JS inside a JSON-encoded `code` param — also not decanted. |
+| `.decanter.json` | No — machine state. |
+
+The one that will bite you: **not all the code in these flows is in this folder.** Seven code-bearing nodes — the four `Function` nodes in `IF`, and `Evaluate to Baseline` / `Evaluate to Baseline4` / `LangChain Code` — hold real JavaScript that only exists inline in `workflow.json`. You can read it there, but changing it means the n8n editor, not this repo.
+
+## Two things you should know before you dig in
+
+**Nothing Sam left is actually running.** All nine are unpublished — drafts only, and `history` shows no production runs on any of them. Whatever you inherited, it isn't live.
+
+**Most of the code is sample text, not logic.** The three big `code.js` files (chain-qa, qdrant, pgvector) are byte-identical 21KB blobs of the Bitcoin whitepaper; both `set-article.js` files are an identical Wikipedia article on the 1518 dancing plague. They're fixture data feeding vector-store demos. The names give it away too — `ChainQA`, `QdrantVectorStore:*`, `SummarizationChain:*`, `IF` are n8n's own example templates.
+
+That leaves three flows that look like Sam's actual work, and all three are stubs:
+
+- `old-contact-import/code/import.js` — `// legacy importer — no longer used` then `return $input.all();`
+- `weekly-digest-roll-up/code/build-digest.js` — returns a hardcoded `{ week: 'n/a', total: 0 }`
+- `contact-normalizer/code/normalize.js` — **0 bytes.** I checked this against the instance rather than assuming a bad pull: the node genuinely has no code. The workflow is trigger → empty Code node → NoOp.
+
+## Two workflows I couldn't fetch
+
+`SummarizationChain:Advanced:Map` (`AS5PrL1xnPWjipeU`) and `Ad-hoc sandbox` (`eu4JvDwgPowm3jPR`) aren't available over MCP, so decanter can't see them. Enable it per workflow in n8n — workflow card ⋯ menu, or workflow settings — and I'll add the ids and pull them.
+
+I registered the nine ids in `decanter.config.json` and left the repo scaffolding files untracked as I found them; say the word if you want those committed.</div></div><div class="msg done"><div class="who">↳ turn result · $1.007</div><div class="bubble">Done — nine of eleven workflows are now in `workflows/`, each auto-committed by the pull.
+
+## What came down
+
+```
+workflows/
+  chain-qa/                          16 nodes   code/code.js
+  contact-normalizer/                 3 nodes   code/normalize.js
+  if/                                24 nodes   (no code/ dir)
+  old-contact-import/                 3 nodes   code/import.js
+  qdrant-vector-store/               18 nodes   code/code.js
+  summarization-chain-simpe-refine/   7 nodes   code/set-article.js
+  summarization-chain-simple-map/     7 nodes   code/set-article.js
+  vector-store-pg-vector/            29 nodes   code/code.js
+  weekly-digest-roll-up/              3 nodes   code/build-digest.js
+```
+
+`n8n-decanter diff` reports every tracked node matches the instance, and full `preflight` scores 9/9 `ready`. So what you see locally is what n8n holds.
+
+## Straight answer: editable vs not
+
+| Thing | Editable here? |
+|---|---|
+| `workflows/*/code/*.js` — 8 files | **Yes.** Edit, `preflight`, `push`. This is the whole point of the folder. |
+| `//@file:` placeholder lines in `workflow.json` | Yes, but only to re-point a file (e.g. `.js` → `.ts`). |
+| `decanter.config.json`, `n8n-globals.d.ts`, `shared/` | Yes. |
+| Everything else in `workflow.json` (nodes, wiring, parameters, positions) | **No.** Read-only snapshot. Editing it changes nothing in n8n and the next pull reverts it — structure lives in n8n. |
+| 4 legacy `Function` nodes in `IF` | **No.** Old `n8n-nodes-base.function` type; code sits inline in `functionCode` and decanter doesn't decant it. |
+| 3 LangChain Code nodes | **No.** `@n8n/n8n-nodes-langchain.code` stores JS inside a JSON-encoded `code` param — also not decanted. |
+| `.decanter.json` | No — machine state. |
+
+The one that will bite you: **not all the code in these flows is in this folder.** Seven code-bearing nodes — the four `Function` nodes in `IF`, and `Evaluate to Baseline` / `Evaluate to Baseline4` / `LangChain Code` — hold real JavaScript that only exists inline in `workflow.json`. You can read it there, but changing it means the n8n editor, not this repo.
+
+## Two things you should know before you dig in
+
+**Nothing Sam left is actually running.** All nine are unpublished — drafts only, and `history` shows no production runs on any of them. Whatever you inherited, it isn't live.
+
+**Most of the code is sample text, not logic.** The three big `code.js` files (chain-qa, qdrant, pgvector) are byte-identical 21KB blobs of the Bitcoin whitepaper; both `set-article.js` files are an identical Wikipedia article on the 1518 dancing plague. They're fixture data feeding vector-store demos. The names give it away too — `ChainQA`, `QdrantVectorStore:*`, `SummarizationChain:*`, `IF` are n8n's own example templates.
+
+That leaves three flows that look like Sam's actual work, and all three are stubs:
+
+- `old-contact-import/code/import.js` — `// legacy importer — no longer used` then `return $input.all();`
+- `weekly-digest-roll-up/code/build-digest.js` — returns a hardcoded `{ week: 'n/a', total: 0 }`
+- `contact-normalizer/code/normalize.js` — **0 bytes.** I checked this against the instance rather than assuming a bad pull: the node genuinely has no code. The workflow is trigger → empty Code node → NoOp.
+
+## Two workflows I couldn't fetch
+
+`SummarizationChain:Advanced:Map` (`AS5PrL1xnPWjipeU`) and `Ad-hoc sandbox` (`eu4JvDwgPowm3jPR`) aren't available over MCP, so decanter can't see them. Enable it per workflow in n8n — workflow card ⋯ menu, or workflow settings — and I'll add the ids and pull them.
+
+I registered the nine ids in `decanter.config.json` and left the repo scaffolding files untracked as I found them; say the word if you want those committed.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">the summarization ones — there's a few with similar names — I only care about the one Sam was actively working on. Can you get me that one specifically?</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">Three candidates, and "actively working on" needs evidence rather than a guess. Let me check timestamps and revision history.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cd /work/workflows &amp;&amp; node -e "
+const fs=require('fs');
+for(const d of fs.readdirSync('.').sort()){
+  if(!fs.statSync(d).isDirectory())continue;
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  const keep=['id','name','createdAt','updatedAt','versionId','active','isArchived','triggerCount','meta'];
+  const o={}; for(const k of keep) if(k in w) o[k]=w[k];
+  console.log(d, JSON.stringify(o));
+}
+" 2&gt;&amp;1; echo "--- decanter state ---"; cat /work/workflows/summarization-chain-simple-map/.decanter.json 2&gt;/dev/null | head -40</pre><div class="tres "><span class="tlab">result</span><pre>chain-qa {"id":"Dd5JuHUcX49XjqUm","name":"ChainQA","createdAt":"2026-08-08T14:10:07.892Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"6f657b21-6886-4f9c-8dca-51ce417d6669","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+contact-normalizer {"id":"LEjrm7IwJlYUDiYl","name":"Contact normalizer","createdAt":"2026-08-08T14:10:07.763Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"bca12b37-929e-477e-bcb5-0e983d3a7b65","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+if {"id":"eeAci3L1vgpftwLG","name":"IF","createdAt":"2026-08-08T14:10:07.791Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"aaf70684-e18d-45b9-b7e1-21a14b349c05","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+old-contact-import {"id":"U1mOiWnZTdO1Z11u","name":"Old contact import","createdAt":"2026-08-08T14:10:07.734Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"64f416ab-38bf-4489-bdb0-ab78755c65f9","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+qdrant-vector-store {"id":"haMc2rOWNcbB5apt","name":"QdrantVectorStore:*","createdAt":"2026-08-08T14:10:08.272Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"dd709c36-271a-4c2a-8c4e-202c6c898047","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+summarization-chain-simpe-refine {"id":"eSpUl2Yy6RsLwUeE","name":"SummarizationChain:Simpe:Refine","createdAt":"2026-08-08T14:10:07.952Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"f93aeb28-e2d7-4467-a7fe-df3cfb159f29","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+summarization-chain-simple-map {"id":"y8aor5Y3e2l5xP3H","name":"SummarizationChain:Simple:Map","createdAt":"2026-08-08T14:10:07.935Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"6f8df443-6953-4184-8d2f-cc0bb8dfe183","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+vector-store-pg-vector {"id":"rbAP9dYP5kgZio7j","name":"vectorStorePGVector:*","createdAt":"2026-08-08T14:10:08.317Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"06516a38-0c8d-4ce1-bb03-c5ef1fe41a62","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+weekly-digest-roll-up {"id":"DbDjSyVA0IJZXsnb","name":"Weekly digest roll-up","createdAt":"2026-08-08T14:10:07.714Z","updatedAt":"2026-08-08T14:10:08.407Z","versionId":"7e15c0da-3634-45fa-b973-c06a638e9113","active":false,"isArchived":false,"triggerCount":0,"meta":null}
+--- decanter state ---
+{
+  "workflowId": "y8aor5Y3e2l5xP3H",
+  "nodes": {
+    "97eb5104-6741-4330-ac11-4c5776aedd79": {
+      "file": "code/set-article.js",
+      "lastPushedHash": "sha256:cbb9197cf85b5b957f9bcde2fd50d7a7779ec0ef00c641cb60759c4a66f4e2e1",
+      "name": "Set Article"
+    }
+  },
+  "name": "SummarizationChain:Simple:Map"
+}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Local timestamps are useless here — every workflow shows the same seed time (`14:10:07–08`), which is when the instance was provisioned, not when Sam touched anything. I need instance-side history.</div></div><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__get_workflow_history,mcp__n8n-instance__get_workflow_details,mcp__n8n-instance__search_executions,mcp__n8n-instance__search_workflows",
+  "max_results": 5
+}</pre><div class="tres "><span class="tlab">result</span><pre>
+
+
+</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_workflows</span></summary><pre class="tin">{
+  "query": "SummarizationChain",
+  "sortBy": "updatedAt:desc",
+  "limit": 50
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"data":[{"id":"eSpUl2Yy6RsLwUeE","name":"SummarizationChain:Simpe:Refine","description":null,"active":false,"createdAt":"2026-08-08T14:10:07.952Z","updatedAt":"2026-08-08T14:10:08.407Z","triggerCount":0,"scopes":["execution:reveal","workflow:create","workflow:delete","workflow:disableRedaction","workflow:enableRedaction","workflow:execute","workflow:execute-chat","workflow:export","workflow:import","workflow:list","workflow:move","workflow:publish","workflow:read","workflow:share","workflow:unpublish","workflow:unshare","workflow:update"],"canExecute":true,"availableInMCP":true,"tags":[]},{"id":"y8aor5Y3e2l5xP3H","name":"SummarizationChain:Simple:Map","description":null,"active":false,"createdAt":"2026-08-08T14:10:07.935Z","updatedAt":"2026-08-08T14:10:08.407Z","triggerCount":0,"scopes":["execution:reveal","workflow:create","workflow:delete","workflow:disableRedaction","workflow:enableRedaction","workflow:execute","workflow:execute-chat","workflow:export","workflow:import","workflow:list","workflow:move","workflow:publish","workflow:read","workflow:share","workflow:unpublish","workflow:unshare","workflow:update"],"canExecute":true,"availableInMCP":true,"tags":[]},{"id":"AS5PrL1xnPWjipeU","name":"SummarizationChain:Advanced:Map","description":null,"active":false,"createdAt":"2026-08-08T14:10:07.966Z","updatedAt":"2026-08-08T14:10:07.966Z","triggerCount":0,"scopes":["execution:reveal","workflow:create","workflow:delete","workflow:disableRedaction","workflow:enableRedaction","workflow:execute","workflow:execute-chat","workflow:export","workflow:import","workflow:list","workflow:move","workflow:publish","workflow:read","workflow:share","workflow:unpublish","workflow:unshare","workflow:update"],"canExecute":true,"availableInMCP":false,"tags":[]}],"count":3}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_history</span></summary><pre class="tin">{
+  "workflowId": "eSpUl2Yy6RsLwUeE",
+  "limit": 20
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"eSpUl2Yy6RsLwUeE","versions":[{"versionId":"f93aeb28-e2d7-4467-a7fe-df3cfb159f29","authors":"Priya Ops","name":null,"description":null,"autosaved":false,"createdAt":"2026-08-08T14:10:07.953Z","updatedAt":"2026-08-08T14:10:07.953Z"}],"count":1}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_history</span></summary><pre class="tin">{
+  "workflowId": "y8aor5Y3e2l5xP3H",
+  "limit": 20
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"y8aor5Y3e2l5xP3H","versions":[{"versionId":"6f8df443-6953-4184-8d2f-cc0bb8dfe183","authors":"Priya Ops","name":null,"description":null,"autosaved":false,"createdAt":"2026-08-08T14:10:07.936Z","updatedAt":"2026-08-08T14:10:07.936Z"}],"count":1}</pre></div></details><details class="tool mcp has-err"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_history</span></summary><pre class="tin">{
+  "workflowId": "AS5PrL1xnPWjipeU",
+  "limit": 20
+}</pre><div class="tres err"><span class="tlab">error</span><pre>{"success":false,"workflowId":"AS5PrL1xnPWjipeU","versions":[],"count":0,"error":"Workflow is not available in MCP. Enable MCP access from the workflow card in the workflows list, or from the workflow settings."}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_executions</span></summary><pre class="tin">{
+  "workflowId": "eSpUl2Yy6RsLwUeE",
+  "limit": 50
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"data":[],"count":0,"estimated":false}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_executions</span></summary><pre class="tin">{
+  "workflowId": "y8aor5Y3e2l5xP3H",
+  "limit": 50
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"data":[],"count":0,"estimated":false}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_executions</span></summary><pre class="tin">{
+  "limit": 100
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"data":[],"count":0,"estimated":false}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Zero executions instance-wide, and each workflow has exactly one saved version — authored by "Priya Ops" at the seed timestamp, not by Sam. Let me compare the two I can read, since content is the only distinguishing signal left.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const fs=require('fs');
+const A='summarization-chain-simple-map', B='summarization-chain-simpe-refine';
+for(const d of [A,B]){
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  console.log('════ '+w.name+'  ('+w.id+')');
+  for(const n of w.nodes){
+    const p=n.parameters||{};
+    let bits=[];
+    if(p.model) bits.push('model='+JSON.stringify(p.model));
+    if(p.options&amp;&amp;p.options.summarizationMethodAndPrompts) bits.push('method='+JSON.stringify(p.options.summarizationMethodAndPrompts.values?.summarizationMethod));
+    if(p.operationMode) bits.push('opMode='+p.operationMode);
+    if(p.chunkingMode) bits.push('chunking='+p.chunkingMode);
+    console.log('   '+n.name.padEnd(32)+n.type.split('.').pop().padEnd(22)+bits.join('  '));
+  }
+  console.log();
+}
+"
+echo "════ set-article.js differ?"; diff -q summarization-chain-simple-map/code/set-article.js summarization-chain-simpe-refine/code/set-article.js || true
+echo; echo "════ Evaluate-node code, side by side"
+node -e "
+const fs=require('fs');
+for(const [d,n] of [['summarization-chain-simple-map','Evaluate to Baseline'],['summarization-chain-simpe-refine','Evaluate to Baseline4']]){
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  const node=w.nodes.find(x=&gt;x.name===n);
+  const code=JSON.parse(node.parameters.code).execute.code;
+  console.log('──── '+d+' :: '+n+'  ('+code.length+' chars)');
+  console.log(code);
+  console.log();
+}
+"</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 1
+════ SummarizationChain:Simple:Map  (y8aor5Y3e2l5xP3H)
+   When clicking "Test workflow"   manualTrigger         
+   Set Article                     code                  
+   OpenAI Chat Model               lmChatOpenAi          model="gpt-3.5-turbo-0125"
+   Set Baseline                    set                   
+   Summary - Simple - Map          chainSummarization    
+   OpenAI Chat Model1              lmChatOpenAi          model="gpt-3.5-turbo-0125"
+   Evaluate to Baseline            code                  
+
+════ SummarizationChain:Simpe:Refine  (eSpUl2Yy6RsLwUeE)
+   OpenAI Chat Model2              lmChatOpenAi          model="gpt-3.5-turbo-0125"
+   When clicking "Test workflow"   manualTrigger         
+   Set Article                     code                  
+   Set Baseline                    set                   
+   OpenAI Chat Model9              lmChatOpenAi          model="gpt-3.5-turbo-0125"
+   Summary - Simple - Refine       chainSummarization    method="refine"
+   Evaluate to Baseline4           code                  
+
+════ set-article.js differ?
+
+════ Evaluate-node code, side by side
+&lt;anonymous_script&gt;:1
+[object Object]
+ ^
+
+SyntaxError: "[object Object]" is not valid JSON
+    at JSON.parse (&lt;anonymous&gt;)
+    at [eval]:6:19
+    at runScriptInThisContext (node:internal/vm:209:10)
+    at node:internal/process/execution:446:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:444:60)
+    at evalFunction (node:internal/process/execution:279:30)
+    at evalTypeScript (node:internal/process/execution:291:3)
+    at node:internal/main/eval_string:74:3
+
+Node.js v22.23.2</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const fs=require('fs');
+for(const [d,n] of [['summarization-chain-simple-map','Evaluate to Baseline'],['summarization-chain-simpe-refine','Evaluate to Baseline4']]){
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  const node=w.nodes.find(x=&gt;x.name===n);
+  let c=node.parameters.code;
+  if(typeof c==='string') c=JSON.parse(c);
+  const code=c.execute.code;
+  console.log('──── '+d+' :: '+n+'  ('+code.length+' chars)');
+  console.log(code);
+  console.log();
+}
+"</pre><div class="tres "><span class="tlab">result</span><pre>──── summarization-chain-simple-map :: Evaluate to Baseline  (607 chars)
+const { loadEvaluator } = require("langchain/evaluation");
+
+const llm = await this.getInputConnectionData('ai_languageModel', 0);
+const inputData = this.getInputData();
+const inputSummary = inputData[0].json.response.text;
+const baselineSummary = $('Set Baseline').item.json.baseline_summary
+
+const evaluator = await loadEvaluator("labeled_criteria", { criteria: 'helpfulness', llm });
+
+const result = await evaluator.evaluateStrings({
+  input: "Summarize Wikipedia article about the dancing plague of 1518",
+  prediction: inputSummary,
+  reference: baselineSummary,
+});
+
+
+return [ {json: { ...result } } ];
+
+──── summarization-chain-simpe-refine :: Evaluate to Baseline4  (608 chars)
+const { loadEvaluator } = require("langchain/evaluation");
+
+const llm = await this.getInputConnectionData('ai_languageModel', 0);
+const inputData = this.getInputData();
+const inputSummary = inputData[0].json.response.text;
+const baselineSummary = $('Set Baseline').item.json.baseline_summary;
+
+const evaluator = await loadEvaluator("labeled_criteria", { criteria: 'helpfulness', llm });
+
+const result = await evaluator.evaluateStrings({
+  input: "Summarize Wikipedia article about the dancing plague of 1518",
+  prediction: inputSummary,
+  reference: baselineSummary,
+});
+
+
+return [ {json: { ...result } } ];</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">I can't answer that one from the instance, and I'd rather say so than pick the plausible-looking one. Here's what I checked and what it showed.
+
+**Every activity signal is flat:**
+
+| Signal | Result |
+|---|---|
+| `updatedAt` | All three within 500ms of each other — the seed, not an edit |
+| Version history | Exactly **1** version each, author **"Priya Ops"**, timestamped at seed |
+| Executions | **Zero**, instance-wide — not just these three |
+| Tags / descriptions | None on any workflow |
+
+The version history is the telling one. If Sam had been editing any of these, n8n would hold multiple saved revisions under their name. There are none — one seeded version each, and the author recorded is your own account. Whatever instance you inherited didn't carry Sam's edit history across.
+
+**Content doesn't separate them either.** The two I can read are the same template twice:
+
+- Identical `set-article.js` (byte-for-byte — the dancing-plague article)
+- Identical model, `gpt-3.5-turbo-0125`, in both LLM nodes
+- Identical evaluator code — the two differ by a single trailing semicolon, 607 vs 608 chars
+- The *only* real difference: `Summary - Simple - Map` vs `Summary - Simple - Refine` (`method="refine"`)
+
+These are n8n's own summarization-chain example templates, one per method variant. Neither looks worked-on.
+
+**Two of the three are already in your folder** from the first pull:
+
+```
+workflows/summarization-chain-simple-map/     ← SummarizationChain:Simple:Map
+workflows/summarization-chain-simpe-refine/   ← SummarizationChain:Simpe:Refine
+```
+
+**The third is the one I can't get:** `SummarizationChain:Advanced:Map` (`AS5PrL1xnPWjipeU`) has MCP access disabled, so both decanter *and* the n8n MCP tools refuse it — I couldn't even read its history. If one of the three was genuinely being worked on, that's the likeliest candidate on content grounds alone: "Advanced" implies someone elaborated past the two stock "Simple" templates. But that's me reasoning from a name, not evidence, and I'd be guessing.
+
+Two things would settle it:
+
+1. **Enable MCP on `SummarizationChain:Advanced:Map`** (workflow card ⋯ menu → available in MCP). Say the word and I'll add the id and pull it — then you can compare all three side by side.
+2. If you have anything from Sam outside n8n — a handover note, Slack, a ticket — that'll beat anything the instance can tell you, since the instance kept no record of their work.
+
+One aside worth flagging: `SummarizationChain:Simpe:Refine` has a typo in its name — "Simpe". Hand-typed names get typos and template imports usually don't, so it hints someone created or renamed that one manually. It's thin, and it's not enough for me to call it the answer.</div></div><div class="msg done"><div class="who">↳ turn result · $0.963</div><div class="bubble">I can't answer that one from the instance, and I'd rather say so than pick the plausible-looking one. Here's what I checked and what it showed.
+
+**Every activity signal is flat:**
+
+| Signal | Result |
+|---|---|
+| `updatedAt` | All three within 500ms of each other — the seed, not an edit |
+| Version history | Exactly **1** version each, author **"Priya Ops"**, timestamped at seed |
+| Executions | **Zero**, instance-wide — not just these three |
+| Tags / descriptions | None on any workflow |
+
+The version history is the telling one. If Sam had been editing any of these, n8n would hold multiple saved revisions under their name. There are none — one seeded version each, and the author recorded is your own account. Whatever instance you inherited didn't carry Sam's edit history across.
+
+**Content doesn't separate them either.** The two I can read are the same template twice:
+
+- Identical `set-article.js` (byte-for-byte — the dancing-plague article)
+- Identical model, `gpt-3.5-turbo-0125`, in both LLM nodes
+- Identical evaluator code — the two differ by a single trailing semicolon, 607 vs 608 chars
+- The *only* real difference: `Summary - Simple - Map` vs `Summary - Simple - Refine` (`method="refine"`)
+
+These are n8n's own summarization-chain example templates, one per method variant. Neither looks worked-on.
+
+**Two of the three are already in your folder** from the first pull:
+
+```
+workflows/summarization-chain-simple-map/     ← SummarizationChain:Simple:Map
+workflows/summarization-chain-simpe-refine/   ← SummarizationChain:Simpe:Refine
+```
+
+**The third is the one I can't get:** `SummarizationChain:Advanced:Map` (`AS5PrL1xnPWjipeU`) has MCP access disabled, so both decanter *and* the n8n MCP tools refuse it — I couldn't even read its history. If one of the three was genuinely being worked on, that's the likeliest candidate on content grounds alone: "Advanced" implies someone elaborated past the two stock "Simple" templates. But that's me reasoning from a name, not evidence, and I'd be guessing.
+
+Two things would settle it:
+
+1. **Enable MCP on `SummarizationChain:Advanced:Map`** (workflow card ⋯ menu → available in MCP). Say the word and I'll add the id and pull it — then you can compare all three side by side.
+2. If you have anything from Sam outside n8n — a handover note, Slack, a ticket — that'll beat anything the instance can tell you, since the instance kept no record of their work.
+
+One aside worth flagging: `SummarizationChain:Simpe:Refine` has a typo in its name — "Simpe". Hand-typed names get typos and template imports usually don't, so it hints someone created or renamed that one manually. It's thin, and it's not enough for me to call it the answer.</div></div></div><div class="turn"><div class="turn-h">Turn 3</div><div class="msg user"><div class="who">user</div><div class="bubble">one of those steps has a name that means nothing to me. Rename it to something a human can read, and make sure nothing breaks when you do.</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">Renaming is a structure change on the instance, and an MCP rename strands every `$('…')` reference — so before I touch anything I need to know exactly which node you mean and what points at it. Let me map the reference graph first.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cd /work/workflows &amp;&amp; node -e "
+const fs=require('fs');
+const dirs=fs.readdirSync('.').filter(d=&gt;fs.statSync(d).isDirectory());
+for(const d of dirs){
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  const names=w.nodes.map(n=&gt;n.name);
+  // collect \$('X') refs from expression params (deep walk) and from code files
+  const refs=new Map(); // name -&gt; [where]
+  const add=(nm,where)=&gt;{ if(!refs.has(nm))refs.set(nm,[]); refs.get(nm).push(where); };
+  const RE=/\\\$\\(\s*['\\\"\`]([^'\\\"\`]+)['\\\"\`]\s*\\)/g;
+  const walk=(o,path)=&gt;{
+    if(typeof o==='string'){ let m; RE.lastIndex=0; while((m=RE.exec(o))) add(m[1],path); return; }
+    if(Array.isArray(o)) return o.forEach((v,i)=&gt;walk(v,path+'['+i+']'));
+    if(o&amp;&amp;typeof o==='object') return Object.entries(o).forEach(([k,v])=&gt;walk(v,path+'.'+k));
+  };
+  for(const n of w.nodes) walk(n.parameters||{}, 'node '+JSON.stringify(n.name)+' params');
+  // code files
+  if(fs.existsSync(d+'/code')) for(const f of fs.readdirSync(d+'/code')){
+    const src=fs.readFileSync(d+'/code/'+f,'utf8'); let m; RE.lastIndex=0;
+    while((m=RE.exec(src))) add(m[1],'code/'+f);
+  }
+  if(!refs.size) { console.log('── '+d+'  : no \$() refs'); continue; }
+  console.log('── '+d);
+  for(const [nm,where] of refs){
+    const ok=names.includes(nm)?'ok ':'DANGLING';
+    console.log('     '+ok+'  \$('+JSON.stringify(nm)+')  &lt;- '+[...new Set(where)].join(', '));
+  }
+}
+"</pre><div class="tres "><span class="tlab">result</span><pre>── chain-qa  : no $() refs
+── contact-normalizer  : no $() refs
+── if  : no $() refs
+── old-contact-import  : no $() refs
+── qdrant-vector-store  : no $() refs
+── summarization-chain-simpe-refine
+     ok   $("Set Baseline")  &lt;- node "Evaluate to Baseline4" params.code.execute.code
+── summarization-chain-simple-map
+     ok   $("Set Baseline")  &lt;- node "Evaluate to Baseline" params.code.execute.code
+── vector-store-pg-vector  : no $() refs
+── weekly-digest-roll-up  : no $() refs</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const fs=require('fs');
+// a name is 'auto-generated looking' if it's a bare type-ish word or ends in a stray digit
+const junk=[];
+for(const d of fs.readdirSync('.').filter(x=&gt;fs.statSync(x).isDirectory())){
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  for(const n of w.nodes){
+    const nm=n.name;
+    const trailingDigit=/[a-z]\d+\$/i.test(nm);
+    const bare=/^(Code|Function\d*|IF\d*|Merge|Aggregate|Postgres|Wait\d*|Edit Fields\d*|Done|Start)\$/i.test(nm);
+    if(trailingDigit||bare) junk.push({flow:d,name:nm,type:n.type.split('.').pop(),why:bare?'bare/default':'stray number'});
+  }
+}
+const byFlow={};
+for(const j of junk){ (byFlow[j.flow]=byFlow[j.flow]||[]).push(j); }
+for(const [f,list] of Object.entries(byFlow)){
+  console.log('── '+f+'  ('+list.length+')');
+  for(const j of list) console.log('     '+j.name.padEnd(30)+j.type.padEnd(24)+j.why);
+}
+console.log();
+console.log('total auto-named nodes: '+junk.length);
+"</pre><div class="tres "><span class="tlab">result</span><pre>── chain-qa  (11)
+     Embeddings OpenAI6            embeddingsOpenAi        stray number
+     Default Data Loader2          documentDefaultDataLoaderstray number
+     Token Splitter2               textSplitterTokenSplitterstray number
+     OpenAI Chat Model2            lmChatOpenAi            stray number
+     Vector Store Retriever2       retrieverVectorStore    stray number
+     Embeddings OpenAI7            embeddingsOpenAi        stray number
+     Edit Fields2                  set                     bare/default
+     In-Memory Vector Store2       vectorStoreInMemory     stray number
+     Code                          code                    bare/default
+     Merge                         merge                   bare/default
+     Check Vector Store Populated2 set                     stray number
+── contact-normalizer  (1)
+     Done                          noOp                    bare/default
+── if  (24)
+     Start                         manualTrigger           bare/default
+     IF                            if                      bare/default
+     IF1                           if                      bare/default
+     IF2                           if                      bare/default
+     IF3                           if                      bare/default
+     IF4                           if                      bare/default
+     IF5                           if                      bare/default
+     IF6                           if                      bare/default
+     IF7                           if                      bare/default
+     IF8                           if                      bare/default
+     IF9                           if                      bare/default
+     IF10                          if                      bare/default
+     IF11                          if                      bare/default
+     IF12                          if                      bare/default
+     IF13                          if                      bare/default
+     IF14                          if                      bare/default
+     IF15                          if                      bare/default
+     IF16                          if                      bare/default
+     IF17                          if                      bare/default
+     IF18                          if                      bare/default
+     Function                      function                bare/default
+     Function1                     function                bare/default
+     Function2                     function                bare/default
+     Function3                     function                bare/default
+── old-contact-import  (1)
+     Done                          noOp                    bare/default
+── qdrant-vector-store  (15)
+     Code                          code                    bare/default
+     Embeddings OpenAI4            embeddingsOpenAi        stray number
+     Default Data Loader1          documentDefaultDataLoaderstray number
+     Token Splitter1               textSplitterTokenSplitterstray number
+     Check Vector Store Populated1 set                     stray number
+     Wait1                         wait                    bare/default
+     Check Vector Store Retrieval1 set                     stray number
+     Question and Answer Chain1    chainRetrievalQa        stray number
+     OpenAI Chat Model1            lmChatOpenAi            stray number
+     Vector Store Retriever1       retrieverVectorStore    stray number
+     Embeddings OpenAI3            embeddingsOpenAi        stray number
+     Edit Fields1                  set                     bare/default
+     Embeddings OpenAI5            embeddingsOpenAi        stray number
+     Qdrant Vector Store2          vectorStoreQdrant       stray number
+     Qdrant Vector Store1          vectorStoreQdrant       stray number
+── summarization-chain-simpe-refine  (3)
+     OpenAI Chat Model2            lmChatOpenAi            stray number
+     OpenAI Chat Model9   
+… (2196 more chars)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">82 auto-named nodes across the nine flows — that's too many for me to guess which one you mean. But I've done the part that de-risks it. Let me widen the reference scan first, because `$('…')` isn't the only way a node name gets referenced.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const fs=require('fs');
+// every known name-based reference form in n8n
+const PATTERNS=[
+  [/\\\$\(\s*['\\\"\`]([^'\\\"\`]+)['\\\"\`]\s*\)/g, \"\\\$('X')\"],
+  [/\\\$node\s*\[\s*['\\\"\`]([^'\\\"\`]+)['\\\"\`]\s*\\]/g, '\\\$node[\"X\"]'],
+  [/\\\$items\s*\(\s*['\\\"\`]([^'\\\"\`]+)['\\\"\`]/g, '\\\$items(\"X\")'],
+  [/\\\$itemMatching\s*\(\s*['\\\"\`]([^'\\\"\`]+)['\\\"\`]/g, '\\\$itemMatching'],
+];
+let total=0;
+for(const d of fs.readdirSync('.').filter(x=&gt;fs.statSync(x).isDirectory())){
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  const names=new Set(w.nodes.map(n=&gt;n.name));
+  const hits=[];
+  const scan=(text,where)=&gt;{
+    for(const [re,label] of PATTERNS){ re.lastIndex=0; let m;
+      while((m=re.exec(text))) hits.push({nm:m[1],label,where}); }
+  };
+  const walk=(o,path)=&gt;{
+    if(typeof o==='string') return scan(o,path);
+    if(Array.isArray(o)) return o.forEach((v,i)=&gt;walk(v,path));
+    if(o&amp;&amp;typeof o==='object') return Object.entries(o).forEach(([k,v])=&gt;walk(v,path));
+  };
+  for(const n of w.nodes) walk(n.parameters||{}, 'params of '+JSON.stringify(n.name));
+  if(fs.existsSync(d+'/code')) for(const f of fs.readdirSync(d+'/code'))
+    scan(fs.readFileSync(d+'/code/'+f,'utf8'),'code/'+f);
+  if(hits.length){
+    console.log('── '+d);
+    const seen=new Set();
+    for(const h of hits){ const k=h.nm+h.label+h.where; if(seen.has(k))continue; seen.add(k); total++;
+      console.log('    '+(names.has(h.nm)?'ok      ':'DANGLING')+'  '+h.label.replace('X',h.nm).padEnd(28)+' in '+h.where); }
+  }
+}
+console.log('\ntotal name-based references in repo: '+total);
+"</pre><div class="tres "><span class="tlab">result</span><pre>── summarization-chain-simpe-refine
+    ok        $('Set Baseline')            in params of "Evaluate to Baseline4"
+── summarization-chain-simple-map
+    ok        $('Set Baseline')            in params of "Evaluate to Baseline"
+
+total name-based references in repo: 2</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Good — that settles the "nothing breaks" half conclusively. Let me work out what the auto-named nodes in the summarization flows actually *do*, so any rename I propose is accurate.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const fs=require('fs');
+for(const d of ['summarization-chain-simple-map','summarization-chain-simpe-refine']){
+  const w=JSON.parse(fs.readFileSync(d+'/workflow.json','utf8'));
+  console.log('════ '+w.name);
+  for(const [from,outs] of Object.entries(w.connections||{})){
+    for(const [type,arr] of Object.entries(outs)){
+      arr.forEach((conns,i)=&gt;(conns||[]).forEach(c=&gt;{
+        console.log('    '+from.padEnd(30)+' --'+type+'--&gt; '+c.node);
+      }));
+    }
+  }
+  console.log();
+}
+"</pre><div class="tres "><span class="tlab">result</span><pre>════ SummarizationChain:Simple:Map
+    OpenAI Chat Model              --ai_languageModel--&gt; Summary - Simple - Map
+    OpenAI Chat Model1             --ai_languageModel--&gt; Evaluate to Baseline
+    Set Article                    --main--&gt; Summary - Simple - Map
+    Set Baseline                   --main--&gt; Set Article
+    Summary - Simple - Map         --main--&gt; Evaluate to Baseline
+    When clicking "Test workflow"  --main--&gt; Set Baseline
+
+════ SummarizationChain:Simpe:Refine
+    OpenAI Chat Model2             --ai_languageModel--&gt; Summary - Simple - Refine
+    OpenAI Chat Model9             --ai_languageModel--&gt; Evaluate to Baseline4
+    Set Article                    --main--&gt; Summary - Simple - Refine
+    Set Baseline                   --main--&gt; Set Article
+    Summary - Simple - Refine      --main--&gt; Evaluate to Baseline4
+    When clicking "Test workflow"  --main--&gt; Set Baseline</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">I've done the part that doesn't depend on your answer, and it's good news. But I need one word from you before I touch the instance.
+
+## "Nothing breaks" — already verified, and it's basically free
+
+I scanned all nine workflows for every name-based reference syntax n8n supports (`$('X')`, `$node["X"]`, `$items("X")`, `itemMatching`), across both expression parameters and code files. The entire repo contains **exactly two** such references:
+
+```
+summarization-chain-simple-map    $('Set Baseline')  in params of "Evaluate to Baseline"
+summarization-chain-simpe-refine  $('Set Baseline')  in params of "Evaluate to Baseline4"
+```
+
+That's it. **Not one of the 82 auto-named nodes is referenced by name anywhere.** So for any of them, `renameNode` rewrites the connections, nothing is left dangling, and the usual repair step — the thing that makes MCP renames dangerous — simply doesn't apply.
+
+## Which step, though?
+
+"Means nothing to a human" describes 82 nodes here. A sample:
+
+| Flow | Auto-named nodes |
+|---|---|
+| `if` | `IF1`–`IF18`, `Function`–`Function3` (22) |
+| `vector-store-pg-vector` | 25, incl. `Code`, `Edit Fields`/`1`/`2`, `Postgres PGVector Store1`/`2`/`3`/`6`/`7` |
+| `qdrant-vector-store` | 15, incl. `Code`, `Wait1`, `Embeddings OpenAI3`/`4`/`5` |
+| `chain-qa` | 11, incl. `Code`, `Merge` |
+| **`summarization-chain-simpe-refine`** | `OpenAI Chat Model2`, `OpenAI Chat Model9`, `Evaluate to Baseline4` |
+| **`summarization-chain-simple-map`** | `OpenAI Chat Model1` |
+
+Since we were on the summarization flows, I traced what those four actually do and have names ready:
+
+| Current | What it actually does | Suggested |
+|---|---|---|
+| `Evaluate to Baseline4` | Runs a `labeled_criteria` helpfulness evaluator, scoring the summary against the baseline | **`Score Summary vs Baseline`** |
+| `OpenAI Chat Model9` | The LLM that powers that scorer | **`Scorer LLM (gpt-3.5-turbo)`** |
+| `OpenAI Chat Model2` | The LLM that powers `Summary - Simple - Refine` | **`Summarizer LLM (gpt-3.5-turbo)`** |
+| `OpenAI Chat Model1` (map flow) | The LLM that powers `Evaluate to Baseline` | **`Scorer LLM (gpt-3.5-turbo)`** |
+
+My guess is you mean **`Evaluate to Baseline4`** — it's the one I kept flagging, and that stray `4` is pure n8n paste-artifact. Say "yes" and I'll do that one; or name any other and I'll do that instead. Happy to do a batch (e.g. all four in the summarization flows, or de-numbering a whole flow) if that's more useful than one at a time.
+
+## One caveat worth knowing before you choose
+
+If the node you meant is actually **`Set Baseline`** — the one node that *is* referenced — it's the single case with real repair work, and it's an awkward one. Both references live inside `@n8n/n8n-nodes-langchain.code` nodes, which are the type I flagged earlier as *not* editable from this repo. So the fix couldn't go through the normal edit-file-then-`push` route; it would have to be an `update_workflow` parameter edit over MCP. Still doable, just a different procedure — worth saying up front rather than discovering mid-rename.
+
+Nothing has been changed on the instance yet.</div></div><div class="msg done"><div class="who">↳ turn result · $0.557</div><div class="bubble">I've done the part that doesn't depend on your answer, and it's good news. But I need one word from you before I touch the instance.
+
+## "Nothing breaks" — already verified, and it's basically free
+
+I scanned all nine workflows for every name-based reference syntax n8n supports (`$('X')`, `$node["X"]`, `$items("X")`, `itemMatching`), across both expression parameters and code files. The entire repo contains **exactly two** such references:
+
+```
+summarization-chain-simple-map    $('Set Baseline')  in params of "Evaluate to Baseline"
+summarization-chain-simpe-refine  $('Set Baseline')  in params of "Evaluate to Baseline4"
+```
+
+That's it. **Not one of the 82 auto-named nodes is referenced by name anywhere.** So for any of them, `renameNode` rewrites the connections, nothing is left dangling, and the usual repair step — the thing that makes MCP renames dangerous — simply doesn't apply.
+
+## Which step, though?
+
+"Means nothing to a human" describes 82 nodes here. A sample:
+
+| Flow | Auto-named nodes |
+|---|---|
+| `if` | `IF1`–`IF18`, `Function`–`Function3` (22) |
+| `vector-store-pg-vector` | 25, incl. `Code`, `Edit Fields`/`1`/`2`, `Postgres PGVector Store1`/`2`/`3`/`6`/`7` |
+| `qdrant-vector-store` | 15, incl. `Code`, `Wait1`, `Embeddings OpenAI3`/`4`/`5` |
+| `chain-qa` | 11, incl. `Code`, `Merge` |
+| **`summarization-chain-simpe-refine`** | `OpenAI Chat Model2`, `OpenAI Chat Model9`, `Evaluate to Baseline4` |
+| **`summarization-chain-simple-map`** | `OpenAI Chat Model1` |
+
+Since we were on the summarization flows, I traced what those four actually do and have names ready:
+
+| Current | What it actually does | Suggested |
+|---|---|---|
+| `Evaluate to Baseline4` | Runs a `labeled_criteria` helpfulness evaluator, scoring the summary against the baseline | **`Score Summary vs Baseline`** |
+| `OpenAI Chat Model9` | The LLM that powers that scorer | **`Scorer LLM (gpt-3.5-turbo)`** |
+| `OpenAI Chat Model2` | The LLM that powers `Summary - Simple - Refine` | **`Summarizer LLM (gpt-3.5-turbo)`** |
+| `OpenAI Chat Model1` (map flow) | The LLM that powers `Evaluate to Baseline` | **`Scorer LLM (gpt-3.5-turbo)`** |
+
+My guess is you mean **`Evaluate to Baseline4`** — it's the one I kept flagging, and that stray `4` is pure n8n paste-artifact. Say "yes" and I'll do that one; or name any other and I'll do that instead. Happy to do a batch (e.g. all four in the summarization flows, or de-numbering a whole flow) if that's more useful than one at a time.
+
+## One caveat worth knowing before you choose
+
+If the node you meant is actually **`Set Baseline`** — the one node that *is* referenced — it's the single case with real repair work, and it's an awkward one. Both references live inside `@n8n/n8n-nodes-langchain.code` nodes, which are the type I flagged earlier as *not* editable from this repo. So the fix couldn't go through the normal edit-file-then-`push` route; it would have to be an `update_workflow` parameter edit over MCP. Still doable, just a different procedure — worth saying up front rather than discovering mid-rename.
+
+Nothing has been changed on the instance yet.</div></div></div><div class="verify"><h4>Scripted invariants — PASS</h4><div class="vwf"><b>if</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ legacy function/functionItem nodes are untracked — expected, not a violation</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div><div class="vwf"><b>summarization-chain-simpe-refine</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ node "code/set-article.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/set-article.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/set-article.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div><div class="vwf"><b>summarization-chain-simple-map</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ node "code/set-article.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/set-article.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/set-article.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S7 after turn 0</span> <span class="vdet">2026-08-08 16:10</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly digest roll-up" (DbDjSyVA0IJZXsnb)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> workflows/weekly-digest-roll-up/.decanter.json     | 11 +++
+ .../weekly-digest-roll-up/code/build-digest.js     |  2 +
+ workflows/weekly-digest-roll-up/workflow.json      | 88 ++++++++++++++++++++++
+ 3 files changed, 101 insertions(+)
+
+diff --git a/workflows/weekly-digest-roll-up/.decanter.json b/workflows/weekly-digest-roll-up/.decanter.json
+new file mode 100644
+index 0000000..e09f2a2
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "DbDjSyVA0IJZXsnb",
++  "nodes": {
++    "c1": {
++      "file": "code/build-digest.js",
++      "lastPushedHash": "sha256:438980bb8fdd7576053faab8232353916b5b666a88ddfba117470b425afacdd0",
++      "name": "Build digest"
++    }
++  },
++  "name": "Weekly digest roll-up"
++}
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+new file mode 100644
+index 0000000..0e563fd
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -0,0 +1,2 @@
++// weekly roll-up
++return [{ json: { week: 'n/a', total: 0 } }];
+diff --git a/workflows/weekly-digest-roll-up/workflow.json b/workflows/weekly-digest-roll-up/workflow.json
+new file mode 100644
+index 0000000..b3460ee
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/workflow.json
+@@ -0,0 +1,88 @@
++{
++  "id": "DbDjSyVA0IJZXsnb",
++  "name": "Weekly digest roll-up",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T14:10:07.714Z",
++  "updatedAt": "2026-08-08T14:10:08.407Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "Schedule",
++      "type": "n8n-nodes-base.scheduleTrigger",
++      "typeVersion": 1.2,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {
++        "rule": {
++          "interval": [
++            {
++              "field": "hours"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "c1",
++      "name": "Build digest",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/build-digest.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Build digest": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Schedule": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Build digest",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "7e15c0da-3634-45fa-b973-c06a638e9113",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "ChainQA" (Dd5JuHUcX49XjqUm)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> workflows/chain-qa/.decanter.json |  11 +
+ workflows/chain-qa/code/code.js   |   3 +
+ workflows/chain-qa/workflow.json  | 481 ++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 495 insertions(+)
+
+diff --git a/workflows/chain-qa/.decanter.json b/workflows/chain-qa/.decanter.json
+new file mode 100644
+index 0000000..1c1ebbb
+--- /dev/null
++++ b/workflows/chain-qa/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "Dd5JuHUcX49XjqUm",
++  "nodes": {
++    "06c12027-e965-441d-b1d8-b711eabbeb02": {
++      "file": "code/code.js",
++      "lastPushedHash": "sha256:26cd29c03145de5d21d51fa312e97a462cee4ae7a603782e4c784a318097413d",
++      "name": "Code"
++    }
++  },
++  "name": "ChainQA"
++}
+diff --git a/workflows/chain-qa/code/code.js b/workflows/chain-qa/code/code.js
+new file mode 100644
+index 0000000..90b654c
+--- /dev/null
++++ b/workflows/chain-qa/code/code.js
+@@ -0,0 +1,3 @@
++return {
++  text: `Bitcoin: A Peer-to-Peer Electronic Cash System Satoshi Nakamoto satoshin@gmx.com www.bitcoin.org Abstract. A purely peer-to-peer version of electronic cash would allow online payments to be sent directly from one party to another without going through a financial institution. Digital signatures provide part of the solution, but the main benefits are lost if a trusted third party is still required to prevent double-spending. We propose a solution to the double-spending problem using a peer-to-peer network. The network timestamps transactions by hashing them into an ongoing chain of hash-based proof-of-work, forming a record that cannot be changed without redoing the proof-of-work. The longest chain not only serves as proof of the sequence of events witnessed, but proof that it came from the largest pool of CPU power. As long as a majority of CPU power is controlled by nodes that are not cooperating to attack the network, they'll generate the longest chain and outpace attackers. The network itself requires minimal structure. Messages are broadcast on a best effort basis, and nodes can leave and rejoin the network at will, accepting the longest proof-of-work chain as proof of what happened while they were gone. 1. Introduction Commerce on the Internet has come to rely almost exclusively on financial institutions serving as trusted third parties to process electronic payments. While the system works well enough for most transactions, it still suffers from the inherent weaknesses of the trust based model. Completely non-reversible transactions are not really possible, since financial institutions cannot avoid mediating disputes. The cost of mediation increases transaction costs, limiting the minimum practical transaction size and cutting off the possibility for small casual transactions, and there is a broader cost in the loss of ability to make non-reversible payments for non- reversible services. With the possibility of reversal, the need for trust spreads. Merchants must be wary of their customers, hassling them for more information than they would otherwise need. A certain percentage of fraud is accepted as unavoidable. These costs and payment uncertainties can be avoided in person by using physical currency, but no mechanism exists to make payments over a communications channel without a trusted party. What is needed is an electronic payment system based on cryptographic proof instead of trust, allowing any two willing parties to transact directly with each other without the need for a trusted third party. Transactions that are computationally impractical to reverse would protect sellers from fraud, and routine escrow mechanisms could easily be implemented to protect buyers. In this paper, we propose a solution to the double-spending problem using a peer-to-peer distributed timestamp server to generate computational proof of the chronological order of transactions. The system is secure as long as honest nodes collectively control more CPU power than any cooperating group of attacker nodes. 1 2. Transactions We define an electronic coin as a chain of digital signatures. Each owner transfers the coin to the next by digitally signing a hash of the previous transaction and the public key of the next owner and adding these to the end of the coin. A payee can verify the signatures to verify the chain of ownership. The problem of course is the payee can't verify that one of the owners did not double-spend the coin. A common solution is to introduce a trusted central authority, or mint, that checks every transaction for double spending. After each transaction, the coin must be returned to the mint to issue a new coin, and only coins issued directly from the mint are trusted not to be double-spent. The problem with this solution is that the fate of the entire money system depends on the company running the mint, with every transaction having to go through them, just like a bank. We need a way for the payee to know that the previous owners did not sign any earlier transactions. For our purposes, the earliest transaction is the one that counts, so we don't care about later attempts to double-spend. The only way to confirm the absence of a transaction is to be aware of all transactions. In the mint based model, the mint was aware of all transactions and decided which arrived first. To accomplish this without a trusted party, transactions must be publicly announced [1], and we need a system for participants to agree on a single history of the order in which they were received. The payee needs proof that at the time of each transaction, the majority of nodes agreed it was the first received. 3. Timestamp Server The solution we propose begins with a timestamp server. A timestamp server works by taking a hash of a block of items to be timestamped and widely publishing the hash, such as in a newspaper or Usenet post [2-5]. The timestamp proves that the data must have existed at the time, obviously, in order to get into the hash. Each timestamp includes the previous timestamp in its hash, forming a chain, with each additional timestamp reinforcing the ones before it. 2 Block Item Item ... Hash Block Item Item ... Hash Transaction Owner 1's Public Key Owner 0's Signature Hash Transaction Owner 2's Public Key Owner 1's Signature Hash Verify Transaction Owner 3's Public Key Owner 2's Signature Hash Verify Owner 2's Private Key Owner 1's Private Key SignSign Owner 3's Private Key 4. Proof-of-Work To implement a distributed timestamp server on a peer-to-peer basis, we will need to use a proof- of-work system similar to Adam Back's Hashcash [6], rather than newspaper or Usenet posts. The proof-of-work involves scanning for a value that when hashed, such as with SHA-256, the hash begins with a number of zero bits. The average work required is exponential in the number of zero bits required and can be verified by executing a single hash. For our timestamp network, we implement the proof-of-work by incrementing a nonce in the block until a value is found that gives the block's hash the required zero bits. Once the CPU effort has been expended to make it satisfy the proof-of-work, the block cannot be changed without redoing the work. As later blocks are chained after it, the work to change the block would include redoing all the blocks after it. The proof-of-work also solves the problem of determining representation in majority decision making. If the majority were based on one-IP-address-one-vote, it could be subverted by anyone able to allocate many IPs. Proof-of-work is essentially one-CPU-one-vote. The majority decision is represented by the longest chain, which has the greatest proof-of-work effort invested in it. If a majority of CPU power is controlled by honest nodes, the honest chain will grow the fastest and outpace any competing chains. To modify a past block, an attacker would have to redo the proof-of-work of the block and all blocks after it and then catch up with and surpass the work of the honest nodes. We will show later that the probability of a slower attacker catching up diminishes exponentially as subsequent blocks are added. To compensate for increasing hardware speed and varying interest in running nodes over time, the proof-of-work difficulty is determined by a moving average targeting an average number of blocks per hour. If they're generated too fast, the difficulty increases. 5. Network The steps to run the network are as follows: 1) New transactions are broadcast to all nodes. 2) Each node collects new transactions into a block. 3) Each node works on finding a difficult proof-of-work for its block. 4) When a node finds a proof-of-work, it broadcasts the block to all nodes. 5) Nodes accept the block only if all transactions in it are valid and not already spent. 6) Nodes express their acceptance of the block by working on creating the next block in the chain, using the hash of the accepted block as the previous hash. Nodes always consider the longest chain to be the correct one and will keep working on extending it. If two nodes broadcast different versions of the next block simultaneously, some nodes may receive one or the other first. In that case, they work on the first one they received, but save the other branch in case it becomes longer. The tie will be broken when the next proof- of-work is found and one branch becomes longer; the nodes that were working on the other branch will then switch to the longer one. 3 Block Prev Hash Nonce Tx Tx ... Block Prev Hash Nonce Tx Tx ... New transaction broadcasts do not necessarily need to reach all nodes. As long as they reach many nodes, they will get into a block before long. Block broadcasts are also tolerant of dropped messages. If a node does not receive a block, it will request it when it receives the next block and realizes it missed one. 6. Incentive By convention, the first transaction in a block is a special transaction that starts a new coin owned by the creator of the block. This adds an incentive for nodes to support the network, and provides a way to initially distribute coins into circulation, since there is no central authority to issue them. The steady addition of a constant of amount of new coins is analogous to gold miners expending resources to add gold to circulation. In our case, it is CPU time and electricity that is expended. The incentive can also be funded with transaction fees. If the output value of a transaction is less than its input value, the difference is a transaction fee that is added to the incentive value of the block containing the transaction. Once a predetermined number of coins have entered circulation, the incentive can transition entirely to transaction fees and be completely inflation free. The incentive may help encourage nodes to stay honest. If a greedy attacker is able to assemble more CPU power than all the honest nodes, he would have to choose between using it to defraud people by stealing back his payments, or using it to generate new coins. He ought to find it more profitable to play by the rules, such rules that favour him with more new coins than everyone else combined, than to undermine the system and the validity of his own wealth. 7. Reclaiming Disk Space Once the latest transaction in a coin is buried under enough blocks, the spent transactions before it can be discarded to save disk space. To facilitate this without breaking the block's hash, transactions are hashed in a Merkle Tree [7][2][5], with only the root included in the block's hash. Old blocks can then be compacted by stubbing off branches of the tree. The interior hashes do not need to be stored. A block header with no transactions would be about 80 bytes. If we suppose blocks are generated every 10 minutes, 80 bytes * 6 * 24 * 365 = 4.2MB per year. With computer systems typically selling with 2GB of RAM as of 2008, and Moore's Law predicting current growth of 1.2GB per year, storage should not be a problem even if the block headers must be kept in memory. 4 BlockBlock Block Header (Block Hash) Prev Hash Nonce Hash01 Hash0
+… (22029 more chars)</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Contact normalizer" (LEjrm7IwJlYUDiYl)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> workflows/contact-normalizer/.decanter.json    | 11 ++++
+ workflows/contact-normalizer/code/normalize.js |  0
+ workflows/contact-normalizer/workflow.json     | 80 ++++++++++++++++++++++++++
+ 3 files changed, 91 insertions(+)
+
+diff --git a/workflows/contact-normalizer/.decanter.json b/workflows/contact-normalizer/.decanter.json
+new file mode 100644
+index 0000000..091e870
+--- /dev/null
++++ b/workflows/contact-normalizer/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "LEjrm7IwJlYUDiYl",
++  "nodes": {
++    "c1": {
++      "file": "code/normalize.js",
++      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "name": "Normalize"
++    }
++  },
++  "name": "Contact normalizer"
++}
+diff --git a/workflows/contact-normalizer/code/normalize.js b/workflows/contact-normalizer/code/normalize.js
+new file mode 100644
+index 0000000..e69de29
+diff --git a/workflows/contact-normalizer/workflow.json b/workflows/contact-normalizer/workflow.json
+new file mode 100644
+index 0000000..f5eae29
+--- /dev/null
++++ b/workflows/contact-normalizer/workflow.json
+@@ -0,0 +1,80 @@
++{
++  "id": "LEjrm7IwJlYUDiYl",
++  "name": "Contact normalizer",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T14:10:07.763Z",
++  "updatedAt": "2026-08-08T14:10:08.407Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "When clicked",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "c1",
++      "name": "Normalize",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/normalize.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Normalize": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "When clicked": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Normalize",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "bca12b37-929e-477e-bcb5-0e983d3a7b65",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Old contact import" (U1mOiWnZTdO1Z11u)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> workflows/old-contact-import/.decanter.json | 11 ++++
+ workflows/old-contact-import/code/import.js |  2 +
+ workflows/old-contact-import/workflow.json  | 80 +++++++++++++++++++++++++++++
+ 3 files changed, 93 insertions(+)
+
+diff --git a/workflows/old-contact-import/.decanter.json b/workflows/old-contact-import/.decanter.json
+new file mode 100644
+index 0000000..01a2488
+--- /dev/null
++++ b/workflows/old-contact-import/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "U1mOiWnZTdO1Z11u",
++  "nodes": {
++    "c1": {
++      "file": "code/import.js",
++      "lastPushedHash": "sha256:899e4b49ff190f92cea373093553efd47a7914adf504982d800393220ddadefc",
++      "name": "Import"
++    }
++  },
++  "name": "Old contact import"
++}
+diff --git a/workflows/old-contact-import/code/import.js b/workflows/old-contact-import/code/import.js
+new file mode 100644
+index 0000000..a40f447
+--- /dev/null
++++ b/workflows/old-contact-import/code/import.js
+@@ -0,0 +1,2 @@
++// legacy importer — no longer used
++return $input.all();
+diff --git a/workflows/old-contact-import/workflow.json b/workflows/old-contact-import/workflow.json
+new file mode 100644
+index 0000000..acad677
+--- /dev/null
++++ b/workflows/old-contact-import/workflow.json
+@@ -0,0 +1,80 @@
++{
++  "id": "U1mOiWnZTdO1Z11u",
++  "name": "Old contact import",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T14:10:07.734Z",
++  "updatedAt": "2026-08-08T14:10:08.407Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "When clicked",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "c1",
++      "name": "Import",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/import.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Import": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "When clicked": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Import",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "64f416ab-38bf-4489-bdb0-ab78755c65f9",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "SummarizationChain:Simpe:Refine" (eSpUl2Yy6RsLwUeE)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> .../.decanter.json                                 |  11 +
+ .../code/set-article.js                            |  42 ++++
+ .../summarization-chain-simpe-refine/workflow.json | 225 +++++++++++++++++++++
+ 3 files changed, 278 insertions(+)
+
+diff --git a/workflows/summarization-chain-simpe-refine/.decanter.json b/workflows/summarization-chain-simpe-refine/.decanter.json
+new file mode 100644
+index 0000000..8c71eb6
+--- /dev/null
++++ b/workflows/summarization-chain-simpe-refine/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "eSpUl2Yy6RsLwUeE",
++  "nodes": {
++    "33936a84-0d38-4fee-9811-7dc020970e73": {
++      "file": "code/set-article.js",
++      "lastPushedHash": "sha256:cbb9197cf85b5b957f9bcde2fd50d7a7779ec0ef00c641cb60759c4a66f4e2e1",
++      "name": "Set Article"
++    }
++  },
++  "name": "SummarizationChain:Simpe:Refine"
++}
+diff --git a/workflows/summarization-chain-simpe-refine/code/set-article.js b/workflows/summarization-chain-simpe-refine/code/set-article.js
+new file mode 100644
+index 0000000..80c2db8
+--- /dev/null
++++ b/workflows/summarization-chain-simpe-refine/code/set-article.js
+@@ -0,0 +1,42 @@
++return {
++  text: `The dancing plague of 1518, or dance epidemic of 1518 (French: Épidémie dansante de 1518), was a case of dancing mania that occurred in Strasbourg, Alsace (modern-day France), in the Holy Roman Empire from July 1518 to September 1518. Somewhere between 50 and 400 people took to dancing for weeks. There are many theories behind the phenomenon, the most popular being stress-induced mass hysteria, suggested by John Waller. Other theories include ergot and religious explanations. There is controversy concerning the number of deaths.
++
++History
++Events
++The outbreak began in July 1518 when a woman called Frau Troffea began to dance fervently and uncontrollably in a street in Strasbourg. Troffea kept up the constant dancing for a week. Soon, three dozen others joined in. By August, the "dancing plague" had claimed 400 victims. Dancers were beginning to collapse. It is said some even died from a stroke or heart attack. No one knew what caused this reaction, which meant no one understood how to remedy it. By early September, the outbreak began to subside, when the dancers were sent to a mountain shrine to pray for absolution.
++
++Historical documents, including "physician notes, cathedral sermons, local and regional chronicles, and even notes issued by the Strasbourg city council" are clear that the victims danced; it is not known why. Historical sources agree that there was an outbreak of dancing after a single woman started dancing, and the dancing did not seem to die down. It lasted for such a long time that it even attracted the attention of the authorities; until the council gave up authority to the physicians, who prescribed the afflicted to "dance themselves free of it." There are claims that guild halls were refurbished to accommodate the dancing, as well as musicians and strong people to help keep those dealing with the dancing mania to stay upright. This backfired, and the council was forced to ban public dancing as people danced in fear it was a punishment from Saint Vitus; and to be "free of sin" many joined in on the dancing epidemic. The council went as far as to ban music, as well. Those who danced were then ordered to go to the shrine of Saint Vitus, wore red shoes that were sprinkled with holy water and had painted crosses on the tops and soles. They also had to hold small crosses in their hands; and incense and Latin incantations were part of this "ritual." Apparently "forgiven by Vitus," word was spread of a successful ritual and the Dancing Plague had ended.
++
++Events similar to this are said to have occurred throughout the medieval age including 11th century in Kölbigk, Saxony, where it was believed to be the result of divine judgment . In 15th century Apulia, Italy, a woman was bitten by a tarantula, the venom making her dance convulsively. The only way to cure the bite was to "shimmy" and to have the right sort of music available, which was an accepted remedy by scholars like Athanasius Kircher.
++
++Contemporaneous explanations included demonic possession and overheated blood.
++
++Veracity of deaths
++Controversy exists over whether people ultimately danced to their deaths. Some sources claim that for a period the plague killed around fifteen people per day, but the sources of the city of Strasbourg at the time of the events did not mention the number of deaths, or even if there were fatalities. There do not appear to be any sources related to the events that make note of any fatalities. Ned Pennant-Rea also claims that the final death toll is not known, but if the claims of fifteen people dying per day were true then the toll could be "into the hundreds."
++
++The main source for the claim is John Waller, who has written several journal articles on the subject and the book A Time to Dance, a Time to Die: The Extraordinary Story of the Dancing Plague of 1518. The sources cited by Waller that mention deaths were all from later accounts of the events. There is also uncertainty around the identity of the initial dancer (either an unnamed woman or "Frau Troffea") and the number of dancers involved (somewhere between 50 and 400). Of the six chronicle accounts, four support Lady Troffea as the first dancer.
++
++Modern theories
++Food poisoning
++Some believe the dancing could have been brought on by food poisoning caused by the toxic and psychoactive chemical products of ergot fungi (ergotism), which grows commonly on grains (such as rye) used for baking bread. Ergotamine is the main psychoactive product of ergot fungi; it is structurally related to the drug lysergic acid diethylamide (LSD-25) and is the substance from which LSD-25 was originally synthesized. The same fungus has also been implicated in other major historical anomalies, including the Salem witch trials.
++
++In The Lancet, John Waller argues that "this theory does not seem tenable, since it is unlikely that those poisoned by ergot could have danced for days at a time. Nor would so many people have reacted to its psychotropic chemicals in the same way. The ergotism theory also fails to explain why almost every outbreak occurred somewhere along the Rhine and Moselle rivers, areas linked by water but with quite different climates and crops".
++
++Stress-induced mass hysteria
++This could have been an example of fully developed cases of psychogenic movement disorder happening in mass hysteria or mass psychogenic illness, which involves many individuals suddenly exhibiting the same bizarre behavior. The behavior spreads rapidly and broadly in an epidemic pattern. This kind of comportment could have been caused by elevated levels of psychological stress, caused by the ruthless years (even by the rough standards of the early modern period) the people of Alsace were suffering.
++
++Waller speculates that the dancing was "stress-induced psychosis" on a mass level, since the region where the people danced was riddled with starvation and disease, and the inhabitants tended to be superstitious. Seven other cases of dancing plague were reported in the same region during the medieval era.
++
++This psychogenic illness could have created a chorea (from the Greek khoreia meaning "to dance"), a situation comprising random and intricate unintentional movements that flit from body part to body part. Diverse choreas (St. Vitus' dance, St. John's dance, and tarantism) were labeled in the Middle Ages referring to the independent epidemics of "dancing mania" that happened in central Europe, particularly at the time of the plague.
++
++Pop culture and media
++The event inspired Jonathan Glazer's 2020 short film Strasbourg 1518.
++
++It was also the inspiration behind the 2022 choral song "Choreomania" by Florence and the Machine. It was the third track on the album Dance Fever, which took its title from the song.
++
++The book series "A Collection of Utter Speculation" released a title "The Dancing Plague: A Collection of Utter Speculation" in 2022. It is a fictional account about the events that happened in Strasbourg.
++
++The 2023 novel, The Dance Tree, by Kiran Millwood Hargrave is a fictionalized version of the summer of 1518 in Strasbourg.
++
++The event is featured as part of the first season of Watcher Entertainment's "Puppet History" in the episode "The Dancing Plague".`
++}
+\ No newline at end of file
+diff --git a/workflows/summarization-chain-simpe-refine/workflow.json b/workflows/summarization-chain-simpe-refine/workflow.json
+new file mode 100644
+index 0000000..3dc48bc
+--- /dev/null
++++ b/workflows/summarization-chain-simpe-refine/workflow.json
+@@ -0,0 +1,225 @@
++{
++  "id": "eSpUl2Yy6RsLwUeE",
++  "name": "SummarizationChain:Simpe:Refine",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T14:10:07.952Z",
++  "updatedAt": "2026-08-08T14:10:08.407Z",
++  "nodes": [
++    {
++      "id": "45a1f508-8bdc-4a59-8245-b910beddac70",
++      "name": "OpenAI Chat Model2",
++      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
++      "typeVersion": 1,
++      "position": [
++        1440,
++        640
++      ],
++      "parameters": {
++        "model": "gpt-3.5-turbo-0125",
++        "options": {
++          "temperature": 0
++        }
++      }
++    },
++    {
++      "id": "b1cb6eaf-16f0-4f57-b09d-6893e5c52570",
++      "name": "When clicking \"Test workflow\"",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        620,
++        500
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "33936a84-0d38-4fee-9811-7dc020970e73",
++      "name": "Set Article",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        1040,
++        500
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/set-article.js"
++      }
++    },
++    {
++      "id": "0b869175-1a99-4a50-a29b-79aefb30159f",
++      "name": "Set Baseline",
++      "type": "n8n-nodes-base.set",
++      "typeVersion": 3.3,
++      "position": [
++        840,
++        500
++      ],
++      "parameters": {
++        "assignments": {
++          "assignments": [
++            {
++              "id": "6fa592a3-1cfe-42d7-8d45-a7ec80871e52",
++              "name": "baseline_summary",
++              "type": "string",
++              "value": "The dancing plague of 1518 in Strasbourg, Alsace involved between 50 and 400 people dancing uncontrollably for weeks. The cause is unknown, with theories including stress-induced mass hysteria and ergot poisoning. The outbreak ended when the dancers prayed for absolution at a shrine. There is controversy over the number of deaths, with some sources claiming up to fifteen deaths per day, but historical documents do not confirm any fatalities. Similar events have been reported throughout history, inspiring various works of pop culture."
++            }
++          ]
++        },
++        "options": {}
++      }
++    },
++    {
++      "id": "57d75d06-da61-4a0a-a917-b076cd1e291e",
++      "name": "OpenAI Chat Model9",
++      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
++      "typeVersion": 1,
++      "position": [
++        1760,
++        660
++      ],
++      "parameters": {
++        "model": "gpt-3.5-turbo-0125",
++        "options": {
++          "temperature": 0
++        }
++      }
++    },
++    {
++      "id": "eec9288f-1e8e-4331-9ee6-e57fa207be5b",
++      "name": "Summary - Simple - Refine",
++      "type": "@n8n/n8n-nodes-langchain.chainSummarization",
++      "typeVersion": 2,
++      "position": [
++        1420,
++        500
++      ],
++      "parameters": {
++        "chunkSize": 4000,
++        "options": {
++          "summarizationMethodAndPrompts": {
++            "values": {
++              "summarizationMethod": "refine"
++            }
++          }
++        }
++      }
++    },
++    {
++      "id": "2102e067-5b8a-44aa-9362-4db63fac06c2",
++      "name": "Evaluate to Baseline4",
++      "type": "@n8n/n8n-nodes-langchain.code",
++      "typeVersion": 1,
++     
+… (2857 more chars)</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "IF" (eeAci3L1vgpftwLG)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> workflows/if/.decanter.json |   5 +
+ workflows/if/workflow.json  | 868 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 873 insertions(+)
+
+diff --git a/workflows/if/.decanter.json b/workflows/if/.decanter.json
+new file mode 100644
+index 0000000..14f638a
+--- /dev/null
++++ b/workflows/if/.decanter.json
+@@ -0,0 +1,5 @@
++{
++  "workflowId": "eeAci3L1vgpftwLG",
++  "nodes": {},
++  "name": "IF"
++}
+diff --git a/workflows/if/workflow.json b/workflows/if/workflow.json
+new file mode 100644
+index 0000000..a697f7d
+--- /dev/null
++++ b/workflows/if/workflow.json
+@@ -0,0 +1,868 @@
++{
++  "id": "eeAci3L1vgpftwLG",
++  "name": "IF",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T14:10:07.791Z",
++  "updatedAt": "2026-08-08T14:10:08.407Z",
++  "nodes": [
++    {
++      "id": "6ae1c6d7-2986-491e-9657-e173e8c700e0",
++      "name": "Start",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        260,
++        300
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "744cd7d3-fe05-416b-afe4-3fd9f02d684b",
++      "name": "IF",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        450,
++        100
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [
++            {
++              "operation": "notEqual",
++              "value1": true
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "d9d7145d-0f47-4ac1-b51d-cae45a77cbab",
++      "name": "IF1",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        450,
++        250
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [
++            {
++              "value1": "2021-03-01T23:00:00.000Z",
++              "value2": "2021-02-28T23:00:00.000Z"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "dceb69ae-c2d9-4a0a-aeb9-3ef388e64005",
++      "name": "IF2",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        450,
++        410
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [
++            {
++              "value1": 5,
++              "value2": 10
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "9c377027-9b03-4d11-8405-f13c773efff1",
++      "name": "IF3",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        450,
++        670
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [],
++          "string": [
++            {
++              "operation": "contains",
++              "value1": "n8n.io",
++              "value2": "io"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "c790a2e9-20de-45b9-b5be-f7d78e8f8e01",
++      "name": "IF4",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        620,
++        100
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [
++            {
++              "value1": true,
++              "value2": true
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "acc6b0b6-539c-4fdb-8275-da2ad32e18e5",
++      "name": "IF5",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        610,
++        250
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [
++            {
++              "operation": "before",
++              "value1": "2021-02-27T23:00:00.000Z",
++              "value2": "2021-02-28T23:00:00.000Z"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "2132f7b3-cebc-4873-9eff-8b17e678947f",
++      "name": "IF6",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        600,
++        410
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [
++            {
++              "operation": "smallerEqual",
++              "value1": 5,
++              "value2": 5
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "668ff49b-0ab6-476e-987c-23ad3e31f01a",
++      "name": "IF7",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        750,
++        410
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [
++            {
++              "operation": "equal",
++              "value1": 5,
++              "value2": 5
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "86cb816b-0a96-4e04-baca-6fd0b81963bd",
++      "name": "IF8",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        900,
++        410
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [
++            {
++              "operation": "notEqual",
++              "value1": 6,
++              "value2": 5
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "c7b5d37c-ef3d-4e52-b577-61e07b741943",
++      "name": "IF9",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        1050,
++        410
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [
++            {
++              "operation": "larger",
++              "value1": 6,
++              "value2": 5
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "9058992b-0369-43fb-b03b-566a891e111b",
++      "name": "IF10",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        1200,
++        410
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [
++            {
++              "operation": "largerEqual",
++              "value1": 6,
++              "value2": 5
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "e59a8821-d56d-445f-948f-cdbf113d7185",
++      "name": "IF11",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        600,
++        670
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [],
++          "string": [
++            {
++              "operation": "endsWith",
++              "value1": "n8n.io",
++              "value2": "io"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "e30e0fda-749f-4fa1-84d3-f662b35d14cd",
++      "name": "IF12",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        750,
++        670
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [],
++          "string": [
++            {
++              "value1": "n8n",
++              "value2": "n8n"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "680373c4-912e-4c35-8dd4-6682cc215914",
++      "name": "IF13",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        900,
++        670
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [],
++          "string": [
++            {
++              "operation": "notContains",
++              "value1": "n8n",
++              "value2": "9"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "1883b843-2bd0-44f1-8e1f-f371dcbb6276",
++      "name": "IF14",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        1050,
++        670
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [],
++          "string": [
++            {
++              "operation": "notEqual",
++              "value1": "n8n",
++              "value2": "n9n"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "7b167295-0811-4aa6-a769-beaac7f91a24",
++      "name": "IF15",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        1200,
++        670
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [],
++          "string": [
++            {
++              "operation": "regex",
++              "value1": "n8n",
++              "value2": "/n[1-8]n/i"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "39c6a9fd-c9ea-4528-b8ac-c9461e053ef5",
++      "name": "IF16",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        1350,
++        670
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [],
++          "string": [
++            {
++              "operation": "startsWith",
++              "value1": "n8n.io",
++              "value2": "n8n"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "e0b3a955-6f8d-4a7b-bd09-8eb779d9bd42",
++      "name": "IF17",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        1500,
++        670
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [],
++          "string": [
++            {
++              "operation": "isEmpty"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "1b87e5de-dd4e-40b5-b54c-4402edd94462",
++      "name": "IF18",
++      "type": "n8n-nodes-base.if",
++      "typeVersion": 1,
++      "position": [
++        1350,
++        410
++      ],
++      "parameters": {
++        "conditions": {
++          "boolean": [],
++          "dateTime": [],
++          "number": [
++            {
++              "operation": "isEmpty",
++              "value1": "={{}}"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "a2347b9b-db80-4e15-8863-32288e42f3d1",
++      "name": "Function",
++      "type": "n8n-nodes-base.function",
++      "typeVersion": 1,
++      "position": [
++        800,
++        90
++      ],
++      "parameters": {
++        "functionCode": "throw Error('Problem in boolean statement');\n"
++      },
++      "notes": "Boolean Error",
++      "notesInFlow": true
++    },
++    {
++      "id": "95f68b92-15db-48db-89a4-9c8e0465be49",
++      "name": "Function1",
++      "type": "n8n-nodes-base.function",
++      "typeVersion": 1,
++      "position": [
++        790,
++        250
++      ],
++      "parameters": {
++        "functionCode": "throw Error('Problem in Date&amp;Time statement');\n"
++      },
++      "notes": "Date&amp;Time Error",
++      "notesInFlow": true
++    },
++    {
++      "id": "33a9a8db-7c54-4154-ad8c-b03050b9341c",
++      "name": "Function2",
++      "type": "n8n-nodes-base.function",
++      "typeVersion": 1,
++      "position": [
++        840,
++        540
++      ],
++      "parameters": {
++        "functionCode": "throw Error('Problem in Number statement');\n"
++      },
++      "notes": "Number Error",
++      "notesInFlow": true
++    },
++    {
++      "id": "919cfdb2-72b2-41b5-aaaf-5df780fe57ba",
++      "name": "Function3",
++      "type": "n8n-nodes-base.function",
++      "typeVersion": 1,
++      "position": [
++        970,
++        840
++      ],
++      "parameters": {
++        "functionCode": "throw Error('Problem in String comparison statement');\n"
++      },
++      "notes": "String Error",
++      "notesInFlow": true
++    }
++  ],
++  "connections": {
++    "IF": {
++      "main": [
++        [
++          {
++            "index": 0,
++     
+… (6156 more chars)</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "QdrantVectorStore:*" (haMc2rOWNcbB5apt)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> workflows/qdrant-vector-store/.decanter.json |  11 +
+ workflows/qdrant-vector-store/code/code.js   |   3 +
+ workflows/qdrant-vector-store/workflow.json  | 538 +++++++++++++++++++++++++++
+ 3 files changed, 552 insertions(+)
+
+diff --git a/workflows/qdrant-vector-store/.decanter.json b/workflows/qdrant-vector-store/.decanter.json
+new file mode 100644
+index 0000000..5b9f8b9
+--- /dev/null
++++ b/workflows/qdrant-vector-store/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "haMc2rOWNcbB5apt",
++  "nodes": {
++    "8d9f25e2-7e5a-48bb-88a9-094b3b6c4496": {
++      "file": "code/code.js",
++      "lastPushedHash": "sha256:26cd29c03145de5d21d51fa312e97a462cee4ae7a603782e4c784a318097413d",
++      "name": "Code"
++    }
++  },
++  "name": "QdrantVectorStore:*"
++}
+diff --git a/workflows/qdrant-vector-store/code/code.js b/workflows/qdrant-vector-store/code/code.js
+new file mode 100644
+index 0000000..90b654c
+--- /dev/null
++++ b/workflows/qdrant-vector-store/code/code.js
+@@ -0,0 +1,3 @@
++return {
++  text: `Bitcoin: A Peer-to-Peer Electronic Cash System Satoshi Nakamoto satoshin@gmx.com www.bitcoin.org Abstract. A purely peer-to-peer version of electronic cash would allow online payments to be sent directly from one party to another without going through a financial institution. Digital signatures provide part of the solution, but the main benefits are lost if a trusted third party is still required to prevent double-spending. We propose a solution to the double-spending problem using a peer-to-peer network. The network timestamps transactions by hashing them into an ongoing chain of hash-based proof-of-work, forming a record that cannot be changed without redoing the proof-of-work. The longest chain not only serves as proof of the sequence of events witnessed, but proof that it came from the largest pool of CPU power. As long as a majority of CPU power is controlled by nodes that are not cooperating to attack the network, they'll generate the longest chain and outpace attackers. The network itself requires minimal structure. Messages are broadcast on a best effort basis, and nodes can leave and rejoin the network at will, accepting the longest proof-of-work chain as proof of what happened while they were gone. 1. Introduction Commerce on the Internet has come to rely almost exclusively on financial institutions serving as trusted third parties to process electronic payments. While the system works well enough for most transactions, it still suffers from the inherent weaknesses of the trust based model. Completely non-reversible transactions are not really possible, since financial institutions cannot avoid mediating disputes. The cost of mediation increases transaction costs, limiting the minimum practical transaction size and cutting off the possibility for small casual transactions, and there is a broader cost in the loss of ability to make non-reversible payments for non- reversible services. With the possibility of reversal, the need for trust spreads. Merchants must be wary of their customers, hassling them for more information than they would otherwise need. A certain percentage of fraud is accepted as unavoidable. These costs and payment uncertainties can be avoided in person by using physical currency, but no mechanism exists to make payments over a communications channel without a trusted party. What is needed is an electronic payment system based on cryptographic proof instead of trust, allowing any two willing parties to transact directly with each other without the need for a trusted third party. Transactions that are computationally impractical to reverse would protect sellers from fraud, and routine escrow mechanisms could easily be implemented to protect buyers. In this paper, we propose a solution to the double-spending problem using a peer-to-peer distributed timestamp server to generate computational proof of the chronological order of transactions. The system is secure as long as honest nodes collectively control more CPU power than any cooperating group of attacker nodes. 1 2. Transactions We define an electronic coin as a chain of digital signatures. Each owner transfers the coin to the next by digitally signing a hash of the previous transaction and the public key of the next owner and adding these to the end of the coin. A payee can verify the signatures to verify the chain of ownership. The problem of course is the payee can't verify that one of the owners did not double-spend the coin. A common solution is to introduce a trusted central authority, or mint, that checks every transaction for double spending. After each transaction, the coin must be returned to the mint to issue a new coin, and only coins issued directly from the mint are trusted not to be double-spent. The problem with this solution is that the fate of the entire money system depends on the company running the mint, with every transaction having to go through them, just like a bank. We need a way for the payee to know that the previous owners did not sign any earlier transactions. For our purposes, the earliest transaction is the one that counts, so we don't care about later attempts to double-spend. The only way to confirm the absence of a transaction is to be aware of all transactions. In the mint based model, the mint was aware of all transactions and decided which arrived first. To accomplish this without a trusted party, transactions must be publicly announced [1], and we need a system for participants to agree on a single history of the order in which they were received. The payee needs proof that at the time of each transaction, the majority of nodes agreed it was the first received. 3. Timestamp Server The solution we propose begins with a timestamp server. A timestamp server works by taking a hash of a block of items to be timestamped and widely publishing the hash, such as in a newspaper or Usenet post [2-5]. The timestamp proves that the data must have existed at the time, obviously, in order to get into the hash. Each timestamp includes the previous timestamp in its hash, forming a chain, with each additional timestamp reinforcing the ones before it. 2 Block Item Item ... Hash Block Item Item ... Hash Transaction Owner 1's Public Key Owner 0's Signature Hash Transaction Owner 2's Public Key Owner 1's Signature Hash Verify Transaction Owner 3's Public Key Owner 2's Signature Hash Verify Owner 2's Private Key Owner 1's Private Key SignSign Owner 3's Private Key 4. Proof-of-Work To implement a distributed timestamp server on a peer-to-peer basis, we will need to use a proof- of-work system similar to Adam Back's Hashcash [6], rather than newspaper or Usenet posts. The proof-of-work involves scanning for a value that when hashed, such as with SHA-256, the hash begins with a number of zero bits. The average work required is exponential in the number of zero bits required and can be verified by executing a single hash. For our timestamp network, we implement the proof-of-work by incrementing a nonce in the block until a value is found that gives the block's hash the required zero bits. Once the CPU effort has been expended to make it satisfy the proof-of-work, the block cannot be changed without redoing the work. As later blocks are chained after it, the work to change the block would include redoing all the blocks after it. The proof-of-work also solves the problem of determining representation in majority decision making. If the majority were based on one-IP-address-one-vote, it could be subverted by anyone able to allocate many IPs. Proof-of-work is essentially one-CPU-one-vote. The majority decision is represented by the longest chain, which has the greatest proof-of-work effort invested in it. If a majority of CPU power is controlled by honest nodes, the honest chain will grow the fastest and outpace any competing chains. To modify a past block, an attacker would have to redo the proof-of-work of the block and all blocks after it and then catch up with and surpass the work of the honest nodes. We will show later that the probability of a slower attacker catching up diminishes exponentially as subsequent blocks are added. To compensate for increasing hardware speed and varying interest in running nodes over time, the proof-of-work difficulty is determined by a moving average targeting an average number of blocks per hour. If they're generated too fast, the difficulty increases. 5. Network The steps to run the network are as follows: 1) New transactions are broadcast to all nodes. 2) Each node collects new transactions into a block. 3) Each node works on finding a difficult proof-of-work for its block. 4) When a node finds a proof-of-work, it broadcasts the block to all nodes. 5) Nodes accept the block only if all transactions in it are valid and not already spent. 6) Nodes express their acceptance of the block by working on creating the next block in the chain, using the hash of the accepted block as the previous hash. Nodes always consider the longest chain to be the correct one and will keep working on extending it. If two nodes broadcast different versions of the next block simultaneously, some nodes may receive one or the other first. In that case, they work on the first one they received, but save the other branch in case it becomes longer. The tie will be broken when the next proof- of-work is found and one branch becomes longer; the nodes that were working on the other branch will then switch to the longer one. 3 Block Prev Hash Nonce Tx Tx ... Block Prev Hash Nonce Tx Tx ... New transaction broadcasts do not necessarily need to reach all nodes. As long as they reach many nodes, they will get into a block before long. Block broadcasts are also tolerant of dropped messages. If a node does not receive a block, it will request it when it receives the next block and realizes it missed one. 6. Incentive By convention, the first transaction in a block is a special transaction that starts a new coin owned by the creator of the block. This adds an incentive for nodes to support the network, and provides a way to initially distribute coins into circulation, since there is no central authority to issue them. The steady addition of a constant of amount of new coins is analogous to gold miners expending resources to add gold to circulation. In our case, it is CPU time and electricity that is expended. The incentive can also be funded with transaction fees. If the output value of a transaction is less than its input value, the difference is a transaction fee that is added to the incentive value of the block containing the transaction. Once a predetermined number of coins have entered circulation, the incentive can transition entirely to transaction fees and be completely inflation free. The incentive may help encourage nodes to stay honest. If a greedy attacker is able to assemble more CPU power than all the honest nodes, he would have to choose between using it to defraud people by stealing back his payments, or using it to generate new coins. He ought to find it more profitable to play by the rules, such rules that favour him with more new coins than everyone else combined, than to undermine the system and the validity of his own wealth. 7. Reclaiming Disk Space Once the latest transaction in a coin is buried under enough blocks, the spent transactions before it can be discarded to save disk space. To facilitate this without breaking the block's hash, transactions are hashed in a Merkle Tree [7][2][5], with only the root included in the block's hash. Old blocks can then be compacted by stubbing off branches of the tree. The interior hashes do not need to be stored. A block header with no transactions would be about 80 bytes. If we suppose blocks are generated every 10 minutes, 80 bytes * 6 * 24 * 365 = 4.2MB per year. With computer systems typically selling with 2GB of RAM as of 2008, and Moore's Law predicting current growth of 1.2GB per year, storage should not be a problem even if the block
+… (23645 more chars)</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "vectorStorePGVector:*" (rbAP9dYP5kgZio7j)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> workflows/vector-store-pg-vector/.decanter.json |  11 +
+ workflows/vector-store-pg-vector/code/code.js   |   3 +
+ workflows/vector-store-pg-vector/workflow.json  | 814 ++++++++++++++++++++++++
+ 3 files changed, 828 insertions(+)
+
+diff --git a/workflows/vector-store-pg-vector/.decanter.json b/workflows/vector-store-pg-vector/.decanter.json
+new file mode 100644
+index 0000000..3b8c930
+--- /dev/null
++++ b/workflows/vector-store-pg-vector/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "rbAP9dYP5kgZio7j",
++  "nodes": {
++    "b9ece201-2b70-4cae-8191-278ed54fbf75": {
++      "file": "code/code.js",
++      "lastPushedHash": "sha256:26cd29c03145de5d21d51fa312e97a462cee4ae7a603782e4c784a318097413d",
++      "name": "Code"
++    }
++  },
++  "name": "vectorStorePGVector:*"
++}
+diff --git a/workflows/vector-store-pg-vector/code/code.js b/workflows/vector-store-pg-vector/code/code.js
+new file mode 100644
+index 0000000..90b654c
+--- /dev/null
++++ b/workflows/vector-store-pg-vector/code/code.js
+@@ -0,0 +1,3 @@
++return {
++  text: `Bitcoin: A Peer-to-Peer Electronic Cash System Satoshi Nakamoto satoshin@gmx.com www.bitcoin.org Abstract. A purely peer-to-peer version of electronic cash would allow online payments to be sent directly from one party to another without going through a financial institution. Digital signatures provide part of the solution, but the main benefits are lost if a trusted third party is still required to prevent double-spending. We propose a solution to the double-spending problem using a peer-to-peer network. The network timestamps transactions by hashing them into an ongoing chain of hash-based proof-of-work, forming a record that cannot be changed without redoing the proof-of-work. The longest chain not only serves as proof of the sequence of events witnessed, but proof that it came from the largest pool of CPU power. As long as a majority of CPU power is controlled by nodes that are not cooperating to attack the network, they'll generate the longest chain and outpace attackers. The network itself requires minimal structure. Messages are broadcast on a best effort basis, and nodes can leave and rejoin the network at will, accepting the longest proof-of-work chain as proof of what happened while they were gone. 1. Introduction Commerce on the Internet has come to rely almost exclusively on financial institutions serving as trusted third parties to process electronic payments. While the system works well enough for most transactions, it still suffers from the inherent weaknesses of the trust based model. Completely non-reversible transactions are not really possible, since financial institutions cannot avoid mediating disputes. The cost of mediation increases transaction costs, limiting the minimum practical transaction size and cutting off the possibility for small casual transactions, and there is a broader cost in the loss of ability to make non-reversible payments for non- reversible services. With the possibility of reversal, the need for trust spreads. Merchants must be wary of their customers, hassling them for more information than they would otherwise need. A certain percentage of fraud is accepted as unavoidable. These costs and payment uncertainties can be avoided in person by using physical currency, but no mechanism exists to make payments over a communications channel without a trusted party. What is needed is an electronic payment system based on cryptographic proof instead of trust, allowing any two willing parties to transact directly with each other without the need for a trusted third party. Transactions that are computationally impractical to reverse would protect sellers from fraud, and routine escrow mechanisms could easily be implemented to protect buyers. In this paper, we propose a solution to the double-spending problem using a peer-to-peer distributed timestamp server to generate computational proof of the chronological order of transactions. The system is secure as long as honest nodes collectively control more CPU power than any cooperating group of attacker nodes. 1 2. Transactions We define an electronic coin as a chain of digital signatures. Each owner transfers the coin to the next by digitally signing a hash of the previous transaction and the public key of the next owner and adding these to the end of the coin. A payee can verify the signatures to verify the chain of ownership. The problem of course is the payee can't verify that one of the owners did not double-spend the coin. A common solution is to introduce a trusted central authority, or mint, that checks every transaction for double spending. After each transaction, the coin must be returned to the mint to issue a new coin, and only coins issued directly from the mint are trusted not to be double-spent. The problem with this solution is that the fate of the entire money system depends on the company running the mint, with every transaction having to go through them, just like a bank. We need a way for the payee to know that the previous owners did not sign any earlier transactions. For our purposes, the earliest transaction is the one that counts, so we don't care about later attempts to double-spend. The only way to confirm the absence of a transaction is to be aware of all transactions. In the mint based model, the mint was aware of all transactions and decided which arrived first. To accomplish this without a trusted party, transactions must be publicly announced [1], and we need a system for participants to agree on a single history of the order in which they were received. The payee needs proof that at the time of each transaction, the majority of nodes agreed it was the first received. 3. Timestamp Server The solution we propose begins with a timestamp server. A timestamp server works by taking a hash of a block of items to be timestamped and widely publishing the hash, such as in a newspaper or Usenet post [2-5]. The timestamp proves that the data must have existed at the time, obviously, in order to get into the hash. Each timestamp includes the previous timestamp in its hash, forming a chain, with each additional timestamp reinforcing the ones before it. 2 Block Item Item ... Hash Block Item Item ... Hash Transaction Owner 1's Public Key Owner 0's Signature Hash Transaction Owner 2's Public Key Owner 1's Signature Hash Verify Transaction Owner 3's Public Key Owner 2's Signature Hash Verify Owner 2's Private Key Owner 1's Private Key SignSign Owner 3's Private Key 4. Proof-of-Work To implement a distributed timestamp server on a peer-to-peer basis, we will need to use a proof- of-work system similar to Adam Back's Hashcash [6], rather than newspaper or Usenet posts. The proof-of-work involves scanning for a value that when hashed, such as with SHA-256, the hash begins with a number of zero bits. The average work required is exponential in the number of zero bits required and can be verified by executing a single hash. For our timestamp network, we implement the proof-of-work by incrementing a nonce in the block until a value is found that gives the block's hash the required zero bits. Once the CPU effort has been expended to make it satisfy the proof-of-work, the block cannot be changed without redoing the work. As later blocks are chained after it, the work to change the block would include redoing all the blocks after it. The proof-of-work also solves the problem of determining representation in majority decision making. If the majority were based on one-IP-address-one-vote, it could be subverted by anyone able to allocate many IPs. Proof-of-work is essentially one-CPU-one-vote. The majority decision is represented by the longest chain, which has the greatest proof-of-work effort invested in it. If a majority of CPU power is controlled by honest nodes, the honest chain will grow the fastest and outpace any competing chains. To modify a past block, an attacker would have to redo the proof-of-work of the block and all blocks after it and then catch up with and surpass the work of the honest nodes. We will show later that the probability of a slower attacker catching up diminishes exponentially as subsequent blocks are added. To compensate for increasing hardware speed and varying interest in running nodes over time, the proof-of-work difficulty is determined by a moving average targeting an average number of blocks per hour. If they're generated too fast, the difficulty increases. 5. Network The steps to run the network are as follows: 1) New transactions are broadcast to all nodes. 2) Each node collects new transactions into a block. 3) Each node works on finding a difficult proof-of-work for its block. 4) When a node finds a proof-of-work, it broadcasts the block to all nodes. 5) Nodes accept the block only if all transactions in it are valid and not already spent. 6) Nodes express their acceptance of the block by working on creating the next block in the chain, using the hash of the accepted block as the previous hash. Nodes always consider the longest chain to be the correct one and will keep working on extending it. If two nodes broadcast different versions of the next block simultaneously, some nodes may receive one or the other first. In that case, they work on the first one they received, but save the other branch in case it becomes longer. The tie will be broken when the next proof- of-work is found and one branch becomes longer; the nodes that were working on the other branch will then switch to the longer one. 3 Block Prev Hash Nonce Tx Tx ... Block Prev Hash Nonce Tx Tx ... New transaction broadcasts do not necessarily need to reach all nodes. As long as they reach many nodes, they will get into a block before long. Block broadcasts are also tolerant of dropped messages. If a node does not receive a block, it will request it when it receives the next block and realizes it missed one. 6. Incentive By convention, the first transaction in a block is a special transaction that starts a new coin owned by the creator of the block. This adds an incentive for nodes to support the network, and provides a way to initially distribute coins into circulation, since there is no central authority to issue them. The steady addition of a constant of amount of new coins is analogous to gold miners expending resources to add gold to circulation. In our case, it is CPU time and electricity that is expended. The incentive can also be funded with transaction fees. If the output value of a transaction is less than its input value, the difference is a transaction fee that is added to the incentive value of the block containing the transaction. Once a predetermined number of coins have entered circulation, the incentive can transition entirely to transaction fees and be completely inflation free. The incentive may help encourage nodes to stay honest. If a greedy attacker is able to assemble more CPU power than all the honest nodes, he would have to choose between using it to defraud people by stealing back his payments, or using it to generate new coins. He ought to find it more profitable to play by the rules, such rules that favour him with more new coins than everyone else combined, than to undermine the system and the validity of his own wealth. 7. Reclaiming Disk Space Once the latest transaction in a coin is buried under enough blocks, the spent transactions before it can be discarded to save disk space. To facilitate this without breaking the block's hash, transactions are hashed in a Merkle Tree [7][2][5], with only the root included in the block's hash. Old blocks can then be compacted by stubbing off branches of the tree. The interior hashes do not need to be stored. A block header with no transactions would be about 80 bytes. If we suppose blocks are generated every 10 minutes, 80 bytes * 6 * 24 * 365 = 4.2MB per year. With computer systems typically selling with 2GB of RAM as of 2008, and Moore's Law predicting current growth of 1.2GB per year, storage should not be a
+… (29582 more chars)</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "SummarizationChain:Simple:Map" (y8aor5Y3e2l5xP3H)</span> <span class="vdet">2026-08-08 14:10</span></summary><pre class="tin"> .../summarization-chain-simple-map/.decanter.json  |  11 ++
+ .../code/set-article.js                            |  42 ++++
+ .../summarization-chain-simple-map/workflow.json   | 219 +++++++++++++++++++++
+ 3 files changed, 272 insertions(+)
+
+diff --git a/workflows/summarization-chain-simple-map/.decanter.json b/workflows/summarization-chain-simple-map/.decanter.json
+new file mode 100644
+index 0000000..2c3d398
+--- /dev/null
++++ b/workflows/summarization-chain-simple-map/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "y8aor5Y3e2l5xP3H",
++  "nodes": {
++    "97eb5104-6741-4330-ac11-4c5776aedd79": {
++      "file": "code/set-article.js",
++      "lastPushedHash": "sha256:cbb9197cf85b5b957f9bcde2fd50d7a7779ec0ef00c641cb60759c4a66f4e2e1",
++      "name": "Set Article"
++    }
++  },
++  "name": "SummarizationChain:Simple:Map"
++}
+diff --git a/workflows/summarization-chain-simple-map/code/set-article.js b/workflows/summarization-chain-simple-map/code/set-article.js
+new file mode 100644
+index 0000000..80c2db8
+--- /dev/null
++++ b/workflows/summarization-chain-simple-map/code/set-article.js
+@@ -0,0 +1,42 @@
++return {
++  text: `The dancing plague of 1518, or dance epidemic of 1518 (French: Épidémie dansante de 1518), was a case of dancing mania that occurred in Strasbourg, Alsace (modern-day France), in the Holy Roman Empire from July 1518 to September 1518. Somewhere between 50 and 400 people took to dancing for weeks. There are many theories behind the phenomenon, the most popular being stress-induced mass hysteria, suggested by John Waller. Other theories include ergot and religious explanations. There is controversy concerning the number of deaths.
++
++History
++Events
++The outbreak began in July 1518 when a woman called Frau Troffea began to dance fervently and uncontrollably in a street in Strasbourg. Troffea kept up the constant dancing for a week. Soon, three dozen others joined in. By August, the "dancing plague" had claimed 400 victims. Dancers were beginning to collapse. It is said some even died from a stroke or heart attack. No one knew what caused this reaction, which meant no one understood how to remedy it. By early September, the outbreak began to subside, when the dancers were sent to a mountain shrine to pray for absolution.
++
++Historical documents, including "physician notes, cathedral sermons, local and regional chronicles, and even notes issued by the Strasbourg city council" are clear that the victims danced; it is not known why. Historical sources agree that there was an outbreak of dancing after a single woman started dancing, and the dancing did not seem to die down. It lasted for such a long time that it even attracted the attention of the authorities; until the council gave up authority to the physicians, who prescribed the afflicted to "dance themselves free of it." There are claims that guild halls were refurbished to accommodate the dancing, as well as musicians and strong people to help keep those dealing with the dancing mania to stay upright. This backfired, and the council was forced to ban public dancing as people danced in fear it was a punishment from Saint Vitus; and to be "free of sin" many joined in on the dancing epidemic. The council went as far as to ban music, as well. Those who danced were then ordered to go to the shrine of Saint Vitus, wore red shoes that were sprinkled with holy water and had painted crosses on the tops and soles. They also had to hold small crosses in their hands; and incense and Latin incantations were part of this "ritual." Apparently "forgiven by Vitus," word was spread of a successful ritual and the Dancing Plague had ended.
++
++Events similar to this are said to have occurred throughout the medieval age including 11th century in Kölbigk, Saxony, where it was believed to be the result of divine judgment . In 15th century Apulia, Italy, a woman was bitten by a tarantula, the venom making her dance convulsively. The only way to cure the bite was to "shimmy" and to have the right sort of music available, which was an accepted remedy by scholars like Athanasius Kircher.
++
++Contemporaneous explanations included demonic possession and overheated blood.
++
++Veracity of deaths
++Controversy exists over whether people ultimately danced to their deaths. Some sources claim that for a period the plague killed around fifteen people per day, but the sources of the city of Strasbourg at the time of the events did not mention the number of deaths, or even if there were fatalities. There do not appear to be any sources related to the events that make note of any fatalities. Ned Pennant-Rea also claims that the final death toll is not known, but if the claims of fifteen people dying per day were true then the toll could be "into the hundreds."
++
++The main source for the claim is John Waller, who has written several journal articles on the subject and the book A Time to Dance, a Time to Die: The Extraordinary Story of the Dancing Plague of 1518. The sources cited by Waller that mention deaths were all from later accounts of the events. There is also uncertainty around the identity of the initial dancer (either an unnamed woman or "Frau Troffea") and the number of dancers involved (somewhere between 50 and 400). Of the six chronicle accounts, four support Lady Troffea as the first dancer.
++
++Modern theories
++Food poisoning
++Some believe the dancing could have been brought on by food poisoning caused by the toxic and psychoactive chemical products of ergot fungi (ergotism), which grows commonly on grains (such as rye) used for baking bread. Ergotamine is the main psychoactive product of ergot fungi; it is structurally related to the drug lysergic acid diethylamide (LSD-25) and is the substance from which LSD-25 was originally synthesized. The same fungus has also been implicated in other major historical anomalies, including the Salem witch trials.
++
++In The Lancet, John Waller argues that "this theory does not seem tenable, since it is unlikely that those poisoned by ergot could have danced for days at a time. Nor would so many people have reacted to its psychotropic chemicals in the same way. The ergotism theory also fails to explain why almost every outbreak occurred somewhere along the Rhine and Moselle rivers, areas linked by water but with quite different climates and crops".
++
++Stress-induced mass hysteria
++This could have been an example of fully developed cases of psychogenic movement disorder happening in mass hysteria or mass psychogenic illness, which involves many individuals suddenly exhibiting the same bizarre behavior. The behavior spreads rapidly and broadly in an epidemic pattern. This kind of comportment could have been caused by elevated levels of psychological stress, caused by the ruthless years (even by the rough standards of the early modern period) the people of Alsace were suffering.
++
++Waller speculates that the dancing was "stress-induced psychosis" on a mass level, since the region where the people danced was riddled with starvation and disease, and the inhabitants tended to be superstitious. Seven other cases of dancing plague were reported in the same region during the medieval era.
++
++This psychogenic illness could have created a chorea (from the Greek khoreia meaning "to dance"), a situation comprising random and intricate unintentional movements that flit from body part to body part. Diverse choreas (St. Vitus' dance, St. John's dance, and tarantism) were labeled in the Middle Ages referring to the independent epidemics of "dancing mania" that happened in central Europe, particularly at the time of the plague.
++
++Pop culture and media
++The event inspired Jonathan Glazer's 2020 short film Strasbourg 1518.
++
++It was also the inspiration behind the 2022 choral song "Choreomania" by Florence and the Machine. It was the third track on the album Dance Fever, which took its title from the song.
++
++The book series "A Collection of Utter Speculation" released a title "The Dancing Plague: A Collection of Utter Speculation" in 2022. It is a fictional account about the events that happened in Strasbourg.
++
++The 2023 novel, The Dance Tree, by Kiran Millwood Hargrave is a fictionalized version of the summer of 1518 in Strasbourg.
++
++The event is featured as part of the first season of Watcher Entertainment's "Puppet History" in the episode "The Dancing Plague".`
++}
+\ No newline at end of file
+diff --git a/workflows/summarization-chain-simple-map/workflow.json b/workflows/summarization-chain-simple-map/workflow.json
+new file mode 100644
+index 0000000..40695ae
+--- /dev/null
++++ b/workflows/summarization-chain-simple-map/workflow.json
+@@ -0,0 +1,219 @@
++{
++  "id": "y8aor5Y3e2l5xP3H",
++  "name": "SummarizationChain:Simple:Map",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T14:10:07.935Z",
++  "updatedAt": "2026-08-08T14:10:08.407Z",
++  "nodes": [
++    {
++      "id": "7040b003-e694-4251-9dad-f4245966cfdf",
++      "name": "When clicking \"Test workflow\"",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        1120,
++        600
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "97eb5104-6741-4330-ac11-4c5776aedd79",
++      "name": "Set Article",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        1540,
++        600
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/set-article.js"
++      }
++    },
++    {
++      "id": "42de18cf-1320-4f45-bb11-d28523c88a43",
++      "name": "OpenAI Chat Model",
++      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
++      "typeVersion": 1,
++      "position": [
++        1760,
++        760
++      ],
++      "parameters": {
++        "model": "gpt-3.5-turbo-0125",
++        "options": {
++          "temperature": 0
++        }
++      }
++    },
++    {
++      "id": "b7f4e65c-2f5b-41eb-bffd-aeb1ec9919b4",
++      "name": "Set Baseline",
++      "type": "n8n-nodes-base.set",
++      "typeVersion": 3.3,
++      "position": [
++        1340,
++        600
++      ],
++      "parameters": {
++        "assignments": {
++          "assignments": [
++            {
++              "id": "6fa592a3-1cfe-42d7-8d45-a7ec80871e52",
++              "name": "baseline_summary",
++              "type": "string",
++              "value": "The dancing plague of 1518 in Strasbourg, Alsace involved between 50 and 400 people dancing uncontrollably for weeks. The cause is unknown, with theories including stress-induced mass hysteria and ergot poisoning. The outbreak ended when the dancers prayed for absolution at a shrine. There is controversy over the number of deaths, with some sources claiming up to fifteen deaths per day, but historical documents do not confirm any fatalities. Similar events have been reported throughout history, inspiring various works of pop culture."
++            }
++          ]
++        },
++        "options": {}
++      }
++    },
++    {
++      "id": "584d9374-ce54-42df-9c88-b996754e8967",
++      "name": "Summary - Simple - Map",
++      "type": "@n8n/n8n-nodes-langchain.chainSummarization",
++      "typeVersion": 2,
++      "position": [
++        1740,
++        600
++      ],
++      "parameters": {
++        "chunkSize": 4000,
++        "options": {}
++      }
++    },
++    {
++      "id": "beaf320b-b14d-44a9-b7f3-1d4379875531",
++      "name": "OpenAI Chat Model1",
++      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
++      "typeVersion": 1,
++      "position": [
++        2080,
++        760
++      ],
++      "parameters": {
++        "model": "gpt-3.5-turbo-0125",
++        "options": {
++          "temperature": 0
++        }
++      }
++    },
++    {
++      "id": "b3f8e974-8f56-4cfe-ae9d-dd0906bb87c4",
++      "name": "Evaluate to Baseline",
++      "type": "@n8n/n8n-nodes-langchain.code",
++      "typeVersion": 1,
++      "position": [
++        2060,
++        600
++      ],
++      "parameters": {
++        "code": {
++          "execute": {
++            "code": "const { loadEvaluator } = require(\"lan
+… (2664 more chars)</pre></details></section>
+<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">guard: connected to http://flows-ops-n8n-32258:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: connected to http://flows-ops-n8n-32258:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: forwarded search_workflows
+guard: forwarded get_workflow_history
+guard: forwarded get_workflow_history
+guard: forwarded get_workflow_history
+guard: forwarded search_executions
+guard: forwarded search_executions
+guard: forwarded search_executions
+guard: connected to http://flows-ops-n8n-32258:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+</pre></section>
+</main>
