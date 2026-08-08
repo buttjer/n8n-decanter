@@ -671,10 +671,14 @@ below are written bare for readability; add the prefix if your shell needs it.
   **Archiving is outward-facing**
   (the workflow leaves the active list; a published one goes offline;
   reversible only in the n8n UI) — never without an explicit instruction
-  naming that workflow. After any structure act the **live mirror** refreshes
-  the local `workflow.json` snapshot for you in the background (no manual
-  `pull` needed); run `pull` yourself only if you want it immediately or the
-  mirror is disabled (`"liveMirror": false`).
+  naming that workflow. After any structure act the **live mirror** runs a full
+  `pull` for you in the background (no manual `pull` needed) — that is
+  `workflow.json` **and** the `code/` files **and** `.decanter.json`, including
+  file moves on a rename. So it can overwrite an unpushed local edit: **push or
+  commit before you restructure**, and repair a rename in the documented order
+  (expression parameters in n8n first, then local code, then `push`) — the other
+  order feeds your code fix to the refresh. Run `pull` yourself only if you want
+  it immediately, or disable the mirror with `"liveMirror": false`.
 - **Backups** — `n8n-decanter backup create <workflow>` captures a versioned,
   redeployable full export into a committed `backups/` folder (needs
   `N8N_API_KEY`); the file carries credential refs + any embedded secrets, so

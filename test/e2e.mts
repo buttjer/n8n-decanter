@@ -973,6 +973,43 @@ await step("watch path: pushSingleNode round-trip (MCP, addressed by current rem
   assert.equal(remoteNode("wf123", "n2").parameters.jsCode, "return $input.all(); // watched\n");
 });
 
+// Plan 69: a watch save used to run the per-FILE subset, which cannot see node
+// names and so never caught a dangling `$('…')` — watch shipped what `push`
+// refuses. It now runs the folder guard with a SCOPED abort. Both halves matter:
+// blocking only the saved file is what keeps a multi-file rename repair working.
+await step("watch: a dangling ref blocks the file that has it, not a save of a clean sibling", async () => {
+  const { pushSingleNode } = await import(pathToFileURL(path.join(PROJECT, "lib/push.mts")).href);
+  const errs: string[] = [];
+  const warns: string[] = [];
+  const log = { info: () => {}, ok: () => {}, warn: (m: string) => void warns.push(m), error: (m: string) => void errs.push(m) };
+  const client = await mcpClient();
+  const own = path.join(dir1, "code", "transform-eu-us.js");
+  const sibling = path.join(dir1, "code", "amazon-feed.ts");
+  const ownBefore = readFileSync(own, "utf8");
+  const siblingBefore = readFileSync(sibling, "utf8");
+  const remoteBefore = remoteNode("wf123", "n2").parameters.jsCode;
+
+  // (a) the violation is in the file being saved → refused, nothing reaches n8n
+  writeFileSync(own, "return $('Ghost Node').all();\n");
+  await assert.rejects(
+    () => pushSingleNode(client, dir1, "n2", {}, log),
+    /does not comply with the decanter layout/,
+    "a dangling ref in the saved file must refuse the save",
+  );
+  assert.ok(errs.some((e) => /Ghost Node/.test(e)), `the reason must reach the user: ${errs.join("|")}`);
+  assert.equal(remoteNode("wf123", "n2").parameters.jsCode, remoteBefore, "a refused save must not write");
+
+  // (b) the violation is elsewhere in the folder → reported, save goes through
+  writeFileSync(own, ownBefore);
+  writeFileSync(sibling, "return $('Ghost Node').all();\n");
+  warns.length = 0;
+  await pushSingleNode(client, dir1, "n2", {}, log);
+  assert.equal(remoteNode("wf123", "n2").parameters.jsCode, ownBefore, "a sibling's breakage must not block this save");
+  assert.ok(warns.some((w) => /Ghost Node/.test(w) && /not blocking this save/.test(w)), `the sibling's breakage must still be reported: ${warns.join("|")}`);
+
+  writeFileSync(sibling, siblingBefore);
+});
+
 await step("watch: takes a workflow id, errors on an unknown one before watching", async () => {
   const r = await cli("watch", "nope");
   assert.equal(r.code, 1);

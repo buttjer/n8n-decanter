@@ -139,8 +139,10 @@ even under `--offline`; the rest of the sync tier is skipped with
 
 The `layout` check is the same guard [push](/docs/cli/push/) and
 [watch](/docs/cli/watch/) run before writing — removing the old standalone
-`check` verb removed a *view*, not a gate. Hard errors (`--force` does **not**
-bypass them):
+`check` verb removed a *view*, not a gate. A `watch` save runs the same checks
+but only *refuses* on violations in the file being saved; the rest it prints
+(see [watch](/docs/cli/watch/)). Hard errors (`--force` does **not** bypass
+them):
 
 - inline code in `workflow.json` without a `//@file:` placeholder
 - placeholders pointing at missing, `.remote.js`, or non-`.js`/`.ts` files,

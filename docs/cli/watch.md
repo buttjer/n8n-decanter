@@ -31,7 +31,11 @@ Keep the n8n editor tab open on the watched workflow — n8n 2.x reflects each
 push in the open canvas natively (no proxy, no manual refresh), and skips the
 update if the tab has unsaved edits so nothing in-browser is clobbered.
 
-Node saves are guarded by the same
-[compliance rules](/docs/cli/preflight/#what-the-compliance-guard-catches) as a
-manual push, so a broken save doesn't reach n8n. `--force` carries through to
+Node saves run the same folder-wide
+[compliance guard](/docs/cli/preflight/#what-the-compliance-guard-catches) as a
+manual push — including the dangling-reference check, which needs the whole
+folder to know which node names exist. A save is **refused** when the violation
+is in the file you just saved; violations elsewhere in the folder are printed on
+every save but let it through, so a multi-file repair after a rename doesn't
+deadlock the loop. `push` and `preflight` gate on all of them. `--force` carries through to
 the per-node drift guard, exactly as on [push](/docs/cli/push/).

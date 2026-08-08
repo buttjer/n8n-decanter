@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `watch` save now runs the same folder-wide compliance guard as `push`.** It
+  used to check only the saved file, which cannot see the workflow's node names —
+  so it could not catch a dangling `$('Renamed Node')` and pushed straight to the
+  draft what a manual `push` refuses outright. The break then surfaced at run time
+  in n8n instead of at save time. Four surfaces already claimed the guards were
+  the same; now they are.
+
+  **The abort is scoped, deliberately:** a save is refused when the violation is
+  in the file you just saved, and violations elsewhere in the folder are printed
+  on every save without blocking it. Repairing a rename means fixing several
+  files, and a folder-wide abort would stop every save until the last fix — which
+  would disable `watch` during exactly the job it is for.
+
+- **`liveMirror` is documented as what it is: a full `pull`.** The shipped agent
+  contract and the config reference both described it as refreshing the
+  `workflow.json` snapshot. It also rewrites the `code/` files and
+  `.decanter.json` and moves files on a rename, so it can overwrite an unpushed
+  local edit — which is worth knowing before you restructure. No behaviour change;
+  the docs now say what the code has always done.
+
 ## [0.10.0] - 2026-08-07
 
 ### Added

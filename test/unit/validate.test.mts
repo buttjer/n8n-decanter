@@ -48,7 +48,7 @@ const codeNode = (id: string, name: string, jsCode: string) =>
 
 describe("validateWorkflowDir", () => {
   it("passes a compliant layout with no errors or warnings", () => {
-    assert.deepEqual(validateWorkflowDir(scaffold()), { errors: [], warnings: [] });
+    assert.deepEqual(validateWorkflowDir(scaffold()), { errors: [], warnings: [], errorsByFile: {} });
   });
 
   it("errors on missing .decanter.json", () => {
@@ -174,7 +174,7 @@ describe("validateWorkflowDir", () => {
     });
 
     it("stays silent once the map agrees with the placeholder", () => {
-      assert.deepEqual(validateWorkflowDir(scaffold()), { errors: [], warnings: [] });
+      assert.deepEqual(validateWorkflowDir(scaffold()), { errors: [], warnings: [], errorsByFile: {} });
     });
   });
 
@@ -251,6 +251,45 @@ describe("validateWorkflowDir", () => {
     writeFileSync(path.join(dir, "fixtures", "fetch.json"), JSON.stringify({ node: "Fetch", items: [] }));
     const { errors } = validateWorkflowDir(dir);
     assert.ok(errors.some((e) => /fixtures\/ dir is retired/.test(e)), errors.join("|"));
+  });
+
+  // Plan 69: a watch save pushes ONE file, so it needs to know which errors are
+  // that file's. Attribution is built where the errors are produced — this pins
+  // both halves, because getting only one right is what made watch lax.
+  describe("errorsByFile (what a single-file save may be blamed for)", () => {
+    const twoNodes = {
+      nodes: [
+        codeNode("n2", "Main", "//@file:code/main.js"),
+        codeNode("n3", "Other", "//@file:code/other.js"),
+      ],
+    };
+    const state = JSON.stringify({ workflowId: "wf1", nodes: { n2: { file: "code/main.js" }, n3: { file: "code/other.js" } } });
+
+    it("attributes a dangling ref to the file that contains it, and to no other", () => {
+      const dir = scaffold({
+        state,
+        workflow: twoNodes,
+        files: { "code/main.js": "return [];\n", "code/other.js": "return $('Ghost').all();\n" },
+      });
+      const { errors, errorsByFile } = validateWorkflowDir(dir);
+      assert.ok(errors.some((e) => /references \$\('Ghost'\)/.test(e)), errors.join("|"));
+      assert.ok(errorsByFile?.["code/other.js"]?.some((e) => /references \$\('Ghost'\)/.test(e)), "the ref belongs to other.js");
+      assert.equal(errorsByFile?.["code/main.js"], undefined, "a clean file must not collect the other file's error");
+    });
+
+    it("leaves folder-level errors unattributed, so a save is not blamed for them", () => {
+      const dir = scaffold({
+        state,
+        workflow: {
+          nodes: [codeNode("n2", "Main", "//@file:code/main.js"), codeNode("n3", "Main", "//@file:code/other.js")],
+        },
+        files: { "code/other.js": "return [];\n" },
+      });
+      const { errors, errorsByFile } = validateWorkflowDir(dir);
+      assert.ok(errors.some((e) => /duplicate node name/.test(e)), errors.join("|"));
+      const attributed = Object.values(errorsByFile ?? {}).flat();
+      assert.ok(!attributed.some((e) => /duplicate node name/.test(e)), "a duplicate name belongs to the folder, not to one save");
+    });
   });
 });
 
