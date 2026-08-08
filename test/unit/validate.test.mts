@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 import type { Workflow } from "../../lib/types.mts";
-import { danglingNodeRefs, validateNodeFile, validateWorkflowDir } from "../../lib/validate.mts";
+import { danglingNodeRefs, TS_INSTALL_HINT, validateNodeFile, validateWorkflowDir } from "../../lib/validate.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-validate-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -346,5 +346,15 @@ describe("danglingNodeRefs", () => {
 
   it("reports each missing name once per node, not once per occurrence", () => {
     assert.deepEqual(danglingNodeRefs([code("T", "$('Gone').all(); $('Gone').first();")]), [{ node: "T", name: "Gone", ref: "$('Gone')", where: "code" }]);
+  });
+});
+
+// Plan-77 sweep finding. This string is ADVICE THAT RUNS: a bare
+// `npm i -D typescript` installs 7.x, whose compiler dropped the programmatic
+// CompilerHost API the node-file typecheck drives — so unpinned advice trades a
+// skipped check for a broken one. A blind round hit it and pinned 5.9.3 by hand.
+describe("the typescript install hint", () => {
+  it("pins the major, because an unpinned install breaks the check it enables", () => {
+    assert.match(TS_INSTALL_HINT, /typescript@\^5/);
   });
 });

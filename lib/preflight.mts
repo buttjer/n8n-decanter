@@ -31,7 +31,7 @@ import { ENABLE_MCP_HINT, getWorkflowDetails, isUnavailableInMcp, type McpClient
 import { computeSyncFacts, type SyncFacts } from "./status.mts";
 import { readScenarioMeta, runSimulation, type SimSource, sourceFile } from "./simulate.mts";
 import type { DecanterConfig, Execution, Log, Workflow } from "./types.mts";
-import { runTypecheckResult, type TypecheckResult, validateWorkflowDir } from "./validate.mts";
+import { runTypecheckResult, TS_INSTALL_HINT, type TypecheckResult, validateWorkflowDir } from "./validate.mts";
 import { publicationState, publishedVersionLagsDraft } from "./util.mts";
 
 // ---------- model ----------
@@ -321,7 +321,7 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
         status: "skip",
         message: noTs ? "typescript not installed — typecheck skipped" : "no tsconfig.json — typecheck skipped",
         reason,
-        unlock: noTs ? "npm i -D typescript to enable type checks" : "add a tsconfig.json to enable type checks",
+        unlock: noTs ? `${TS_INSTALL_HINT} to enable type checks` : "add a tsconfig.json to enable type checks",
       };
     }
     return { status: "pass", message: "node files typecheck clean" };
