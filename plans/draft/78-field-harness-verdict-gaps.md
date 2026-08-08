@@ -6,15 +6,18 @@ round's evidence — the cheapest possible defects to leave in place)
 **Source:** the triple sweep of 2026-08-08 (28 rounds, `ftrun-56329` …
 `ftrun-86911`), archived in this same PR. Every finding here is a **harness**
 defect; none is a product defect.
-**Snapshot:** 2026-08-08T13:10Z @ f6bff72
+**Snapshot:** 2026-08-08T14:05Z @ 0da3fd3 *(reworked: findings 4 and 5 added
+after the first `--n8n-tag` sweep — same shape, found the same way)*
 **Model:** Sonnet — three well-specified mechanical fixes.
 
 Running the same sweep three times turned two results that had been recorded as
-facts into **variance**, and exposed three ways the harness loses or fakes
-evidence: a failing `verify` writes no verdict at all, `--container` spends a
-unit on a condition it cannot stage, and one scenario's turn names a workflow the
-seed pack makes ambiguous. All three make a round read as *covered* when it was
-not — the exact failure mode this harness keeps catching in itself.
+facts into **variance**, and exposed five ways the harness loses, fakes or
+overcharges for evidence: a failing `verify` writes no verdict at all,
+`--container` spends a unit on a condition it cannot stage, one scenario's turn
+names a workflow the seed pack makes ambiguous, the fenced credential is checked
+nine times instead of once, and the archived manifest still carries a session
+JWT. Most of them make a round read as *covered* when it was not — the exact
+failure mode this harness keeps catching in itself.
 
 ## Why these are worth a P1
 
@@ -70,13 +73,57 @@ target). `verifyWorkflows: ["s8-ladder"]` then fails when the agent picks the
 other one — and the agent is not wrong, it answered truthfully for the workflow
 it was asked about.
 
-This was **already documented** in `a8dfa17`'s commit message as a known scenario
-bug, and left unfixed. The sweep sharpens it: **it is not deterministic.** The
-agent picked the wrong workflow in round A and the right one in rounds B and C —
-so the old single-round record ("S8: scenario bug") and the two PASSes are the
-same scenario, resolved by a coin flip.
+**Already fixed — PR #237, which sat open while every one of these sweeps ran.**
+It names *"Weekly revenue totals"* outright in turn 1, does the same for S9, and
+generalises the rule in `STYLE.md`: naming something the pack seeds is only half
+of it, the name must also not fit anything *else* the pack seeds. Nothing here
+proposes a fix; this entry exists to record what the sweeps added to it.
 
-**Fix:** name the ladder workflow unambiguously in turn 1 (or rename the seed).
+What they added is the **coin flip**, now on four data points instead of two.
+#237 argues from `ftrun-45973` (wrong workflow) against `ftrun-38054` (right
+one); sweep A picked wrong, and B, C and the 2.33.3 round all picked right from
+the identical prompt. So the record this replaces — `a8dfa17`'s commit message
+filing S8 as "a known scenario bug" — and the PASSes were never different
+scenarios. They were the same one, resolved by chance.
+
+**Leaving it unmerged through the series turned out to be the right accident.**
+All five sweeps ran on byte-identical scenario files; merging mid-series would
+have made S8 in rounds A–C incomparable with D and E, for a fix worth one unit.
+
+### 4. `--container` checks its credential per unit, *after* staging
+
+Found running the first `--n8n-tag` sweep (2026-08-08). `test/field-test/.env`
+holds the Anthropic credential and is gitignored, so a **fresh worktree never
+has one** — and container mode discovers that in `containerSetup`, which runs
+*after* the unit's stage. The sweep booted and tore down **nine n8n instances to
+print the same message nine times**, and only the raw Node stack made it legible.
+
+The scenario-prerequisite gate already does this right ("prerequisites unmet —
+nothing was spent", checked before the image build). The credential is not on
+that path.
+
+Sharper than a papercut, because **the repo's own worktree rule steers you into
+it**: every repo-modifying task is supposed to run in a worktree, and a fresh
+worktree cannot run a fenced sweep until someone copies an ignored file into it.
+
+**Fix:** check the credential **once, before the first stage**, with the same
+"nothing was spent" wording; say plainly that `.env` is gitignored and name the
+copy. And catch a unit's failure into one readable line rather than letting an
+`execFile` rejection print a stack per unit.
+
+### 5. The archived manifest still ships an unredacted `ownerCookie`
+
+`run.mts` builds its secrets list from `[mcpToken, apiKey]` and overwrites only
+those two, so the n8n **owner session JWT travels into git verbatim** — 40 of the
+64 archives before this round, and every one written since. The README states
+secrets are scrubbed at archive time, so this is a contract violation rather than
+a judgement call.
+
+Practical risk is ~nil (a throwaway container on an ephemeral localhost port,
+long expired). Fixing it is one line; leaving a public repo full of session JWTs
+is not worth the argument.
+
+**Fix:** add `ownerCookie` to the redaction, and re-pack the existing archives.
 
 ## Tasks
 
@@ -84,9 +131,12 @@ same scenario, resolved by a coin flip.
    non-zero exit + an explicit banner in `report.html`.
 2. `run.mts` — treat `requiresSeedEnvOff` as host-only under `--container`,
    refused before spend, listed by name in the `--dry-run` plan.
-3. `scenarios/S8.md` — disambiguate turn 1 against the `wave2` pack.
+3. ~~`scenarios/S8.md` — disambiguate turn 1~~ — **done, PR #237.**
 4. Backfill: re-render the four pre-existing no-verdict archives once task 1
    lands, so the archive stops carrying unexplained blanks.
+5. `run.mts` — credential check once, before the first stage; one readable line
+   per failed unit instead of a stack.
+6. `run.mts` — redact `ownerCookie`; re-pack the archives that carry one.
 
 ## Acceptance
 
@@ -94,7 +144,11 @@ same scenario, resolved by a coin flip.
   false`** verdict file, and the sweep exits non-zero.
 - `--isolate --all --container --dry-run` names S14 among the dropped host-only
   scenarios, and stages nothing for it.
-- Three consecutive S8 rounds act on `s8-ladder`.
+- Three consecutive S8 rounds act on `s8-ladder` *(should already hold via #237
+  — worth confirming on the next round rather than assuming)*.
+- `--container` with no credential refuses **before the first stage**, booting
+  nothing.
+- No archived `manifest.json` contains an `n8n-auth=` JWT.
 
 ## Notes
 

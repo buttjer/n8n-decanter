@@ -1,0 +1,1613 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S8" class="navlink pass">S8 <span class="badge pass">PASS</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:56502</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>sonnet</code> · n8n <code>n8nio/n8n:2.33.3</code> · seeds <code>wave2</code>. Two rounds are only comparable when these match.</p>
+
+<section id="S8"><h2>S8 <span class="badge pass">PASS</span></h2><div class="persona">same user, risk-averse about production; wants evidence, not assurances</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">The weekly digest flow needs a change: the totals it builds should skip anything marked as a refund, and round to two decimals instead of whatever it does now. This one runs against real numbers, so before it goes anywhere near production I want to know it still does the right thing.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls /work; echo ---; cat /work/decanter.config.json 2&gt;/dev/null</pre><div class="tres "><span class="tlab">result</span><pre>AGENTS.md
+CLAUDE.md
+decanter-ts-plugin
+decanter.config.json
+n8n-decanter-0.10.0.tgz
+n8n-globals.d.ts
+node_modules
+opencode.json
+package-lock.json
+package.json
+shared
+tsconfig.json
+workflows
+---
+{
+  "root": "./workflows",
+  "workflows": []
+}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls /work/workflows; echo ---; find /work/workflows -iname "*digest*"</pre><div class="tres "><span class="tlab">result</span><pre>---</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__search_workflows",
+  "max_results": 5
+}</pre><div class="tres "><span class="tlab">result</span><pre></pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_workflows</span></summary><pre class="tin">{
+  "query": "digest"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"data":[{"id":"uspqlZsJEfCnM0Hm","name":"Weekly digest roll-up","description":null,"active":false,"createdAt":"2026-08-08T13:29:22.977Z","updatedAt":"2026-08-08T13:29:23.146Z","triggerCount":0,"scopes":["execution:reveal","workflow:create","workflow:delete","workflow:disableRedaction","workflow:enableRedaction","workflow:execute","workflow:execute-chat","workflow:export","workflow:import","workflow:list","workflow:move","workflow:publish","workflow:read","workflow:share","workflow:unpublish","workflow:unshare","workflow:update"],"canExecute":true,"availableInMCP":true,"tags":[]}],"count":1}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Found it: "Weekly digest roll-up" (id `uspqlZsJEfCnM0Hm`). Let me add it to the config and pull it locally.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/decanter.config.json</span></summary><pre class="tin diff"><span class="dl ddel">-   <span class="ts">"workflows"</span>: []</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [<span class="ts">"uspqlZsJEfCnM0Hm"</span>]</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull uspqlZsJEfCnM0Hm 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote weekly-digest-roll-up/code/build-digest.js
+wrote weekly-digest-roll-up/workflow.json
+committed: decanter: pulled "Weekly digest roll-up" (uspqlZsJEfCnM0Hm)
+✓ pulled "Weekly digest roll-up" -&gt; /work/workflows/weekly-digest-roll-up (0.1s)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Pulled successfully. Let me look at the workflow structure and the Code node source.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-digest-roll-up/workflow.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "uspqlZsJEfCnM0Hm",
+3	  "name": "Weekly digest roll-up",
+4	  "active": false,
+5	  "isArchived": false,
+6	  "createdAt": "2026-08-08T13:29:22.977Z",
+7	  "updatedAt": "2026-08-08T13:29:23.146Z",
+8	  "nodes": [
+9	    {
+10	      "id": "trig",
+11	      "name": "Schedule",
+12	      "type": "n8n-nodes-base.scheduleTrigger",
+13	      "typeVersion": 1.2,
+14	      "position": [
+15	        0,
+16	        0
+17	      ],
+18	      "parameters": {
+19	        "rule": {
+20	          "interval": [
+21	            {
+22	              "field": "hours"
+23	            }
+24	          ]
+25	        }
+26	      }
+27	    },
+28	    {
+29	      "id": "c1",
+30	      "name": "Build digest",
+31	      "type": "n8n-nodes-base.code",
+32	      "typeVersion": 2,
+33	      "position": [
+34	        220,
+35	        0
+36	      ],
+37	      "parameters": {
+38	        "jsCode": "//@file:code/build-digest.js",
+39	        "mode": "runOnceForAllItems"
+40	      }
+41	    },
+42	    {
+43	      "id": "d1",
+44	      "name": "Done",
+45	      "type": "n8n-nodes-base.noOp",
+46	      "typeVersion": 1,
+47	      "position": [
+48	        440,
+49	        0
+50	      ],
+51	      "parameters": {}
+52	    }
+53	  ],
+54	  "connections": {
+55	    "Build digest": {
+56	      "main": [
+57	        [
+58	          {
+59	            "index": 0,
+60	            "node": "Done",
+61	            "type": "main"
+62	          }
+63	        ]
+64	      ]
+65	    },
+66	    "Schedule": {
+67	      "main": [
+68	        [
+69	          {
+70	            "index": 0,
+71	            "node": "Build digest",
+72	            "type": "main"
+73	          }
+74	        ]
+75	      ]
+76	    }
+77	  },
+78	  "settings": {
+79	    "availableInMCP": true,
+80	    "executionOrder": "v1"
+81	  },
+82	  "meta": null,
+83	  "tags": [],
+84	  "versionId": "dedc33a3-6918-4114-b604-aa7d3e2fa889",
+85	  "nodeGroups": [],
+86	  "parentFolderId": null,
+87	  "triggerCount": 0
+88	}
+89	</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-digest-roll-up/code/build-digest.js</pre><div class="tres "><span class="tlab">result</span><pre>1	// weekly roll-up
+2	return [{ json: { week: 'n/a', total: 0 } }];
+3	</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__get_workflow_history,mcp__n8n-instance__get_execution,mcp__n8n-instance__search_executions",
+  "max_results": 5
+}</pre><div class="tres "><span class="tlab">result</span><pre>
+
+</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_history</span></summary><pre class="tin">{
+  "workflowId": "uspqlZsJEfCnM0Hm"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"uspqlZsJEfCnM0Hm","versions":[{"versionId":"dedc33a3-6918-4114-b604-aa7d3e2fa889","authors":"Priya Ops","name":null,"description":null,"autosaved":false,"createdAt":"2026-08-08T13:29:22.979Z","updatedAt":"2026-08-08T13:29:22.979Z"}],"count":1}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter executions "weekly-digest-roll-up" 2&gt;&amp;1 | head -50</pre><div class="tres "><span class="tlab">result</span><pre>no executions on the server for uspqlZsJEfCnM0Hm</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls -la /work/shared 2&gt;&amp;1; echo ---; find /work/shared -type f 2&gt;&amp;1; echo ---; cat /work/n8n-globals.d.ts 2&gt;&amp;1 | head -80</pre><div class="tres "><span class="tlab">result</span><pre>total 4
+drwxr-xr-x  4 agent agent 128 Aug  8 13:29 .
+drwxr-xr-x 23 agent agent 736 Aug  8 13:29 ..
+-rw-r--r--  1 agent agent   0 Aug  8 13:29 .gitkeep
+-rw-r--r--  1 agent agent 495 Aug  8 13:29 example-helpers.ts
+---
+/work/shared/.gitkeep
+/work/shared/example-helpers.ts
+---
+// Ambient globals available inside n8n Code nodes ("Run Once for All Items" /
+// "Run Once for Each Item"). Pragmatic subset — loose where n8n is dynamic.
+
+interface N8nBinaryData {
+  data: string;
+  mimeType: string;
+  fileName?: string;
+  fileExtension?: string;
+  fileSize?: string;
+  directory?: string;
+  id?: string;
+  [key: string]: unknown;
+}
+
+interface N8nItem {
+  json: Record&lt;string, any&gt;;
+  binary?: Record&lt;string, N8nBinaryData&gt;;
+  pairedItem?: number | { item: number; input?: number };
+  error?: Error;
+}
+
+interface N8nInput {
+  all(branchIndex?: number, runIndex?: number): N8nItem[];
+  first(branchIndex?: number, runIndex?: number): N8nItem;
+  last(branchIndex?: number, runIndex?: number): N8nItem;
+  /** Only in "Run Once for Each Item" mode. */
+  item: N8nItem;
+  params?: Record&lt;string, any&gt;;
+}
+
+interface N8nNodeRef {
+  all(branchIndex?: number, runIndex?: number): N8nItem[];
+  first(branchIndex?: number, runIndex?: number): N8nItem;
+  last(branchIndex?: number, runIndex?: number): N8nItem;
+  /**
+   * The item on this node paired to the current item ("Run Once for Each
+   * Item" context). Non-undefined: a missing pairing throws at runtime, it
+   * doesn't yield `undefined`. Mirrors `$input.item`.
+   */
+  item: N8nItem;
+  itemMatching(itemIndex: number): N8nItem;
+  params: Record&lt;string, any&gt;;
+  context: Record&lt;string, any&gt;;
+  isExecuted: boolean;
+}
+
+/** Access output of an earlier node: `$("Node Name").all()` */
+declare function $(nodeName: string): N8nNodeRef;
+
+declare const $input: N8nInput;
+/** Shorthand for the current item's json ("Run Once for Each Item" mode). */
+declare const $json: Record&lt;string, any&gt;;
+declare const $binary: Record&lt;string, N8nBinaryData&gt;;
+declare const $env: Record&lt;string, string | undefined&gt;;
+
+declare const $execution: {
+  id: string;
+  mode: "test" | "production";
+  resumeUrl?: string;
+  resumeFormUrl?: string;
+  customData?: {
+    set(key: string, value: string): void;
+    get(key: string): string | undefined;
+    setAll(values: Record&lt;string, string&gt;): void;
+    getAll(): Record&lt;string, string&gt;;
+  };
+};
+
+declare const $workflow: { id: string; name: string; active: boolean };
+declare const $prevNode: { name: string; outputIndex: number; runIndex: number };
+declare const $runIndex: number;
+declare const $itemIndex: number;
+declare const $nodeVersion: number;
+declare const $nodeId: string;
+declare const $webhookId: string | undefined;
+
+/** Per-workflow / per-node persisted store. */
+declare function $getWorkflowStaticData(type: "global" | "node"): Record&lt;string, any&gt;;
+
+/** Query data with JMESPath. Both spellings work — `$jmesPath` is n8n's</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat /work/decanter.config.json; echo ---; npx n8n-decanter data-tables 2&gt;&amp;1 | head -60</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "root": "./workflows",
+  "workflows": ["uspqlZsJEfCnM0Hm"]
+}
+---
+wrote data-tables/orders-Jk0IZ3Uwi1BLVV59/{meta,columns,rows}.json (3 columns, 5 rows)
+✓ 1 data table -&gt; data-tables (gitignored — temp data, "data-tables clean" removes it)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat /work/data-tables/orders-Jk0IZ3Uwi1BLVV59/meta.json; echo ---COLUMNS---; cat /work/data-tables/orders-Jk0IZ3Uwi1BLVV59/columns.json; echo ---ROWS---; cat /work/data-tables/orders-Jk0IZ3Uwi1BLVV59/rows.json</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "id": "Jk0IZ3Uwi1BLVV59",
+  "name": "Orders",
+  "projectId": "bLRKVboWb8XDRIyb",
+  "fetchedAt": "2026-08-08T13:30:31.563Z",
+  "rowCount": 5,
+  "filter": null,
+  "search": null,
+  "sortBy": null,
+  "limit": 100,
+  "all": false
+}
+---COLUMNS---
+[
+  {
+    "updatedAt": "2026-08-08T13:29:23.111Z",
+    "createdAt": "2026-08-08T13:29:23.111Z",
+    "id": "NakrNKd7IkStSAwU",
+    "dataTableId": "Jk0IZ3Uwi1BLVV59",
+    "name": "reference",
+    "type": "string",
+    "index": 0
+  },
+  {
+    "updatedAt": "2026-08-08T13:29:23.111Z",
+    "createdAt": "2026-08-08T13:29:23.111Z",
+    "id": "AoEglbUD6raTZgeH",
+    "dataTableId": "Jk0IZ3Uwi1BLVV59",
+    "name": "status",
+    "type": "string",
+    "index": 1
+  },
+  {
+    "updatedAt": "2026-08-08T13:29:23.111Z",
+    "createdAt": "2026-08-08T13:29:23.111Z",
+    "id": "Iw1bFv2WhF6IiDZH",
+    "dataTableId": "Jk0IZ3Uwi1BLVV59",
+    "name": "total",
+    "type": "number",
+    "index": 2
+  }
+]
+---ROWS---
+[
+  {
+    "reference": "A-1001",
+    "status": "pending",
+    "total": 42.5,
+    "id": 1,
+    "createdAt": "2026-08-08T13:29:23.134Z",
+    "updatedAt": "2026-08-08T13:29:23.134Z"
+  },
+  {
+    "reference": "A-1002",
+    "status": "shipped",
+    "total": 13.25,
+    "id": 2,
+    "createdAt": "2026-08-08T13:29:23.134Z",
+    "updatedAt": "2026-08-08T13:29:23.134Z"
+  },
+  {
+    "reference": "A-1003",
+    "status": "pending",
+    "total": 99.99,
+    "id": 3,
+    "createdAt": "2026-08-08T13:29:23.134Z",
+    "updatedAt": "2026-08-08T13:29:23.134Z"
+  },
+  {
+    "reference": "A-1004",
+    "status": "cancelled",
+    "total": 0,
+    "id": 4,
+    "createdAt": "2026-08-08T13:29:23.134Z",
+    "updatedAt": "2026-08-08T13:29:23.134Z"
+  },
+  {
+    "reference": "A-1005",
+    "status": "pending",
+    "total": 7.01,
+    "id": 5,
+    "createdAt": "2026-08-08T13:29:23.134Z",
+    "updatedAt": "2026-08-08T13:29:23.134Z"
+  }
+]</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">grep -n -i "table\|DataTable" /work/n8n-globals.d.ts</pre><div class="tres "><span class="tlab">result</span><pre>(Bash completed with no output)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">find /work/workflows/weekly-digest-roll-up -type f | xargs -I{} sh -c 'echo ==={}===; cat {}'</pre><div class="tres "><span class="tlab">result</span><pre>===/work/workflows/weekly-digest-roll-up/workflow.json===
+{
+  "id": "uspqlZsJEfCnM0Hm",
+  "name": "Weekly digest roll-up",
+  "active": false,
+  "isArchived": false,
+  "createdAt": "2026-08-08T13:29:22.977Z",
+  "updatedAt": "2026-08-08T13:29:23.146Z",
+  "nodes": [
+    {
+      "id": "trig",
+      "name": "Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c1",
+      "name": "Build digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "//@file:code/build-digest.js",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "d1",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Build digest": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Done",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Schedule": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Build digest",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true,
+    "executionOrder": "v1"
+  },
+  "meta": null,
+  "tags": [],
+  "versionId": "dedc33a3-6918-4114-b604-aa7d3e2fa889",
+  "nodeGroups": [],
+  "parentFolderId": null,
+  "triggerCount": 0
+}
+===/work/workflows/weekly-digest-roll-up/.decanter.json===
+{
+  "workflowId": "uspqlZsJEfCnM0Hm",
+  "nodes": {
+    "c1": {
+      "file": "code/build-digest.js",
+      "lastPushedHash": "sha256:438980bb8fdd7576053faab8232353916b5b666a88ddfba117470b425afacdd0",
+      "name": "Build digest"
+    }
+  },
+  "name": "Weekly digest roll-up"
+}
+===/work/workflows/weekly-digest-roll-up/code/build-digest.js===
+// weekly roll-up
+return [{ json: { week: 'n/a', total: 0 } }];</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">I pulled the workflow and found the current state doesn't match what the request implies. `Build digest` (the Code node) is a hardcoded stub:
+
+```js
+// weekly roll-up
+return [{ json: { week: 'n/a', total: 0 } }];
+```
+
+It doesn't read any input at all — the graph is just `Schedule → Build digest → Done`, no upstream node feeding it order/transaction data. So there's no existing "totals" logic to adjust for refunds/rounding; the digest doesn't compute anything real yet.
+
+I did find a data table named **Orders** (`reference`, `status`, `total` columns — statuses currently seen: pending/shipped/cancelled) that looks like the natural source, but it isn't wired into this workflow. Before I add a node to pull from it and write the roll-up logic, can you confirm:
+
+1. Should `Build digest` read from the **Orders** data table (filtering `status` for a refund marker — is that value `"refunded"`, or something else)?
+2. Is `total` the field to sum, and is "week" meant to bucket by `createdAt`, or is this meant to just total everything since the last run?
+
+I'd rather confirm the source than wire up a guessed data pipeline on a workflow you said is going near production numbers.</div></div><div class="msg done"><div class="who">↳ turn result · $0.634</div><div class="bubble">I pulled the workflow and found the current state doesn't match what the request implies. `Build digest` (the Code node) is a hardcoded stub:
+
+```js
+// weekly roll-up
+return [{ json: { week: 'n/a', total: 0 } }];
+```
+
+It doesn't read any input at all — the graph is just `Schedule → Build digest → Done`, no upstream node feeding it order/transaction data. So there's no existing "totals" logic to adjust for refunds/rounding; the digest doesn't compute anything real yet.
+
+I did find a data table named **Orders** (`reference`, `status`, `total` columns — statuses currently seen: pending/shipped/cancelled) that looks like the natural source, but it isn't wired into this workflow. Before I add a node to pull from it and write the roll-up logic, can you confirm:
+
+1. Should `Build digest` read from the **Orders** data table (filtering `status` for a refund marker — is that value `"refunded"`, or something else)?
+2. Is `total` the field to sum, and is "week" meant to bucket by `createdAt`, or is this meant to just total everything since the last run?
+
+I'd rather confirm the source than wire up a guessed data pipeline on a workflow you said is going near production numbers.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">ok — and I'd rather not take your word for it. Can you show me it behaving on real input from an actual run, not made-up data?</div></div><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · search_executions</span></summary><pre class="tin">{
+  "limit": 20
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"data":[{"id":"1","workflowId":"FxkEY98P1VW0Oyct","status":"success","mode":"manual","startedAt":"2026-08-08T13:29:32.827Z","stoppedAt":"2026-08-08T13:29:32.875Z","waitTill":null}],"count":1,"estimated":false}</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__get_workflow_details",
+  "max_results": 3
+}</pre><div class="tres "><span class="tlab">result</span><pre></pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_details</span></summary><pre class="tin">{
+  "workflowId": "FxkEY98P1VW0Oyct"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"workflow":{"id":"FxkEY98P1VW0Oyct","name":"Weekly revenue totals","active":false,"isArchived":false,"versionId":"ff9d138f-48d1-44bf-9540-96bfb423463c","activeVersionId":null,"triggerCount":0,"createdAt":"2026-08-08T13:29:23.048Z","updatedAt":"2026-08-08T13:29:23.146Z","settings":{"executionOrder":"v1","availableInMCP":true},"connections":{"When clicked":{"main":[[{"node":"Fetch orders","type":"main","index":0}]]},"Fetch orders":{"main":[[{"node":"Build totals","type":"main","index":0}]]},"Build totals":{"main":[[{"node":"Done","type":"main","index":0}]]}},"nodes":[{"id":"trig","name":"When clicked","type":"n8n-nodes-base.manualTrigger","typeVersion":1,"position":[0,0],"parameters":{}},{"id":"c1","name":"Fetch orders","type":"n8n-nodes-base.code","typeVersion":2,"position":[220,0],"parameters":{"mode":"runOnceForAllItems","jsCode":"// upstream system hands us the week's orders\nconst orders = [\n  { id: 'A-1', customer: 'ada', amount: 42.5, kind: 'sale' },\n  { id: 'A-2', customer: 'bo', amount: 13.25, kind: 'sale' },\n  { id: 'A-3', customer: 'ada', amount: -13.25, kind: 'refund' },\n  { id: 'A-4', customer: 'cy', amount: 99.999, kind: 'sale' },\n  { id: 'A-5', customer: 'bo', amount: 7.005, kind: 'sale' },\n  { id: 'A-6', customer: 'cy', amount: -99.999, kind: 'refund' },\n];\nreturn orders.map((json) =&gt; ({ json }));\n"}},{"id":"c2","name":"Build totals","type":"n8n-nodes-base.code","typeVersion":2,"position":[440,0],"parameters":{"mode":"runOnceForAllItems","jsCode":"// weekly totals per customer\nconst totals = {};\nfor (const item of $input.all()) {\n  const { customer, amount } = item.json;\n  totals[customer] = (totals[customer] ?? 0) + amount;\n}\nreturn Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));\n"}},{"id":"d1","name":"Done","type":"n8n-nodes-base.noOp","typeVersion":1,"position":[660,0],"parameters":{}}],"nodeGroups":[],"activeVersion":null,"tags":[],"meta":null,"parentFolderId":null,"scopes":["execution:reveal","workflow:create","workflow:delete","workflow:disableRedaction","workflow:enableRedaction","workflow:execute","workflow:execute-chat","workflow:export","workflow:import","workflow:list","workflow:move","workflow:publish","workflow:read","workflow:share","workflow:unpublish","workflow:unshare","workflow:update"],"canExecute":true},"triggerInfo":"This workflow has the following trigger(s):\n"}</pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_execution</span></summary><pre class="tin">{
+  "workflowId": "FxkEY98P1VW0Oyct",
+  "executionId": "1",
+  "includeData": true
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"execution":{"id":"1","workflowId":"FxkEY98P1VW0Oyct","mode":"manual","status":"success","startedAt":"2026-08-08T13:29:32.827Z","stoppedAt":"2026-08-08T13:29:32.875Z","retryOf":null,"retrySuccessId":null,"waitTill":null},"data":{"version":1,"startData":{},"resultData":{"runData":{"When clicked":[{"startTime":1786195772838,"executionIndex":0,"source":[],"hints":[],"executionTime":1,"executionStatus":"success","data":{"main":[[{"json":{},"pairedItem":{"item":0}}]]}}],"Fetch orders":[{"startTime":1786195772840,"executionIndex":1,"source":[{"previousNode":"When clicked","previousNodeOutput":0,"previousNodeRun":0}],"hints":[],"executionTime":30,"executionStatus":"success","data":{"main":[[{"json":{"id":"A-1","customer":"ada","amount":42.5,"kind":"sale"},"pairedItem":{"item":0}},{"json":{"id":"A-2","customer":"bo","amount":13.25,"kind":"sale"},"pairedItem":{"item":0}},{"json":{"id":"A-3","customer":"ada","amount":-13.25,"kind":"refund"},"pairedItem":{"item":0}},{"json":{"id":"A-4","customer":"cy","amount":99.999,"kind":"sale"},"pairedItem":{"item":0}},{"json":{"id":"A-5","customer":"bo","amount":7.005,"kind":"sale"},"pairedItem":{"item":0}},{"json":{"id":"A-6","customer":"cy","amount":-99.999,"kind":"refund"},"pairedItem":{"item":0}}]]}}],"Build totals":[{"startTime":1786195772870,"executionIndex":2,"source":[{"previousNode":"Fetch orders","previousNodeOutput":0,"previousNodeRun":0}],"hints":[],"executionTime":4,"executionStatus":"success","data":{"main":[[{"json":{"customer":"ada","total":29.25}},{"json":{"customer":"bo","total":20.255}},{"json":{"customer":"cy","total":0}}]]}}],"Done":[{"startTime":1786195772874,"executionIndex":3,"source":[{"previousNode":"Build totals","previousNodeOutput":0,"previousNodeRun":0}],"hints":[],"executionTime":0,"executionStatus":"success","data":{"main":[[{"json":{"customer":"ada","total":29.25},"pairedItem":{"item":0}},{"json":{"customer":"bo","total":20.255},"pairedItem":{"item":1}},{"json":{"customer":"cy","total":0},"pairedItem":{"item":2}}]]}}]},"pinData":{},"lastNodeExecuted":"Done"},"executionData":{"contextData":{},"nodeExecutionStack":[],"metadata":{},"waitingExecution":{},"waitingExecutionSource":{},"runtimeData":{"version":1,"establishedAt":1786195772822,"source":"manual","triggerNode":{"name":"When clicked","type":"n8n-nodes-base.manualTrigger"},"redaction":{"version":2,"production":false,"manual":false,"source":"workflow"}}},"resumeToken":"51e574d11d207c553708c025ca5212e5bc5a0e812bbaf96cfe5e1d2cf6275006"}}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Found it — there's a real execution on the server, but it's on a **different** workflow than the one I pulled: `Weekly revenue totals` (`FxkEY98P1VW0Oyct`), not `Weekly digest roll-up`. Its `Fetch orders → Build totals → Done` chain has an actual run with real order data (`kind: 'sale' | 'refund'`, refunds encoded as negative `amount`), and the current `Build totals` code visibly has both bugs you mentioned: it nets refunds into the total instead of excluding them, and it doesn't round (bo's total came out `20.255`). `Weekly digest roll-up` was just an empty stub with no logic and no execution history — not what you meant.
+
+Let me pull the correct workflow and use that real execution as the ground truth.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": ["uspqlZsJEfCnM0Hm"]
+4	}
+5	</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/decanter.config.json</span></summary><pre class="tin diff"><span class="dl ddel">-   <span class="ts">"workflows"</span>: [<span class="ts">"uspqlZsJEfCnM0Hm"</span>]</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [<span class="ts">"uspqlZsJEfCnM0Hm"</span>, <span class="ts">"FxkEY98P1VW0Oyct"</span>]</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull FxkEY98P1VW0Oyct 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote weekly-revenue-totals/code/fetch-orders.js
+wrote weekly-revenue-totals/code/build-totals.js
+wrote weekly-revenue-totals/workflow.json
+committed: decanter: pulled "Weekly revenue totals" (FxkEY98P1VW0Oyct)
+✓ pulled "Weekly revenue totals" -&gt; /work/workflows/weekly-revenue-totals (0.1s)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/weekly-revenue-totals/code/build-totals.js</pre><div class="tres "><span class="tlab">result</span><pre>1	// weekly totals per customer
+2	const totals = {};
+3	for (const item of $input.all()) {
+4	  const { customer, amount } = item.json;
+5	  totals[customer] = (totals[customer] ?? 0) + amount;
+6	}
+7	return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));
+8	</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let me capture that real execution as a committed scenario, so I can pin the fix against real data instead of anything invented.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter scenario create "weekly-revenue-totals" "real-run-1" --execution 1 2&gt;&amp;1</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 1
+✗ execution 1 not captured under executions/ — fetch it first: n8n-decanter executions &lt;ref&gt;</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter executions "weekly-revenue-totals" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote workflows/weekly-revenue-totals/executions/1.json (success)
+✓ 1 execution -&gt; workflows/weekly-revenue-totals/executions (gitignored — temp data, "executions clean" removes it)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter scenario create "weekly-revenue-totals" "real-run-1" --execution 1 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>simulation: 3 node(s) execute for real, 1 pinned from capture 1
+✓ scenario "real-run-1" written from capture 1 -&gt; workflows/weekly-revenue-totals/scenarios/real-run-1.json (7 KB) — no gaps; replay with `preflight --simulate --scenario real-run-1`
+! scenario copies real captured data — review for credentials/PII before committing</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Baseline scenario captured with no gaps. Let me confirm it replays cleanly against today's (unmodified) code before I touch anything.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight "weekly-revenue-totals" --simulate --scenario real-run-1 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Weekly revenue totals · --simulate
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ✓ connect   MCP reachable, auth valid
+  ✓ access    workflow available in MCP
+  ✓ parity    local code matches the draft
+  ✓ drift     no remote code drift
+  ✓ snapshot  structure snapshot current
+  · lifecycle unpublished — draft only
+  ✓ history   1 recent run(s), none failed
+  ✓ capture   scenario "real-run-1" (fresh) available to pin from
+  ⤷ simulate  Docker not available — the simulate engine needs it
+score 100/100 · verdict: ready · 10/11 checks ran
+  ⤷ skipped simulate: Docker not available — start Docker (or wait for the npx engine backend)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Docker isn't available locally, so `--simulate` can't run the engine replay here. Let me instead run the node directly against the real captured input (extracted from the actual execution, not invented), and separately verify via `test --scenario` against the live instance draft after pushing — that path doesn't need Docker.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">python3 -c "
+import json
+d = json.load(open('workflows/weekly-revenue-totals/executions/1.json'))
+items = d['data']['resultData']['runData']['Fetch orders'][0]['data']['main'][0]
+fixture = {'input': [{'json': i['json']} for i in items]}
+json.dump(fixture, open('/tmp/real-fixture.json','w'), indent=2)
+print(json.dumps(fixture, indent=2))
+"</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 127
+/bin/bash: line 8: python3: command not found</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const d = require('/work/workflows/weekly-revenue-totals/executions/1.json');
+const items = d.data.resultData.runData['Fetch orders'][0].data.main[0];
+const fixture = { input: items.map(i =&gt; ({ json: i.json })) };
+require('fs').writeFileSync('/tmp/real-fixture.json', JSON.stringify(fixture, null, 2));
+console.log(JSON.stringify(fixture, null, 2));
+"</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "input": [
+    {
+      "json": {
+        "id": "A-1",
+        "customer": "ada",
+        "amount": 42.5,
+        "kind": "sale"
+      }
+    },
+    {
+      "json": {
+        "id": "A-2",
+        "customer": "bo",
+        "amount": 13.25,
+        "kind": "sale"
+      }
+    },
+    {
+      "json": {
+        "id": "A-3",
+        "customer": "ada",
+        "amount": -13.25,
+        "kind": "refund"
+      }
+    },
+    {
+      "json": {
+        "id": "A-4",
+        "customer": "cy",
+        "amount": 99.999,
+        "kind": "sale"
+      }
+    },
+    {
+      "json": {
+        "id": "A-5",
+        "customer": "bo",
+        "amount": 7.005,
+        "kind": "sale"
+      }
+    },
+    {
+      "json": {
+        "id": "A-6",
+        "customer": "cy",
+        "amount": -99.999,
+        "kind": "refund"
+      }
+    }
+  ]
+}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">This is real captured order data from execution 1. Let me confirm the current (buggy) behavior against it first, as a baseline.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/weekly-revenue-totals/code/build-totals.js /tmp/real-fixture.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running build-totals.js (runOnceForAllItems) with fixture real-fixture.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 3 items:
+[
+  {
+    "json": {
+      "customer": "ada",
+      "total": 29.25
+    }
+  },
+  {
+    "json": {
+      "customer": "bo",
+      "total": 20.255
+    }
+  },
+  {
+    "json": {
+      "customer": "cy",
+      "total": 0
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Matches the live execution exactly — confirms the fixture is faithful. Now fixing the code: skip `kind: 'refund'` items entirely and round to two decimals.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/workflows/weekly-revenue-totals/code/build-totals.js</span></summary><pre class="tin diff"><span class="dl dctx">  <span class="tc">// weekly totals per customer</span></span>
+<span class="dl dctx">  <span class="tk">const</span> totals = {};</span>
+<span class="dl dctx">  <span class="tk">for</span> (<span class="tk">const</span> item <span class="tk">of</span> $input.all()) {</span>
+<span class="dl ddel">-   <span class="tk">const</span> { customer, amount } = item.json;</span>
+<span class="dl dadd">+   <span class="tk">const</span> { customer, amount, kind } = item.json;</span>
+<span class="dl dadd">+   <span class="tk">if</span> (kind === <span class="ts">'refund'</span>) continue;</span>
+<span class="dl dctx">    totals[customer] = (totals[customer] ?? <span class="tn">0</span>) + amount;</span>
+<span class="dl dctx">  }</span>
+<span class="dl ddel">- <span class="tk">return</span> Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));</span>
+<span class="dl dadd">+ <span class="tk">return</span> Object.entries(totals).map(([customer, total]) =&gt; ({</span>
+<span class="dl dadd">+   json: { customer, total: Math.round(total * <span class="tn">100</span>) / <span class="tn">100</span> },</span>
+<span class="dl dadd">+ }));</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/workflows/weekly-revenue-totals/code/build-totals.js has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "console.log(99.999*100); console.log(Math.round(99.999*100)/100); console.log(20.255*100, Math.round(20.255*100)/100);"</pre><div class="tres "><span class="tlab">result</span><pre>9999.9
+100
+2025.5 20.26</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/weekly-revenue-totals/code/build-totals.js /tmp/real-fixture.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running build-totals.js (runOnceForAllItems) with fixture real-fixture.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 3 items:
+[
+  {
+    "json": {
+      "customer": "ada",
+      "total": 42.5
+    }
+  },
+  {
+    "json": {
+      "customer": "bo",
+      "total": 20.26
+    }
+  },
+  {
+    "json": {
+      "customer": "cy",
+      "total": 100
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">That's the fix behaving correctly on the real captured order data: ada's refund is now excluded (42.5 instead of netted 29.25), bo's total rounds cleanly to 20.26, and cy's sale rounds to 100 instead of netting to 0. Now running preflight before pushing.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight "weekly-revenue-totals" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Weekly revenue totals · static + instance reads
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ✓ connect   MCP reachable, auth valid
+  ✓ access    workflow available in MCP
+  ! parity    local code differs from the draft in 1 node(s) — push to make it the draft, then test
+      Build totals: local changes in code/build-totals.js
+  ✓ drift     no remote code drift
+  ✓ snapshot  structure snapshot current
+  · lifecycle unpublished — draft only
+  ✓ history   1 recent run(s), none failed
+  ✓ capture   capture #1 (fresh) available to pin from
+  ⤷ simulate  the local-engine replay is opt-in
+score 90/100 · verdict: caution · 10/11 checks ran
+  ! parity: local code differs from the draft in 1 node(s) — push to make it the draft, then test → n8n-decanter push Weekly revenue totals
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Clean — the only flag is that the change isn't pushed yet, which is expected. Pushing to the draft now.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter push "weekly-revenue-totals" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ typecheck OK
+✓ pushed "Weekly revenue totals" (FxkEY98P1VW0Oyct) — 1 node — unpublished draft (0.1s)
+committed: decanter: pushed "Weekly revenue totals" (FxkEY98P1VW0Oyct)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now testing the draft on the instance against the real captured scenario — this actually executes on n8n with the real engine, not a local simulation.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter test "weekly-revenue-totals" --scenario real-run-1 2&gt;&amp;1</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 1
+testing the current n8n draft on the instance — 1 node(s) pinned from scenario real-run-1
+instance run 2 — 3 node(s) diffed, 1 pinned
+✓ Fetch orders: matches capture
+✗ Build totals: diverged from capture
+    expected [{"customer":"ada","total":29.25},{"customer":"bo","total":20.255},{"customer":"cy","total":0}]
+    actual   [{"customer":"ada","total":42.5},{"customer":"bo","total":20.26},{"customer":"cy","total":100}]
+✗ Done: diverged from capture
+    expected [{"customer":"ada","total":29.25},{"customer":"bo","total":20.255},{"customer":"cy","total":0}]
+    actual   [{"customer":"ada","total":42.5},{"customer":"bo","total":20.26},{"customer":"cy","total":100}]
+✗ instance test diverged: Build totals, Done
+the live (published) version was never affected — test_workflow runs the draft</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">That divergence is expected and good — it's diffing against the *old buggy* captured baseline, which should no longer match now that the behavior is intentionally different. The important thing: `Build totals` executed for real on the instance and produced `{ada: 42.5, bo: 20.26, cy: 100}` — identical to my local `node run` result, confirming the pushed draft on the actual n8n engine behaves as intended. Let me pull that new run and refresh the scenario so it reflects the corrected behavior going forward.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter executions "weekly-revenue-totals" --limit 3 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote workflows/weekly-revenue-totals/executions/2.json (success)
+wrote workflows/weekly-revenue-totals/executions/1.json (success)
+! captured executions ran published version 38b856ca-cd0b-465e-9a4d-40313462d3af; your draft is ff9d138f-48d1-44bf-9540-96bfb423463c — the data may not match the code you're editing
+✓ 2 executions -&gt; workflows/weekly-revenue-totals/executions (gitignored — temp data, "executions clean" removes it)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">node -e "
+const d = require('/work/workflows/weekly-revenue-totals/executions/2.json');
+console.log(JSON.stringify(d.data.resultData.runData['Build totals'][0].data.main[0], null, 2));
+"</pre><div class="tres "><span class="tlab">result</span><pre>[
+  {
+    "json": {
+      "customer": "ada",
+      "total": 42.5
+    }
+  },
+  {
+    "json": {
+      "customer": "bo",
+      "total": 20.26
+    }
+  },
+  {
+    "json": {
+      "customer": "cy",
+      "total": 100
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Execution 2 confirms it — that's the corrected code, run for real on the instance, on the same real order data. Let me refresh the committed scenario to this as the new baseline.</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter scenario create "weekly-revenue-totals" "real-run-1" --execution 2 2&gt;&amp;1</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 1
+✗ scenario "real-run-1" already exists: workflows/weekly-revenue-totals/scenarios/real-run-1.json — edit it directly, add --extend to top it up with nodes it is missing, or delete it to regenerate</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">rm /work/workflows/weekly-revenue-totals/scenarios/real-run-1.json &amp;&amp; npx n8n-decanter scenario create "weekly-revenue-totals" "real-run-1" --execution 2 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>! captured executions ran published version 38b856ca-cd0b-465e-9a4d-40313462d3af; your draft is ff9d138f-48d1-44bf-9540-96bfb423463c — the data may not match the code you're editing
+simulation: 3 node(s) execute for real, 1 pinned from capture 2
+✓ scenario "real-run-1" written from capture 2 -&gt; workflows/weekly-revenue-totals/scenarios/real-run-1.json (7 KB) — no gaps; replay with `preflight --simulate --scenario real-run-1`
+! scenario copies real captured data — review for credentials/PII before committing</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">That warning about a version mismatch is worth checking before I trust this as the new baseline.</div></div><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · get_workflow_history</span></summary><pre class="tin">{
+  "workflowId": "FxkEY98P1VW0Oyct"
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"success":true,"workflowId":"FxkEY98P1VW0Oyct","versions":[{"versionId":"38b856ca-cd0b-465e-9a4d-40313462d3af","authors":"Priya Ops (via MCP)","name":"Updated Build totals","description":"Updated nodes: Build totals","autosaved":false,"createdAt":"2026-08-08T13:32:58.151Z","updatedAt":"2026-08-08T13:32:58.151Z"},{"versionId":"ff9d138f-48d1-44bf-9540-96bfb423463c","authors":"Priya Ops","name":null,"description":null,"autosaved":false,"createdAt":"2026-08-08T13:29:23.050Z","updatedAt":"2026-08-08T13:29:23.050Z"}],"count":2}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">That confirms it: `38b856ca…` (created 13:32:58, named "Updated Build totals") is exactly the version my push produced — execution 2 ran against my fix, not stale code. The warning was just about my local `workflow.json` snapshot being a version behind; let me refresh it.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull "weekly-revenue-totals" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>committed: decanter: snapshot before pull (FxkEY98P1VW0Oyct)
+wrote weekly-revenue-totals/workflow.json
+committed: decanter: pulled "Weekly revenue totals" (FxkEY98P1VW0Oyct)
+✓ pulled "Weekly revenue totals" -&gt; /work/workflows/weekly-revenue-totals (0.3s)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now re-running `test` against the refreshed scenario to confirm a clean pass.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter test "weekly-revenue-totals" --scenario real-run-1 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>testing the current n8n draft on the instance — 1 node(s) pinned from scenario real-run-1
+instance run 3 — 3 node(s) diffed, 1 pinned
+✓ Fetch orders: matches capture
+✓ Build totals: matches capture
+✓ Done: matches capture
+✓ instance test matches the capture (3 nodes checked)
+the live (published) version was never affected — test_workflow runs the draft</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Full green run: `preflight` clean, and `test` now matches the pinned real-data scenario exactly, executed live on the instance's draft engine. Let me clean up the temporary execution/data-table fetches and check final status.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter executions clean 2&gt;&amp;1; npx n8n-decanter data-tables clean 2&gt;&amp;1; git status --short</pre><div class="tres "><span class="tlab">result</span><pre>removed workflows/weekly-revenue-totals/executions
+✓ cleaned 1 executions dir
+✓ removed data-tables
+?? .claude/
+?? .cursor/
+?? .decanter-template.json
+?? .gitignore
+?? .mcp.json
+?? .vscode/
+?? AGENTS.md
+?? CLAUDE.md
+?? decanter-ts-plugin/
+?? decanter.config.json
+?? n8n-decanter-0.10.0.tgz
+?? n8n-globals.d.ts
+?? opencode.json
+?? package-lock.json
+?? package.json
+?? shared/
+?? tsconfig.json</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git log --oneline -10</pre><div class="tres "><span class="tlab">result</span><pre>7a09cbd decanter: pulled "Weekly revenue totals" (FxkEY98P1VW0Oyct)
+6fb11ff decanter: snapshot before pull (FxkEY98P1VW0Oyct)
+254d422 decanter: pushed "Weekly revenue totals" (FxkEY98P1VW0Oyct)
+033f05a decanter: pulled "Weekly revenue totals" (FxkEY98P1VW0Oyct)
+dd1c2fc decanter: pulled "Weekly digest roll-up" (uspqlZsJEfCnM0Hm)
+cd42a06 harness: S8 after turn 0</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git status --short workflows decanter.config.json; echo ---; git diff --stat HEAD~5 HEAD 2&gt;&amp;1 | tail -20</pre><div class="tres "><span class="tlab">result</span><pre>?? decanter.config.json
+---
+ workflows/weekly-digest-roll-up/.decanter.json     |  11 +
+ .../weekly-digest-roll-up/code/build-digest.js     |   2 +
+ workflows/weekly-digest-roll-up/workflow.json      |  88 +++++++
+ workflows/weekly-revenue-totals/.decanter.json     |  16 ++
+ .../weekly-revenue-totals/code/build-totals.js     |  10 +
+ .../weekly-revenue-totals/code/fetch-orders.js     |  10 +
+ .../scenarios/real-run-1.json                      | 265 +++++++++++++++++++++
+ workflows/weekly-revenue-totals/workflow.json      | 108 +++++++++
+ 8 files changed, 510 insertions(+)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Confirmed on real data end to end. Summary:
+
+**What was actually wrong** — `Build totals` in *Weekly revenue totals* (`FxkEY98P1VW0Oyct`) netted refunds into the total (added the negative `amount` instead of excluding refund items), and never rounded, so a customer's total could carry raw float noise (`20.255`).
+
+**The fix** — `code/build-totals.js`: skip items where `kind === 'refund'`, round the sum to two decimals via `Math.round(total * 100) / 100`.
+
+**Verified against a real run, not invented data:**
+- Pulled execution `1` from the instance (real order/refund amounts) and confirmed the *old* code reproduced it exactly (`ada: 29.25, bo: 20.255, cy: 0`) — establishing the fixture was faithful.
+- Ran the *new* code locally against that same real input: `ada: 42.5, bo: 20.26, cy: 100`.
+- Pushed to the draft, then had n8n itself execute the draft on the instance (`test`) — it produced the identical numbers live, on the real engine, not a local approximation.
+- Re-captured that live run as execution `2` and committed it as the scenario `real-run-1` — `n8n-decanter test --scenario real-run-1` now passes clean, so this is a repeatable regression check going forward.
+
+**Status:** pushed to the **draft only** — the published/live version is untouched, so production behavior hasn't changed yet. Say the word when you want `publish` (or `push --publish`) to make it live.
+
+One loose end: I also pulled the unrelated `Weekly digest roll-up` stub earlier while tracking down the wrong workflow — it's harmless (empty placeholder, untouched) but let me know if you'd like it removed from `decanter.config.json` or left as-is.</div></div><div class="msg done"><div class="who">↳ turn result · $1.211</div><div class="bubble">Confirmed on real data end to end. Summary:
+
+**What was actually wrong** — `Build totals` in *Weekly revenue totals* (`FxkEY98P1VW0Oyct`) netted refunds into the total (added the negative `amount` instead of excluding refund items), and never rounded, so a customer's total could carry raw float noise (`20.255`).
+
+**The fix** — `code/build-totals.js`: skip items where `kind === 'refund'`, round the sum to two decimals via `Math.round(total * 100) / 100`.
+
+**Verified against a real run, not invented data:**
+- Pulled execution `1` from the instance (real order/refund amounts) and confirmed the *old* code reproduced it exactly (`ada: 29.25, bo: 20.255, cy: 0`) — establishing the fixture was faithful.
+- Ran the *new* code locally against that same real input: `ada: 42.5, bo: 20.26, cy: 100`.
+- Pushed to the draft, then had n8n itself execute the draft on the instance (`test`) — it produced the identical numbers live, on the real engine, not a local approximation.
+- Re-captured that live run as execution `2` and committed it as the scenario `real-run-1` — `n8n-decanter test --scenario real-run-1` now passes clean, so this is a repeatable regression check going forward.
+
+**Status:** pushed to the **draft only** — the published/live version is untouched, so production behavior hasn't changed yet. Say the word when you want `publish` (or `push --publish`) to make it live.
+
+One loose end: I also pulled the unrelated `Weekly digest roll-up` stub earlier while tracking down the wrong workflow — it's harmless (empty placeholder, untouched) but let me know if you'd like it removed from `decanter.config.json` or left as-is.</div></div></div><div class="turn"><div class="turn-h">Turn 3</div><div class="msg user"><div class="who">user</div><div class="bubble">good. put the change where it needs to be, but don't flip anything on for real yet — I'll do that Monday.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight "weekly-revenue-totals" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Weekly revenue totals · static + instance reads
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ✓ connect   MCP reachable, auth valid
+  ✓ access    workflow available in MCP
+  ✓ parity    local code matches the draft
+  ✓ drift     no remote code drift
+  ✓ snapshot  structure snapshot current
+  · lifecycle unpublished — draft only
+  ✓ history   3 recent run(s), none failed
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 10/11 checks ran
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Already done — nothing further to push. The fix has been on the workflow's **draft** since last turn (`parity` confirms local code matches it, `lifecycle: unpublished — draft only`), so the fix is in place and verified but not live. I won't run `publish` — that stays yours for Monday.</div></div><div class="msg done"><div class="who">↳ turn result · $0.406</div><div class="bubble">Already done — nothing further to push. The fix has been on the workflow's **draft** since last turn (`parity` confirms local code matches it, `lifecycle: unpublished — draft only`), so the fix is in place and verified but not live. I won't run `publish` — that stays yours for Monday.</div></div></div><div class="verify"><h4>Scripted invariants — PASS</h4><div class="vwf"><b>weekly-revenue-totals</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ committed scenarios are structurally valid</li><li class="ok">✓ node "code/fetch-orders.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/fetch-orders.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/fetch-orders.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ node "code/build-totals.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/build-totals.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/build-totals.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S8 after turn 0</span> <span class="vdet">2026-08-08 15:29</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly digest roll-up" (uspqlZsJEfCnM0Hm)</span> <span class="vdet">2026-08-08 13:29</span></summary><pre class="tin"> workflows/weekly-digest-roll-up/.decanter.json     | 11 +++
+ .../weekly-digest-roll-up/code/build-digest.js     |  2 +
+ workflows/weekly-digest-roll-up/workflow.json      | 88 ++++++++++++++++++++++
+ 3 files changed, 101 insertions(+)
+
+diff --git a/workflows/weekly-digest-roll-up/.decanter.json b/workflows/weekly-digest-roll-up/.decanter.json
+new file mode 100644
+index 0000000..7c05361
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "uspqlZsJEfCnM0Hm",
++  "nodes": {
++    "c1": {
++      "file": "code/build-digest.js",
++      "lastPushedHash": "sha256:438980bb8fdd7576053faab8232353916b5b666a88ddfba117470b425afacdd0",
++      "name": "Build digest"
++    }
++  },
++  "name": "Weekly digest roll-up"
++}
+diff --git a/workflows/weekly-digest-roll-up/code/build-digest.js b/workflows/weekly-digest-roll-up/code/build-digest.js
+new file mode 100644
+index 0000000..0e563fd
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/code/build-digest.js
+@@ -0,0 +1,2 @@
++// weekly roll-up
++return [{ json: { week: 'n/a', total: 0 } }];
+diff --git a/workflows/weekly-digest-roll-up/workflow.json b/workflows/weekly-digest-roll-up/workflow.json
+new file mode 100644
+index 0000000..d3b8e72
+--- /dev/null
++++ b/workflows/weekly-digest-roll-up/workflow.json
+@@ -0,0 +1,88 @@
++{
++  "id": "uspqlZsJEfCnM0Hm",
++  "name": "Weekly digest roll-up",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T13:29:22.977Z",
++  "updatedAt": "2026-08-08T13:29:23.146Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "Schedule",
++      "type": "n8n-nodes-base.scheduleTrigger",
++      "typeVersion": 1.2,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {
++        "rule": {
++          "interval": [
++            {
++              "field": "hours"
++            }
++          ]
++        }
++      }
++    },
++    {
++      "id": "c1",
++      "name": "Build digest",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/build-digest.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Build digest": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Schedule": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Build digest",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "dedc33a3-6918-4114-b604-aa7d3e2fa889",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly revenue totals" (FxkEY98P1VW0Oyct)</span> <span class="vdet">2026-08-08 13:32</span></summary><pre class="tin"> workflows/weekly-revenue-totals/.decanter.json     |  16 ++++
+ .../weekly-revenue-totals/code/build-totals.js     |   7 ++
+ .../weekly-revenue-totals/code/fetch-orders.js     |  10 ++
+ workflows/weekly-revenue-totals/workflow.json      | 105 +++++++++++++++++++++
+ 4 files changed, 138 insertions(+)
+
+diff --git a/workflows/weekly-revenue-totals/.decanter.json b/workflows/weekly-revenue-totals/.decanter.json
+new file mode 100644
+index 0000000..9030968
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/.decanter.json
+@@ -0,0 +1,16 @@
++{
++  "workflowId": "FxkEY98P1VW0Oyct",
++  "nodes": {
++    "c1": {
++      "file": "code/fetch-orders.js",
++      "lastPushedHash": "sha256:39202d90b57724daf5f32033d0298b1302d5eae139117340afbdac926cd64eb2",
++      "name": "Fetch orders"
++    },
++    "c2": {
++      "file": "code/build-totals.js",
++      "lastPushedHash": "sha256:2c2b1a33e7759a2c44618154853bf888af2440503bf4bdc07cce6309f71961c6",
++      "name": "Build totals"
++    }
++  },
++  "name": "Weekly revenue totals"
++}
+diff --git a/workflows/weekly-revenue-totals/code/build-totals.js b/workflows/weekly-revenue-totals/code/build-totals.js
+new file mode 100644
+index 0000000..977c728
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/code/build-totals.js
+@@ -0,0 +1,7 @@
++// weekly totals per customer
++const totals = {};
++for (const item of $input.all()) {
++  const { customer, amount } = item.json;
++  totals[customer] = (totals[customer] ?? 0) + amount;
++}
++return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));
+diff --git a/workflows/weekly-revenue-totals/code/fetch-orders.js b/workflows/weekly-revenue-totals/code/fetch-orders.js
+new file mode 100644
+index 0000000..e7e4fef
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/code/fetch-orders.js
+@@ -0,0 +1,10 @@
++// upstream system hands us the week's orders
++const orders = [
++  { id: 'A-1', customer: 'ada', amount: 42.5, kind: 'sale' },
++  { id: 'A-2', customer: 'bo', amount: 13.25, kind: 'sale' },
++  { id: 'A-3', customer: 'ada', amount: -13.25, kind: 'refund' },
++  { id: 'A-4', customer: 'cy', amount: 99.999, kind: 'sale' },
++  { id: 'A-5', customer: 'bo', amount: 7.005, kind: 'sale' },
++  { id: 'A-6', customer: 'cy', amount: -99.999, kind: 'refund' },
++];
++return orders.map((json) =&gt; ({ json }));
+diff --git a/workflows/weekly-revenue-totals/workflow.json b/workflows/weekly-revenue-totals/workflow.json
+new file mode 100644
+index 0000000..2102c46
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/workflow.json
+@@ -0,0 +1,105 @@
++{
++  "id": "FxkEY98P1VW0Oyct",
++  "name": "Weekly revenue totals",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T13:29:23.048Z",
++  "updatedAt": "2026-08-08T13:29:23.146Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "When clicked",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "c1",
++      "name": "Fetch orders",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/fetch-orders.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "c2",
++      "name": "Build totals",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/build-totals.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        660,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Build totals": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Fetch orders": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Build totals",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "When clicked": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Fetch orders",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "ff9d138f-48d1-44bf-9540-96bfb423463c",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pushed "Weekly revenue totals" (FxkEY98P1VW0Oyct)</span> <span class="vdet">2026-08-08 13:32</span></summary><pre class="tin"> workflows/weekly-revenue-totals/.decanter.json     |   2 +-
+ .../weekly-revenue-totals/code/build-totals.js     |   7 +-
+ .../scenarios/real-run-1.json                      | 256 +++++++++++++++++++++
+ 3 files changed, 262 insertions(+), 3 deletions(-)
+
+diff --git a/workflows/weekly-revenue-totals/.decanter.json b/workflows/weekly-revenue-totals/.decanter.json
+index 9030968..4d3dc15 100644
+--- a/workflows/weekly-revenue-totals/.decanter.json
++++ b/workflows/weekly-revenue-totals/.decanter.json
+@@ -8,7 +8,7 @@
+     },
+     "c2": {
+       "file": "code/build-totals.js",
+-      "lastPushedHash": "sha256:2c2b1a33e7759a2c44618154853bf888af2440503bf4bdc07cce6309f71961c6",
++      "lastPushedHash": "sha256:d53be983d54238ce1407cedea007df9619417b0d7eff083db4fdacfa11c945af",
+       "name": "Build totals"
+     }
+   },
+diff --git a/workflows/weekly-revenue-totals/code/build-totals.js b/workflows/weekly-revenue-totals/code/build-totals.js
+index 977c728..724c5d3 100644
+--- a/workflows/weekly-revenue-totals/code/build-totals.js
++++ b/workflows/weekly-revenue-totals/code/build-totals.js
+@@ -1,7 +1,10 @@
+ // weekly totals per customer
+ const totals = {};
+ for (const item of $input.all()) {
+-  const { customer, amount } = item.json;
++  const { customer, amount, kind } = item.json;
++  if (kind === 'refund') continue;
+   totals[customer] = (totals[customer] ?? 0) + amount;
+ }
+-return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));
++return Object.entries(totals).map(([customer, total]) =&gt; ({
++  json: { customer, total: Math.round(total * 100) / 100 },
++}));
+diff --git a/workflows/weekly-revenue-totals/scenarios/real-run-1.json b/workflows/weekly-revenue-totals/scenarios/real-run-1.json
+new file mode 100644
+index 0000000..3d2322d
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/scenarios/real-run-1.json
+@@ -0,0 +1,256 @@
++{
++  "id": "1",
++  "finished": true,
++  "mode": "manual",
++  "retryOf": null,
++  "retrySuccessId": null,
++  "status": "success",
++  "startedAt": "2026-08-08T13:29:32.827Z",
++  "stoppedAt": "2026-08-08T13:29:32.875Z",
++  "workflowId": "FxkEY98P1VW0Oyct",
++  "waitTill": null,
++  "storedAt": "db",
++  "jsonSizeBytes": 4432,
++  "workflowVersionId": "ff9d138f-48d1-44bf-9540-96bfb423463c",
++  "data": {
++    "version": 1,
++    "startData": {},
++    "resultData": {
++      "runData": {
++        "When clicked": [
++          {
++            "startTime": 1786195772838,
++            "executionIndex": 0,
++            "source": [],
++            "hints": [],
++            "executionTime": 1,
++            "executionStatus": "success",
++            "data": {
++              "main": [
++                [
++                  {
++                    "json": {},
++                    "pairedItem": {
++                      "item": 0
++                    }
++                  }
++                ]
++              ]
++            }
++          }
++        ],
++        "Fetch orders": [
++          {
++            "startTime": 1786195772840,
++            "executionIndex": 1,
++            "source": [
++              {
++                "previousNode": "When clicked",
++                "previousNodeOutput": 0,
++                "previousNodeRun": 0
++              }
++            ],
++            "hints": [],
++            "executionTime": 30,
++            "executionStatus": "success",
++            "data": {
++              "main": [
++                [
++                  {
++                    "json": {
++                      "id": "A-1",
++                      "customer": "ada",
++                      "amount": 42.5,
++                      "kind": "sale"
++                    },
++                    "pairedItem": {
++                      "item": 0
++                    }
++                  },
++                  {
++                    "json": {
++                      "id": "A-2",
++                      "customer": "bo",
++                      "amount": 13.25,
++                      "kind": "sale"
++                    },
++                    "pairedItem": {
++                      "item": 0
++                    }
++                  },
++                  {
++                    "json": {
++                      "id": "A-3",
++                      "customer": "ada",
++                      "amount": -13.25,
++                      "kind": "refund"
++                    },
++                    "pairedItem": {
++                      "item": 0
++                    }
++                  },
++                  {
++                    "json": {
++                      "id": "A-4",
++                      "customer": "cy",
++                      "amount": 99.999,
++                      "kind": "sale"
++                    },
++                    "pairedItem": {
++                      "item": 0
++                    }
++                  },
++                  {
++                    "json": {
++                      "id": "A-5",
++                      "customer": "bo",
++                      "amount": 7.005,
++                      "kind": "sale"
++                    },
++                    "pairedItem": {
++                      "item": 0
++                    }
++                  },
++                  {
++                    "json": {
++                      "id": "A-6",
++                      "customer": "cy",
++                      "amount": -99.999,
++                      "kind": "refund"
++                    },
++                    "pairedItem": {
++                      "item": 0
++                    }
++                  }
++                ]
++              ]
++            }
++          }
++        ],
++        "Build totals": [
++          {
++            "startTime": 1786195772870,
++            "executionIndex": 2,
++            "source": [
++              {
++                "previousNode": "Fetch orders",
++                "previousNodeOutput": 0,
++                "previousNodeRun": 0
++              }
++            ],
++            "hints": [],
++            "executionTime": 4,
++            "executionStatus": "success",
++            "data": {
++              "main": [
++                [
++                  {
++                    "json": {
++                      "customer": "ada",
++                      "total": 29.25
++                    }
++                  },
++                  {
++                    "json": {
++                      "customer": "bo",
++                      "total": 20.255
++                    }
++                  },
++                  {
++                    "json": {
++                      "customer": "cy",
++                      "total": 0
++                    }
++                  }
++                ]
++              ]
++            }
++          }
++        ],
++        "Done": [
++          {
++            "startTime": 1786195772874,
++            "executionIndex": 3,
++            "source": [
++              {
++                "previousNode": "Build totals",
++                "previousNodeOutput": 0,
++                "previousNodeRun": 0
++              }
++            ],
++            "hints": [],
++            "executionTime": 0,
++            "executionStatus": "success",
++            "data": {
++              "main": [
++                [
++                  {
++                    "json": {
++                      "customer": "ada",
++                      "total": 29.25
++                    },
++                    "pairedItem": {
++                      "item": 0
++                    }
++                  },
++                  {
++                    "json": {
++                      "customer": "bo",
++                      "total": 20.255
++                    },
++                    "pairedItem": {
++                      "item": 1
++                    }
++                  },
++                  {
++                    "json": {
++                      "customer": "cy",
++                      "total": 0
++                    },
++                    "pairedItem": {
++                      "item": 2
++                    }
++                  }
++                ]
++              ]
++            }
++          }
++        ]
++      },
++      "pinData": {},
++      "lastNodeExecuted": "Done"
++    },
++    "executionData": {
++      "contextData": {},
++      "nodeExecutionStack": [],
++      "metadata": {},
++      "waitingExecution": {},
++      "waitingExecutionSource": {},
++      "runtimeData": {
++        "version": 1,
++        "establishedAt": 1786195772822,
++        "source": "manual",
++        "triggerNode": {
++          "name": "When clicked",
++          "type": "n8n-nodes-base.manualTrigger"
++        },
++        "redaction": {
++          "version": 2,
++          "production": false,
++          "manual": false,
++          "source": "workflow"
++        }
++      }
++    },
++    "resumeToken": "51e574d11d207c553708c025ca5212e5bc5a0e812bbaf96cfe5e1d2cf6275006"
++  },
++  "customData": {},
++  "_decanterScenario": {
++    "source": "capture",
++    "sourceExecution": "1",
++    "createdAt": "2026-08-08",
++    "workflowVersionId": "ff9d138f-48d1-44bf-9540-96bfb423463c",
++    "guidance": "Committed, reproducible copy of capture 1 — no gaps to fill.",
++    "fill": []
++  }
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: snapshot before pull (FxkEY98P1VW0Oyct)</span> <span class="vdet">2026-08-08 13:33</span></summary><pre class="tin"> .../scenarios/real-run-1.json                      | 57 +++++++++++++---------
+ 1 file changed, 33 insertions(+), 24 deletions(-)
+
+diff --git a/workflows/weekly-revenue-totals/scenarios/real-run-1.json b/workflows/weekly-revenue-totals/scenarios/real-run-1.json
+index 3d2322d..40351ab 100644
+--- a/workflows/weekly-revenue-totals/scenarios/real-run-1.json
++++ b/workflows/weekly-revenue-totals/scenarios/real-run-1.json
+@@ -1,17 +1,17 @@
+ {
+-  "id": "1",
++  "id": "2",
+   "finished": true,
+   "mode": "manual",
+   "retryOf": null,
+   "retrySuccessId": null,
+   "status": "success",
+-  "startedAt": "2026-08-08T13:29:32.827Z",
+-  "stoppedAt": "2026-08-08T13:29:32.875Z",
++  "startedAt": "2026-08-08T13:33:00.691Z",
++  "stoppedAt": "2026-08-08T13:33:00.721Z",
+   "workflowId": "FxkEY98P1VW0Oyct",
+   "waitTill": null,
+   "storedAt": "db",
+-  "jsonSizeBytes": 4432,
+-  "workflowVersionId": "ff9d138f-48d1-44bf-9540-96bfb423463c",
++  "jsonSizeBytes": 4529,
++  "workflowVersionId": "38b856ca-cd0b-465e-9a4d-40313462d3af",
+   "data": {
+     "version": 1,
+     "startData": {},
+@@ -19,11 +19,11 @@
+       "runData": {
+         "When clicked": [
+           {
+-            "startTime": 1786195772838,
++            "startTime": 1786195980696,
+             "executionIndex": 0,
+             "source": [],
+             "hints": [],
+-            "executionTime": 1,
++            "executionTime": 0,
+             "executionStatus": "success",
+             "data": {
+               "main": [
+@@ -41,7 +41,7 @@
+         ],
+         "Fetch orders": [
+           {
+-            "startTime": 1786195772840,
++            "startTime": 1786195980696,
+             "executionIndex": 1,
+             "source": [
+               {
+@@ -51,7 +51,7 @@
+               }
+             ],
+             "hints": [],
+-            "executionTime": 30,
++            "executionTime": 18,
+             "executionStatus": "success",
+             "data": {
+               "main": [
+@@ -129,7 +129,7 @@
+         ],
+         "Build totals": [
+           {
+-            "startTime": 1786195772870,
++            "startTime": 1786195980714,
+             "executionIndex": 2,
+             "source": [
+               {
+@@ -139,7 +139,7 @@
+               }
+             ],
+             "hints": [],
+-            "executionTime": 4,
++            "executionTime": 7,
+             "executionStatus": "success",
+             "data": {
+               "main": [
+@@ -147,19 +147,19 @@
+                   {
+                     "json": {
+                       "customer": "ada",
+-                      "total": 29.25
++                      "total": 42.5
+                     }
+                   },
+                   {
+                     "json": {
+                       "customer": "bo",
+-                      "total": 20.255
++                      "total": 20.26
+                     }
+                   },
+                   {
+                     "json": {
+                       "customer": "cy",
+-                      "total": 0
++                      "total": 100
+                     }
+                   }
+                 ]
+@@ -169,7 +169,7 @@
+         ],
+         "Done": [
+           {
+-            "startTime": 1786195772874,
++            "startTime": 1786195980721,
+             "executionIndex": 3,
+             "source": [
+               {
+@@ -187,7 +187,7 @@
+                   {
+                     "json": {
+                       "customer": "ada",
+-                      "total": 29.25
++                      "total": 42.5
+                     },
+                     "pairedItem": {
+                       "item": 0
+@@ -196,7 +196,7 @@
+                   {
+                     "json": {
+                       "customer": "bo",
+-                      "total": 20.255
++                      "total": 20.26
+                     },
+                     "pairedItem": {
+                       "item": 1
+@@ -205,7 +205,7 @@
+                   {
+                     "json": {
+                       "customer": "cy",
+-                      "total": 0
++                      "total": 100
+                     },
+                     "pairedItem": {
+                       "item": 2
+@@ -217,7 +217,16 @@
+           }
+         ]
+       },
+-      "pinData": {},
++      "pinData": {
++        "When clicked": [
++          {
++            "json": {},
++            "pairedItem": {
++              "item": 0
++            }
++          }
++        ]
++      },
+       "lastNodeExecuted": "Done"
+     },
+     "executionData": {
+@@ -228,7 +237,7 @@
+       "waitingExecutionSource": {},
+       "runtimeData": {
+         "version": 1,
+-        "establishedAt": 1786195772822,
++        "establishedAt": 1786195980688,
+         "source": "manual",
+         "triggerNode": {
+           "name": "When clicked",
+@@ -242,15 +251,15 @@
+         }
+       }
+     },
+-    "resumeToken": "51e574d11d207c553708c025ca5212e5bc5a0e812bbaf96cfe5e1d2cf6275006"
++    "resumeToken": "00d9332fc0864fc641a9e5e5b328afff5fe3bbc780491885fd8f576ac8dcbde7"
+   },
+   "customData": {},
+   "_decanterScenario": {
+     "source": "capture",
+-    "sourceExecution": "1",
++    "sourceExecution": "2",
+     "createdAt": "2026-08-08",
+-    "workflowVersionId": "ff9d138f-48d1-44bf-9540-96bfb423463c",
+-    "guidance": "Committed, reproducible copy of capture 1 — no gaps to fill.",
++    "workflowVersionId": "38b856ca-cd0b-465e-9a4d-40313462d3af",
++    "guidance": "Committed, reproducible copy of capture 2 — no gaps to fill.",
+     "fill": []
+   }
+ }
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly revenue totals" (FxkEY98P1VW0Oyct)</span> <span class="vdet">2026-08-08 13:33</span></summary><pre class="tin"> workflows/weekly-revenue-totals/workflow.json | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/workflows/weekly-revenue-totals/workflow.json b/workflows/weekly-revenue-totals/workflow.json
+index 2102c46..fe8c606 100644
+--- a/workflows/weekly-revenue-totals/workflow.json
++++ b/workflows/weekly-revenue-totals/workflow.json
+@@ -4,7 +4,7 @@
+   "active": false,
+   "isArchived": false,
+   "createdAt": "2026-08-08T13:29:23.048Z",
+-  "updatedAt": "2026-08-08T13:29:23.146Z",
++  "updatedAt": "2026-08-08T13:32:58.149Z",
+   "nodes": [
+     {
+       "id": "trig",
+@@ -96,9 +96,12 @@
+     "availableInMCP": true,
+     "executionOrder": "v1"
+   },
+-  "meta": null,
++  "meta": {
++    "aiBuilderAssisted": true,
++    "builderVariant": "mcp"
++  },
+   "tags": [],
+-  "versionId": "ff9d138f-48d1-44bf-9540-96bfb423463c",
++  "versionId": "38b856ca-cd0b-465e-9a4d-40313462d3af",
+   "nodeGroups": [],
+   "parentFolderId": null,
+   "triggerCount": 0
+</pre></details></section>
+<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">guard: connected to http://flows-ops-n8n-22186:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: forwarded search_workflows
+guard: forwarded get_workflow_history
+guard: connected to http://flows-ops-n8n-22186:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: forwarded search_executions
+guard: forwarded get_workflow_details
+guard: forwarded get_execution
+guard: forwarded get_workflow_history
+guard: connected to http://flows-ops-n8n-22186:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+</pre></section>
+</main>
