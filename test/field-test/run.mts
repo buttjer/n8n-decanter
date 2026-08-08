@@ -46,8 +46,10 @@ if (argv.includes("--help") || argv.includes("-h")) {
     "       node test/field-test/run.mts --isolate [S1 S2 …]   one fresh instance per unit",
     "       node test/field-test/run.mts --isolate --all       every scenario, each isolated",
     "",
-    "  --seeds <pack>  pin every unit to one pack; omit it and each unit gets the",
-    "                  smallest pack covering its own requiresSeedKinds",
+    "  --seeds <pack>    pin every unit to one pack; omit it and each unit gets the",
+    "                    smallest pack covering its own requiresSeedKinds",
+    "  --model <name>    model for the blind sessions (default sonnet)",
+    "  --n8n-tag <image> n8n image each unit boots (default n8nio/n8n:2.30.7)",
   ].join("\n"));
   process.exit(0);
 }
@@ -59,7 +61,22 @@ const containerMode = argv.includes("--container");
 /** `--seeds <pack>`: pins every unit to one pack. Omit it and each unit gets the
  * smallest pack that covers its own `requiresSeedKinds` (Plan 77). */
 const SEED_PACK_ARG = argv.includes("--seeds") ? argv[argv.indexOf("--seeds") + 1] : undefined;
-const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--seeds");
+/** `--model <name>`: which model drives the blind sessions (default `sonnet`).
+ *
+ * Every archived round to date ran on Sonnet, which leaves the harness unable to
+ * separate "the scaffolded AGENTS.md steers agents file-first" from "Sonnet
+ * happens to work that way" — the single claim the whole agent-facing case rests
+ * on. A flag rather than an env var for the sandbox reason in `stage.mts`. */
+const MODEL = (argv.includes("--model") ? argv[argv.indexOf("--model") + 1] : process.env.FIELD_MODEL) ?? "sonnet";
+/** `--n8n-tag <image>`: forwarded verbatim to each `--isolate` stage. */
+const N8N_TAG_ARG = argv.includes("--n8n-tag") ? argv[argv.indexOf("--n8n-tag") + 1] : undefined;
+for (const [flag, value] of [["--model", MODEL], ["--n8n-tag", N8N_TAG_ARG]] as const) {
+  if (argv.includes(flag) && (value === undefined || value.startsWith("--"))) { console.error(`${flag} needs a value`); process.exit(2); }
+}
+// A flag's VALUE is not a scenario id — without this, `--model opus` would leave
+// "opus" as a positional and be read as a manifest path or a scenario.
+const VALUED_FLAGS = new Set(["--seeds", "--model", "--n8n-tag"]);
+const positional = argv.filter((a, i) => !a.startsWith("--") && !VALUED_FLAGS.has(argv[i - 1] ?? ""));
 
 /** Every scenario in the pack, numerically — `S2` before `S10`. */
 function allScenarioIds(): string[] {
@@ -117,12 +134,22 @@ if (argv.includes("--isolate")) {
     }
   }
   const units = groupScenarios(ids);
-  const passthrough = argv.filter((a) => a === "--dry-run" || a === "--container");
+  // `--model` must reach the child that actually spawns claude; `--n8n-tag` must
+  // reach the STAGE instead (below). A flag that silently fails to cross the
+  // re-exec would produce a sweep labelled as varying something it never varied.
+  const passthrough = [
+    ...argv.filter((a) => a === "--dry-run" || a === "--container"),
+    ...(argv.includes("--model") ? ["--model", MODEL] : []),
+  ];
   // One `stage.mts --list-packs` for the whole sweep; the packs cannot change
   // mid-run, and a per-unit call would just re-read the same files.
   const packs = JSON.parse((await execFile(process.execPath, [path.join(HERE, "stage.mts"), "--list-packs"], { encoding: "utf8" })).stdout) as Record<string, string[]>;
   const packOf = new Map(units.map((u) => [u.join("+"), SEED_PACK_ARG ?? packFor(u, packs)]));
   console.log(`isolating ${ids.length} scenario(s) into ${units.length} unit(s): ${units.map((u) => `${u.join("+")} [${packOf.get(u.join("+"))}]`).join(", ")}`);
+  // Say what this sweep varies, before it runs. A round is only comparable to
+  // another if you can tell which world it ran in, and the two knobs that define
+  // that world are exactly these.
+  console.log(`  model ${MODEL} · n8n ${N8N_TAG_ARG ?? process.env.FIELD_N8N_TAG ?? "n8nio/n8n:2.30.7 (default)"}`);
   // `--isolate --dry-run` prints the PLAN and boots nothing. Passing --dry-run
   // through to the children would still stage an instance per unit — thirteen
   // container boots to answer "what would you run?" (Plan 77).
@@ -155,7 +182,7 @@ if (argv.includes("--isolate")) {
     if (shape.some((s) => s.requiresSeedEnvOff)) stageEnv.FIELD_NO_SEED_ENV = "1";
     const shapeNote = [stageEnv.FIELD_NO_CLI ? "FIELD_NO_CLI=1" : "", stageEnv.FIELD_NO_SEED_ENV ? "FIELD_NO_SEED_ENV=1" : ""].filter((s) => s !== "").join(" ");
     console.log(`\n===== unit ${i + 1}/${units.length}: ${unit.join(" ")} — staging a fresh instance (seeds: ${pack}${shapeNote ? `, ${shapeNote}` : ""}) =====`);
-    const stageArgs = ["--seeds", pack];
+    const stageArgs = ["--seeds", pack, ...(N8N_TAG_ARG ? ["--n8n-tag", N8N_TAG_ARG] : [])];
     const staged = await execFile(process.execPath, [path.join(HERE, "stage.mts"), ...stageArgs], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, env: stageEnv });
     const mf = (staged.stdout.match(/^MANIFEST=(.+)$/m) ?? [])[1];
     if (mf === undefined) { console.error(`unit ${unit.join("+")}: stage printed no MANIFEST= line`); failed++; continue; }
@@ -948,7 +975,7 @@ const DRIFTING_HOOKS = new Set(["remote-drift", "publish-then-drift", "break-pub
 // ---------- one blind claude -p turn ----------
 const TURN_TIMEOUT_MS = Number(process.env.FIELD_TURN_TIMEOUT_MS ?? 900_000); // 15 min/turn safety net
 async function claudeTurn(msg: string, turnIndex: number, resumeId: string | undefined, transcript: string): Promise<{ sessionId: string | undefined; resultText: string }> {
-  const args = ["-p", msg, "--model", "sonnet", "--output-format", "stream-json", "--verbose"];
+  const args = ["-p", msg, "--model", MODEL, "--output-format", "stream-json", "--verbose"];
   if (resumeId) args.push("--resume", resumeId);
   // Broad "consenting user" grant on EVERY turn (permission-UX is out of scope,
   // Plan 35). The settings.local.json DENY rules still win (push --force,
@@ -1199,7 +1226,10 @@ async function archiveRun(): Promise<void> {
     // the manifest travels WITHOUT credentials (this lands in git). `scenariosAsRun`
     // is false when re-archiving an older round: the scenarios/ copy is then
     // today's, not provably the ones that ran, and the report says so.
-    writeFileSync(path.join(staging, "manifest.json"), JSON.stringify({ ...manifest, mcpToken: "‹redacted›", apiKey: "‹redacted›", scenariosAsRun: !argv.includes("--archive") }, null, 2) + "\n");
+    // `model` is a RUN property, not a stage one, so the stage-written manifest
+    // cannot carry it — but the archive must, or two rounds that differ only by
+    // model become indistinguishable in git. (`n8nTag` the stage already records.)
+    writeFileSync(path.join(staging, "manifest.json"), JSON.stringify({ ...manifest, model: MODEL, mcpToken: "‹redacted›", apiKey: "‹redacted›", scenariosAsRun: !argv.includes("--archive") }, null, 2) + "\n");
     scrubTree(staging, secrets); // transcripts/guard.log may echo a token in tool output
 
     mkdirSync(dest, { recursive: true });

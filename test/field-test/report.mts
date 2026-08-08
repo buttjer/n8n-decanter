@@ -55,7 +55,7 @@ function unpackArchive(tgz: string): string {
   return mf;
 }
 
-interface Manifest { host: string; mcpToken?: string; apiKey?: string; harnessRoot: string; workDir?: string; scenariosAsRun?: boolean; seeded?: Array<{ name: string; kind: string }>; }
+interface Manifest { host: string; mcpToken?: string; apiKey?: string; harnessRoot: string; workDir?: string; scenariosAsRun?: boolean; model?: string; n8nTag?: string | null; seedPack?: string; seeded?: Array<{ name: string; kind: string }>; }
 const manifestPath = fromArg ? unpackArchive(fromArg) : (positional[0] ?? process.env.FIELD_MANIFEST);
 if (!manifestPath) { console.error("report: pass <manifest.json>, --from <raw.tgz>, or set FIELD_MANIFEST"); process.exit(2); }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
@@ -321,6 +321,7 @@ code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-mon
 <header><h1>n8n-decanter · blind field test</h1>${parts.map((p) => p.nav).join("")}${progressionHtml ? `<a href="#progression" class="navlink">progression</a>` : ""}${guardHtml ? `<a href="#guard" class="navlink">guard.log</a>` : ""}</header>
 <main>
 <p class="persona">Host <code>${clean(manifest.host)}</code> · ${wanted.length} scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>${clean(manifest.model ?? "sonnet (not recorded)")}</code> · n8n <code>${clean(manifest.n8nTag ?? "external instance")}</code>${manifest.seedPack ? ` · seeds <code>${clean(manifest.seedPack)}</code>` : ""}. Two rounds are only comparable when these match.</p>
 ${manifest.scenariosAsRun === false ? `<p class="persona"><b>Provenance:</b> this round was archived retroactively, so the bundled <code>scenarios/</code> are the files as of archiving — <i>not</i> provably the ones that ran. Turns showing a recorded prompt are verbatim; any without one fall back to those scenario files and may differ from what was sent.</p>` : ""}
 ${parts.map((p) => p.html).join("\n")}
 ${progressionHtml}

@@ -93,6 +93,8 @@ function stageSynthetic(): { manifestPath: string; harness: string; workDir: str
     allowExtension: [],
     cliTarball: null,
     decanterSpec: null,
+    n8nTag: "n8nio/n8n:2.33.3",
+    seedPack: "builtin",
     seeded: [{ id: "w1", name: "Contact normalizer", slug: "contact-normalizer", kind: "s1-skeleton", availableInMCP: true }],
   };
   const manifestPath = path.join(root, "manifest.json");
@@ -144,6 +146,13 @@ describe("field-test report", () => {
     assert.match(html, /harness: S1 after turn 1/);
   });
 
+  it("names the round's conditions, so two rounds can be told apart", () => {
+    const html = readFileSync(out, "utf8");
+    assert.match(html, /Round conditions/);
+    assert.match(html, /n8nio\/n8n:2\.33\.3/, "the n8n image must be visible in the report");
+    assert.match(html, /sonnet \(not recorded\)/, "a pre-flag archive must say the model is unrecorded, not imply one");
+  });
+
   it("redacts credentials everywhere", () => {
     assert.ok(!html.includes(MCP_TOKEN), "MCP token leaked into the report");
     assert.ok(!html.includes(API_KEY), "API key leaked into the report");
@@ -170,6 +179,13 @@ describe("field-test report", () => {
     assert.ok(files.includes("guard.log"), "guard log missing");
     assert.ok(files.includes("work.git/HEAD"), "bare workflow history missing");
     assert.ok(!files.some((f) => f.startsWith("work/")), "working tree should not be archived");
+
+    // The round's WORLD must survive into git. `--model` and `--n8n-tag` exist so
+    // a sweep can vary them; two rounds that differ only by model would otherwise
+    // be indistinguishable once archived, which is worse than not varying at all.
+    const archivedManifest = JSON.parse(readFileSync(path.join(unpacked, "manifest.json"), "utf8")) as { model?: string; n8nTag?: string };
+    assert.equal(archivedManifest.model, "sonnet", "archived manifest must record the model that ran");
+    assert.equal(archivedManifest.n8nTag, "n8nio/n8n:2.33.3", "archived manifest must keep the n8n image");
 
     // it lands in git, so no credential may survive the packing
     for (const f of files) {

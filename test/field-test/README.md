@@ -310,11 +310,36 @@ try: node test/field-test/run.mts <manifest> S2 S4
 - **Guard evidence** (`guard.log`): a blocked `jsCode`-over-MCP write shows as a
   guard warn-line; an empty/connection-only log means the agent went file-first.
 
+## Varying the round's world — `--model` and `--n8n-tag`
+
+Every archived round through 2026-08-08 ran the **same two conditions**: n8n
+2.30.7 and `--model sonnet`. That is what makes the sweep's pass rate a statement
+about one world rather than about the product, and it was structural: both knobs
+existed only as `FIELD_*` env vars, and an inline `VAR=… node …` prefix is
+exactly the form agent sandboxes refuse — so the agent driving the sweeps could
+not vary them. Both are now flags.
+
+```sh
+node test/field-test/run.mts --isolate --all --container --n8n-tag n8nio/n8n:2.33.3
+node test/field-test/run.mts --isolate --all --container --model opus
+```
+
+- Each sweep **prints its two conditions** before spending anything, and the
+  archived `manifest.json` records `model` + `n8nTag`, so a round in git carries
+  the world it ran in. `report.html` shows both under *Round conditions*.
+- **Vary one at a time.** A round that changes model *and* n8n version cannot say
+  which one moved the result — the same rule the existing staging conditions
+  already follow.
+- `--model` reaches the blind session through the `--isolate` re-exec;
+  `--n8n-tag` is forwarded to each unit's **stage** instead, since that is what
+  boots the container.
+
 ## Env knobs
 
 | Var | Effect |
 | --- | --- |
-| `FIELD_N8N_TAG` | n8n image (default matches `test/smoke-n8n.mts`). |
+| `FIELD_N8N_TAG` | n8n image (default matches `test/smoke-n8n.mts`). **Prefer `--n8n-tag`** — see below. |
+| `FIELD_MODEL` | model for the blind sessions (default `sonnet`). **Prefer `--model`.** |
 | `FIELD_N8N_URL` / `FIELD_MCP_TOKEN` / `FIELD_API_KEY` | target an existing instance instead of booting one. |
 | `FIELD_DECANTER_SPEC` | install a published version / tarball / git ref instead of packing the local repo. |
 | `FIELD_NO_SEED_ENV=1` | stage the **cold start**: no `.env`, no `.decanter-auth.json` — the scaffold is there, the credentials are not (removed *after* the stage's own `init`, which would otherwise write them back). Required by S14. |
