@@ -32,11 +32,12 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 .vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
 code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
 </style>
-<header><h1>n8n-decanter · blind field test</h1><a href="#S10" class="navlink na">S10 <span class="badge na">—</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S10" class="navlink fail">S10 <span class="badge fail">UNGRADED</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
 <main>
 <p class="persona">Host <code>http://127.0.0.1:62879</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>sonnet (not recorded)</code> · n8n <code>n8nio/n8n:2.30.7</code> · seeds <code>corpus-v1</code>. Two rounds are only comparable when these match.</p>
 
-<section id="S10"><h2>S10 <span class="badge na">—</span></h2><div class="persona">same user, spooked by an outage, wants a recovery story that works</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Our n8n fell over last week and nobody could tell me whether we'd lose everything. I want a copy of the order-sync flow that I could actually put back if the instance disappeared tomorrow. Make me one, and tell me where it lives.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat decanter.config.json 2&gt;/dev/null; echo "---"; ls</pre><div class="tres "><span class="tlab">result</span><pre>{
+<section id="S10"><h2>S10 <span class="badge fail">UNGRADED</span></h2><div class="persona">same user, spooked by an outage, wants a recovery story that works</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Our n8n fell over last week and nobody could tell me whether we'd lose everything. I want a copy of the order-sync flow that I could actually put back if the instance disappeared tomorrow. Make me one, and tell me where it lives.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat decanter.config.json 2&gt;/dev/null; echo "---"; ls</pre><div class="tres "><span class="tlab">result</span><pre>{
   "root": "./workflows",
   "workflows": []
 }
@@ -155,7 +156,7 @@ Two ways to actually move this forward:
 1. **Check if it's really gone** — I run `get_workflow_history`/search for anything resembling it, in case it's just misnamed or archived rather than deleted.
 2. **If it's genuinely gone**, someone who knows what it did needs to give me the real spec (systems, auth, logic) so I can rebuild it *and* back it up properly this time with `n8n-decanter backup create`, closing the gap for real.
 
-Want me to run the history check first?</div></div></div></section>
+Want me to run the history check first?</div></div></div><div class="verify"><h4>Scripted invariants — UNGRADED</h4><p class="vdet">No <code>verify-S10.json</code> in this round. The verifier did not produce a verdict, so <b>this scenario was not machine-graded</b> — do not read it as a pass. The reason, if any, was printed to the run's stdout, which is not part of the archive.</p></div></section>
 <section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S10 after turn 0</span> <span class="vdet">2026-08-05 17:21</span></summary><pre class="tin"> workflows/._.gitkeep | Bin 0 -&gt; 163 bytes
  workflows/.gitkeep   |   0
  2 files changed, 0 insertions(+), 0 deletions(-)

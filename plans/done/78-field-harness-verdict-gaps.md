@@ -1,6 +1,7 @@
 # Plan 78 — three harness gaps the first n=3 sweep exposed
 
-**Status:** Draft
+**Status:** Done — all seven findings fixed, each with a test asserting the state
+it claims to create. Task 3 landed separately as #237.
 **Priority:** P1 (all three are small, offline, and each one silently corrupts a
 round's evidence — the cheapest possible defects to leave in place)
 **Source:** the triple sweep of 2026-08-08 (28 rounds, `ftrun-56329` …
@@ -207,6 +208,28 @@ Record which of the two it saw.
 - `--container` with no credential refuses **before the first stage**, booting
   nothing.
 - No archived `manifest.json` contains an `n8n-auth=` JWT.
+
+## What landed
+
+| # | Fix | Asserted by |
+| --- | --- | --- |
+| 1 | `verify.mts` writes a verdict on **every** exit — unresolved scope *and* a thrown error, both `passed: false` with the reason in `unresolved`. `report.html` renders a missing verdict as **UNGRADED** in the FAIL colour, distinguished from S13's by-design `verifyWorkflows: "none"` | two unit tests in `field-report.test.mts` |
+| 2 | `requiresSeedEnvOff` is host-only under `--container`, dropped **by name before the plan prints** — `S5, S6, S9, S14 are host-only` | verified: dry-run names all four |
+| 3 | — | landed as #237 |
+| 4 | nine archives re-rendered; their silent blanks now read UNGRADED | the diff |
+| 5 | credential pre-flight **once, before the first stage**, naming the gitignored `.env` | verified: refuses having booted nothing |
+| 6 | `ownerCookie` added to the redaction list and overwritten in the archived manifest | `field-report.test.mts` fails if the JWT survives packing |
+| 7 | the converted-not-yet-pushed state is **evidence** (`PASS — converted, not yet pushed`), not a violation | reproduced at the CLI surface against a mock: the check flips from FAIL to PASS |
+
+**Finding 1 turned out to have a third mouth.** The plan named the
+unresolved-scope exit; reproducing finding 7 hit a *thrown* verifier that also
+exited with nothing on disk. Both paths now write.
+
+**Finding 6 is forward-only, deliberately.** The 40 archives already carrying a
+session JWT cannot be cleaned without rewriting history, which the ruleset
+blocks — and the JWTs are throwaway-container, ephemeral-port, long expired. The
+list is fixed so nothing written from here on adds to them; re-packing the old
+ones would churn 4 MB to leave the same blobs in history.
 
 ## Notes
 

@@ -27,12 +27,16 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIELD = path.join(HERE, "..", "field-test");
 const RUN = path.join(FIELD, "run.mts");
 const REPORT = path.join(FIELD, "report.mts");
+const VERIFY = path.join(FIELD, "verify.mts");
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-fieldreport-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const MCP_TOKEN = "mcp-tok-e3f9a1b2c3d4e5f6a7b8";
 const API_KEY = "api-key-9f8e7d6c5b4a3928170a";
+/** An n8n owner SESSION JWT. Shaped like the real thing because it travelled into
+ * git verbatim for 40 archives — the redaction list named only the two above. */
+const OWNER_COOKIE = "n8n-auth=eyJhbGciOiJIUzI1NiJ9.eyJpZCI6ImZha2UtMTIzIn0.s1gn4tur3-f4k3-f0r-t3st1ng";
 const PROMPT = "Ada, the empty step needs the finished code.";
 
 /** One stream-json line, as the claude CLI emits it. */
@@ -95,6 +99,7 @@ function stageSynthetic(): { manifestPath: string; harness: string; workDir: str
     decanterSpec: null,
     n8nTag: "n8nio/n8n:2.33.3",
     seedPack: "builtin",
+    ownerCookie: OWNER_COOKIE,
     seeded: [{ id: "w1", name: "Contact normalizer", slug: "contact-normalizer", kind: "s1-skeleton", availableInMCP: true }],
   };
   const manifestPath = path.join(root, "manifest.json");
@@ -146,6 +151,38 @@ describe("field-test report", () => {
     assert.match(html, /harness: S1 after turn 1/);
   });
 
+  it("verify writes a verdict even when it cannot resolve its scope", () => {
+    // Plan 78 finding 1, at the source. `verify.mts` used to exit(2) with nothing
+    // on disk when its scoped workflow wasn't tracked — which is how S8, S3, S10,
+    // S4 and (later) S12 were archived looking ungraded rather than failed. No
+    // network needed: an empty workflows/ reaches the same branch.
+    const { manifestPath: mp, workDir: wd } = stageSynthetic();
+    rmSync(path.join(wd, "workflows"), { recursive: true, force: true });
+    const vOut = path.join(TMP, "verify-scoped.json");
+    try {
+      execFileSync(process.execPath, [VERIFY, mp, "--scenario", "S1", "--out", vOut], { stdio: "ignore" });
+    } catch { /* exit 2 is the point */ }
+    assert.ok(existsSync(vOut), "a failing verify must still write its verdict");
+    const v = JSON.parse(readFileSync(vOut, "utf8"));
+    assert.equal(v.passed, false);
+    assert.match(String(v.unresolved), /no tracked workflow folders/);
+  });
+
+  it("a round with no verdict reads as UNGRADED, not as covered", () => {
+    // Plan 78 finding 1. Four archived rounds carried no `verify-*.json` because a
+    // failing verifier exited without writing one, and the report rendered them
+    // with the same neutral dash S13 gets for declaring `verifyWorkflows: "none"`.
+    // One is "graded elsewhere, on purpose"; the other is a hole in the evidence.
+    const { manifestPath: mp, harness: hr } = stageSynthetic();
+    rmSync(path.join(hr, "verify-S1.json"));
+    const out2 = path.join(TMP, "ungraded.html");
+    execFileSync(process.execPath, [REPORT, mp, "--out", out2], { stdio: "ignore" });
+    const html = readFileSync(out2, "utf8");
+    assert.match(html, /UNGRADED/, "a missing verdict must say so");
+    assert.match(html, /was not machine-graded/, "and must say what that means");
+    assert.doesNotMatch(html, /badge na">UNGRADED/, "UNGRADED must not wear the neutral badge");
+  });
+
   it("names the round's conditions, so two rounds can be told apart", () => {
     const html = readFileSync(out, "utf8");
     assert.match(html, /Round conditions/);
@@ -192,6 +229,7 @@ describe("field-test report", () => {
       const body = readFileSync(path.join(unpacked, f), "utf8").toString();
       assert.ok(!body.includes(MCP_TOKEN), `MCP token leaked into ${f}`);
       assert.ok(!body.includes(API_KEY), `API key leaked into ${f}`);
+      assert.ok(!body.includes(OWNER_COOKIE), `owner session JWT leaked into ${f}`);
     }
 
     rmSync(harness, { recursive: true, force: true }); // the run is gone
