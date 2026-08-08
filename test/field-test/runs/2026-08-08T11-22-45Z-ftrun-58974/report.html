@@ -32,11 +32,12 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 .vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
 code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
 </style>
-<header><h1>n8n-decanter · blind field test</h1><a href="#S3" class="navlink na">S3 <span class="badge na">—</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S3" class="navlink fail">S3 <span class="badge fail">UNGRADED</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
 <main>
 <p class="persona">Host <code>http://127.0.0.1:65081</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>sonnet (not recorded)</code> · n8n <code>n8nio/n8n:2.30.7</code> · seeds <code>builtin</code>. Two rounds are only comparable when these match.</p>
 
-<section id="S3"><h2>S3 <span class="badge na">—</span></h2><div class="persona">same user; a colleague edited the same workflow in n8n first</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Small tweak to the contact cleanup workflow — in the Normalize step, also dedupe records by name (case-insensitive), not just by email. Then push it and take it live.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls /work; echo "---"; find /work -maxdepth 2 -iname "*contact*" -o -iname "workflows" | head -50</pre><div class="tres "><span class="tlab">result</span><pre>AGENTS.md
+<section id="S3"><h2>S3 <span class="badge fail">UNGRADED</span></h2><div class="persona">same user; a colleague edited the same workflow in n8n first</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Small tweak to the contact cleanup workflow — in the Normalize step, also dedupe records by name (case-insensitive), not just by email. Then push it and take it live.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls /work; echo "---"; find /work -maxdepth 2 -iname "*contact*" -o -iname "workflows" | head -50</pre><div class="tres "><span class="tlab">result</span><pre>AGENTS.md
 CLAUDE.md
 decanter-ts-plugin
 decanter.config.json
@@ -135,7 +136,7 @@ Once that's confirmed, the plan is: register the workflow id in `decanter.config
 **Still open before I write code:** since the node currently has *no* dedupe-by-email logic at all, "also dedupe by name" means I'd be writing the whole dedupe function from scratch, not extending existing logic. Two questions so I don't guess wrong:
 
 - Confirm **Contact normalizer** is the right workflow (given the name mismatch and empty logic)?
-- What should count as a duplicate — same email OR same name (case-insensitive), keep first occurrence? Any field priority for which record to keep when two are merged (e.g. prefer the one with more fields filled in)?</div></div></div></section>
+- What should count as a duplicate — same email OR same name (case-insensitive), keep first occurrence? Any field priority for which record to keep when two are merged (e.g. prefer the one with more fields filled in)?</div></div></div><div class="verify"><h4>Scripted invariants — UNGRADED</h4><p class="vdet">No <code>verify-S3.json</code> in this round. The verifier did not produce a verdict, so <b>this scenario was not machine-graded</b> — do not read it as a pass. The reason, if any, was printed to the run's stdout, which is not part of the archive.</p></div></section>
 <section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S3 after turn 0</span> <span class="vdet">2026-08-08 13:22</span></summary><pre class="tin"> workflows/.gitkeep | 0
  1 file changed, 0 insertions(+), 0 deletions(-)
 

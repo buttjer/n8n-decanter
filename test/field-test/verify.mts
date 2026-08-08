@@ -109,6 +109,14 @@ const ROOT = path.resolve(manifest.workDir, manifest.root ?? "workflows");
 const sha256 = (text: string): string => "sha256:" + createHash("sha256").update(text, "utf8").digest("hex");
 const FILE_PLACEHOLDER_PREFIX = "//@file:";
 const CODE_NODE_TYPE = "n8n-nodes-base.code";
+/** File a `//@file:` placeholder points at (mirrors lib/util placeholderFile,
+ * reimplemented on purpose — an oracle that imports the thing it grades cannot
+ * catch that thing being wrong). */
+function placeholderTarget(jsCode: string | undefined): string | null {
+  if (typeof jsCode !== "string" || !jsCode.startsWith("//@file:")) return null;
+  return jsCode.slice("//@file:".length).trim();
+}
+
 /** Recover a trailing `// @ts-n8n sha256:<hex>` marker (mirrors lib/util splitMarker, reimplemented on purpose). */
 function splitMarker(code: string): { body: string; markerHash: string | null } {
   const m = code.match(/(?:^|\n)(\/\/ @ts-n8n (sha256:[0-9a-f]{64}))[ \t]*\n?[ \t\n]*$/);
@@ -362,6 +370,26 @@ async function checkWorkflow(slug: string): Promise<WorkflowResult> {
     const localPath = path.join(dir, node.file);
     const label = `node ${JSON.stringify(node.file)}`;
     if (!existsSync(localPath)) {
+      // CONVERTED, NOT YET PUSHED — evidence, not a violation (Plan 78 finding 7).
+      //
+      // A `.js`→`.ts` conversion re-points the snapshot's //@file: placeholder and
+      // deletes the old file; `.decanter.json` is re-keyed by the NEXT push. An
+      // agent that stops to ask before pushing a live workflow — which the
+      // scaffolded AGENTS.md tells it to do — leaves exactly this state, and the
+      // Opus round duly FAILed for it. decanter reports it correctly at every
+      // surface (preflight 80/100 naming the fix, diff, and push self-heals), so
+      // faulting it here manufactures a product defect out of good conduct. Same
+      // reasoning as `--expect-drift`: record which state was seen, don't judge.
+      const moved = wfJson.nodes.find((n) => n.id === nodeId);
+      const placeholder = placeholderTarget(moved?.parameters?.jsCode);
+      if (placeholder !== null && placeholder !== node.file && existsSync(path.join(dir, placeholder))) {
+        checks.push({
+          name: `${label}: converted, not yet pushed`,
+          ok: true,
+          detail: `.decanter.json still records ${node.file}; the placeholder now points at ${placeholder}, which exists — the next push re-keys the map`,
+        });
+        continue;
+      }
       checks.push({ name: `${label}: local file exists`, ok: false, detail: `${node.file} in .decanter.json but missing on disk` });
       continue;
     }
@@ -447,12 +475,55 @@ const slugs = wantedIds.length > 0
   : discoverFolders();
 
 if (slugs.length === 0) {
-  console.error(`verify: no tracked workflow folders under ${ROOT}${wantedIds.length ? ` matching ${wantedIds.join(", ")}` : ""}`);
+  // A FAILING verify must still write its verdict (Plan 78 finding 1).
+  //
+  // This used to `exit(2)` with nothing on disk, so `run.mts` archived the round
+  // with no `verify-<S>.json` at all — indistinguishable from S13, which declares
+  // `verifyWorkflows: "none"` on purpose. Four archived rounds read as "no
+  // verdict, cause unknown" for exactly this reason, and the Opus round lost S12
+  // the same way: the diagnosis lived only in the run's stdout, which is not part
+  // of the archive. A missing verdict must never be quieter than a failing one.
+  const detail = `no tracked workflow folders under ${ROOT}${wantedIds.length ? ` matching ${wantedIds.join(", ")}` : ""}`;
+  console.error(`verify: ${detail}`);
+  if (outFile) {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(outFile, JSON.stringify({
+      scenario: scenario ?? null,
+      manifest: manifestPath,
+      workflows: [],
+      violations: 1,
+      passed: false,
+      unresolved: detail,
+    }, null, 2) + "\n");
+    console.log(`wrote ${outFile}`);
+  }
   process.exit(2);
 }
 
 const results: WorkflowResult[] = [];
-for (const slug of slugs) results.push(await checkWorkflow(slug));
+try {
+  for (const slug of slugs) results.push(await checkWorkflow(slug));
+} catch (err) {
+  // A THROW must not swallow the verdict either (Plan 78 finding 1). An
+  // unreachable instance, a shape the reader didn't expect, a corrupt state file
+  // — any of them used to end the process with a stack and nothing on disk, so
+  // the archive looked ungraded rather than failed. Write what we know.
+  const detail = (err as Error).message.split("\n")[0];
+  console.error(`\nverify: aborted — ${detail}`);
+  if (outFile) {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(outFile, JSON.stringify({
+      scenario: scenario ?? null,
+      manifest: manifestPath,
+      workflows: results,
+      violations: 1,
+      passed: false,
+      unresolved: `verifier aborted: ${detail}`,
+    }, null, 2) + "\n");
+    console.log(`wrote ${outFile}`);
+  }
+  process.exit(2);
+}
 
 let failed = 0;
 console.log(`\n=== field-test verify${scenario ? ` — ${scenario}` : ""} (${slugs.length} workflow${slugs.length === 1 ? "" : "s"}) ===`);

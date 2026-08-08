@@ -35,6 +35,9 @@ import { SESSION_START_NUDGE } from "./skills-install.mts";
 const execFile = promisify(execFileCb);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCENARIO_DIR = path.join(HERE, "scenarios");
+// Declared up here, not next to the other container constants, because the
+// `--isolate` pre-flight below needs it BEFORE the first stage boots.
+const ENV_FILE = path.join(HERE, ".env"); // gitignored; holds the one credential
 const VERIFY = path.join(HERE, "verify.mts");
 const REPORT = path.join(HERE, "report.mts");
 
@@ -127,7 +130,12 @@ if (argv.includes("--isolate")) {
   // silently: a skipped scenario that reads as "covered" is the failure this
   // harness keeps finding in itself.
   if (argv.includes("--all") && containerMode) {
-    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true; });
+    // `requiresSeedEnvOff` is host-only too (Plan 78 finding 2): it deletes the
+    // `.env` — which is exactly the file container mode rewrites to the
+    // in-network host — so the blind agent sees the host-side 127.0.0.1:<port>
+    // from the manifest, which does not resolve inside the fence. The stage
+    // already warns about it, but only AFTER the unit has been booted and spent.
+    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true || s.requiresSeedEnvOff === true; });
     if (hostOnly.length > 0) {
       console.log(`--container: ${hostOnly.join(", ")} are host-only and are NOT part of this sweep — run them separately:\n    node test/field-test/run.mts --isolate ${hostOnly.join(" ")}\n`);
       ids = ids.filter((id) => !hostOnly.includes(id));
@@ -168,6 +176,27 @@ if (argv.includes("--isolate")) {
     console.log(`\ndry run: nothing staged, nothing spent. Drop --dry-run to execute.`);
     process.exit(0);
   }
+  // Credential pre-flight — ONCE, before the first stage (Plan 78 finding 4).
+  //
+  // `containerSetup` checks this per unit, after that unit has already booted an
+  // n8n. A sweep with no credential therefore boots and tears down one instance
+  // per unit to print the same message that many times — nine, the first time
+  // this was run. And the repo's own worktree rule steers you straight into it:
+  // `.env` is gitignored, so a fresh worktree never has one. Same contract as the
+  // scenario-prerequisite gate: unmet means nothing is spent.
+  if (containerMode) {
+    const cred = readEnvFile(ENV_FILE);
+    const has = (n: string) => ((cred[n] ?? process.env[n] ?? "").trim() !== "");
+    if (!has("CLAUDE_CODE_OAUTH_TOKEN") && !has("ANTHROPIC_API_KEY")) {
+      console.error(
+        `--container needs a credential — nothing was spent:\n` +
+          `  no CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in ${ENV_FILE}\n` +
+          `  that file is GITIGNORED, so a fresh worktree never has one — copy it across, or:\n` +
+          `    cp test/field-test/.env.example test/field-test/.env   # then set ONE credential`,
+      );
+      process.exit(2);
+    }
+  }
   let failed = 0;
   for (const [i, unit] of units.entries()) {
     const pack = packOf.get(unit.join("+"))!;
@@ -193,7 +222,11 @@ if (argv.includes("--isolate")) {
     } catch (err) {
       const e = err as { stdout?: string; stderr?: string };
       console.log((e.stdout ?? "") + (e.stderr ?? ""));
-      console.error(`unit ${unit.join("+")} exited non-zero`);
+      // One readable line, not a Node stack per unit. A child that dies before its
+      // turns prints its own `throw` trace into the captured stdout above; what
+      // the operator needs on top of that is which unit and what it said.
+      const why = ((e.stderr ?? "").match(/^Error: (.+)$/m) ?? [])[1];
+      console.error(`unit ${unit.join("+")} exited non-zero${why ? ` — ${why}` : ""}`);
       failed++;
     } finally {
       // Tear down even when the unit failed: the archive is already written into
@@ -219,7 +252,6 @@ const GUARD_LOG = path.join(HARNESS, "guard.log");
 // container-mode constants
 const DOCKER_DIR = path.join(HERE, "docker");
 const COMPOSE = path.join(DOCKER_DIR, "docker-compose.yml");
-const ENV_FILE = path.join(HERE, ".env"); // gitignored; holds ANTHROPIC_API_KEY
 const INTERNAL_NET = "decanter-fieldtest_internal"; // compose project + network
 const RUN_BUDGET_MS = Math.max(1, Number(process.env.FIELD_RUN_BUDGET_MIN ?? 60)) * 60_000;
 /** FIELD_* vars compose interpolates on EVERY subcommand — set by containerSetup. */
@@ -1206,7 +1238,14 @@ async function archiveRun(): Promise<void> {
   const stamp = (manifest.createdAt ?? new Date().toISOString()).replace(/:/g, "-").replace(/\.\d+Z$/, "Z");
   const dest = process.env.FIELD_ARCHIVE_DIR ?? path.join(HERE, "runs", `${stamp}-${runId}`);
   const staging = path.join(HARNESS, "__raw");
-  const secrets = [manifest.mcpToken, manifest.apiKey].filter((s) => typeof s === "string" && s.length > 8);
+  // `ownerCookie` belongs here too (Plan 78 finding 5): it is an n8n owner SESSION
+  // JWT, and the README promises the archive is scrubbed. It was neither in this
+  // list nor overwritten below, so 40 of the archives committed before
+  // 2026-08-08 carry one verbatim in a public repo. Practical risk is ~nil (a
+  // throwaway container on an ephemeral localhost port, long expired) and the
+  // existing ones cannot be removed without rewriting history, which the ruleset
+  // blocks — but nothing written from here on should add to them.
+  const secrets = [manifest.mcpToken, manifest.apiKey, manifest.ownerCookie].filter((s): s is string => typeof s === "string" && s.length > 8);
   try {
     rmSync(staging, { recursive: true, force: true });
     mkdirSync(staging, { recursive: true });
@@ -1229,7 +1268,7 @@ async function archiveRun(): Promise<void> {
     // `model` is a RUN property, not a stage one, so the stage-written manifest
     // cannot carry it — but the archive must, or two rounds that differ only by
     // model become indistinguishable in git. (`n8nTag` the stage already records.)
-    writeFileSync(path.join(staging, "manifest.json"), JSON.stringify({ ...manifest, model: MODEL, mcpToken: "‹redacted›", apiKey: "‹redacted›", scenariosAsRun: !argv.includes("--archive") }, null, 2) + "\n");
+    writeFileSync(path.join(staging, "manifest.json"), JSON.stringify({ ...manifest, model: MODEL, mcpToken: "‹redacted›", apiKey: "‹redacted›", ...(manifest.ownerCookie ? { ownerCookie: "‹redacted›" } : {}), scenariosAsRun: !argv.includes("--archive") }, null, 2) + "\n");
     scrubTree(staging, secrets); // transcripts/guard.log may echo a token in tool output
 
     mkdirSync(dest, { recursive: true });

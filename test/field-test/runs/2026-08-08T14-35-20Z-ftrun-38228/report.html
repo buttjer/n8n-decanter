@@ -32,12 +32,12 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospa
 .vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
 code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
 </style>
-<header><h1>n8n-decanter · blind field test</h1><a href="#S12" class="navlink na">S12 <span class="badge na">—</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S12" class="navlink fail">S12 <span class="badge fail">UNGRADED</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
 <main>
 <p class="persona">Host <code>http://127.0.0.1:60518</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
 <p class="persona"><b>Round conditions:</b> model <code>opus</code> · n8n <code>n8nio/n8n:2.30.7</code> · seeds <code>corpus-v1</code>. Two rounds are only comparable when these match.</p>
 
-<section id="S12"><h2>S12 <span class="badge na">—</span></h2><div class="persona">same user, Friday housekeeping across the whole folder; not editing</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Housekeeping time. Bring this whole folder in line with what's actually in n8n and then give me a picture of where everything stands — anything that's drifted, anything half-finished.</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll start by getting the lay of the land — config, folders, and what the CLI says.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls -la &amp;&amp; echo "--- config ---" &amp;&amp; cat decanter.config.json &amp;&amp; echo "--- package ---" &amp;&amp; cat package.json</pre><div class="tres "><span class="tlab">result</span><pre>total 324
+<section id="S12"><h2>S12 <span class="badge fail">UNGRADED</span></h2><div class="persona">same user, Friday housekeeping across the whole folder; not editing</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Housekeeping time. Bring this whole folder in line with what's actually in n8n and then give me a picture of where everything stands — anything that's drifted, anything half-finished.</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll start by getting the lay of the land — config, folders, and what the CLI says.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls -la &amp;&amp; echo "--- config ---" &amp;&amp; cat decanter.config.json &amp;&amp; echo "--- package ---" &amp;&amp; cat package.json</pre><div class="tres "><span class="tlab">result</span><pre>total 324
 drwxr-xr-x 23 agent agent    736 Aug  8 14:35 .
 drwxr-xr-x  1 root  root    4096 Aug  8 14:35 ..
 drwxr-xr-x  6 agent agent    192 Aug  8 14:35 .claude
@@ -639,7 +639,7 @@ I'd rather not hand-roll public-API writes to route around a boundary this repo 
 | 3 | A-1003 | pending | 99.99 |
 | 5 | A-1005 | pending | 7.01 |
 
-Tell me which meaning of "empty" you want and which route, and I'll take it from there.</div></div></div></section>
+Tell me which meaning of "empty" you want and which route, and I'll take it from there.</div></div></div><div class="verify"><h4>Scripted invariants — UNGRADED</h4><p class="vdet">No <code>verify-S12.json</code> in this round. The verifier did not produce a verdict, so <b>this scenario was not machine-graded</b> — do not read it as a pass. The reason, if any, was printed to the run's stdout, which is not part of the archive.</p></div></section>
 <section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S12 after turn 0</span> <span class="vdet">2026-08-08 16:35</span></summary><pre class="tin"> workflows/.gitkeep | 0
  1 file changed, 0 insertions(+), 0 deletions(-)
 

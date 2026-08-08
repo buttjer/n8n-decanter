@@ -112,12 +112,12 @@ function parseTurn(file: string): Ev[] {
 }
 
 // ---------- scenario prompts (for the "user says" bubbles) ----------
-function scenarioTurns(id: string): { persona: string; turns: string[] } {
+function scenarioTurns(id: string): { persona: string; turns: string[]; verifyWorkflows?: unknown } {
   const file = path.join(SCENARIO_DIR, `${id}.md`);
   if (!existsSync(file)) return { persona: "", turns: [] };
   const m = readFileSync(file, "utf8").match(/##\s*Orchestration[\s\S]*?```json\n([\s\S]*?)\n```/);
   if (!m) return { persona: "", turns: [] };
-  try { const o = JSON.parse(m[1]); return { persona: o.persona ?? "", turns: o.turns ?? [] }; } catch { return { persona: "", turns: [] }; }
+  try { const o = JSON.parse(m[1]); return { persona: o.persona ?? "", turns: o.turns ?? [], verifyWorkflows: o.verifyWorkflows }; } catch { return { persona: "", turns: [] }; }
 }
 
 // ---------- syntax highlighting + diffs (server-side; the file stays self-contained) ----------
@@ -221,10 +221,16 @@ function renderProgression(): string {
 // ---------- render ----------
 function renderScenario(id: string): { nav: string; html: string; verdict: string } {
   const dir = path.join(TDIR, id);
-  const { persona, turns } = scenarioTurns(id);
+  const { persona, turns, verifyWorkflows } = scenarioTurns(id);
   const verifyFile = path.join(HR, `verify-${id}.json`);
   const verify = existsSync(verifyFile) ? JSON.parse(readFileSync(verifyFile, "utf8")) : null;
-  const verdict = verify ? (verify.passed ? "PASS" : `FAIL (${verify.violations})`) : "—";
+  // "no verdict" has two very different meanings and they used to render alike:
+  // S13 declares `verifyWorkflows: "none"` and is graded from the transcript on
+  // purpose, while a round whose verifier died is simply UNGRADED. Reading the
+  // second as the first is how four archived rounds passed for "covered"
+  // (Plan 78 finding 1).
+  const byDesign = verifyWorkflows === "none";
+  const verdict = verify ? (verify.passed ? "PASS" : `FAIL (${verify.violations})`) : byDesign ? "—" : "UNGRADED";
 
   const turnFiles = existsSync(dir) ? readdirSync(dir).filter((f) => /^turn-\d+\.jsonl$/.test(f)).sort() : [];
   let body = "";
@@ -256,8 +262,14 @@ function renderScenario(id: string): { nav: string; html: string; verdict: strin
   });
 
   let verifyHtml = "";
+  if (!verify && byDesign) {
+    verifyHtml = `<div class="verify"><h4>Scripted invariants — not applicable</h4><p class="vdet">This scenario declares <code>verifyWorkflows: "none"</code>: nothing here is machine-graded, and the finding lives in the transcript above.</p></div>`;
+  } else if (!verify) {
+    verifyHtml = `<div class="verify"><h4>Scripted invariants — UNGRADED</h4><p class="vdet">No <code>verify-${esc(id)}.json</code> in this round. The verifier did not produce a verdict, so <b>this scenario was not machine-graded</b> — do not read it as a pass. The reason, if any, was printed to the run's stdout, which is not part of the archive.</p></div>`;
+  }
   if (verify) {
     verifyHtml = `<div class="verify"><h4>Scripted invariants — ${verdict}</h4>`;
+    if (verify.unresolved) verifyHtml += `<p class="vdet">The verifier could not resolve what it was scoped to: ${esc(String(verify.unresolved))}</p>`;
     for (const wf of verify.workflows ?? []) {
       verifyHtml += `<div class="vwf"><b>${esc(wf.slug)}</b><ul>`;
       for (const c of wf.checks ?? []) verifyHtml += `<li class="${c.ok ? "ok" : "bad"}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${c.ok ? "" : `<br><span class="vdet">${esc(c.detail)}</span>`}</li>`;
@@ -267,6 +279,8 @@ function renderScenario(id: string): { nav: string; html: string; verdict: strin
   }
 
   const cls = verdict.startsWith("PASS") ? "pass" : verdict === "—" ? "na" : "fail";
+  // UNGRADED shares the FAIL colour deliberately: it is a hole in the evidence,
+  // and a neutral badge is what let it read as "covered".
   const nav = `<a href="#${id}" class="navlink ${cls}">${id} <span class="badge ${cls}">${verdict}</span></a>`;
   const html = `<section id="${id}"><h2>${id} <span class="badge ${cls}">${verdict}</span></h2><div class="persona">${esc(persona)}</div>${body}${verifyHtml}</section>`;
   return { nav, html, verdict };
