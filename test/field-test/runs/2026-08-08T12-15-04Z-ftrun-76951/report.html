@@ -1,0 +1,584 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S1" class="navlink pass">S1 <span class="badge pass">PASS</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:49234</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+
+<section id="S1"><h2>S1 <span class="badge pass">PASS</span></h2><div class="persona">solo ops analyst, project already synced, terminal-comfortable</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">This folder is already hooked up to my n8n. Please finish my one workflow: it's a manual-trigger flow called 'Contact normalizer' with an empty Code step called 'Normalize'. I paste in a JSON array of contact records and I want that step to (1) drop exact duplicate records and (2) normalise every email to lowercase and trim whitespace on names. That step is still empty over in n8n, so make sure the finished code actually ends up there — not just sitting in this folder.
+
+Sample input the step should handle:
+[{"name":"  Ada ","email":"ADA@Example.com","status":"active"},{"name":"Ada","email":"ada@example.com","status":"active"},{"name":"Bo","email":"BO@x.io","status":"archived"}]</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat decanter.config.json 2&gt;/dev/null; echo "---"; ls -la</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "root": "./workflows",
+  "workflows": []
+}
+---
+total 324
+drwxr-xr-x 23 agent agent    736 Aug  8 12:15 .
+drwxr-xr-x  1 root  root    4096 Aug  8 12:15 ..
+drwxr-xr-x  6 agent agent    192 Aug  8 12:15 .claude
+drwxr-xr-x  3 agent agent     96 Aug  8 12:15 .cursor
+-rw-r--r--  1 agent agent   1892 Aug  8 12:15 .decanter-template.json
+-rw-r--r--  1 agent agent    608 Aug  8 12:15 .env
+drwxr-xr-x 12 agent agent    384 Aug  8 12:15 .git
+-rw-r--r--  1 agent agent     97 Aug  8 12:15 .gitignore
+-rw-r--r--  1 agent agent    289 Aug  8 12:15 .mcp.json
+drwxr-xr-x  3 agent agent     96 Aug  8 12:15 .vscode
+-rw-r--r--  1 agent agent  39362 Aug  8 12:15 AGENTS.md
+-rw-r--r--  1 agent agent   1941 Aug  8 12:15 CLAUDE.md
+drwxr-xr-x  4 agent agent    128 Aug  8 12:15 decanter-ts-plugin
+-rw-r--r--  1 agent agent     47 Aug  8 12:15 decanter.config.json
+-rw-r--r--  1 agent agent 218596 Aug  8 12:15 n8n-decanter-0.10.0.tgz
+-rw-r--r--  1 agent agent   7331 Aug  8 12:15 n8n-globals.d.ts
+drwxr-xr-x  3 agent agent   4096 Aug  8 12:15 node_modules
+-rw-r--r--  1 agent agent   1397 Aug  8 12:15 opencode.json
+-rw-r--r--  1 agent agent  15273 Aug  8 12:15 package-lock.json
+-rw-r--r--  1 agent agent    206 Aug  8 12:15 package.json
+drwxr-xr-x  4 agent agent    128 Aug  8 12:15 shared
+-rw-r--r--  1 agent agent    613 Aug  8 12:15 tsconfig.json
+drwxr-xr-x  3 agent agent     96 Aug  8 12:15 workflows</pre></div></details><details class="tool"><summary><span class="ticon">⌕</span> <span class="tname">Glob</span></summary><pre class="tin">**/Contact*</pre><div class="tres "><span class="tlab">result</span><pre>No files found</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">find workflows -maxdepth 3; echo "---which decanter---"; which n8n-decanter 2&gt;/dev/null; npx --no-install n8n-decanter --version 2&gt;&amp;1 | head -5</pre><div class="tres "><span class="tlab">result</span><pre>workflows
+workflows/.gitkeep
+---which decanter---
+/usr/local/bin/n8n-decanter
+0.10.0</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Good, the CLI is available. Let me find the "Contact normalizer" workflow on the instance and pull it locally.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter list --remote 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>Old contact import  FKnXrjJh97oVdoEo  (not pulled)
+Weekly digest roll-up  H7Fl7fs0vMuLHb8w  (not pulled)
+Contact normalizer  YbFX8051nFk09ODD  (not pulled)
+Ad-hoc sandbox  FBgiK2dPwRr6XelR  (not available in MCP)
+to pull a "(not available in MCP)" workflow: enable MCP access from the workflow card in the n8n workflows list (⋯ menu), or from the workflow settings, then retry</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Found it. Now I'll add it to `decanter.config.json` and pull it.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/decanter.config.json</span></summary><pre class="tin diff"><span class="dl ddel">-   <span class="ts">"workflows"</span>: []</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [<span class="ts">"YbFX8051nFk09ODD"</span>]</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter pull YbFX8051nFk09ODD 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote contact-normalizer/code/normalize.js
+wrote contact-normalizer/workflow.json
+committed: decanter: pulled "Contact normalizer" (YbFX8051nFk09ODD)
+✓ pulled "Contact normalizer" -&gt; /work/workflows/contact-normalizer (0.1s)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Pulled successfully. Let me check the workflow structure and the empty code file.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/contact-normalizer/workflow.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "YbFX8051nFk09ODD",
+3	  "name": "Contact normalizer",
+4	  "active": false,
+5	  "isArchived": false,
+6	  "createdAt": "2026-08-08T12:15:00.542Z",
+7	  "updatedAt": "2026-08-08T12:15:00.555Z",
+8	  "nodes": [
+9	    {
+10	      "id": "trig",
+11	      "name": "When clicked",
+12	      "type": "n8n-nodes-base.manualTrigger",
+13	      "typeVersion": 1,
+14	      "position": [
+15	        0,
+16	        0
+17	      ],
+18	      "parameters": {}
+19	    },
+20	    {
+21	      "id": "c1",
+22	      "name": "Normalize",
+23	      "type": "n8n-nodes-base.code",
+24	      "typeVersion": 2,
+25	      "position": [
+26	        220,
+27	        0
+28	      ],
+29	      "parameters": {
+30	        "jsCode": "//@file:code/normalize.js",
+31	        "mode": "runOnceForAllItems"
+32	      }
+33	    },
+34	    {
+35	      "id": "d1",
+36	      "name": "Done",
+37	      "type": "n8n-nodes-base.noOp",
+38	      "typeVersion": 1,
+39	      "position": [
+40	        440,
+41	        0
+42	      ],
+43	      "parameters": {}
+44	    }
+45	  ],
+46	  "connections": {
+47	    "Normalize": {
+48	      "main": [
+49	        [
+50	          {
+51	            "index": 0,
+52	            "node": "Done",
+53	            "type": "main"
+54	          }
+55	        ]
+56	      ]
+57	    },
+58	    "When clicked": {
+59	      "main": [
+60	        [
+61	          {
+62	            "index": 0,
+63	            "node": "Normalize",
+64	            "type": "main"
+65	          }
+66	        ]
+67	      ]
+68	    }
+69	  },
+70	  "settings": {
+71	    "availableInMCP": true,
+72	    "executionOrder": "v1"
+73	  },
+74	  "meta": null,
+75	  "tags": [],
+76	  "versionId": "f9485813-e617-4065-a741-c6bf4fb9606f",
+77	  "nodeGroups": [],
+78	  "parentFolderId": null,
+79	  "triggerCount": 0
+80	}
+81	</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/work/workflows/contact-normalizer/code/normalize.js</pre><div class="tres "><span class="tlab">result</span><pre>&lt;system-reminder&gt;Warning: the file exists but the contents are empty.&lt;/system-reminder&gt;</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /work/workflows/contact-normalizer/code/normalize.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ /**</span>
+<span class="dl dadd">+  * @typedef {Record&lt;string, unknown&gt;} ContactRecord</span>
+<span class="dl dadd">+  */</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ /**</span>
+<span class="dl dadd">+  * Deterministic string form <span class="tk">of</span> a value, independent <span class="tk">of</span> object key order,</span>
+<span class="dl dadd">+  * so two records that differ only <span class="tk">in</span> key order still compare equal.</span>
+<span class="dl dadd">+  * @param {unknown} value</span>
+<span class="dl dadd">+  * @returns {string}</span>
+<span class="dl dadd">+  */</span>
+<span class="dl dadd">+ <span class="tk">function</span> canonicalize(value) {</span>
+<span class="dl dadd">+   <span class="tk">if</span> (Array.isArray(value)) {</span>
+<span class="dl dadd">+     <span class="tk">return</span> <span class="ts">`[${value.map(canonicalize).join(",")}]`</span>;</span>
+<span class="dl dadd">+   }</span>
+<span class="dl dadd">+   <span class="tk">if</span> (value !== <span class="tk">null</span> &amp;&amp; <span class="tk">typeof</span> value === <span class="ts">"object"</span>) {</span>
+<span class="dl dadd">+     <span class="tk">const</span> record = <span class="tc">/** @type {ContactRecord} */</span> (value);</span>
+<span class="dl dadd">+     <span class="tk">const</span> keys = Object.keys(record).sort();</span>
+<span class="dl dadd">+     <span class="tk">return</span> `{${keys</span>
+<span class="dl dadd">+       .map((key) =&gt; <span class="ts">`${JSON.stringify(key)}:${canonicalize(record[key])}`</span>)</span>
+<span class="dl dadd">+       .join(<span class="ts">","</span>)}}`;</span>
+<span class="dl dadd">+   }</span>
+<span class="dl dadd">+   <span class="tk">return</span> JSON.stringify(value);</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ /**</span>
+<span class="dl dadd">+  * @param {ContactRecord} record</span>
+<span class="dl dadd">+  * @returns {ContactRecord}</span>
+<span class="dl dadd">+  */</span>
+<span class="dl dadd">+ <span class="tk">function</span> normalizeRecord(record) {</span>
+<span class="dl dadd">+   <span class="tk">const</span> normalized = { ...record };</span>
+<span class="dl dadd">+   <span class="tk">if</span> (<span class="tk">typeof</span> normalized.email === <span class="ts">"string"</span>) {</span>
+<span class="dl dadd">+     normalized.email = normalized.email.trim().toLowerCase();</span>
+<span class="dl dadd">+   }</span>
+<span class="dl dadd">+   <span class="tk">if</span> (<span class="tk">typeof</span> normalized.name === <span class="ts">"string"</span>) {</span>
+<span class="dl dadd">+     normalized.name = normalized.name.trim();</span>
+<span class="dl dadd">+   }</span>
+<span class="dl dadd">+   <span class="tk">return</span> normalized;</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> records = $input.all().map((item) =&gt; <span class="tc">/** @type {ContactRecord} */</span> (item.json));</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tc">/** @type {Set&lt;string&gt;} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> seen = <span class="tk">new</span> Set();</span>
+<span class="dl dadd">+ <span class="tc">/** @type {ContactRecord[]} */</span></span>
+<span class="dl dadd">+ <span class="tk">const</span> deduped = [];</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">for</span> (<span class="tk">const</span> record <span class="tk">of</span> records) {</span>
+<span class="dl dadd">+   <span class="tk">const</span> normalized = normalizeRecord(record);</span>
+<span class="dl dadd">+   <span class="tk">const</span> key = canonicalize(normalized);</span>
+<span class="dl dadd">+   <span class="tk">if</span> (seen.has(key)) continue;</span>
+<span class="dl dadd">+   seen.add(key);</span>
+<span class="dl dadd">+   deduped.push(normalized);</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> deduped.map((json) =&gt; ({ json }));</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /work/workflows/contact-normalizer/code/normalize.js (file state is current in your context — no need to Read it back)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let's verify with a fixture matching the sample input, then run preflight.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat &gt; /tmp/fixture.json &lt;&lt;'EOF'
+{
+  "input": [
+    { "json": {"name": "  Ada ", "email": "ADA@Example.com", "status": "active"} },
+    { "json": {"name": "Ada", "email": "ada@example.com", "status": "active"} },
+    { "json": {"name": "Bo", "email": "BO@x.io", "status": "archived"} }
+  ]
+}
+EOF
+n8n-decanter node run workflows/contact-normalizer/code/normalize.js /tmp/fixture.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running normalize.js (runOnceForAllItems) with fixture fixture.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 2 items:
+[
+  {
+    "json": {
+      "name": "Ada",
+      "email": "ada@example.com",
+      "status": "active"
+    }
+  },
+  {
+    "json": {
+      "name": "Bo",
+      "email": "bo@x.io",
+      "status": "archived"
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Output matches expectations: dedup collapses the two Ada records after normalization, emails are lowercased, names trimmed. Now run preflight and push.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter preflight --offline contact-normalizer 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Contact normalizer · --offline
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ⤷ connect   --offline skips the instance tier
+  ⤷ access    --offline skips the instance tier
+  ⤷ parity    --offline skips the instance tier
+  ⤷ drift     --offline skips the instance tier
+  ⤷ snapshot  --offline skips the instance tier
+  ⤷ lifecycle --offline skips the instance tier
+  ⤷ history   --offline skips the instance tier
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 3/11 checks ran
+  ⤷ skipped connect: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped access: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped parity: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped drift: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped snapshot: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped lifecycle: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped history: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Offline checks pass. Now the full preflight (with instance reads) before pushing, then push to land the code on the draft.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter preflight contact-normalizer 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Contact normalizer · static + instance reads
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ✓ connect   MCP reachable, auth valid
+  ✓ access    workflow available in MCP
+  ! parity    local code differs from the draft in 1 node(s) — push to make it the draft, then test
+      Normalize: local changes in code/normalize.js
+  ✓ drift     no remote code drift
+  ✓ snapshot  structure snapshot current
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 90/100 · verdict: caution · 10/11 checks ran
+  ! parity: local code differs from the draft in 1 node(s) — push to make it the draft, then test → n8n-decanter push Contact normalizer
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Clean — the only flag is that the code hasn't been pushed yet, which is expected. Pushing now to land it on the draft.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter push contact-normalizer 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ typecheck OK
+✓ pushed "Contact normalizer" (YbFX8051nFk09ODD) — 1 node — unpublished draft (0.2s)
+committed: decanter: pushed "Contact normalizer" (YbFX8051nFk09ODD)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Pushed to the draft. Now let's confirm the draft is clean via `test` (static check for dangling refs, since there's no capture/scenario to pin a runtime check).</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter test contact-normalizer 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ "Contact normalizer" (YbFX8051nFk09ODD) — draft is statically clean; nothing was executed
+pass --scenario &lt;slug&gt; or --execution &lt;id&gt; to actually run it on the instance</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">The `Normalize` step is done and live on the workflow's draft in n8n. Summary:
+
+- Registered the workflow (`YbFX8051nFk09ODD`) in `decanter.config.json` and pulled it into `workflows/contact-normalizer/`.
+- Wrote `workflows/contact-normalizer/code/normalize.js`: normalizes each record (lowercases + trims email, trims name) then drops exact duplicates based on the *normalized* values, so your sample's two "Ada" variants collapse into one.
+- Verified with `node run` against your exact sample input — output was `Ada / ada@example.com / active` and `Bo / bo@x.io / archived`, 2 items.
+- `preflight` (offline and full) passed clean, then `push` landed the code on the workflow's **draft** in n8n.
+
+This is a draft-only change — the workflow is currently unpublished, so nothing is "live" to break; let me know if you'd like me to `publish` it.</div></div><div class="msg done"><div class="who">↳ turn result · $0.559</div><div class="bubble">The `Normalize` step is done and live on the workflow's draft in n8n. Summary:
+
+- Registered the workflow (`YbFX8051nFk09ODD`) in `decanter.config.json` and pulled it into `workflows/contact-normalizer/`.
+- Wrote `workflows/contact-normalizer/code/normalize.js`: normalizes each record (lowercases + trims email, trims name) then drops exact duplicates based on the *normalized* values, so your sample's two "Ada" variants collapse into one.
+- Verified with `node run` against your exact sample input — output was `Ada / ada@example.com / active` and `Bo / bo@x.io / archived`, 2 items.
+- `preflight` (offline and full) passed clean, then `push` landed the code on the workflow's **draft** in n8n.
+
+This is a draft-only change — the workflow is currently unpublished, so nothing is "live" to break; let me know if you'd like me to `publish` it.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">oh — and drop any rows where status is 'archived', we don't care about those.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /work/workflows/contact-normalizer/code/normalize.js</span></summary><pre class="tin diff"><span class="dl dctx">  <span class="tk">for</span> (<span class="tk">const</span> record <span class="tk">of</span> records) {</span>
+<span class="dl dadd">+   <span class="tk">if</span> (record.status === <span class="ts">"archived"</span>) continue;</span>
+<span class="dl dctx">    <span class="tk">const</span> normalized = normalizeRecord(record);</span>
+<span class="dl dctx">    <span class="tk">const</span> key = canonicalize(normalized);</span>
+<span class="dl dctx">    <span class="tk">if</span> (seen.has(key)) continue;</span>
+<span class="dl dctx">    seen.add(key);</span>
+<span class="dl dctx">    deduped.push(normalized);</span>
+<span class="dl dctx">  }</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /work/workflows/contact-normalizer/code/normalize.js has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter node run workflows/contact-normalizer/code/normalize.js /tmp/fixture.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running normalize.js (runOnceForAllItems) with fixture fixture.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 1 item:
+[
+  {
+    "json": {
+      "name": "Ada",
+      "email": "ada@example.com",
+      "status": "active"
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Bo (archived) is now dropped, leaving just Ada. Running preflight and pushing.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">n8n-decanter preflight contact-normalizer 2&gt;&amp;1 &amp;&amp; echo "---PUSH---" &amp;&amp; n8n-decanter push contact-normalizer 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Contact normalizer · static + instance reads
+  ✓ layout    layout compliant
+  ✓ types     node files typecheck clean
+  ✓ connect   MCP reachable, auth valid
+  ✓ access    workflow available in MCP
+  ! parity    local code differs from the draft in 1 node(s) — push to make it the draft, then test
+      Normalize: local changes in code/normalize.js
+  ✓ drift     no remote code drift
+  ✓ snapshot  structure snapshot current
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 90/100 · verdict: caution · 10/11 checks ran
+  ! parity: local code differs from the draft in 1 node(s) — push to make it the draft, then test → n8n-decanter push Contact normalizer
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)
+---PUSH---
+✓ typecheck OK
+✓ pushed "Contact normalizer" (YbFX8051nFk09ODD) — 1 node — unpublished draft (0.1s)
+committed: decanter: pushed "Contact normalizer" (YbFX8051nFk09ODD)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Done — `Normalize` now skips any record with `status: "archived"` before dedup/normalization, and the change is pushed to the workflow's draft in n8n.</div></div><div class="msg done"><div class="who">↳ turn result · $0.314</div><div class="bubble">Done — `Normalize` now skips any record with `status: "archived"` before dedup/normalization, and the change is pushed to the workflow's draft in n8n.</div></div></div><div class="turn"><div class="turn-h">Turn 3</div><div class="msg user"><div class="who">user</div><div class="bubble">nice. before I flip it on for real, how do I know it'll actually do the right thing on that sample?</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">Two ways, cheapest first:
+
+**1. What I already ran** — `n8n-decanter node run` executes the actual `code/normalize.js` against a fixture built from your sample, offline. I ran it right after each change and confirmed the output: Ada deduped/normalized, Bo (archived) dropped, exactly `[{name:"Ada", email:"ada@example.com", status:"active"}]`. That proves the *logic* is right, but it's a simulated JS run, not the real n8n engine.
+
+**2. Prove it on the actual draft** (recommended before you flip it live) — open "Contact normalizer" in n8n, and on the `Normalize` node's input panel paste your sample array as pinned/test data, then hit "Test step" (or run the whole workflow from the manual trigger). Since the draft already has today's pushed code, this runs your exact logic on the real engine, with the real node wiring (trigger → Normalize → Done).
+
+Once you've done that manual run, I can turn it into a repeatable check: pull the execution with `n8n-decanter executions "Contact normalizer"`, then either `n8n-decanter test --execution &lt;id&gt;` to replay it against the draft, or `n8n-decanter scenario create "Contact normalizer" happy-path --execution &lt;id&gt;` to commit it as a permanent regression scenario I can replay on every future change. Want me to set that up?</div></div><div class="msg done"><div class="who">↳ turn result · $0.270</div><div class="bubble">Two ways, cheapest first:
+
+**1. What I already ran** — `n8n-decanter node run` executes the actual `code/normalize.js` against a fixture built from your sample, offline. I ran it right after each change and confirmed the output: Ada deduped/normalized, Bo (archived) dropped, exactly `[{name:"Ada", email:"ada@example.com", status:"active"}]`. That proves the *logic* is right, but it's a simulated JS run, not the real n8n engine.
+
+**2. Prove it on the actual draft** (recommended before you flip it live) — open "Contact normalizer" in n8n, and on the `Normalize` node's input panel paste your sample array as pinned/test data, then hit "Test step" (or run the whole workflow from the manual trigger). Since the draft already has today's pushed code, this runs your exact logic on the real engine, with the real node wiring (trigger → Normalize → Done).
+
+Once you've done that manual run, I can turn it into a repeatable check: pull the execution with `n8n-decanter executions "Contact normalizer"`, then either `n8n-decanter test --execution &lt;id&gt;` to replay it against the draft, or `n8n-decanter scenario create "Contact normalizer" happy-path --execution &lt;id&gt;` to commit it as a permanent regression scenario I can replay on every future change. Want me to set that up?</div></div></div><div class="verify"><h4>Scripted invariants — PASS</h4><div class="vwf"><b>contact-normalizer</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ node "code/normalize.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/normalize.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/normalize.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S1 after turn 0</span> <span class="vdet">2026-08-08 14:15</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Contact normalizer" (YbFX8051nFk09ODD)</span> <span class="vdet">2026-08-08 12:15</span></summary><pre class="tin"> workflows/contact-normalizer/.decanter.json    | 11 ++++
+ workflows/contact-normalizer/code/normalize.js |  0
+ workflows/contact-normalizer/workflow.json     | 80 ++++++++++++++++++++++++++
+ 3 files changed, 91 insertions(+)
+
+diff --git a/workflows/contact-normalizer/.decanter.json b/workflows/contact-normalizer/.decanter.json
+new file mode 100644
+index 0000000..d8240e9
+--- /dev/null
++++ b/workflows/contact-normalizer/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "YbFX8051nFk09ODD",
++  "nodes": {
++    "c1": {
++      "file": "code/normalize.js",
++      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "name": "Normalize"
++    }
++  },
++  "name": "Contact normalizer"
++}
+diff --git a/workflows/contact-normalizer/code/normalize.js b/workflows/contact-normalizer/code/normalize.js
+new file mode 100644
+index 0000000..e69de29
+diff --git a/workflows/contact-normalizer/workflow.json b/workflows/contact-normalizer/workflow.json
+new file mode 100644
+index 0000000..b51239b
+--- /dev/null
++++ b/workflows/contact-normalizer/workflow.json
+@@ -0,0 +1,80 @@
++{
++  "id": "YbFX8051nFk09ODD",
++  "name": "Contact normalizer",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-08T12:15:00.542Z",
++  "updatedAt": "2026-08-08T12:15:00.555Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "When clicked",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "c1",
++      "name": "Normalize",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/normalize.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Normalize": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "When clicked": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Normalize",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "f9485813-e617-4065-a741-c6bf4fb9606f",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pushed "Contact normalizer" (YbFX8051nFk09ODD)</span> <span class="vdet">2026-08-08 12:16</span></summary><pre class="tin"> workflows/contact-normalizer/.decanter.json    |  2 +-
+ workflows/contact-normalizer/code/normalize.js | 57 ++++++++++++++++++++++++++
+ 2 files changed, 58 insertions(+), 1 deletion(-)
+
+diff --git a/workflows/contact-normalizer/.decanter.json b/workflows/contact-normalizer/.decanter.json
+index d8240e9..e1ab943 100644
+--- a/workflows/contact-normalizer/.decanter.json
++++ b/workflows/contact-normalizer/.decanter.json
+@@ -3,7 +3,7 @@
+   "nodes": {
+     "c1": {
+       "file": "code/normalize.js",
+-      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "lastPushedHash": "sha256:cc045b1d008c4944f50d4b6cb2172242f0275425ed8c7191ba4c9e438ea0df33",
+       "name": "Normalize"
+     }
+   },
+diff --git a/workflows/contact-normalizer/code/normalize.js b/workflows/contact-normalizer/code/normalize.js
+index e69de29..33d2e1c 100644
+--- a/workflows/contact-normalizer/code/normalize.js
++++ b/workflows/contact-normalizer/code/normalize.js
+@@ -0,0 +1,57 @@
++// @ts-check
++
++/**
++ * @typedef {Record&lt;string, unknown&gt;} ContactRecord
++ */
++
++/**
++ * Deterministic string form of a value, independent of object key order,
++ * so two records that differ only in key order still compare equal.
++ * @param {unknown} value
++ * @returns {string}
++ */
++function canonicalize(value) {
++  if (Array.isArray(value)) {
++    return `[${value.map(canonicalize).join(",")}]`;
++  }
++  if (value !== null &amp;&amp; typeof value === "object") {
++    const record = /** @type {ContactRecord} */ (value);
++    const keys = Object.keys(record).sort();
++    return `{${keys
++      .map((key) =&gt; `${JSON.stringify(key)}:${canonicalize(record[key])}`)
++      .join(",")}}`;
++  }
++  return JSON.stringify(value);
++}
++
++/**
++ * @param {ContactRecord} record
++ * @returns {ContactRecord}
++ */
++function normalizeRecord(record) {
++  const normalized = { ...record };
++  if (typeof normalized.email === "string") {
++    normalized.email = normalized.email.trim().toLowerCase();
++  }
++  if (typeof normalized.name === "string") {
++    normalized.name = normalized.name.trim();
++  }
++  return normalized;
++}
++
++const records = $input.all().map((item) =&gt; /** @type {ContactRecord} */ (item.json));
++
++/** @type {Set&lt;string&gt;} */
++const seen = new Set();
++/** @type {ContactRecord[]} */
++const deduped = [];
++
++for (const record of records) {
++  const normalized = normalizeRecord(record);
++  const key = canonicalize(normalized);
++  if (seen.has(key)) continue;
++  seen.add(key);
++  deduped.push(normalized);
++}
++
++return deduped.map((json) =&gt; ({ json }));
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pushed "Contact normalizer" (YbFX8051nFk09ODD)</span> <span class="vdet">2026-08-08 12:16</span></summary><pre class="tin"> workflows/contact-normalizer/.decanter.json    | 2 +-
+ workflows/contact-normalizer/code/normalize.js | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/workflows/contact-normalizer/.decanter.json b/workflows/contact-normalizer/.decanter.json
+index e1ab943..1e940cd 100644
+--- a/workflows/contact-normalizer/.decanter.json
++++ b/workflows/contact-normalizer/.decanter.json
+@@ -3,7 +3,7 @@
+   "nodes": {
+     "c1": {
+       "file": "code/normalize.js",
+-      "lastPushedHash": "sha256:cc045b1d008c4944f50d4b6cb2172242f0275425ed8c7191ba4c9e438ea0df33",
++      "lastPushedHash": "sha256:fe151cbc4afbe0d528aca3137a1e9d25fe08c3ae3d5a57171163b0fed3e0c717",
+       "name": "Normalize"
+     }
+   },
+diff --git a/workflows/contact-normalizer/code/normalize.js b/workflows/contact-normalizer/code/normalize.js
+index 33d2e1c..eda1482 100644
+--- a/workflows/contact-normalizer/code/normalize.js
++++ b/workflows/contact-normalizer/code/normalize.js
+@@ -47,6 +47,7 @@ const seen = new Set();
+ const deduped = [];
+ 
+ for (const record of records) {
++  if (record.status === "archived") continue;
+   const normalized = normalizeRecord(record);
+   const key = canonicalize(normalized);
+   if (seen.has(key)) continue;
+</pre></details></section>
+<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">guard: connected to http://flows-ops-n8n-76951:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: connected to http://flows-ops-n8n-76951:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: connected to http://flows-ops-n8n-76951:5678 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+</pre></section>
+</main>
