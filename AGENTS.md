@@ -432,8 +432,14 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   a throwaway n8n (or FIELD_N8N_URL targets a running one)
                       #   and scaffolds a neutral scratch project, printing a
                       #   manifest. `field-test:run <manifest>` drives blind
-                      #   `claude -p --model sonnet` sessions per the S*.md
-                      #   scenarios — run UNSANDBOXED (nested claude needs the
+                      #   `claude -p` sessions per the S*.md scenarios. The two
+                      #   knobs that define a round's WORLD are flags, not env
+                      #   vars — `--model <name>` (default sonnet) and
+                      #   `--n8n-tag <image>` (default n8nio/n8n:2.30.7); every
+                      #   round through 2026-08-08 ran one world, and the env-only
+                      #   form was unusable from a sandboxed agent. Vary ONE at a
+                      #   time; both land in the archived manifest + report.
+                      #   Run UNSANDBOXED (nested claude needs the
                       #   Anthropic API + must reach the local n8n; fs.watch dies
                       #   sandboxed). `run.mts --smoke`/`--netcheck` are debug
                       #   probes; `field-test:verify <manifest>` runs the scripted

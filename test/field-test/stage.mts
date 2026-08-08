@@ -13,11 +13,15 @@
 //
 // Usage:
 //   node test/field-test/stage.mts                # boot + provision + scaffold
+//   node test/field-test/stage.mts --n8n-tag n8nio/n8n:2.33.3   # a different n8n
 //   node test/field-test/stage.mts --down <manifest.json>   # teardown
 //   node test/field-test/stage.mts --help
 //
 // Env knobs:
-//   FIELD_N8N_TAG=<image>   override the pinned n8n image (default matches smoke)
+//   FIELD_N8N_TAG=<image>   override the pinned n8n image (default matches smoke).
+//                           Prefer the `--n8n-tag` FLAG: an inline `VAR=… node …`
+//                           prefix breaks agent-sandbox allowlist matching, so an
+//                           env-only knob is one a sandboxed agent cannot set.
 //   FIELD_N8N_URL=<url>     target an already-running local instance; skips the
 //                           Docker boot AND owner/MCP provisioning (assumes the
 //                           instance already has MCP enabled + a token you pass
@@ -41,7 +45,16 @@ const PACKAGE_ROOT = path.resolve(HERE, "..", "..");
 const docker = (...args: string[]) => execFile("docker", args, { encoding: "utf8" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const IMAGE = process.env.FIELD_N8N_TAG ?? "n8nio/n8n:2.30.7"; // keep in sync with test/smoke-n8n.mts
+/** `--n8n-tag <image>` (or `FIELD_N8N_TAG`): which n8n to boot. The flag wins.
+ *
+ * A flag, not just an env var, on purpose: every archived round to date ran
+ * against ONE n8n version, which makes every claim version-locked — and the
+ * knob that would have varied it was reachable only as `FIELD_N8N_TAG=… node …`,
+ * a form agent sandboxes refuse. Same reasoning as `--step=` on the e2e runner. */
+const IMAGE = process.argv.includes("--n8n-tag")
+  ? process.argv[process.argv.indexOf("--n8n-tag") + 1]
+  : (process.env.FIELD_N8N_TAG ?? "n8nio/n8n:2.30.7"); // default keeps in sync with test/smoke-n8n.mts
+if (IMAGE === undefined || IMAGE.startsWith("--")) { console.error("--n8n-tag needs an image, e.g. --n8n-tag n8nio/n8n:2.33.3"); process.exit(2); }
 const PID = process.pid;
 const CONTAINER = `flows-ops-n8n-${PID}`;
 // Neutral owner — never shown to the agent, but kept clean anyway.
@@ -49,7 +62,12 @@ const OWNER = { email: "priya@flows.local", firstName: "Priya", lastName: "Ops",
 
 // ---------- teardown mode ----------
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log("usage: node test/field-test/stage.mts [--down <manifest.json>]");
+  console.log([
+    "usage: node test/field-test/stage.mts [--seeds <pack>] [--n8n-tag <image>]",
+    "       node test/field-test/stage.mts --down <manifest.json>",
+    "",
+    "  --n8n-tag <image>  n8n image to boot (default n8nio/n8n:2.30.7)",
+  ].join("\n"));
   process.exit(0);
 }
 if (process.argv.includes("--down")) {
