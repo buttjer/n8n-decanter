@@ -73,13 +73,22 @@ target). `verifyWorkflows: ["s8-ladder"]` then fails when the agent picks the
 other one — and the agent is not wrong, it answered truthfully for the workflow
 it was asked about.
 
-This was **already documented** in `a8dfa17`'s commit message as a known scenario
-bug, and left unfixed. The sweep sharpens it: **it is not deterministic.** The
-agent picked the wrong workflow in round A and the right one in rounds B and C —
-so the old single-round record ("S8: scenario bug") and the two PASSes are the
-same scenario, resolved by a coin flip.
+**Already fixed — PR #237, which sat open while every one of these sweeps ran.**
+It names *"Weekly revenue totals"* outright in turn 1, does the same for S9, and
+generalises the rule in `STYLE.md`: naming something the pack seeds is only half
+of it, the name must also not fit anything *else* the pack seeds. Nothing here
+proposes a fix; this entry exists to record what the sweeps added to it.
 
-**Fix:** name the ladder workflow unambiguously in turn 1 (or rename the seed).
+What they added is the **coin flip**, now on four data points instead of two.
+#237 argues from `ftrun-45973` (wrong workflow) against `ftrun-38054` (right
+one); sweep A picked wrong, and B, C and the 2.33.3 round all picked right from
+the identical prompt. So the record this replaces — `a8dfa17`'s commit message
+filing S8 as "a known scenario bug" — and the PASSes were never different
+scenarios. They were the same one, resolved by chance.
+
+**Leaving it unmerged through the series turned out to be the right accident.**
+All five sweeps ran on byte-identical scenario files; merging mid-series would
+have made S8 in rounds A–C incomparable with D and E, for a fix worth one unit.
 
 ### 4. `--container` checks its credential per unit, *after* staging
 
@@ -122,7 +131,7 @@ is not worth the argument.
    non-zero exit + an explicit banner in `report.html`.
 2. `run.mts` — treat `requiresSeedEnvOff` as host-only under `--container`,
    refused before spend, listed by name in the `--dry-run` plan.
-3. `scenarios/S8.md` — disambiguate turn 1 against the `wave2` pack.
+3. ~~`scenarios/S8.md` — disambiguate turn 1~~ — **done, PR #237.**
 4. Backfill: re-render the four pre-existing no-verdict archives once task 1
    lands, so the archive stops carrying unexplained blanks.
 5. `run.mts` — credential check once, before the first stage; one readable line
@@ -135,7 +144,8 @@ is not worth the argument.
   false`** verdict file, and the sweep exits non-zero.
 - `--isolate --all --container --dry-run` names S14 among the dropped host-only
   scenarios, and stages nothing for it.
-- Three consecutive S8 rounds act on `s8-ladder`.
+- Three consecutive S8 rounds act on `s8-ladder` *(should already hold via #237
+  — worth confirming on the next round rather than assuming)*.
 - `--container` with no credential refuses **before the first stage**, booting
   nothing.
 - No archived `manifest.json` contains an `n8n-auth=` JWT.
