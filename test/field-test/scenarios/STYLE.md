@@ -82,10 +82,12 @@ you're done"* grants the authorisation while leaving the mechanism to the agent 
 that discovery is the thing under test. *"Run a preflight and push"* would pass
 every time and measure nothing.
 
-## Only name things the stage actually seeds (hard — it has bitten twice)
+## Name things the stage seeds, and name them UNAMBIGUOUSLY (hard — three times now)
 
 A turn may only refer to a workflow, table or file the scenario's own pack
-**creates**. Both failures so far were this:
+**creates** — and the name must not fit anything *else* the pack creates. The
+first two failures were the first half of that rule; the third was the second
+half, which is why the rule is now stated in two parts:
 
 - **S13**, round `ftrun-29773`: turn 1 asked for "the contact cleanup flow",
   which was neither in `decanter.config.json` nor pulled — stacking a second
@@ -95,11 +97,41 @@ A turn may only refer to a workflow, table or file the scenario's own pack
   workflow behind `corpus-credentialed` is named `QdrantVectorStore:*`. The
   agent searched all 11 workflows, found nothing, and **correctly refused to
   fabricate a stand-in** — a clean agent transcript and a wasted unit.
+- **S8**, round `ftrun-45973`: turn 1 asked to fix *"the weekly digest flow …
+  the totals it builds"*. The intended target is **Weekly revenue totals**
+  (`s8-ladder`) — but the same `wave2` pack also seeds **Weekly digest
+  roll-up**, whose name matches the prompt *better*. The agent pulled that one,
+  found it had never run, and said so. **decanter answered truthfully for the
+  workflow it was asked about**; the prompt asked about the wrong one.
 
-Both cost a full unit and produced a **FAIL that reads like a product defect**.
-Before writing a turn, check the pack: `seeds/<pack>.json`, or the seeded list a
-stage prints. If the fixture's real name is ugly (`QdrantVectorStore:*`), have
-the persona *say* the ugly name — a real user would.
+All three cost a full unit and produced a **FAIL that reads like a product
+defect**. Before writing a turn, check the pack — `seeds/<pack>.json`, or the
+seeded list a stage prints — and check it **twice**:
+
+1. **Does the thing I named exist?** (S13, S10)
+2. **Does the name I used fit anything else in the pack?** (S8) Read your turn
+   as an agent who has just listed every workflow on the instance and knows
+   nothing else. If two candidates survive, the round is a coin flip — and it
+   will land differently on different runs, which is worse than failing
+   outright: S8 picked the *right* workflow in `ftrun-38054` and the wrong one
+   in `ftrun-45973`, from the identical prompt.
+
+If the fixture's real name is ugly (`QdrantVectorStore:*`), have the persona
+*say* the ugly name — a real user would. Ambiguity is not realism; a real user
+knows which of their own workflows they mean.
+
+**Why this is a rule and not a test.** The obvious next move is to mechanize it:
+tokenize every seeded name, see how many of them the turns could be pointing at,
+fail the build on more than one. That was prototyped and **rejected** — on the
+current pack it flags S3 ("contact cleanup workflow" fits both *Contact
+normalizer* and *Old contact import*) and S4, neither of which has ever
+mis-fired; S3's agent named the ambiguity out loud and resolved it correctly. A
+check that fails the build on cases the evidence says are fine would assert more
+than it knows. It did earn its keep once, though: it is what caught S9 pointing
+at "the digest change" while its pack also seeds *Weekly digest roll-up* — an
+ambiguity that had never fired only because `go-offline` pulls just the two
+intended workflows. If you want to try again, that is the bar: no false positives
+on the pack as it stands.
 
 ## Turn model (headless `claude -p`)
 
