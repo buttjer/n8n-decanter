@@ -1,0 +1,108 @@
+# Plan 78 — three harness gaps the first n=3 sweep exposed
+
+**Status:** Draft
+**Priority:** P1 (all three are small, offline, and each one silently corrupts a
+round's evidence — the cheapest possible defects to leave in place)
+**Source:** the triple sweep of 2026-08-08 (28 rounds, `ftrun-56329` …
+`ftrun-86911`), archived in this same PR. Every finding here is a **harness**
+defect; none is a product defect.
+**Snapshot:** 2026-08-08T13:10Z @ f6bff72
+**Model:** Sonnet — three well-specified mechanical fixes.
+
+Running the same sweep three times turned two results that had been recorded as
+facts into **variance**, and exposed three ways the harness loses or fakes
+evidence: a failing `verify` writes no verdict at all, `--container` spends a
+unit on a condition it cannot stage, and one scenario's turn names a workflow the
+seed pack makes ambiguous. All three make a round read as *covered* when it was
+not — the exact failure mode this harness keeps catching in itself.
+
+## Why these are worth a P1
+
+The sweep's headline is good: **25 of 25 mechanically graded scenario runs
+passed with zero invariant violations**, and none of the three failures was the
+product. But arriving at that sentence required reading console output that no
+longer exists in two of the archives, because of finding 1. A round costs real
+quota; evidence that silently doesn't survive archiving is the one bug class that
+compounds.
+
+## Findings
+
+### 1. `verify` FAILs write no `verify-<S>.json` — the archive looks ungraded
+
+When the verifier cannot resolve its scoped workflow (`no tracked workflow
+folders under … matching <id>`), it reports `verify FAIL` **on the console** and
+writes nothing. `run.mts` archives the round anyway, `report.html` renders no
+verdict section, and the round is indistinguishable from S13, which declares
+`verifyWorkflows: "none"` on purpose.
+
+- **Reproduced live**, three times in one sweep (S3, S8, S14 in round A).
+- **It explains the pre-existing archive too:** `ftrun-45973` (S8),
+  `ftrun-89719` (S3), `ftrun-93801` (S10), `ftrun-93355` (S4) were all read as
+  "no verdict, cause unknown" before this sweep. They are all this.
+
+**Fix:** write the verdict file on every path, with `passed: false` and the
+reason as a check. A round with no verdict file at all should make `run.mts`
+exit non-zero and the report carry an explicit *ungraded* banner — a missing
+verdict must never be quieter than a failing one.
+
+### 2. `--container` spends a unit on S14, which it cannot stage
+
+`FIELD_NO_SEED_ENV=1` removes the `.env` — but in container mode the `.env` is
+exactly what gets rewritten to the in-network host
+(`http://flows-ops-n8n-<id>:5678`). Without it the blind agent sees the host-side
+`127.0.0.1:<ephemeral>` from the manifest, which does not resolve inside the
+fence, and correctly reports connection refused.
+
+The harness **already knows**: it prints `no … /.env — the agent's init must
+supply the in-network host (avoid FIELD_NO_SEED_ENV in container mode)` — but
+*after* the unit is spent, while S5/S6/S9 are dropped by name **before** any
+spend.
+
+**Fix:** give S14 the same up-front treatment as the host-only three —
+`requiresSeedEnvOff` implies host-only under `--container`, named out loud in the
+plan, dropped before the image build.
+
+### 3. S8's turn 1 names a workflow the `wave2` pack makes ambiguous
+
+Turn 1 says *"the weekly digest flow"*; `wave2` seeds both **Weekly digest
+roll-up** (`realism`) and **Weekly revenue totals** (`s8-ladder`, the intended
+target). `verifyWorkflows: ["s8-ladder"]` then fails when the agent picks the
+other one — and the agent is not wrong, it answered truthfully for the workflow
+it was asked about.
+
+This was **already documented** in `a8dfa17`'s commit message as a known scenario
+bug, and left unfixed. The sweep sharpens it: **it is not deterministic.** The
+agent picked the wrong workflow in round A and the right one in rounds B and C —
+so the old single-round record ("S8: scenario bug") and the two PASSes are the
+same scenario, resolved by a coin flip.
+
+**Fix:** name the ladder workflow unambiguously in turn 1 (or rename the seed).
+
+## Tasks
+
+1. `verify.mts` / `run.mts` — always emit a verdict file; missing verdict ⇒
+   non-zero exit + an explicit banner in `report.html`.
+2. `run.mts` — treat `requiresSeedEnvOff` as host-only under `--container`,
+   refused before spend, listed by name in the `--dry-run` plan.
+3. `scenarios/S8.md` — disambiguate turn 1 against the `wave2` pack.
+4. Backfill: re-render the four pre-existing no-verdict archives once task 1
+   lands, so the archive stops carrying unexplained blanks.
+
+## Acceptance
+
+- A scenario whose verifier cannot resolve its scope produces a **`passed:
+  false`** verdict file, and the sweep exits non-zero.
+- `--isolate --all --container --dry-run` names S14 among the dropped host-only
+  scenarios, and stages nothing for it.
+- Three consecutive S8 rounds act on `s8-ladder`.
+
+## Notes
+
+- **No `CHANGELOG.md` entry** — dev-harness only, nothing user-facing.
+- Deliberately **not fixed inside the sweep**: A, B and C had to run on identical
+  code for the quota to mean anything. The findings were recorded and the code
+  left alone.
+- Related: [Plan 62](../done/62-field-test-unrun-conditions.md) found the same
+  shape twice before (a staging flag that silently stopped staging its
+  condition). Finding 2 is a third instance, and finding 1 is that shape applied
+  to the *verdict* rather than the *condition*.
