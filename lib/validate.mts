@@ -14,6 +14,21 @@ const execFile = promisify(execFileCb);
 export interface ValidationResult {
   errors: string[];
   warnings: string[];
+  /**
+   * Which node file each error is attributable to, for the callers that push
+   * ONE file rather than the folder (`pushSingleNode`, i.e. every watch save).
+   *
+   * `errors` still carries every message; this is a lookup, not a partition, so
+   * existing callers are unaffected. Built where the errors are produced rather
+   * than by matching message text after the fact — a substring hunt would
+   * silently re-classify itself the next time a message is reworded.
+   *
+   * Folder-level errors (duplicate names, connection integrity, orphans, and a
+   * Code node whose snapshot carries inline code and therefore names no file at
+   * all) appear in `errors` and in no bucket: they belong to the folder, not to
+   * a save.
+   */
+  errorsByFile?: Record<string, string[]>;
 }
 
 /** Compliance checks for one referenced node file. */
@@ -165,6 +180,13 @@ function parameterStrings(value: unknown, skipKey?: string): string[] {
 export function validateWorkflowDir(dir: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const errorsByFile: Record<string, string[]> = {};
+  /** Blame an error on the node file it came from — see `ValidationResult.errorsByFile`. */
+  const blame = (file: string, ...messages: string[]): void => {
+    if (messages.length === 0) return;
+    if (errorsByFile[file] === undefined) errorsByFile[file] = [];
+    errorsByFile[file].push(...messages);
+  };
   try {
     if (!readState(dir)) errors.push("missing .decanter.json — pull first");
   } catch (err) {
@@ -173,14 +195,14 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   const wfFile = path.join(dir, "workflow.json");
   if (!existsSync(wfFile)) {
     errors.push("missing workflow.json — pull first");
-    return { errors, warnings };
+    return { errors, warnings, errorsByFile };
   }
   let wf: Workflow;
   try {
     wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
   } catch (err) {
     errors.push(`workflow.json: invalid JSON (${(err as Error).message})`);
-    return { errors, warnings };
+    return { errors, warnings, errorsByFile };
   }
 
   const nodes = wf.nodes ?? [];
@@ -221,6 +243,7 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     const result = validateNodeFile(dir, file, `node "${node.name}"`);
     errors.push(...result.errors);
     warnings.push(...result.warnings);
+    blame(file, ...result.errors);
     referencedFiles.add(file);
     coveredRemoteFiles.add(file.replace(/\.(ts|js)$/, ".remote.js"));
 
@@ -231,10 +254,10 @@ export function validateWorkflowDir(dir: string): ValidationResult {
     const filePath = path.join(dir, file);
     if (existsSync(filePath)) {
       for (const r of uniqueRefs(danglingRefs(readFileSync(filePath, "utf8"), nodeNames))) {
-        errors.push(
-          `node "${node.name}": ${file} references ${r.ref} — no node by that name` +
-            ` (renamed? edit ${file} to the new name, then push)`,
-        );
+        const message = `node "${node.name}": ${file} references ${r.ref} — no node by that name` +
+          ` (renamed? edit ${file} to the new name, then push)`;
+        errors.push(message);
+        blame(file, message);
       }
     }
   }
@@ -343,7 +366,7 @@ export function validateWorkflowDir(dir: string): ValidationResult {
   if (existsSync(fixturesDir) && readdirSync(fixturesDir).some((e) => e.endsWith(".json"))) {
     errors.push(`${LEGACY_FIXTURES_DIR}/ dir is retired — per-node fixtures and the old \`--pin\` flag were removed (Plan 37); recreate the data as a scenario (\`scenario create --execution <id>\`), then delete ${LEGACY_FIXTURES_DIR}/`);
   }
-  return { errors, warnings };
+  return { errors, warnings, errorsByFile };
 }
 
 /** Outcome of a typecheck run as a fact (no logging, no throw). */

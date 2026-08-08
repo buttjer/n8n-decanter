@@ -1,6 +1,7 @@
 # Plan 69 — A `watch` save skips the folder-wide compliance guard; four surfaces say it doesn't
 
-**Status:** Draft
+**Status:** Done — watch runs the folder guard with a scoped abort; all four
+surfaces corrected to describe that scoping rather than implying full parity.
 **Priority:** P2
 **Source:** fell out of verifying claim B1 of the 2026-07-30 field report — the
 reporter said the layout check missed stale parameter expressions; it doesn't,
@@ -45,3 +46,29 @@ Worth noting for scoping: decanter has no code path that pushes a non-Code node'
 parameters, so watch cannot *ship* a stale parameter ref anywhere — the exposure
 is limited to Code sources and folder-level state. That argues the risk is lower
 than it first reads, but it doesn't make the docs true.
+
+## Resolution (2026-08-08) — neither option as written
+
+Both framings were wrong in the same way: they treated it as one switch. Running
+the folder guard is right, but **failing on the whole folder is not**, and the
+plan's own "too strict for a hot save loop" worry is the reason. Mid-repair after
+a rename, several files are stranded at once; a folder-wide abort stops every save
+until the last fix, disabling `watch` during exactly the job it exists for.
+
+So the guard is folder-wide and the **abort is scoped**:
+
+- `validateWorkflowDir` gained `errorsByFile` — built where the errors are
+  produced, not by matching message text, which would silently re-classify itself
+  the next time a message is reworded.
+- `pushSingleNode` fails on the errors attributed to the file being saved and
+  prints the rest with `— not blocking this save; \`push\` and \`preflight\` gate
+  on it`.
+- Folder-level errors (duplicate names, connection integrity, orphans, and a node
+  whose snapshot carries inline code and so names no file) stay unattributed by
+  design: they belong to the folder, not to one save.
+
+All four surfaces now describe *that*, rather than claiming a parity that would
+be false in the other direction. An e2e step pins both halves at the real push
+path — refused when the ref is in the saved file, allowed (and reported) when it
+is in a sibling — because getting only one half right is what made watch lax in
+the first place.
