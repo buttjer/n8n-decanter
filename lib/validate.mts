@@ -420,6 +420,24 @@ export async function runTypecheckPerDir(startDir: string, dirs: string[]): Prom
  */
 export const NO_TYPESCRIPT = "decanter: typescript is not installed";
 
+/**
+ * The install command we hand a user whose project has no `typescript`.
+ *
+ * **The `@^5` is load-bearing.** A bare `npm i -D typescript` installs 7.x,
+ * whose package `exports` maps `"."` to `lib/version.cjs`: `require("typescript")`
+ * yields `{ version, versionMajorMinor }` and nothing else, so the
+ * `createCompilerHost`/`createProgram` pair this typecheck drives is `undefined`
+ * (verified on 7.0.2, 2026-08-08). The API is not gone — it moved behind
+ * `typescript/unstable/{sync,async}`, and the name is the point. So unpinned
+ * advice would replace a skipped check with a broken one; a blind round walked
+ * into exactly that and pinned `5.9.3` by hand.
+ *
+ * 6.x would work — 6.0.0-beta still exports both functions — but it is
+ * beta-only today (`latest` is 7.x), so `^5` is what a user should be told.
+ * One definition, shared by the skip message and preflight's unlock.
+ */
+export const TS_INSTALL_HINT = "npm i -D typescript@^5";
+
 export async function runTypecheckResult(startDir: string, scopeDirs?: string[]): Promise<TypecheckResult> {
   const tsconfigDir = findTsconfigDir(startDir);
   if (!tsconfigDir) return { status: "skipped", output: "no tsconfig.json found" };
@@ -440,8 +458,13 @@ export async function runTypecheckResult(startDir: string, scopeDirs?: string[])
     // A globally installed decanter ships none (devDependency), and `init`
     // leaves an existing package.json alone, so scaffolding into a project you
     // already had lands here.
+    // The `@^5` is load-bearing, not decoration: a bare `npm i -D typescript`
+    // installs **7.x** today, whose compiler is the native rewrite and no longer
+    // exposes the programmatic CompilerHost API this typecheck drives — so the
+    // advice would hand you a worse break than the one it fixes. A blind round
+    // walked straight into it and had to pin 5.9.3 by hand.
     if (output.includes(NO_TYPESCRIPT)) {
-      return { status: "skipped", output: "typescript is not installed — node-file typechecking needs it: npm i -D typescript" };
+      return { status: "skipped", output: `typescript is not installed — node-file typechecking needs it: ${TS_INSTALL_HINT} (7.x drops the compiler API this uses)` };
     }
     return { status: "failed", output };
   }

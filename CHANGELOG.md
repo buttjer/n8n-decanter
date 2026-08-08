@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The "install typescript" advice now pins `@^5`.** A bare
+  `npm i -D typescript` installs **7.x**, whose compiler is the native rewrite
+  and no longer exposes the programmatic API decanter's node-file typecheck
+  drives — so following the old advice replaced a *skipped* check with a broken
+  one. The skip message and `preflight`'s unlock now both say
+  `npm i -D typescript@^5` and name the reason. `init`'s scaffold already pinned
+  `^5`; this only ever bit projects `init` deliberately left alone.
+
 - **A 403 from the public API now names the scope you are missing.** n8n answers
   a valid-but-under-scoped `N8N_API_KEY` with a bare 403 and says nothing about
   which of eight scopes is absent. Every REST surface — executions, data tables,

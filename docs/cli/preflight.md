@@ -190,9 +190,16 @@ sync dir with no `tsconfig.json` skips it automatically.
 none — it is a devDependency — and `init` leaves an existing `package.json`
 alone, so scaffolding into a project you already had can leave the check with no
 compiler. That is reported as a **skip** naming the one-command fix
-(`npm i -D typescript`), not as a typecheck *failure*: a module-resolution stack
-trace under a red `types` line reads like a type error in your own code, and it
-is not one.
+(`npm i -D typescript@^5`), not as a typecheck *failure*: a module-resolution
+stack trace under a red `types` line reads like a type error in your own code,
+and it is not one.
+
+**Pin the major.** A bare `npm i -D typescript` installs **7.x**, where
+`require("typescript")` returns only `{ version, versionMajorMinor }` — the
+package's `exports` maps `"."` to `lib/version.cjs`, and the compiler API this
+check drives now lives behind `typescript/unstable/*`. So an unpinned install
+replaces a skipped check with a broken one. `init`'s scaffold already pins `^5`;
+the `@^5` matters when you are adding TypeScript to a project `init` left alone.
 
 > **Green means well-formed, not live.** `preflight --offline` never contacts
 > the instance, so a `ready` verdict there says your files are valid — not that
