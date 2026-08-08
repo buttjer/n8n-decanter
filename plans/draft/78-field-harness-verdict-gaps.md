@@ -125,6 +125,22 @@ is not worth the argument.
 
 **Fix:** add `ownerCookie` to the redaction, and re-pack the existing archives.
 
+### 6. Finding 1 keeps costing, and the Opus round shows what it hides
+
+The `--model opus` round (2026-08-08) produced the **first two FAILs the harness
+has ever recorded on a round that was not itself broken** — and they landed on
+opposite sides of finding 1:
+
+- **S4 wrote a verdict** (`violations: 1`, the missing-file check), so the defect
+  is legible from the archive alone.
+- **S12 did not.** The console said `verify FAIL`; the archive says nothing.
+  Diagnosing it needed the run's stdout, which lives in a scratch file that is
+  not part of the round.
+
+Two FAILs, one readable in six months and one not. That is the cost of finding 1
+stated as cheaply as it will ever be stated, and it argues for fixing it before
+the next model or version round rather than after.
+
 ## Tasks
 
 1. `verify.mts` / `run.mts` — always emit a verdict file; missing verdict ⇒
