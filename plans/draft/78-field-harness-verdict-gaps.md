@@ -6,15 +6,18 @@ round's evidence — the cheapest possible defects to leave in place)
 **Source:** the triple sweep of 2026-08-08 (28 rounds, `ftrun-56329` …
 `ftrun-86911`), archived in this same PR. Every finding here is a **harness**
 defect; none is a product defect.
-**Snapshot:** 2026-08-08T13:10Z @ f6bff72
+**Snapshot:** 2026-08-08T14:05Z @ 0da3fd3 *(reworked: findings 4 and 5 added
+after the first `--n8n-tag` sweep — same shape, found the same way)*
 **Model:** Sonnet — three well-specified mechanical fixes.
 
 Running the same sweep three times turned two results that had been recorded as
-facts into **variance**, and exposed three ways the harness loses or fakes
-evidence: a failing `verify` writes no verdict at all, `--container` spends a
-unit on a condition it cannot stage, and one scenario's turn names a workflow the
-seed pack makes ambiguous. All three make a round read as *covered* when it was
-not — the exact failure mode this harness keeps catching in itself.
+facts into **variance**, and exposed five ways the harness loses, fakes or
+overcharges for evidence: a failing `verify` writes no verdict at all,
+`--container` spends a unit on a condition it cannot stage, one scenario's turn
+names a workflow the seed pack makes ambiguous, the fenced credential is checked
+nine times instead of once, and the archived manifest still carries a session
+JWT. Most of them make a round read as *covered* when it was not — the exact
+failure mode this harness keeps catching in itself.
 
 ## Why these are worth a P1
 
@@ -78,6 +81,41 @@ same scenario, resolved by a coin flip.
 
 **Fix:** name the ladder workflow unambiguously in turn 1 (or rename the seed).
 
+### 4. `--container` checks its credential per unit, *after* staging
+
+Found running the first `--n8n-tag` sweep (2026-08-08). `test/field-test/.env`
+holds the Anthropic credential and is gitignored, so a **fresh worktree never
+has one** — and container mode discovers that in `containerSetup`, which runs
+*after* the unit's stage. The sweep booted and tore down **nine n8n instances to
+print the same message nine times**, and only the raw Node stack made it legible.
+
+The scenario-prerequisite gate already does this right ("prerequisites unmet —
+nothing was spent", checked before the image build). The credential is not on
+that path.
+
+Sharper than a papercut, because **the repo's own worktree rule steers you into
+it**: every repo-modifying task is supposed to run in a worktree, and a fresh
+worktree cannot run a fenced sweep until someone copies an ignored file into it.
+
+**Fix:** check the credential **once, before the first stage**, with the same
+"nothing was spent" wording; say plainly that `.env` is gitignored and name the
+copy. And catch a unit's failure into one readable line rather than letting an
+`execFile` rejection print a stack per unit.
+
+### 5. The archived manifest still ships an unredacted `ownerCookie`
+
+`run.mts` builds its secrets list from `[mcpToken, apiKey]` and overwrites only
+those two, so the n8n **owner session JWT travels into git verbatim** — 40 of the
+64 archives before this round, and every one written since. The README states
+secrets are scrubbed at archive time, so this is a contract violation rather than
+a judgement call.
+
+Practical risk is ~nil (a throwaway container on an ephemeral localhost port,
+long expired). Fixing it is one line; leaving a public repo full of session JWTs
+is not worth the argument.
+
+**Fix:** add `ownerCookie` to the redaction, and re-pack the existing archives.
+
 ## Tasks
 
 1. `verify.mts` / `run.mts` — always emit a verdict file; missing verdict ⇒
@@ -87,6 +125,9 @@ same scenario, resolved by a coin flip.
 3. `scenarios/S8.md` — disambiguate turn 1 against the `wave2` pack.
 4. Backfill: re-render the four pre-existing no-verdict archives once task 1
    lands, so the archive stops carrying unexplained blanks.
+5. `run.mts` — credential check once, before the first stage; one readable line
+   per failed unit instead of a stack.
+6. `run.mts` — redact `ownerCookie`; re-pack the archives that carry one.
 
 ## Acceptance
 
@@ -95,6 +136,9 @@ same scenario, resolved by a coin flip.
 - `--isolate --all --container --dry-run` names S14 among the dropped host-only
   scenarios, and stages nothing for it.
 - Three consecutive S8 rounds act on `s8-ladder`.
+- `--container` with no credential refuses **before the first stage**, booting
+  nothing.
+- No archived `manifest.json` contains an `n8n-auth=` JWT.
 
 ## Notes
 
