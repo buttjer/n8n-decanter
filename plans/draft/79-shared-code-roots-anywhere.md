@@ -476,12 +476,15 @@ four protects anyone *else* from you; they protect you from yourself, and that
 is the user's call. Rules 1 and 4 keep a distinct value that argues for
 *reporting*, never for *blocking*:
 
-| Rule | Who else would notice? | Ours to enforce? |
-| --- | --- | --- |
-| 2 · relative, out of the project root | esbuild, loudly, offline | **no** |
-| 3 · absolute path | esbuild, loudly — but on the colleague's machine, not yours | barely |
-| 4 · package without a `bundleDependencies` opt-in | **nobody** — silently inlined into the workflow JSON | partly |
-| 1 · Node builtin | **nobody** — a `__require` shim ships and only fails at runtime *on the instance* | partly |
+| # | What the user wrote | Who else would notice? | Ours to enforce? |
+| --- | --- | --- | --- |
+| 2 | `from "../../../../elsewhere/x"` — a relative path that lands **outside** the project root | esbuild, loudly, offline | **no** |
+| 3 | `from "/Users/me/x.ts"` — an absolute path | esbuild, loudly — but on the colleague's machine, not yours | barely |
+| 4 | `from "zod"` where `zod` is **not** in `bundleDependencies` | **nobody** — silently inlined into the workflow JSON | partly |
+| 1 | `from "node:fs"` — a Node builtin | **nobody** — a `__require` shim ships and only fails at runtime *on the instance* | partly |
+
+None of the four is deleted. All four keep reporting; they simply stop
+blocking.
 
 - **Warnings, not removal** — load-bearing, not caution. Delete a check and
   `preflight --offline --no-typecheck` reports green while `push` dies later:
