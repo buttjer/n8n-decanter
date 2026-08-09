@@ -170,6 +170,7 @@ Every row was produced by the script above against the CLI at `59079bb`.
 | F4 | Two same-named helpers imported under the **same** binding: esbuild silently lets the last one win | reproduced |
 | F5 | Aliased, they bundle side by side; esbuild renames the clash `total` → `total2` | reproduced |
 | F6 | "sync dir" — the term the one enforced rule is stated in — is used 16× in `/docs` and never defined | reproduced (grep) |
+| F7 | The boundary is a *proxy* for "versioned at a stable relative path", too strict in a monorepo — and npm is an already-sanctioned way around it | reproduced |
 
 ### F0 — nothing hardcodes `shared/`
 
@@ -280,6 +281,56 @@ the node file ([lib/compile.mts:108-128](../../lib/compile.mts#L108-L128)) — i
 simply never made it into prose. **This is plausibly the root of the confusion
 the whole draft describes**: not that `shared/` looks mandatory, but that the
 boundary it is measured against was never named.
+
+### F7 — why the boundary exists, and the door already standing open next to it
+
+*"Why must shared files sit under the sync dir at all — why not somewhere
+else entirely?"* Three reasons, and they all ask the same question:
+
+1. **Git is the product promise.** The sync dir *is* the repo. Code outside it
+   is in no commit, so a pushed node would carry source the history does not
+   know — you could no longer reconstruct what ran on the instance from the
+   repo. That is the claim the whole tool rests on.
+2. **Fresh clone and CI.** `push` from a fresh clone must produce the same
+   bytes. A path pointing outside simply is not there.
+3. **Hash determinism.** Module labels are sync-root-relative and live *inside*
+   the compiled bytes, hence inside the `@ts-n8n sha256:` marker. Anything
+   outside gets a `../`-prefixed label whose value depends on where the checkout
+   sits.
+
+**All three are proxies for one property: is this code versioned, at a relative
+position that is the same on every machine?** The sync dir is a good stand-in
+for that in the common case (sync dir = repo) and **too strict in a monorepo**,
+where `../../packages/money` would be versioned and stable and is still refused.
+
+**And the door is already open — via npm.** `checkNodeImports` runs the
+sync-root test only on `./`/`../` specifiers; the bare-specifier branch checks
+`bundleDependencies` membership and nothing else
+([lib/compile.mts:146-156](../../lib/compile.mts#L146-L156)). A package resolved
+through a `file:` dependency or a symlink pointing out of the sync dir bundles
+without complaint — reproduced, `node run` returned the outside helper's value.
+
+Which makes reason 3 visible rather than theoretical:
+
+| Resolution | Module label in the compiled bytes | Hash |
+| --- | --- | --- |
+| Real package in `node_modules/` | `// node_modules/acme-lib/index.js` | stable |
+| `file:` dep / symlink pointing outside | `// ../acme-lib/index.js` | **escapes the root** → machine-dependent |
+
+Inside a monorepo the relative position is identical across clones, so that
+second row is fine. Outside any shared repo it means a teammate compiles
+different bytes and sees permanent "push pending" with nobody having changed
+anything.
+
+**Open question for the maintainer** (do not act on it in this plan): is the
+monorepo case worth supporting for *relative* imports too — e.g. widen the
+boundary from "the sync dir" to "the enclosing git work tree" — or is
+`npm i file:../packages/x` + a `bundleDependencies` entry the answer, documented
+as such? The second is free and already works; the first is a real design change
+to a guard that currently has one crisp rule. **Recommendation: document the npm
+route**, and revisit only if someone actually hits it. Either way the docs
+should say *why* the boundary exists, because "shared code must live inside it"
+reads arbitrary without reasons 1-3.
 
 ## Two same-named files from two folders (the follow-up question)
 
@@ -470,6 +521,11 @@ specifiers), not configured. Out of scope here.
      and the one hard error (with its exact message), plus the two asymmetries
      (auto-commit pathspec, `watch`) and the same-name rule from F4/F5:
      **different folders never collide; identical binding names do.**
+     State **why** the boundary exists (F7's three reasons — git, fresh clone,
+     hash determinism), and document the npm route
+     (`npm i file:../packages/x` + a `bundleDependencies` entry) as the
+     sanctioned way to reach code outside it, with the caveat that the target
+     should live in the same repo or the labels stop being machine-independent.
    - [docs/concepts/sync-layout.md](../../docs/concepts/sync-layout.md): add the
      sync-dir-level view with `shared/` marked *convention, rename or multiply
      freely*, pointing at the section above.
