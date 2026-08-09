@@ -284,6 +284,40 @@ simply never made it into prose. **This is plausibly the root of the confusion
 the whole draft describes**: not that `shared/` looks mandatory, but that the
 boundary it is measured against was never named.
 
+### Terminology: which "guard", and what it actually does
+
+Two unrelated things in this project are called *the guard*, and conflating them
+made this whole thread harder than it needed to be:
+
+- **The agent guard** (`mcp connect` / `mcp serve`, `lib/mcpserve.mts`) — the
+  MCP proxy that refuses agent writes carrying `jsCode`. **Not** what any of
+  this is about.
+- **The compliance guard** — `push`'s tier-1 gate (`lib/validate.mts`), whose
+  import rules live in `checkNodeImports`. That is the one under discussion, and
+  the docs should stop using the bare word for both.
+
+`checkNodeImports` contains **no bundling logic at all**. `scanNodeImports`
+lexically reads the import block at the head of the file and returns the
+specifier strings; `checkNodeImports` loops over that list, applies four rules,
+and returns a list of complaints. If the list is non-empty, `compileTs` throws
+**before esbuild is ever called** ([lib/compile.mts:184-187](../../lib/compile.mts#L184-L187)).
+Being purely lexical is what lets `preflight --offline` report all four without
+compiling anything, which is why the function is shared between `validate.mts`
+and `compile.mts` in the first place.
+
+Which settles the "why have a check the bundler would do anyway" question:
+
+| Rule | Would esbuild catch it? |
+| --- | --- |
+| `node:*` / builtins | **No** — the problem is n8n's sandbox, which esbuild knows nothing about; it would bundle happily |
+| Bare specifier without a `bundleDependencies` opt-in | **No** — it resolves from `node_modules` and silently inlines a package you never meant to ship |
+| Absolute path | Yes, but unintelligibly |
+| **Relative, outside the root** | **Only if the file is missing.** If it exists, esbuild bundles it without complaint |
+
+Three of the four catch things the bundler cannot. The fourth is the only one
+that forbids something that works — which is exactly the one this plan
+downgrades to a warning.
+
 ### F7 — the boundary guards a property it neither implies nor requires
 
 *"Why must shared files sit under the sync dir at all — why not somewhere else
