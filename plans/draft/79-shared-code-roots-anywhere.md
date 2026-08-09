@@ -170,8 +170,9 @@ Every row was produced by the script above against the CLI at `59079bb`.
 | F4 | Two same-named helpers imported under the **same** binding: esbuild silently lets the last one win | reproduced |
 | F5 | Aliased, they bundle side by side; esbuild renames the clash `total` → `total2` | reproduced |
 | F6 | "sync dir" — the term the one enforced rule is stated in — is used 16× in `/docs` and never defined | reproduced (grep) |
-| F7 | The sync-dir boundary is **too loose** (a gitignored dir inside it passes) and **too strict** (a versioned monorepo sibling is refused) for the property it appears to guard | reproduced |
+| F7 | The out-of-root refusal protects nothing measurable: an out-of-root relative import compiles **byte-identically** at two unrelated checkout depths | reproduced |
 | F7b | The sync dir has nothing to do with git — `loadConfig` never consults it, and the dir need not be a repo at all | reproduced (read + gitignore probe) |
+| F7c | The one genuinely machine-dependent case — a symlink/`file:` package pointing outside the repo — is the case the guard does **not** check | reproduced |
 
 ### F0 — nothing hardcodes `shared/`
 
@@ -307,73 +308,98 @@ a different boundary than the one we have.**
    sync-root test is a **tier-1 compliance violation that `--force` explicitly
    does not bypass** (only the tier-2 drift guard is forceable). A warning, or
    something `--force` can override, is the honest strength.
-3. **Hash determinism** — this one is real *mechanics*, but see below: it also
-   does not single out the sync dir.
+3. ~~**Hash determinism** — an out-of-root import makes the compiled bytes
+   machine-dependent.~~ **Measured, and false for relative imports.** See below.
 
-**Reason 3 in full, because it is the only non-obvious one.** What gets pushed
-is not the `.ts` file but the compiled JS, and "in sync" is decided by a hash
-over exactly those bytes. esbuild writes a comment above each bundled module
-(`// shared/money.ts`) and that string is *part of the bytes*, therefore part
-of the hash. The path in it is relative to `absWorkingDir`, which decanter
-deliberately sets to the sync root
-([lib/compile.mts:216-217](../../lib/compile.mts#L216-L217)) so that no
-`/Users/<name>/…` leaks into the artifact and every machine compiles the same
-bytes. Inside the root that works — `shared/money.ts` is the same string for
-everyone. Outside, the label becomes `../acme-lib/index.js`, and **how many
-`../` and what follows depends on where the checkout sits relative to the
-target**: two people with different layouts compile different bytes, and each
-sees the other's push as "push pending" forever.
+**Reason 3, measured rather than argued.** What gets pushed is not the `.ts`
+file but the compiled JS, and "in sync" is decided by a hash over exactly those
+bytes. esbuild writes a comment above each bundled module (`// shared/money.ts`)
+and that string is part of the bytes, therefore part of the hash. The path is
+relative to `absWorkingDir`, which decanter deliberately sets to the project
+root ([lib/compile.mts:216-217](../../lib/compile.mts#L216-L217)) so no
+`/Users/<name>/…` leaks into the artifact.
 
-**But a monorepo pins that relative position for everyone** — so reason 3
-argues for "a relative position that is stable across clones", which the
-**enclosing git work tree** delivers and the sync dir merely happens to be one
-instance of. The sync root was most likely just the value already in hand:
-`findBundleContext` walks up to `decanter.config.json` anyway to read
-`bundleDependencies`.
+The claim was that an out-of-root import yields a `../`-prefixed label whose
+value depends on where the checkout sits. **It does not.** The label is
+`path.relative(projectRoot, resolve(dirname(nodeFile), specifier))` — computed
+entirely from the node file's position *within* the project and the specifier
+string, both of which are repo contents. The checkout's absolute location never
+enters. Compiled the same project at two unrelated absolute depths
+(`…/A/proj` and `…/B/much/deeper/A/proj`), node importing four levels out:
 
-**And the door is already open — via npm.** `checkNodeImports` runs the
-sync-root test only on `./`/`../` specifiers; the bare-specifier branch checks
-`bundleDependencies` membership and nothing else
-([lib/compile.mts:146-156](../../lib/compile.mts#L146-L156)). A package resolved
-through a `file:` dependency or a symlink pointing out of the sync dir bundles
-without complaint — reproduced, `node run` returned the outside helper's value.
-Which makes the hash argument concrete rather than theoretical:
+```
+// ../outside/vat.ts
+diff A vs B:  identical
+7832cc0dff6dc0ac27746885003cc63b69c840cd16a5e6117d2351ce029aaa00  out-A.js
+7832cc0dff6dc0ac27746885003cc63b69c840cd16a5e6117d2351ce029aaa00  out-B.js
+```
 
-| Resolution | Module label in the compiled bytes | Hash |
+Byte-identical, same sha256. So for a **relative** import there is exactly one
+failure mode left: the target is absent on the other machine and esbuild says
+`Could not resolve` — loud, immediate, offline, before any network call. That is
+ordinary broken-import behavior and squarely the user's own duty of care.
+
+**The one case where the bytes really do drift** is a bare specifier resolved
+through a symlink or `file:` dependency pointing outside the repo, because
+esbuild resolves to the **realpath**, which is machine-specific
+(`npm link`-style setups). A `file:../packages/x` inside the same repo is
+stable. Note this is the case the guard does **not** cover at all — the
+sync-root test runs only on `./`/`../` specifiers; the bare-specifier branch
+checks `bundleDependencies` membership and nothing else
+([lib/compile.mts:146-156](../../lib/compile.mts#L146-L156)). Reproduced: an
+outside package symlinked into `node_modules/` bundles without complaint.
+
+| Resolution | Module label | Stable across machines? |
 | --- | --- | --- |
-| Real package in `node_modules/` | `// node_modules/acme-lib/index.js` | stable |
-| `file:` dep / symlink pointing outside | `// ../acme-lib/index.js` | **escapes the root** → machine-dependent |
+| Relative import, inside the root | `// shared/money.ts` | yes |
+| Relative import, out of the root | `// ../outside/vat.ts` | **yes — measured** |
+| Package in `node_modules/` | `// node_modules/acme-lib/index.js` | yes |
+| Symlink / `file:` dep outside the repo | `// ../acme-lib/index.js` | no (realpath) |
 
-So the guard is **too loose** (gitignored dirs inside, `file:` packages
-outside) and **too strict** (versioned monorepo siblings) for the property it
-appears to protect, and it enforces at a strength that judgement calls do not
-warrant.
+So the guard is **too loose** (gitignored dirs inside; the one genuinely
+unstable case, an outside symlink, passes) and **too strict** (a relative
+import out of the root is provably deterministic and merely might not resolve
+elsewhere) — while enforcing at tier-1, un-forceable strength.
 
-#### Proposal (needs the maintainer's decision before it becomes a task)
+#### Proposal (maintainer decision 2026-08-09: git must not be a dependency)
 
-- **Boundary = the enclosing git work tree**, falling back to the sync dir when
-  there is no repo. Outside the work tree stays a hard error; inside the work
-  tree but outside the sync dir becomes a **warning** naming the hash
-  consequence, not a refusal.
-- **`absWorkingDir` stays the sync root.** This is the load-bearing detail: no
-  existing module label changes, so no artifact churn and no hash re-baseline
-  for anyone, and `../` labels are stable within a work tree anyway.
+Git is out of it entirely — including the "enclosing work tree" boundary
+floated in the previous revision, which would have made git a dependency of the
+import rule. Auto-commit is already switchable off (`commitOnPush` /
+`commitOnPull`), so decanter cannot treat "is this versioned" as its business.
+
+- **Downgrade the sync-root test from a tier-1 error to a warning.** A relative
+  import out of the project root is legal; if the target is missing elsewhere,
+  bundling fails loudly on its own.
+- **Warning, not removal** — and this is the load-bearing part, not caution.
+  Delete the check and `preflight --offline --no-typecheck` reports green while
+  `push` dies at bundling: precisely the gate-lies shape of F1 that this plan
+  exists to fix. Kept as a warning in the same guard, `preflight` still shows
+  it and simply stops blocking.
+- **Nothing else moves.** `absWorkingDir` stays the project root, so no module
+  label changes, no artifact churn, no hash re-baseline for anyone.
+- **Cost:** roughly five lines in one branch; the pinned negative assertion
+  flips to a warning expectation plus one e2e step; one doc rule becomes one
+  doc sentence about duty of care. The only real change is that the failure
+  moves from "early, in our wording" to "at bundle time, in esbuild's" — both
+  offline, both before any network call.
 - Document the npm route (`npm i file:../packages/x` + a `bundleDependencies`
-  entry) as the already-working alternative regardless of the above.
-- Either way, the docs must state *why* a boundary exists at all —
-  "shared code must live inside it" reads arbitrary without the mechanics of
-  reason 3.
+  entry) as the packaged alternative, with the realpath caveat for
+  `npm link`-style targets outside the repo.
 
-#### Naming (F6's other half)
+#### Naming (F6's other half) — **decided: `decanter project root`**
 
-"sync dir" is the wrong name for this thing. The maintainer proposed
-**"n8n-decanter instance root"**. Caveat: *instance* means **the n8n server**
-everywhere else in this codebase and in `/docs` (`availableInMCP`, "instance
-tier", "the instance's policy"), so that term would collide with the one
-distinction users most need. Counter-proposal: **"decanter project root"**
-(short: *project root*) — unclaimed, and it reads correctly in the error
-message: *"resolves outside the project root"*. Maintainer's call; whichever is
-chosen has to be applied to all 16 occurrences at once, not drifted in.
+"sync dir" is the wrong name. The maintainer first proposed *"n8n-decanter
+instance root"*; *instance* means **the n8n server** everywhere else in this
+codebase and in `/docs` (`availableInMCP`, "instance tier", "the instance's
+policy"), so it would collide with the one distinction users most need.
+**Settled on `decanter project root`** (short: *project root*) — unclaimed, and
+it reads correctly in the warning: *"resolves outside the project root"*.
+
+Applies to all 16 occurrences of "sync dir" in `/docs` **in one pass**, plus the
+guard message in
+[lib/compile.mts:150](../../lib/compile.mts#L150) and the `syncRoot` field name
+in `BundleContext` if the rename goes all the way into the code.
 
 ## Two same-named files from two folders (the follow-up question)
 
