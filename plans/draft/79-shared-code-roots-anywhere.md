@@ -816,17 +816,16 @@ settled means renaming twice.
    - `npm run check:docs` green (plus the new depth assertion if Task 2 adopts
      it).
 
-7. **Decide what to do about F4 (open question — needs the maintainer).** The
-   silent last-wins shadowing is caught *today* only by the typecheck. Options,
-   cheapest first: (a) leave it — `push` always typechecks, so nothing wrong
-   ever reaches n8n, and document the aliasing rule; (b) make
-   `checkNodeImports` (which already walks the specifier list) also flag
-   duplicate *binding names* across the import block, turning it into a layout
-   violation `--force` cannot bypass — costs a real binding parser, since
-   `scanNodeImports` currently records specifiers only; (c) surface it as a
-   `node run` warning only. **(a) is the recommendation** unless a field-test
-   round shows an agent hitting it; the typecheck already blocks the push, and
-   (b) buys a parser for a case TypeScript names precisely.
+7. **F4's silent last-wins — document it, don't guard it.** Two same-named
+   helpers imported under the same binding name compile to a bundle in which the
+   first has silently vanished; only the typecheck catches it (TS2300), and the
+   typecheck still **blocks** `push` — that tier is untouched by the
+   warnings decision, so nothing wrong reaches n8n by this route. Detecting it
+   in `checkNodeImports` would need a real binding parser (`scanNodeImports`
+   records specifiers only) for a case TypeScript already names precisely, and
+   there is no longer a "hard violation" tier to put it in anyway. **So: state
+   the aliasing rule in the docs (Task 4) and stop there.** Revisit only if a
+   field-test round shows an agent walking into it.
 
 ## Acceptance / verification
 
