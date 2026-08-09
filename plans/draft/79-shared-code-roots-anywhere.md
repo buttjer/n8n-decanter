@@ -508,13 +508,37 @@ blocking.
   entry) as the packaged alternative, with the realpath caveat for
   `npm link`-style targets outside the repo.
 
-**Note for whoever executes this:** the four rules currently return one flat
-`string[]` of problems that the caller treats uniformly as errors
-([lib/compile.mts:141-160](../../lib/compile.mts#L141-L160)). Turning them into
-warnings means the return type carries a severity, and `compileTs`'s throw site
-([lib/compile.mts:184-187](../../lib/compile.mts#L184-L187)) has to log rather
-than throw — which needs a `Log` where today there is an optional one. Small,
-but not a one-line change.
+**Is this complicated? No — it is a net deletion.** An earlier revision of this
+file worried the flat `string[]` would need to carry a severity. It does not:
+since *all four* rules become warnings, no distinction is needed and the return
+type is unchanged. Two edits, and nothing new is introduced — the `warnings`
+array already exists, `log` is already an optional parameter of `compileTs`, and
+`log?.warn(…)` is already used two lines further down.
+
+```diff
+  // lib/validate.mts:56
+-        errors.push(`${label}: ${p}`);
++        warnings.push(`${label}: ${p}`);
+```
+```diff
+  // lib/compile.mts:184-187
+-  const problems = checkNodeImports(file, specifiers, ctx);
+-  if (problems.length > 0) {
+-    throw new Error(`${file}:\n${problems.map((p) => `  ${p}`).join("\n")}`);
+-  }
++  for (const p of checkNodeImports(file, specifiers, ctx)) log?.warn(`${file}: ${p}`);
+```
+
+Effort across the whole plan:
+
+| Part | Size | Does the code grow? |
+| --- | --- | --- |
+| Warnings instead of errors | 2 sites | **shrinks** |
+| F1 (typecheck blind spot) | 2 sites, ~10 lines | marginal |
+| tsconfig `include` | a few lines of JSON | neutral |
+| The rename | 11 identifiers + ~73 prose sites | no — pure find/replace |
+| **Docs** | **the actual bulk** | no code |
+| Tests | new assertions | yes, deliberately |
 
 #### Naming (F6's other half) — **decided: `decanter project root`**
 
@@ -670,6 +694,22 @@ The one place a set of roots would genuinely buy something is a future `watch`
 that re-pushes importers on a helper edit — and even there the roots should be
 *derived* from the import graph (`scanNodeImports` already yields the
 specifiers), not configured. Out of scope here.
+
+## Rollout — split the rename off
+
+The rename is low-risk and high-diff: ~84 sites that no reviewer can read by
+eye. Landing it together with the behavioural changes would bury them. So:
+
+- **PR 1 — behaviour.** F1's typecheck fix, the four rules downgraded to
+  warnings, the tsconfig `include`, tests. Small, reviewable, each hunk
+  arguable.
+- **PR 2 — the docs.** Define the project root, the rule-vs-default framing, the
+  three working shapes, why a boundary exists, the npm route.
+- **PR 3 — the rename**, mechanically, in one pass. Nothing else in it, so the
+  diff can be skimmed for what it is. `CHANGELOG.md` and `plans/done/*` excluded.
+
+Order matters only in that PR 3 comes last — renaming before the prose is
+settled means renaming twice.
 
 ## Tasks *(contingent on the findings above being confirmed)*
 
