@@ -172,7 +172,7 @@ Every row was produced by the script above against the CLI at `59079bb`.
 | F6 | "sync dir" — the term the one enforced rule is stated in — is used 16× in `/docs` and never defined | reproduced (grep) |
 | F7 | The out-of-root refusal protects nothing measurable: an out-of-root relative import compiles **byte-identically** at two unrelated checkout depths | reproduced |
 | F7b | The sync dir has nothing to do with git — `loadConfig` never consults it, and the dir need not be a repo at all | reproduced (read + gitignore probe) |
-| F7c | The one genuinely machine-dependent case — a symlink/`file:` package pointing outside the repo — is the case the guard does **not** check | reproduced |
+| F7c | The one genuinely machine-dependent case — a symlink/`file:` package pointing outside the repo — is the case nothing checks; esbuild's `metafile` hands it over for ~10 lines | reproduced |
 
 ### F0 — nothing hardcodes `shared/`
 
@@ -436,14 +436,45 @@ unstable case passes untouched) and **too strict** (a relative import out of the
 root is provably deterministic and merely might not resolve elsewhere) — while
 enforcing at tier-1, un-forceable strength.
 
-**Should the new warning point at the symlink case instead?** Plainly: there are
-two ways to pull foreign code into a node — **by path** (`from
-"../../../shared/x"`) and **by name** (`from "mylib"`). The check only ever
-looked at paths. The by-name route is the one that actually breaks, and adding
-it means a realpath check on resolved bare specifiers — a **new capability, not
-a downgrade**. **Recommendation: don't.** It inflates this plan, and it only
-bites `npm link`-style setups, which nobody has reported. If someone does hit
-it, that is its own plan.
+**Should F7c get a warning of its own? Yes — it is ~10 lines.** An earlier
+revision deferred it as "a new capability, not a downgrade". That was scope
+discipline dressed up as difficulty, and it does not survive contact with the
+actual cost.
+
+Plainly: there are two ways to pull foreign code into a node — **by path**
+(`from "../../../shared/x"`) and **by name** (`from "mylib"`). The rules only
+ever looked at paths. The by-name route is the one that actually drifts. The
+worry was that catching it means reimplementing module resolution (`exports`
+maps, conditions, symlinks) — but esbuild hands the answer over for one option
+flag. With `metafile: true`, the symlinked case reports:
+
+```json
+{
+  "../lib/index.js": { "bytes": 26, "imports": [] },
+  "workflows/wf1/code/node.ts": {
+    "imports": [
+      { "path": "../lib/index.js", "kind": "import-statement", "original": "mylib" }
+    ]
+  }
+}
+```
+
+Both facts are right there: the input path starts with `../` (outside the
+project root) and the edge that pulled it in carries `"original": "mylib"` (a
+bare specifier, not a path). So the rule is exactly expressible — **warn on any
+input outside the project root that arrived via a bare specifier** — and it
+reads **esbuild's own resolution** rather than a second implementation that
+could disagree with what actually got bundled.
+
+Two real constraints, neither blocking:
+
+1. **It runs after bundling.** The other four rules are lexical and therefore
+   available to `preflight --offline`'s `layout` line; this one surfaces at
+   compile time (`push`, `diff`, `node run`, `preflight`'s `parity`). A small
+   asymmetry to document, not a reason to skip it.
+2. **It only matters to teams.** Working alone you never notice — your own bytes
+   are stable. The message should say *"your teammates will compile different
+   bytes than you"*, not *"this is wrong"*.
 
 #### Blast radius: import-free files are untouched
 
@@ -701,8 +732,8 @@ The rename is low-risk and high-diff: ~84 sites that no reviewer can read by
 eye. Landing it together with the behavioural changes would bury them. So:
 
 - **PR 1 — behaviour.** F1's typecheck fix, the four rules downgraded to
-  warnings, the tsconfig `include`, tests. Small, reviewable, each hunk
-  arguable.
+  warnings, F7c's new warning, the tsconfig `include`, tests. Small,
+  reviewable, each hunk arguable.
 - **PR 2 — the docs.** Define the project root, the rule-vs-default framing, the
   three working shapes, why a boundary exists, the npm route.
 - **PR 3 — the rename**, mechanically, in one pass. Nothing else in it, so the
@@ -816,7 +847,24 @@ settled means renaming twice.
    - `npm run check:docs` green (plus the new depth assertion if Task 2 adopts
      it).
 
-7. **F4's silent last-wins — document it, don't guard it.** Two same-named
+7. **Add F7c's warning — the case nothing checks today.** In `compileTs`, pass
+   `metafile: true` to the `build()` call
+   ([lib/compile.mts:204-219](../../lib/compile.mts#L204-L219)) and walk
+   `metafile.inputs`: for every input path starting with `../`, look at the
+   edge that imported it; if that edge's `original` is a **bare** specifier
+   (not `./` or `../`), warn. Roughly ten lines, and it reads esbuild's own
+   resolution, so it cannot disagree with what was actually bundled.
+   - **Wording matters here:** the failure is invisible to the author and only
+     hits collaborators, so say so — *"`mylib` resolves outside the project
+     root, so teammates compile different bytes than you and this node will
+     read as push-pending for them"* — rather than implying the code is wrong.
+   - **Note the asymmetry in the docs:** unlike the four lexical rules, this one
+     needs a compile, so it appears in `push` / `diff` / `node run` /
+     `preflight`'s `parity` line, **not** in the offline `layout` line.
+   - A registry-installed package and a `file:` dependency inside the same repo
+     both stay silent — correctly, since both are stable across clones.
+
+8. **F4's silent last-wins — document it, don't guard it.** Two same-named
    helpers imported under the same binding name compile to a bundle in which the
    first has silently vanished; only the typecheck catches it (TS2300), and the
    typecheck still **blocks** `push` — that tier is untouched by the
