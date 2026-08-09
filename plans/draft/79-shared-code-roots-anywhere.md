@@ -339,27 +339,54 @@ failure mode left: the target is absent on the other machine and esbuild says
 `Could not resolve` — loud, immediate, offline, before any network call. That is
 ordinary broken-import behavior and squarely the user's own duty of care.
 
-**The one case where the bytes really do drift** is a bare specifier resolved
-through a symlink or `file:` dependency pointing outside the repo, because
-esbuild resolves to the **realpath**, which is machine-specific
-(`npm link`-style setups). A `file:../packages/x` inside the same repo is
-stable. Note this is the case the guard does **not** cover at all — the
-sync-root test runs only on `./`/`../` specifiers; the bare-specifier branch
-checks `bundleDependencies` membership and nothing else
-([lib/compile.mts:146-156](../../lib/compile.mts#L146-L156)). Reproduced: an
-outside package symlinked into `node_modules/` bundles without complaint.
+#### F7c — the guard blocks the safe case and waves the unsafe one through
 
-| Resolution | Module label | Stable across machines? |
-| --- | --- | --- |
-| Relative import, inside the root | `// shared/money.ts` | yes |
-| Relative import, out of the root | `// ../outside/vat.ts` | **yes — measured** |
-| Package in `node_modules/` | `// node_modules/acme-lib/index.js` | yes |
-| Symlink / `file:` dep outside the repo | `// ../acme-lib/index.js` | no (realpath) |
+The sync-root test runs **only on `./`/`../` specifiers**; a bare specifier is
+checked for `bundleDependencies` membership and nothing else
+([lib/compile.mts:146-156](../../lib/compile.mts#L146-L156)). That is exactly
+backwards, and it is measurable.
+
+Two projects, **byte-identical node source** (same sha256 on the `.ts` file),
+each with the library symlinked into `node_modules/` — one directory away in the
+first, three levels away in the second:
+
+```
+p1:  // ../lib/index.js         →  b7d6d472a52dc2a2768744061d18dd0cde6f0454a863350022e8772b076c7324
+p2:  // ../../../lib/index.js   →  d0f7961b7f50275ec61c4b231ecb76aee83538bd6978642b2287f211ea5098ad
+```
+
+Same source, different compiled bytes. The mechanism is the whole point:
+
+- **Relative import** — the path *is in the source file*. Repo content, so the
+  same string for everyone, wherever the checkout lives.
+- **Bare specifier** — the path is **nowhere in the repo**. esbuild finds it
+  through `node_modules`, follows the symlink, and takes the **realpath** on
+  *that* machine's disk, which differs per developer.
+
+The lived consequence: two people, one repo, different hashes — one sees
+permanent "push pending", pushes, and then the other one does. Ping-pong drift
+with nobody having touched any code.
+
+Only `npm link` / `file:` pointing **out of the repo** is affected. A
+registry-installed package is a real directory inside the project
+(`// node_modules/x/index.js`, stable), and `file:../packages/x` within the same
+repo is stable too.
+
+| Resolution | Module label | Stable across machines? | Guarded? |
+| --- | --- | --- | --- |
+| Relative import, inside the root | `// shared/money.ts` | yes | n/a |
+| Relative import, out of the root | `// ../outside/vat.ts` | **yes — measured** | **hard error** |
+| Package in `node_modules/` | `// node_modules/acme-lib/index.js` | yes | no |
+| Symlink / `file:` dep outside the repo | `// ../lib/index.js` | **no — measured** | **no** |
 
 So the guard is **too loose** (gitignored dirs inside; the one genuinely
-unstable case, an outside symlink, passes) and **too strict** (a relative
-import out of the root is provably deterministic and merely might not resolve
-elsewhere) — while enforcing at tier-1, un-forceable strength.
+unstable case passes untouched) and **too strict** (a relative import out of the
+root is provably deterministic and merely might not resolve elsewhere) — while
+enforcing at tier-1, un-forceable strength.
+
+Whether the new warning should instead be pointed at the *symlink* case is left
+open: it would need a realpath check on resolved bare specifiers, which is a new
+capability rather than a downgrade, and nobody has reported hitting it.
 
 #### Proposal (maintainer decision 2026-08-09: git must not be a dependency)
 
@@ -396,10 +423,23 @@ policy"), so it would collide with the one distinction users most need.
 **Settled on `decanter project root`** (short: *project root*) — unclaimed, and
 it reads correctly in the warning: *"resolves outside the project root"*.
 
-Applies to all 16 occurrences of "sync dir" in `/docs` **in one pass**, plus the
-guard message in
-[lib/compile.mts:150](../../lib/compile.mts#L150) and the `syncRoot` field name
-in `BundleContext` if the rename goes all the way into the code.
+**Maintainer decision: the rename goes all the way into the code.** Counted
+scope:
+
+| Surface | Occurrences |
+| --- | --- |
+| `syncRoot` identifier | 11, across `lib/compile.mts` and `test/unit/compile.test.mts` |
+| "sync dir" in `/docs` | 16 |
+| "sync dir" elsewhere (code comments, `PLAN.md`, `README.md`, `AGENTS.md`, `template/`, tests) | ~57 |
+
+The identifier rename is small and mechanical; the prose is the bulk. Do it as
+**one pass**, not incrementally, or the two terms coexist and the confusion gets
+worse than before.
+
+**Do not rewrite history.** `CHANGELOG.md` carries 14 occurrences and
+`plans/done/*` more — both record what was true when written, and retitling a
+shipped changelog entry is falsification, not maintenance. Only new entries use
+the new term. Same for this file's own quoted output.
 
 ## Two same-named files from two folders (the follow-up question)
 
