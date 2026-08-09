@@ -542,7 +542,11 @@ mock server.
 - Push runs two independent gates, in order:
   1. Compliance guard (`lib/validate.mts`, shared with preflight's `layout`
      check and watch): layout violations are hard errors that `--force` does
-     NOT bypass.
+     NOT bypass. **A watch save runs the same folder-wide guard but scopes the
+     abort** (Plan 69): violations attributable to the saved file are fatal,
+     the rest are printed and let the save through — `ValidationResult.errorsByFile`
+     is the lookup. Without the folder view a save could not see node names at
+     all, so it shipped dangling `$('…')` refs that `push` refuses.
   2. Per-node drift guard: a node's remote CODE moved off the last-sync hash
      (and differs from the local payload) → abort; only this one is bypassed
      by `--force`. Remote structure changes never block (preflight's `snapshot`

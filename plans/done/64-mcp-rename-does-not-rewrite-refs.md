@@ -464,9 +464,10 @@ any of it.**
 - `lib/validate.mts:196`'s comment has always been correctly scoped to the UI —
   **the code was right; only the prose was wrong.** The dangling-ref check is what
   made the field report's fallout visible at all.
-- Related: [Plan 69](../draft/69-watch-skips-folder-guard.md) — `watch` runs only
-  `validateNodeFile`, which has no ref check, so neither half fires in watch mode.
-  Same family as task 3.
+- Related: [Plan 69](./69-watch-skips-folder-guard.md) — `watch` ran only
+  `validateNodeFile`, which has no ref check, so neither half fired in watch mode.
+  Same family as task 3. **Fixed 2026-08-08:** a save now runs the folder guard
+  and refuses on refs in the file being saved.
 - Still unproven by experiment: the *positive* UI claim (nobody drove the actual
   editor). The control experiment shows the server heals nothing and the source
   shows the browser calling `Workflow.renameNode`. It changes no decision here.

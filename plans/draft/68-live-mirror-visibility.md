@@ -4,7 +4,8 @@
 **Priority:** P1
 **Source:** the mechanism behind claim B2 of the 2026-07-30 field report ("pull
 hat ungepushte Änderungen kommentarlos überschrieben"), traced 2026-07-31.
-**Snapshot:** 2026-07-31T05:37Z @ 11bbbc7
+**Snapshot:** 2026-08-08T16:20Z @ 59079bb *(re-verified; the contract half is
+done, the design half is the remaining scope — see "Status 2026-08-08")*
 
 The reporter blamed the `pull` verb; the real path was the background mirror. It
 fires a **full `pull`** — code files, state, file renames — after every forwarded
@@ -31,9 +32,43 @@ Meanwhile the file the agent is told to trust describes the mirror as a
    [`docs/cli/mcp-connect.md:50`](../../docs/cli/mcp-connect.md) is honest ("+ code
    files + state") — the *website* is right and the *shipped contract* is wrong.
 
-Compounding it: `template/CLAUDE.md.example:23-26` prescribes "pull after each MCP
+~~Compounding it: `template/CLAUDE.md.example:23-26` prescribes "pull after each MCP
 rename" with no push-or-commit-first caveat, i.e. it steers into the destructive
-path deliberately and repeatedly.
+path deliberately and repeatedly.~~ **No longer true** (re-checked 2026-08-08):
+that file now prescribes the repair order and names this exact hazard — *"the
+other order loses your code fix to the background refresh."*
+
+## Status 2026-08-08 — layer 3 done, layers 1–2 open
+
+**The contract half is fixed.** Both surfaces that under-described the mirror now
+say it runs a full `pull` — `workflow.json` **and** `code/` **and**
+`.decanter.json`, including file moves on a rename — and that it can therefore
+overwrite an unpushed edit:
+
+- `template/AGENTS.md.example` (the shipped contract, the one that mattered)
+- `docs/concepts/configuration.md` (`liveMirror` row)
+
+Layer 2 is partly addressed already: [Plan 63](../done/63-field-feedback-bugfixes.md)
+gave the mirror a safety commit and made a failed commit stop the pull, so the
+overwrite is recoverable — but a recovery you have to *know about* is not
+visibility.
+
+**What is still open is the design question, and it is bigger than the draft
+made it look.** "Skip the code-file rewrite when a tracked file is locally dirty"
+collides with renames: the file *move* is part of `pullWorkflow`, so skipping the
+code half after an MCP rename would leave files at their old names while
+`workflow.json` and `.decanter.json` name the new ones. That is not silent — the
+layout guard flags it — but it trades a quiet overwrite for a loud inconsistency,
+and which of those is better is a real decision, not an implementation detail.
+
+Worth weighing against it: the mirror exists so a restructuring agent does not
+have to remember `pull`. A mirror that sometimes syncs structure-only is a mirror
+whose behaviour you have to model to trust, which is most of what the mirror was
+buying. The alternative on the table — surface the clobber count in the forwarded
+op's tool-result text, where the agent actually reads — keeps the behaviour simple
+and fixes the thing the field report complained about (nobody was told).
+
+`state.mts` still exports `dirtyJsFiles`, still unused.
 
 ## Shape of a fix
 

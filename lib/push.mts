@@ -7,7 +7,7 @@ import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow,
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
 import { isJsCodeNode, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
-import { validateNodeFile, validateWorkflowDir, type ValidationResult } from "./validate.mts";
+import { validateWorkflowDir, type ValidationResult } from "./validate.mts";
 
 /** Layout-compliance gate: warnings pass through, errors abort the push. */
 export function assertCompliant({ errors, warnings }: ValidationResult, log: Log, what: string): void {
@@ -222,7 +222,25 @@ export async function pushSingleNode(
   if (!state) throw new Error(`missing .decanter.json in ${dir} — pull first`);
   const nodeState = state.nodes[nodeId];
   if (!nodeState) throw new Error(`node ${nodeId} has no entry in ${dir}/.decanter.json — pull first`);
-  assertCompliant(validateNodeFile(dir, nodeState.file), log, nodeState.file);
+  // A watch save runs the FOLDER guard, not just the per-file subset (Plan 69).
+  //
+  // `validateNodeFile` sees one file and no `workflow.json`, so it cannot know
+  // the node names — which means it cannot catch a dangling `$('Renamed Node')`,
+  // the exact fallout of an MCP rename. watch was therefore pushing code that a
+  // manual `push` refuses outright, and four surfaces claimed otherwise. The
+  // asymmetry pointed the wrong way: the fast, unsupervised path was the lax one.
+  //
+  // But it does NOT block on the whole folder. Mid-repair — a rename stranded
+  // three files and you are fixing them one at a time — a folder-wide abort would
+  // stop every save until the last fix, killing watch during exactly the job it
+  // exists for. So: errors attributable to THIS file are fatal (it is what we are
+  // about to push), everything else is reported and lets the save through.
+  const folder = validateWorkflowDir(dir);
+  const own = folder.errorsByFile?.[nodeState.file] ?? [];
+  assertCompliant({ errors: own, warnings: folder.warnings }, log, nodeState.file);
+  for (const other of folder.errors.filter((e) => !own.includes(e))) {
+    log.warn(`${other} — not blocking this save; \`push\` and \`preflight\` gate on it`);
+  }
 
   const remote = await getWorkflowDetails(mcp, state.workflowId);
   const node = remote.nodes.find((n) => n.id === nodeId);

@@ -538,7 +538,17 @@ Guard errors abort and are *not* bypassable with `--force`.
 Unchanged by Plan 32 in substance — the guard validates the *file layer*,
 which is exactly the layer decanter still owns. Runs at the start of every
 push (and every watch save), and as `preflight`+s `layout` check — offline and
-credential-free under `--offline`. Plan 59 retired the standalone `check`
+credential-free under `--offline`.
+
+**A watch save runs the same folder-wide guard, with a scoped abort** (Plan 69).
+Until then it ran `validateNodeFile` only — one file, no `workflow.json`, so no
+node names, so no dangling-reference check: watch pushed exactly what `push`
+refuses, and the fast unsupervised path was the lax one. It now calls
+`validateWorkflowDir` and fails on the errors `errorsByFile` attributes to the
+saved file; folder-level ones (duplicate names, connections, orphans) are printed
+per save without blocking. The asymmetry is deliberate and narrow: mid-repair
+after a rename, several files are stranded at once, and a folder-wide abort would
+stop every save until the last fix — killing watch during the job it exists for. Plan 59 retired the standalone `check`
 verb: it removed a *view*, not a *gate*, and preflight+s `layout` finding now
 carries every violation in its `details` (what `check` printed in full).
 
