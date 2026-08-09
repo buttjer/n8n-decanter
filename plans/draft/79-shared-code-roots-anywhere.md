@@ -470,24 +470,48 @@ floated in the previous revision, which would have made git a dependency of the
 import rule. Auto-commit is already switchable off (`commitOnPush` /
 `commitOnPull`), so decanter cannot treat "is this versioned" as its business.
 
-- **Downgrade the sync-root test from a tier-1 error to a warning.** A relative
-  import out of the project root is legal; if the target is missing elsewhere,
-  bundling fails loudly on its own.
-- **Warning, not removal** — and this is the load-bearing part, not caution.
-  Delete the check and `preflight --offline --no-typecheck` reports green while
-  `push` dies at bundling: precisely the gate-lies shape of F1 that this plan
-  exists to fix. Kept as a warning in the same guard, `preflight` still shows
-  it and simply stops blocking.
+**Widened by the maintainer (same session): all four import rules become
+warnings, none stays a hard error.** The line held throughout — none of the
+four protects anyone *else* from you; they protect you from yourself, and that
+is the user's call. Rules 1 and 4 keep a distinct value that argues for
+*reporting*, never for *blocking*:
+
+| Rule | Who else would notice? | Ours to enforce? |
+| --- | --- | --- |
+| 2 · relative, out of the project root | esbuild, loudly, offline | **no** |
+| 3 · absolute path | esbuild, loudly — but on the colleague's machine, not yours | barely |
+| 4 · package without a `bundleDependencies` opt-in | **nobody** — silently inlined into the workflow JSON | partly |
+| 1 · Node builtin | **nobody** — a `__require` shim ships and only fails at runtime *on the instance* | partly |
+
+- **Warnings, not removal** — load-bearing, not caution. Delete a check and
+  `preflight --offline --no-typecheck` reports green while `push` dies later:
+  precisely the gate-lies shape of F1 this plan exists to fix. Kept as warnings
+  in the same place, `preflight` still shows everything and simply stops
+  blocking.
+- **`--fail-on=warn` already exists** — the strictness knob is built: relaxed by
+  default, strict on request (CI). No new flag.
+- **The blast radius is small because `push` writes the *draft*.** Even a
+  waved-through mistake lands where you inspect it; `publish` is a separate act.
+- **Keep rule 1 the loudest warning.** Not because it deserves a block, but
+  because it is the only one whose failure is invisible at build time *and*
+  breaks the self-contained promise (a bundled node is supposed to run anywhere,
+  n8n Cloud included).
 - **Nothing else moves.** `absWorkingDir` stays the project root, so no module
   label changes, no artifact churn, no hash re-baseline for anyone.
-- **Cost:** roughly five lines in one branch; the pinned negative assertion
-  flips to a warning expectation plus one e2e step; one doc rule becomes one
-  doc sentence about duty of care. The only real change is that the failure
-  moves from "early, in our wording" to "at bundle time, in esbuild's" — both
-  offline, both before any network call.
+- **Cost:** one branch in `checkNodeImports` plus the error/warning plumbing in
+  `validate.mts`; the pinned negative assertions flip to warning expectations;
+  a couple of e2e steps; one doc rule becomes a sentence about duty of care.
 - Document the npm route (`npm i file:../packages/x` + a `bundleDependencies`
   entry) as the packaged alternative, with the realpath caveat for
   `npm link`-style targets outside the repo.
+
+**Note for whoever executes this:** the four rules currently return one flat
+`string[]` of problems that the caller treats uniformly as errors
+([lib/compile.mts:141-160](../../lib/compile.mts#L141-L160)). Turning them into
+warnings means the return type carries a severity, and `compileTs`'s throw site
+([lib/compile.mts:184-187](../../lib/compile.mts#L184-L187)) has to log rather
+than throw — which needs a `Log` where today there is an optional one. Small,
+but not a one-line change.
 
 #### Naming (F6's other half) — **decided: `decanter project root`**
 
