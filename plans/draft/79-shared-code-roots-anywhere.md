@@ -169,6 +169,7 @@ Every row was produced by the script above against the CLI at `59079bb`.
 | F3 | The tsconfig `include` globs `shared/**` only | derived (read) |
 | F4 | Two same-named helpers imported under the **same** binding: esbuild silently lets the last one win | reproduced |
 | F5 | Aliased, they bundle side by side; esbuild renames the clash `total` → `total2` | reproduced |
+| F6 | "sync dir" — the term the one enforced rule is stated in — is used 16× in `/docs` and never defined | reproduced (grep) |
 
 ### F0 — nothing hardcodes `shared/`
 
@@ -251,6 +252,34 @@ imports it* (imports pull it into the program), but an **unreferenced** file in
 it is never checked, and the editor's tsserver doesn't own it. Same glob in
 [tsconfig.json](../../tsconfig.json) and
 [template/tsconfig.json.example](../../template/tsconfig.json.example).
+
+### F6 — the rule is stated in an undefined word
+
+The one enforced rule is *"a relative import must resolve inside the **sync
+dir**"*. That term appears **16 times across `/docs`** — `init`, `quickstart`,
+`installation`, `preflight`, `type-checking`, `typescript-nodes`, the agents
+pages — and is **defined nowhere**. There is no glossary. The Quickstart's first
+heading is literally "Bootstrap a sync dir" with no statement of what one is.
+
+Worse, [docs/concepts/sync-layout.md](../../docs/concepts/sync-layout.md) — the
+page whose whole job this is — does not use the term at all: its tree starts at
+`workflows/`, one level *below* the thing being defined, so the sync dir is
+invisible exactly where a reader would look it up.
+
+```sh
+$ grep -rn "sync dir" docs/ | wc -l
+16
+$ grep -rn "sync dir" docs/concepts/sync-layout.md
+(no matches)
+```
+
+The definition is unambiguous in the code — the dir holding
+`decanter.config.json`, found by an upward search from cwd
+([lib/config.mts:58-64](../../lib/config.mts#L58-L64)) and, for bundling, from
+the node file ([lib/compile.mts:108-128](../../lib/compile.mts#L108-L128)) — it
+simply never made it into prose. **This is plausibly the root of the confusion
+the whole draft describes**: not that `shared/` looks mandatory, but that the
+boundary it is measured against was never named.
 
 ## Two same-named files from two folders (the follow-up question)
 
@@ -417,7 +446,23 @@ specifiers), not configured. Out of scope here.
    widened include is safe by construction. Existing sync dirs keep their
    scaffolded tsconfig — call that out in the changelog with the one-line fix.
 
-4. **Document the actual rule (the core deliverable).**
+4. **Document the actual rule (the core deliverable).** The organising idea is a
+   distinction the docs never draw: **what is a rule versus what is a default.**
+   `code/` is a *rule* — a node file outside it is a hard error
+   ([lib/validate.mts:32](../../lib/validate.mts#L32)). `shared/` has no such
+   counterpart: it is a *default with tooling attached* (the `init` scaffold, the
+   tsconfig glob, the agent allowlist), which is why deviating costs three lines
+   rather than none. Every surface below should read as an instance of that
+   distinction, not as separate advice.
+   - **First, define the sync dir (F6) — everything else depends on it.**
+     [docs/concepts/sync-layout.md](../../docs/concepts/sync-layout.md) opens one
+     level too low: raise its tree to start at the sync dir, and state the
+     definition plainly — *the directory holding `decanter.config.json`; every
+     verb finds it by searching upward, and it is the boundary imports may not
+     cross*. Then audit the other 15 uses of the term for a first-mention link
+     to it. Consider whether `/docs` wants a short glossary at all, or whether
+     one well-linked definition suffices (the latter, probably — one page that
+     owns the term beats a page nobody opens).
    - [docs/concepts/typescript-nodes.md](../../docs/concepts/typescript-nodes.md),
      "Shared code and npm packages": lead with the real boundary — *shared code
      may live in **any folder inside the sync dir**, in any number of folders;
@@ -487,6 +532,8 @@ specifiers), not configured. Out of scope here.
   `resolves outside the sync dir` layout error.
 - The import snippets in `/docs` and `template/AGENTS.md.example` resolve when
   copy-pasted into a freshly `init`ed sync dir.
+- A reader who lands on any page using the term "sync dir" can reach a
+  definition of it in one click, and `docs/concepts/sync-layout.md` states it.
 - A freshly scaffolded sync dir typechecks a helper folder named something other
   than `shared/` without editing `tsconfig.json`.
 - `npm test`, `npm run typecheck`, `npm run lint`, `npm run check:docs` green.
