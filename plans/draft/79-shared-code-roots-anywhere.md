@@ -170,7 +170,8 @@ Every row was produced by the script above against the CLI at `59079bb`.
 | F4 | Two same-named helpers imported under the **same** binding: esbuild silently lets the last one win | reproduced |
 | F5 | Aliased, they bundle side by side; esbuild renames the clash `total` → `total2` | reproduced |
 | F6 | "sync dir" — the term the one enforced rule is stated in — is used 16× in `/docs` and never defined | reproduced (grep) |
-| F7 | The boundary is a *proxy* for "versioned at a stable relative path", too strict in a monorepo — and npm is an already-sanctioned way around it | reproduced |
+| F7 | The sync-dir boundary is **too loose** (a gitignored dir inside it passes) and **too strict** (a versioned monorepo sibling is refused) for the property it appears to guard | reproduced |
+| F7b | The sync dir has nothing to do with git — `loadConfig` never consults it, and the dir need not be a repo at all | reproduced (read + gitignore probe) |
 
 ### F0 — nothing hardcodes `shared/`
 
@@ -282,26 +283,53 @@ simply never made it into prose. **This is plausibly the root of the confusion
 the whole draft describes**: not that `shared/` looks mandatory, but that the
 boundary it is measured against was never named.
 
-### F7 — why the boundary exists, and the door already standing open next to it
+### F7 — the boundary guards a property it neither implies nor requires
 
-*"Why must shared files sit under the sync dir at all — why not somewhere
-else entirely?"* Three reasons, and they all ask the same question:
+*"Why must shared files sit under the sync dir at all — why not somewhere else
+entirely?"* Three reasons get offered. **Under maintainer challenge
+(2026-08-09) the first two do not survive, and the third turns out to argue for
+a different boundary than the one we have.**
 
-1. **Git is the product promise.** The sync dir *is* the repo. Code outside it
-   is in no commit, so a pushed node would carry source the history does not
-   know — you could no longer reconstruct what ran on the instance from the
-   repo. That is the claim the whole tool rests on.
-2. **Fresh clone and CI.** `push` from a fresh clone must produce the same
-   bytes. A path pointing outside simply is not there.
-3. **Hash determinism.** Module labels are sync-root-relative and live *inside*
-   the compiled bytes, hence inside the `@ts-n8n sha256:` marker. Anything
-   outside gets a `../`-prefixed label whose value depends on where the checkout
-   sits.
+1. ~~**Git is the product promise** — the sync dir *is* the repo, so code
+   outside it is in no commit.~~ **Wrong: nothing ties the two together.**
+   `loadConfig` searches upward for `decanter.config.json` and consults git not
+   at all ([lib/config.mts:58-64](../../lib/config.mts#L58-L64)); the sync dir
+   need not be a repo, only auto-commit warns if it isn't. The check is
+   therefore *neither necessary nor sufficient* for "versioned":
+   - **Not sufficient** — a **gitignored** folder *inside* the sync dir passes.
+     Reproduced: `.gitignore` carrying `secret-helpers/`, a node importing
+     `../../../secret-helpers/x` → `✓ layout compliant`, bundles, runs.
+   - **Not necessary** — in a monorepo `../../packages/money` is versioned and
+     is refused anyway.
+2. ~~**Fresh clone and CI** — `push` must reproduce the same bytes.~~ True as a
+   *consequence*, but it is the user's call to accept, not a safety property to
+   enforce. And the enforcement is far too hard for a judgement call: the
+   sync-root test is a **tier-1 compliance violation that `--force` explicitly
+   does not bypass** (only the tier-2 drift guard is forceable). A warning, or
+   something `--force` can override, is the honest strength.
+3. **Hash determinism** — this one is real *mechanics*, but see below: it also
+   does not single out the sync dir.
 
-**All three are proxies for one property: is this code versioned, at a relative
-position that is the same on every machine?** The sync dir is a good stand-in
-for that in the common case (sync dir = repo) and **too strict in a monorepo**,
-where `../../packages/money` would be versioned and stable and is still refused.
+**Reason 3 in full, because it is the only non-obvious one.** What gets pushed
+is not the `.ts` file but the compiled JS, and "in sync" is decided by a hash
+over exactly those bytes. esbuild writes a comment above each bundled module
+(`// shared/money.ts`) and that string is *part of the bytes*, therefore part
+of the hash. The path in it is relative to `absWorkingDir`, which decanter
+deliberately sets to the sync root
+([lib/compile.mts:216-217](../../lib/compile.mts#L216-L217)) so that no
+`/Users/<name>/…` leaks into the artifact and every machine compiles the same
+bytes. Inside the root that works — `shared/money.ts` is the same string for
+everyone. Outside, the label becomes `../acme-lib/index.js`, and **how many
+`../` and what follows depends on where the checkout sits relative to the
+target**: two people with different layouts compile different bytes, and each
+sees the other's push as "push pending" forever.
+
+**But a monorepo pins that relative position for everyone** — so reason 3
+argues for "a relative position that is stable across clones", which the
+**enclosing git work tree** delivers and the sync dir merely happens to be one
+instance of. The sync root was most likely just the value already in hand:
+`findBundleContext` walks up to `decanter.config.json` anyway to read
+`bundleDependencies`.
 
 **And the door is already open — via npm.** `checkNodeImports` runs the
 sync-root test only on `./`/`../` specifiers; the bare-specifier branch checks
@@ -309,28 +337,43 @@ sync-root test only on `./`/`../` specifiers; the bare-specifier branch checks
 ([lib/compile.mts:146-156](../../lib/compile.mts#L146-L156)). A package resolved
 through a `file:` dependency or a symlink pointing out of the sync dir bundles
 without complaint — reproduced, `node run` returned the outside helper's value.
-
-Which makes reason 3 visible rather than theoretical:
+Which makes the hash argument concrete rather than theoretical:
 
 | Resolution | Module label in the compiled bytes | Hash |
 | --- | --- | --- |
 | Real package in `node_modules/` | `// node_modules/acme-lib/index.js` | stable |
 | `file:` dep / symlink pointing outside | `// ../acme-lib/index.js` | **escapes the root** → machine-dependent |
 
-Inside a monorepo the relative position is identical across clones, so that
-second row is fine. Outside any shared repo it means a teammate compiles
-different bytes and sees permanent "push pending" with nobody having changed
-anything.
+So the guard is **too loose** (gitignored dirs inside, `file:` packages
+outside) and **too strict** (versioned monorepo siblings) for the property it
+appears to protect, and it enforces at a strength that judgement calls do not
+warrant.
 
-**Open question for the maintainer** (do not act on it in this plan): is the
-monorepo case worth supporting for *relative* imports too — e.g. widen the
-boundary from "the sync dir" to "the enclosing git work tree" — or is
-`npm i file:../packages/x` + a `bundleDependencies` entry the answer, documented
-as such? The second is free and already works; the first is a real design change
-to a guard that currently has one crisp rule. **Recommendation: document the npm
-route**, and revisit only if someone actually hits it. Either way the docs
-should say *why* the boundary exists, because "shared code must live inside it"
-reads arbitrary without reasons 1-3.
+#### Proposal (needs the maintainer's decision before it becomes a task)
+
+- **Boundary = the enclosing git work tree**, falling back to the sync dir when
+  there is no repo. Outside the work tree stays a hard error; inside the work
+  tree but outside the sync dir becomes a **warning** naming the hash
+  consequence, not a refusal.
+- **`absWorkingDir` stays the sync root.** This is the load-bearing detail: no
+  existing module label changes, so no artifact churn and no hash re-baseline
+  for anyone, and `../` labels are stable within a work tree anyway.
+- Document the npm route (`npm i file:../packages/x` + a `bundleDependencies`
+  entry) as the already-working alternative regardless of the above.
+- Either way, the docs must state *why* a boundary exists at all —
+  "shared code must live inside it" reads arbitrary without the mechanics of
+  reason 3.
+
+#### Naming (F6's other half)
+
+"sync dir" is the wrong name for this thing. The maintainer proposed
+**"n8n-decanter instance root"**. Caveat: *instance* means **the n8n server**
+everywhere else in this codebase and in `/docs` (`availableInMCP`, "instance
+tier", "the instance's policy"), so that term would collide with the one
+distinction users most need. Counter-proposal: **"decanter project root"**
+(short: *project root*) — unclaimed, and it reads correctly in the error
+message: *"resolves outside the project root"*. Maintainer's call; whichever is
+chosen has to be applied to all 16 occurrences at once, not drifted in.
 
 ## Two same-named files from two folders (the follow-up question)
 
@@ -510,8 +553,11 @@ specifiers), not configured. Out of scope here.
      level too low: raise its tree to start at the sync dir, and state the
      definition plainly — *the directory holding `decanter.config.json`; every
      verb finds it by searching upward, and it is the boundary imports may not
-     cross*. Then audit the other 15 uses of the term for a first-mention link
-     to it. Consider whether `/docs` wants a short glossary at all, or whether
+     cross* — explicitly **not** "your git root", which it need not be (F7b).
+     Then audit the other 15 uses of the term for a first-mention link to it,
+     and apply whatever name F7's naming section settles on in the same pass —
+     one rename, not a drift. Consider whether `/docs` wants a short glossary
+     at all, or whether
      one well-linked definition suffices (the latter, probably — one page that
      owns the term beats a page nobody opens).
    - [docs/concepts/typescript-nodes.md](../../docs/concepts/typescript-nodes.md),
