@@ -6,7 +6,7 @@ S1–S14 is runnable and each has at least one archived round
 22 archived rounds); this widens *what* it tests. **Sequenced behind the
 field-report bugfix wave** ([Plan 63](../done/63-field-feedback-bugfixes.md),
 [65](../done/65-three-gate-scenario-mismatch.md),
-[68](../draft/68-live-mirror-visibility.md)) — running it first would spend
+[68](./68-live-mirror-visibility.md)) — running it first would spend
 Sonnet rounds re-finding defects that are already written down.
 **Source:** extends [Plan 35](../done/35-blind-agent-field-test.md) (S1–S6);
 maintainer request 2026-07-24 ("more scenarios, use all functionality, look

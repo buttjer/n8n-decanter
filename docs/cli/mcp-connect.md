@@ -65,6 +65,21 @@ makes the mirror safe to run behind your back, so a failed commit is treated as
 "do not touch the tree" rather than as a warning to pull anyway — the mirror
 skips and says so, and the snapshot stays stale until you `pull` yourself.
 
+**If the refresh overwrites an unpushed local edit, the agent is told.** It is a
+full `pull`, so local code the instance doesn't have yet loses. That has always
+printed a warning — but to the guard's stderr, which is the MCP client's server
+log, not the agent's transcript: the one party who could react never saw it. The
+warning now rides the **result of the agent's next tool call**, naming the files
+and how to recover them from the safety commit, and is delivered once rather than
+repeated. Push local code edits before restructuring and it never fires.
+
+This part is `mcp connect` only. [`mcp serve`](/docs/cli/mcp-serve/) pipes
+upstream responses through untouched — including SSE — so there is no parsed
+message to append to; buffering every response to inject an advisory line would
+cost streaming for all of them to deliver it on some. On that transport the
+stderr warning stays the only signal, so prefer pushing before you restructure
+(or `"liveMirror": false`).
+
 Failure posture matches the HTTP guard: unparseable input is refused
 (**fail closed**), and an unreachable instance answers the agent with a
 JSON-RPC error naming the host instead of hanging. Logs go to stderr; stdout

@@ -1,6 +1,8 @@
 # Plan 68 — The live mirror runs a full pull, and the agent never hears about it
 
-**Status:** Draft
+**Status:** Done — the contract says what the mirror does, and the clobber now
+reaches the agent through the tool result. The dirty-skip alternative was
+weighed and **rejected**; see "The decision".
 **Priority:** P1
 **Source:** the mechanism behind claim B2 of the 2026-07-30 field report ("pull
 hat ungepushte Änderungen kommentarlos überschrieben"), traced 2026-07-31.
@@ -37,6 +39,46 @@ rename" with no push-or-commit-first caveat, i.e. it steers into the destructive
 path deliberately and repeatedly.~~ **No longer true** (re-checked 2026-08-08):
 that file now prescribes the repair order and names this exact hazard — *"the
 other order loses your code fix to the background refresh."*
+
+## The decision (2026-08-09) — announce, don't prevent
+
+Two candidates were on the table. **Announce won.**
+
+**Rejected — make the mirror careful** (skip the code-file rewrite when a tracked
+file is locally dirty). It collides with renames: the file *move* is part of
+`pullWorkflow`, so skipping the code half after an MCP rename leaves files under
+their old names while `workflow.json` and `.decanter.json` already carry the new
+ones. That trades a quiet overwrite for a loud inconsistency — not obviously a
+better deal, and it makes the mirror's behaviour *conditional*, which is most of
+what the mirror was buying. A background convenience you have to model to trust
+has stopped being a convenience.
+
+**Chosen — make the mirror talk.** Behaviour is unchanged; the warning now
+reaches the party who can act on it:
+
+- `pullWorkflow` returns the clobbered files instead of only logging them.
+- The mirror turns them into a notice naming the files and the recovery
+  (`git show HEAD~1:<file>` — the safety commit from Plan 63 is what makes that
+  work, so the two halves finally line up).
+- `attachMirrorNotices` (shared, `mcpserve.mts`) appends it to the next
+  successful **tool result**. Not this call's — the mirror is scheduled *after*
+  the op is forwarded and runs debounced, so its own result is long gone.
+
+Two properties the tests pin, because both are ways this could have been
+useless: the queue drains **only once a message can carry it** (a handshake
+landing in between must not eat the warning), and a notice is delivered
+**once** — one that reappears on every later call is noise an agent learns to
+skip, which is how it stops being read at all.
+
+**Known, deliberate limit:** `mcp serve` pipes upstream responses through
+untouched, SSE included, so there is no parsed message to append to. Buffering
+every response to inject an advisory line would cost streaming for all of them to
+deliver it on some. On the HTTP transport the stderr warning stays the only
+signal. Written down rather than left to be discovered — this plan exists because
+a warning went somewhere nobody looks.
+
+`state.mts` still exports `dirtyJsFiles`, still unused; it was the hook the
+rejected option would have used.
 
 ## Status 2026-08-08 — layer 3 done, layers 1–2 open
 

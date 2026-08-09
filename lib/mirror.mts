@@ -47,6 +47,21 @@ export interface Mirror {
   schedule(id: string): void;
   /** Await all pending + in-flight refreshes (shutdown / tests). */
   drain(): Promise<void>;
+  /**
+   * Drain the notices this mirror wants the AGENT to see (Plan 68).
+   *
+   * The mirror runs a full `pull`, so it can overwrite an unpushed local edit.
+   * It has always warned about that — to a stderr-only logger, because stdout
+   * must stay pure MCP protocol, which is a stream the agent structurally cannot
+   * read. The one channel an agent definitely reads is the *result of a tool
+   * call*, so the guard transports drain this into the next one.
+   *
+   * "Next", not "this one": the mirror is scheduled AFTER the op is forwarded
+   * and runs debounced in the background, so its own call's result is long gone.
+   * In practice an agent's next call follows within seconds; `drain()` on
+   * shutdown is what covers the case where it does not.
+   */
+  takeNotices(): string[];
 }
 
 export interface MirrorOptions {
@@ -97,6 +112,9 @@ export function createMirror(opts: MirrorOptions): Mirror {
     log.warn(message);
   };
 
+  /** Pending agent-facing notices — drained by the guard into the next tool result. */
+  const notices: string[] = [];
+
   /** Tracked = listed in config OR already pulled to a local folder. */
   const tracked = (id: string): boolean => workflows.includes(id) || findWorkflowDir(root, id) !== null;
 
@@ -119,7 +137,15 @@ export function createMirror(opts: MirrorOptions): Mirror {
         return;
       }
     }
-    const { name } = await pullWorkflow(mcp, root, id, { commitOnPull }, log);
+    const { name, clobbered } = await pullWorkflow(mcp, root, id, { commitOnPull }, log);
+    if (clobbered.length > 0) {
+      notices.push(
+        `n8n-decanter live mirror: the background refresh of "${name}" overwrote unpushed local changes in ` +
+          `${clobbered.join(", ")} with the code from n8n. A structure edit triggers a full pull, not just a ` +
+          `snapshot refresh. The previous content was safety-committed first — recover it with \`git show HEAD~1:<file>\` ` +
+          `(or \`git log -p\` in the sync dir). Push local code edits before restructuring to avoid this.`,
+      );
+    }
     log.info(`mirrored "${name}" (${id})`);
   }
 
@@ -156,6 +182,11 @@ export function createMirror(opts: MirrorOptions): Mirror {
   }
 
   return {
+    takeNotices(): string[] {
+      if (notices.length === 0) return [];
+      return notices.splice(0, notices.length);
+    },
+
     schedule(id: string): void {
       if (!liveMirror) return;
       if (!tracked(id)) {

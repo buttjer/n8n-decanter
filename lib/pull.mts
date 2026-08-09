@@ -72,7 +72,9 @@ function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: Workf
  * sources are never touched (divergence is warned, inspect with
  * the `diff` verb; no `.remote.js` artifacts since Plan 32).
  */
-export async function pullWorkflow(mcp: McpClient, root: string, id: string, { commitOnPull = false }: { commitOnPull?: boolean } = {}, log: Log): Promise<{ dir: string; name: string }> {
+export async function pullWorkflow(mcp: McpClient, root: string, id: string, { commitOnPull = false }: { commitOnPull?: boolean } = {}, log: Log): Promise<{ dir: string; name: string; clobbered: string[] }> {
+  /** Node files whose unpushed local edits this pull overwrote (Plan 68). */
+  const clobbered: string[] = [];
   const wf = await getWorkflowDetails(mcp, id);
   const { dir } = ensureWorkflowDir(root, wf, log);
   const state: DecanterState = readState(dir) ?? { workflowId: wf.id, nodes: {} };
@@ -156,6 +158,11 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
         // `code/<node>.js`, and a debounced mirror pull fires before the first
         // push — no state entry, no warning, empty remote body wins.
         if (localHash !== remoteHash && localHash !== nodeState.lastPushedHash) {
+          // Also RETURNED, not only logged (Plan 68): when the caller is the
+          // background live mirror, this warning goes to a stderr-only logger
+          // the agent structurally cannot read, so the overwrite it describes
+          // was invisible to the one party able to react to it.
+          clobbered.push(file);
           log.warn(
             `${wf.name} / ${node.name}: overwriting unpushed local changes in ${file} with the remote code` +
               (recoverable ? " (recover via git — snapshotted just now)" : " — NOT recoverable: no pre-pull snapshot was committed"),
@@ -203,5 +210,5 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
   if (commitOnPull) {
     await commitWorkflowDir(dir, `decanter: pulled "${wf.name}" (${id})`, log);
   }
-  return { dir, name: wf.name };
+  return { dir, name: wf.name, clobbered };
 }

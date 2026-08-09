@@ -188,6 +188,35 @@ export function mirrorTargetId(msg: Record<string, unknown>): string | null {
 }
 
 /**
+ * Attach the live mirror's pending notices to an outgoing tool result (Plan 68).
+ *
+ * Shared by both transports for the same reason the two refusals are: a message
+ * the agent gets from `mcp connect` and not from `mcp serve` is a drift bug
+ * waiting to happen.
+ *
+ * Only a **successful tool result** carries them — an error result already has
+ * the agent's attention and its own instruction, and appending to it would
+ * compete with that. Anything else (handshakes, notifications, `tools/list`)
+ * passes through untouched, and if this message is not a shape we recognise the
+ * notices are handed back so the next one can take them: dropping the warning
+ * silently is the bug this whole plan is about.
+ */
+export function attachMirrorNotices<T>(msg: T, take: () => string[]): T {
+  const record = msg as unknown as { result?: { content?: unknown; isError?: unknown } };
+  const content = record?.result?.content;
+  if (!Array.isArray(content) || record.result?.isError === true) return msg;
+  const first = content.find((c) => (c as { type?: unknown })?.type === "text") as { text?: unknown } | undefined;
+  if (first === undefined || typeof first.text !== "string") return msg;
+  // Only NOW take them: `take` empties the queue, so asking before we know the
+  // message can carry them would drop the warning on every handshake that
+  // happens to precede a tool call.
+  const notices = take();
+  if (notices.length === 0) return msg;
+  first.text = `${first.text}\n\n${notices.join("\n\n")}`;
+  return msg;
+}
+
+/**
  * Start the guard proxy on 127.0.0.1. Auth is a per-session random secret
  * (the agent's MCP config carries it; the n8n credential never leaves this
  * process). The current endpoint + secret land in a gitignored
@@ -311,7 +340,14 @@ export async function startGuardProxy(
       // just yields a redundant no-op pull.
       for (const id of mirrorIds) mirror?.schedule(id);
       if (upstreamRes.body === null) return void res.end();
-      // responses (incl. SSE) pipe through untouched
+      // Responses (incl. SSE) pipe through untouched — and that is why the live
+      // mirror's clobber notice (Plan 68) reaches agents on `mcp connect` but
+      // NOT here. `attachMirrorNotices` needs a parsed message; this path never
+      // parses one, and buffering to inject an advisory line would break SSE
+      // streaming for every response to deliver it on some. A deliberate,
+      // named asymmetry rather than a silent one: on the HTTP transport the
+      // stderr warning stays the only signal, so `liveMirror: false` (or
+      // pushing before restructuring) is the safer posture there.
       Readable.fromWeb(upstreamRes.body as import("node:stream/web").ReadableStream).pipe(res);
     })().catch((err) => {
       log.warn(`guard-proxy request failed: ${(err as Error).message}`);

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The live mirror now tells the agent when it overwrote your work.** It runs a
+  full `pull` after a structure edit, so it can replace an unpushed local code
+  edit with what is on the instance. It always warned about that — on stderr,
+  which is the one stream an MCP agent structurally cannot read, so the party
+  able to react never heard it. The warning now rides the **result of the
+  agent's next tool call**, naming the files and how to recover them from the
+  safety commit. Delivered once, never repeated.
+
+  Only on `mcp connect` (the transport `init` scaffolds). `mcp serve` pipes
+  upstream responses through untouched — including SSE — and buffering them to
+  inject an advisory line would break streaming for every response to deliver it
+  on some. On that transport the stderr warning stays the only signal.
+
 ### Fixed
 
 - **A `watch` save now runs the same folder-wide compliance guard as `push`.** It
