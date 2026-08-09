@@ -5,7 +5,7 @@
 **Source:** User question 2026-08-09 — *"Ist es möglich den Pfad zum shared
 Ordner zu verändern oder sogar mehrere zu haben?"* — plus the follow-up *"wie
 verhält sich das bei 2 gleichnamigen Dateien aus 2 Ordnern?"*
-**Snapshot:** 2026-08-09T12:10Z @ 59079bb
+**Snapshot:** 2026-08-09T16:45Z @ d68eedd *(rebased after #243 merged; line refs and term counts re-measured)*
 **Theme:** Renaming `shared/` and having several shared roots appears to **work
 already** — nothing in the CLI hardcodes the name. This draft writes the claim
 down as individually checkable findings, with a one-command reproduction, so it
@@ -169,7 +169,7 @@ Every row was produced by the script above against the CLI at `59079bb`.
 | F3 | The tsconfig `include` globs `shared/**` only | derived (read) |
 | F4 | Two same-named helpers imported under the **same** binding: esbuild silently lets the last one win | reproduced |
 | F5 | Aliased, they bundle side by side; esbuild renames the clash `total` → `total2` | reproduced |
-| F6 | "sync dir" — the term the one enforced rule is stated in — is used 16× in `/docs` and never defined | reproduced (grep) |
+| F6 | "sync dir" — the term the one enforced rule is stated in — is used 19× in `/docs` and never defined | reproduced (grep) |
 | F7 | The out-of-root refusal protects nothing measurable: an out-of-root relative import compiles **byte-identically** at two unrelated checkout depths | reproduced |
 | F7b | The sync dir has nothing to do with git — `loadConfig` never consults it, and the dir need not be a repo at all | reproduced (read + gitignore probe) |
 | F7c | The one genuinely machine-dependent case — a symlink/`file:` package pointing outside the repo — is the case nothing checks; esbuild's `metafile` hands it over for ~10 lines | reproduced |
@@ -225,7 +225,7 @@ $ n8n-decanter preflight wf1 --offline             # scoped to the workflow dir
 that doesn't happen. Reproduced with the folder literally named `shared/`, so
 this is **not** a consequence of renaming.
 
-`runTypecheckPerDir` ([lib/validate.mts:378-402](../../lib/validate.mts#L378-L402))
+`runTypecheckPerDir` ([lib/validate.mts:401-425](../../lib/validate.mts#L401-L425))
 has the same hole from the other side: it buckets file-less diagnostics as
 "shared" and attributes them to every workflow, but a diagnostic **with** a path
 that matches no workflow dir lands in neither `mine` nor `shared` and is
@@ -259,7 +259,7 @@ it is never checked, and the editor's tsserver doesn't own it. Same glob in
 ### F6 — the rule is stated in an undefined word
 
 The one enforced rule is *"a relative import must resolve inside the **sync
-dir**"*. That term appears **16 times across `/docs`** — `init`, `quickstart`,
+dir**"*. That term appears **19 times across `/docs`** (16 before #243 merged) — `init`, `quickstart`,
 `installation`, `preflight`, `type-checking`, `typescript-nodes`, the agents
 pages — and is **defined nowhere**. There is no glossary. The Quickstart's first
 heading is literally "Bootstrap a sync dir" with no statement of what one is.
@@ -271,7 +271,7 @@ invisible exactly where a reader would look it up.
 
 ```sh
 $ grep -rn "sync dir" docs/ | wc -l
-16
+19
 $ grep -rn "sync dir" docs/concepts/sync-layout.md
 (no matches)
 ```
@@ -547,7 +547,7 @@ array already exists, `log` is already an optional parameter of `compileTs`, and
 `log?.warn(…)` is already used two lines further down.
 
 ```diff
-  // lib/validate.mts:56
+  // lib/validate.mts:71
 -        errors.push(`${label}: ${p}`);
 +        warnings.push(`${label}: ${p}`);
 ```
@@ -586,8 +586,8 @@ scope:
 | Surface | Occurrences |
 | --- | --- |
 | `syncRoot` identifier | 11, across `lib/compile.mts` and `test/unit/compile.test.mts` |
-| "sync dir" in `/docs` | 16 |
-| "sync dir" elsewhere (code comments, `PLAN.md`, `README.md`, `AGENTS.md`, `template/`, tests) | ~57 |
+| "sync dir" in `/docs` | 19 |
+| "sync dir" elsewhere (code comments, `PLAN.md`, `README.md`, `AGENTS.md`, `template/`, tests) | 59 |
 
 The identifier rename is small and mechanical; the prose is the bulk. Do it as
 **one pass**, not incrementally, or the two terms coexist and the confusion gets
@@ -728,7 +728,7 @@ specifiers), not configured. Out of scope here.
 
 ## Rollout — split the rename off
 
-The rename is low-risk and high-diff: ~84 sites that no reviewer can read by
+The rename is low-risk and high-diff: ~89 sites that no reviewer can read by
 eye. Landing it together with the behavioural changes would bury them. So:
 
 - **PR 1 — behaviour.** F1's typecheck fix, the four rules downgraded to
@@ -741,6 +741,24 @@ eye. Landing it together with the behavioural changes would bury them. So:
 
 Order matters only in that PR 3 comes last — renaming before the prose is
 settled means renaming twice.
+
+**PR 3 also has to wait for whatever else is in flight.** A ~89-site rename
+conflicts with any concurrent branch that touches the same prose, and the
+conflicts are the worst kind: textually trivial, individually meaningless, and
+too numerous to review. [Plan 68](68-live-mirror-visibility.md) is being worked
+in parallel — its surface (`lib/mirror.mts`, `lib/pull.mts`, `lib/state.mts`,
+`docs/cli/mcp-connect.md`, `docs/concepts/configuration.md`,
+`template/AGENTS.md.example`) currently carries the term in exactly one place
+(`lib/mirror.mts`), so the collision is small **today** — but that is a snapshot,
+not a guarantee, and Plan 68's own docs work could add more. Re-measure
+immediately before PR 3, and land it when nothing else is open.
+
+**Post-#243 note.** PR #243 (Plan 69, merged 2026-08-09) landed while this was a
+draft. It shifted line numbers in `lib/validate.mts` (the import-rule
+`errors.push` is now **line 71**, `runTypecheckPerDir` now **401-425**) and added
+three `/docs` uses of "sync dir" (16 → 19). Those are corrected throughout this
+file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
+`docs/concepts/sync-layout.md` still never uses the term.
 
 ## Tasks *(contingent on the findings above being confirmed)*
 
@@ -793,7 +811,7 @@ settled means renaming twice.
      definition plainly — *the directory holding `decanter.config.json`; every
      verb finds it by searching upward, and it is the boundary imports may not
      cross* — explicitly **not** "your git root", which it need not be (F7b).
-     Then audit the other 15 uses of the term for a first-mention link to it,
+     Then audit the other 18 uses of the term for a first-mention link to it,
      and apply whatever name F7's naming section settles on in the same pass —
      one rename, not a drift. Consider whether `/docs` wants a short glossary
      at all, or whether
