@@ -305,18 +305,36 @@ Being purely lexical is what lets `preflight --offline` report all four without
 compiling anything, which is why the function is shared between `validate.mts`
 and `compile.mts` in the first place.
 
-Which settles the "why have a check the bundler would do anyway" question:
+#### What a check *before* the bundler is worth
 
-| Rule | Would esbuild catch it? |
-| --- | --- |
-| `node:*` / builtins | **No** — the problem is n8n's sandbox, which esbuild knows nothing about; it would bundle happily |
-| Bare specifier without a `bundleDependencies` opt-in | **No** — it resolves from `node_modules` and silently inlines a package you never meant to ship |
-| Absolute path | Yes, but unintelligibly |
-| **Relative, outside the root** | **Only if the file is missing.** If it exists, esbuild bundles it without complaint |
+Four distinct things, and they do not apply evenly to the four rules.
 
-Three of the four catch things the bundler cannot. The fourth is the only one
-that forbids something that works — which is exactly the one this plan
-downgrades to a warning.
+1. **It catches what esbuild is silent about.** Measured: a `node:fs` import
+   produces no error and no warning — esbuild externalises it and writes a
+   `__require("node:fs")` shim into the artifact, which pushes cleanly and then
+   fails (or doesn't) at **runtime on the n8n instance**, depending on that
+   instance's `NODE_FUNCTION_ALLOW_BUILTIN`. The worst possible place for the
+   failure. Same for an installed-but-not-opted-in package: esbuild inlines
+   whatever `node_modules` offers, so without the check a package you never
+   meant to ship lands in the workflow JSON.
+2. **It fails on the author's machine, not the colleague's.** An absolute
+   specifier resolves fine for you, so you push a node nobody else can build.
+   The check inverts that.
+3. **Offline, without compiling, and all at once.** Being lexical is what lets
+   `preflight --offline`, the layout tier and `watch` report every violation
+   without starting esbuild — and report *all* of them rather than stopping at
+   the first resolution error, in our wording rather than esbuild's.
+4. **One source, two paths.** `preflight` and `push` call the same function, so
+   they cannot disagree — the bug class F1 is an instance of.
+
+| | Rules 1-3 | Rule 4 (out of root) |
+| --- | --- | --- |
+| Is esbuild silent? | **yes** | no — loud `Could not resolve` |
+| Does it fail on the wrong machine? | yes (absolute path) | no — fails where the file is absent |
+| Reportable earlier, offline? | yes | yes |
+
+Only the third row survives for rule 4: **earlier, and in our wording.** Enough
+to keep it as a warning, not enough to block on.
 
 ### F7 — the boundary guards a property it neither implies nor requires
 
