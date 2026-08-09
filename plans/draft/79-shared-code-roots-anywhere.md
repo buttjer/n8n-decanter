@@ -436,9 +436,32 @@ unstable case passes untouched) and **too strict** (a relative import out of the
 root is provably deterministic and merely might not resolve elsewhere) — while
 enforcing at tier-1, un-forceable strength.
 
-Whether the new warning should instead be pointed at the *symlink* case is left
-open: it would need a realpath check on resolved bare specifiers, which is a new
-capability rather than a downgrade, and nobody has reported hitting it.
+**Should the new warning point at the symlink case instead?** Plainly: there are
+two ways to pull foreign code into a node — **by path** (`from
+"../../../shared/x"`) and **by name** (`from "mylib"`). The check only ever
+looked at paths. The by-name route is the one that actually breaks, and adding
+it means a realpath check on resolved bare specifiers — a **new capability, not
+a downgrade**. **Recommendation: don't.** It inflates this plan, and it only
+bites `npm link`-style setups, which nobody has reported. If someone does hit
+it, that is its own plan.
+
+#### Blast radius: import-free files are untouched
+
+Worth stating because it bounds the whole change — `compileTs` returns on the
+`transform` fast path when there are no specifiers
+([lib/compile.mts:173-181](../../lib/compile.mts#L173-L181)), so the check is
+never even called for them:
+
+| File | Imports? | What happens | Check runs? |
+| --- | --- | --- | --- |
+| `.js` | none | pushed **verbatim**, esbuild never touches it | no |
+| `.js` | yes | **hard error** today — "convert the node to `.ts` or inline the code" ([lib/validate.mts:47](../../lib/validate.mts#L47)); that is [Plan 24](../open/24-shared-code-in-js-nodes.md)'s territory, untouched here | separate rule |
+| `.ts` | none | esbuild `transform` only (TS→JS), no bundling, no path comments | no |
+| `.ts` | yes | bundled | **yes** |
+
+So the downgrade can only affect files that genuinely import something. Nothing
+in the lossless `.js` tier, and nothing in the import-free `.ts` fast path,
+changes shape or protection.
 
 #### Proposal (maintainer decision 2026-08-09: git must not be a dependency)
 
