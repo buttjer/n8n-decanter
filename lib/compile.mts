@@ -141,31 +141,44 @@ function packageName(spec: string): string {
   return spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
 }
 
+export interface ImportCheck {
+  /** Violations that block a push — `--force` does not bypass them. */
+  blocking: string[];
+  /** Advisory findings — reported everywhere, blocking nothing (Plan 79). */
+  advisory: string[];
+}
+
 /**
- * Offline import rules for a node file (plans/14): relative imports stay
- * inside the sync dir, bare specifiers need a `bundleDependencies` opt-in,
- * builtins can never be bundled. Shared by the compliance guard and the
- * compiler, so preflight's `layout` check and `push` disagree on nothing.
+ * Offline import rules for a node file (plans/14), split by who the rule
+ * protects (Plan 79 task 7): a Node builtin or an un-opted-in npm package is
+ * **blocking** — esbuild is silent about both, so without the block the
+ * failure (a `__require` shim, a silently inlined package) surfaces at
+ * runtime on the instance. A relative import leaving the sync dir, or an
+ * absolute path, is **advisory** — it only endangers the author's own
+ * portability, and esbuild fails loudly wherever the target is genuinely
+ * absent. Shared by the compliance guard and the compiler, so preflight's
+ * `layout` check and `push` disagree on nothing.
  */
-export function checkNodeImports(file: string, specifiers: string[], ctx: BundleContext): string[] {
-  const problems: string[] = [];
+export function checkNodeImports(file: string, specifiers: string[], ctx: BundleContext): ImportCheck {
+  const blocking: string[] = [];
+  const advisory: string[] = [];
   for (const spec of specifiers) {
     if (spec.startsWith("node:") || BUILTINS.has(packageName(spec))) {
-      problems.push(`imports the Node builtin "${spec}" — builtins cannot be bundled into a Code node (whether n8n allows them at runtime is the instance's NODE_FUNCTION_ALLOW_BUILTIN policy); inline the logic instead`);
+      blocking.push(`imports the Node builtin "${spec}" — builtins cannot be bundled into a Code node (whether n8n allows them at runtime is the instance's NODE_FUNCTION_ALLOW_BUILTIN policy); inline the logic instead`);
     } else if (spec.startsWith("./") || spec.startsWith("../")) {
       if (ctx.syncRoot !== null) {
         const resolved = path.resolve(path.dirname(file), spec);
         if (resolved !== ctx.syncRoot && !resolved.startsWith(ctx.syncRoot + path.sep)) {
-          problems.push(`imports "${spec}", which resolves outside the sync dir (${ctx.syncRoot}) — shared code must live inside it`);
+          advisory.push(`imports "${spec}", which resolves outside the sync dir (${ctx.syncRoot}) — it bundles, but anyone whose checkout lacks the target can't build this node`);
         }
       }
     } else if (path.isAbsolute(spec)) {
-      problems.push(`imports the absolute path "${spec}" — use a relative import inside the sync dir`);
+      advisory.push(`imports the absolute path "${spec}" — it bundles on this machine only; prefer a relative import inside the sync dir`);
     } else if (!ctx.bundleDependencies.includes(packageName(spec))) {
-      problems.push(`imports the npm package "${packageName(spec)}" without opting it in — add it to "bundleDependencies" in decanter.config.json to bundle it into the pushed node`);
+      blocking.push(`imports the npm package "${packageName(spec)}" without opting it in — add it to "bundleDependencies" in decanter.config.json to bundle it into the pushed node`);
     }
   }
-  return problems;
+  return { blocking, advisory };
 }
 
 /**
@@ -175,7 +188,7 @@ export function checkNodeImports(file: string, specifiers: string[], ctx: Bundle
  * imports, the file is bundled self-contained (see the header comment); the
  * output is still a function body ending in a top-level `return`.
  */
-export async function compileTs(file: string, log?: Log): Promise<string> {
+export async function compileTs(file: string, log?: Log, opts?: { quietImportWarnings?: boolean }): Promise<string> {
   const source = readFileSync(file, "utf8");
   const { importBlock, specifiers, body } = scanNodeImports(source);
 
@@ -190,9 +203,16 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
   }
 
   const ctx = findBundleContext(path.dirname(file));
-  const problems = checkNodeImports(file, specifiers, ctx);
-  if (problems.length > 0) {
-    throw new Error(`${file}:\n${problems.map((p) => `  ${p}`).join("\n")}`);
+  const { blocking, advisory } = checkNodeImports(file, specifiers, ctx);
+  if (blocking.length > 0) {
+    throw new Error(`${file}:\n${blocking.map((p) => `  ${p}`).join("\n")}`);
+  }
+  // Advisory findings warn and let the compile proceed (Plan 79 task 7). The
+  // push paths pass quietImportWarnings because their guard tier already
+  // printed the same findings — without it every violation would print twice
+  // per push, once per channel.
+  if (!opts?.quietImportWarnings) {
+    for (const p of advisory) log?.warn(`${file}: ${p}`);
   }
 
   // Realpath the label base: esbuild resolves every bundled module to its

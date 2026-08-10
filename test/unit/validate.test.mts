@@ -341,6 +341,21 @@ describe("validateNodeFile", () => {
     assert.ok(warnings.some((w) => /import below the first statement/.test(w)), warnings.join("\n"));
   });
 
+  it("a sync-dir escape and an absolute path WARN in a .ts node — advisory, not blocking (Plan 79 task 7)", () => {
+    const dir = scaffold({
+      state: JSON.stringify({ workflowId: "wf1", nodes: { n2: { file: "code/main.ts" } } }),
+      files: {
+        // a sync root at the folder itself, so the escape check has a boundary
+        "decanter.config.json": JSON.stringify({ root: "./workflows", workflows: [] }),
+        "code/main.ts": 'import { a } from "../../../../elsewhere/a";\nimport { b } from "/abs/b";\nreturn [{ json: { a, b } }];\n',
+      },
+    });
+    const { errors, warnings } = validateNodeFile(dir, "code/main.ts");
+    assert.deepEqual(errors, [], "neither finding may block");
+    assert.ok(warnings.some((w) => /outside the sync dir/.test(w)), warnings.join("\n"));
+    assert.ok(warnings.some((w) => /absolute path/.test(w)), warnings.join("\n"));
+  });
+
   it("warns on an unresolved .remote.js sibling", () => {
     const dir = scaffold({ files: { "code/main.remote.js": "// remote\n" } });
     const { errors, warnings } = validateNodeFile(dir, "code/main.js");

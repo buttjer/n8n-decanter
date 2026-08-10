@@ -1853,6 +1853,45 @@ await step("bundle: builtins and unlisted npm packages error; bundleDependencies
   assert.equal(r.code, 0, r.out);
 });
 
+// Plan 79 task 7: a sync-dir escape is ADVISORY — it warns on every surface
+// and blocks none, because it only endangers the author's own portability and
+// esbuild fails loudly wherever the target is genuinely absent. Builtins and
+// unlisted packages stay hard errors (previous step) — esbuild is silent
+// about those, so the failure would surface at runtime on the instance.
+await step("bundle: a sync-dir escape warns and pushes (once); --fail-on=warn is the teeth; a missing target still fails loudly", async () => {
+  const tsFile = path.join(dirF, "code", "amazon-export.ts");
+  const originalTs = read(dirF, "code", "amazon-export.ts");
+  const outside = path.join(TMP, "..", `decanter-e2e-outside-${process.pid}`);
+  try {
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(path.join(outside, "vat.ts"), "export const VAT = 0.19;\n");
+    writeFileSync(tsFile, `import { VAT } from "../../../../${path.basename(outside)}/vat";\nreturn [{ json: { vat: VAT } }];\n`);
+    // preflight: layout stays green-with-warning — caution, exit 0
+    let r = await cli("preflight", "--offline", "--no-typecheck");
+    assert.equal(r.code, 0, "an escape must not fail the gate: " + r.out);
+    assert.match(r.out, /outside the sync dir/);
+    // ...and --fail-on=warn is the strict variant (CI teeth)
+    r = await cli("preflight", "--offline", "--no-typecheck", "--fail-on=warn");
+    assert.equal(r.code, 1, "--fail-on=warn must promote the advisory to exit 1: " + r.out);
+    // push: goes through, warns EXACTLY once (the guard tier owns the line;
+    // the compile-time repeat is silenced — the de-dup decision)
+    r = await cli("push", "--no-typecheck");
+    assert.equal(r.code, 0, "an escape must not block a push: " + r.out);
+    assert.equal((r.out.match(/outside the sync dir/g) ?? []).length, 1, "the advisory must print exactly once per push: " + r.out);
+    assert.match(remoteNode("wf123", "n3").parameters.jsCode, /0\.19/, "the escape target is bundled into the draft");
+    // a genuinely missing target still fails loudly — advisory or not
+    writeFileSync(tsFile, 'import { X } from "../../../../does-not-exist-anywhere/x";\nreturn [X];\n');
+    r = await cli("push", "--no-typecheck");
+    assert.equal(r.code, 1, "an unresolvable import must still fail the push");
+    assert.match(r.out, /Could not resolve/);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+    writeFileSync(tsFile, originalTs);
+  }
+  const r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+});
+
 // Plan 79: `shared/` is a convention, not a rule — the enforced boundary is
 // the sync dir. Helpers may live in ANY folder(s) inside it, and the scoped
 // preflight typecheck must see type errors in helper code (the F1 gate-lies

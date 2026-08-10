@@ -153,7 +153,7 @@ async function assembleForRestore(dir: string, backup: Workflow, log: Log): Prom
     const file = placeholderFile(node);
     if (file === null) continue; // inline code (untracked node) — leave as-is
     try {
-      const { jsCode } = await buildNodeCode(dir, file, log);
+      const { jsCode } = await buildNodeCode(dir, file, log, { quietImportWarnings: true });
       node.parameters.jsCode = jsCode;
     } catch {
       throw new Error(`backup references ${file}, which is missing from ${path.basename(dir)}/ — restore from a folder/commit matching the backup, or \`pull\` to recreate it`);

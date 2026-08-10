@@ -17,12 +17,17 @@ export function assertCompliant({ errors, warnings }: ValidationResult, log: Log
   throw new Error(`${what} does not comply with the decanter layout (${errors.length} problem${errors.length === 1 ? "" : "s"}) — fix the issues above, see also: n8n-decanter preflight --offline`);
 }
 
-/** Turn a node source file into the jsCode payload (+ hash of the marker-less body). */
-export async function buildNodeCode(dir: string, file: string, log?: Log): Promise<{ jsCode: string; hash: string }> {
+/**
+ * Turn a node source file into the jsCode payload (+ hash of the marker-less
+ * body). `quietImportWarnings` is for callers whose guard tier already
+ * printed the advisory import findings (push, backup) — without it each
+ * finding would print twice per run, once per channel (Plan 79 task 7).
+ */
+export async function buildNodeCode(dir: string, file: string, log?: Log, opts?: { quietImportWarnings?: boolean }): Promise<{ jsCode: string; hash: string }> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) throw new Error(`referenced node file missing: ${filePath}`);
   if (file.endsWith(".ts")) {
-    return withMarker(await compileTs(filePath, log));
+    return withMarker(await compileTs(filePath, log, opts));
   }
   const jsCode = readFileSync(filePath, "utf8");
   return { jsCode, hash: sha256(jsCode) };
@@ -107,7 +112,7 @@ async function collectOps(
       log.warn(`node "${node.name}" (${ns.file}) is no longer a JS Code node remotely — skipped; pull to clean up state`);
       continue;
     }
-    const { jsCode, hash } = await buildNodeCode(dir, ns.file, log);
+    const { jsCode, hash } = await buildNodeCode(dir, ns.file, log, { quietImportWarnings: true });
     const remoteSplit = splitMarker(node.parameters.jsCode);
     const remoteHash = sha256(remoteSplit.body);
     if (codeDrift(remoteHash, hash, ns.lastPushedHash)) {

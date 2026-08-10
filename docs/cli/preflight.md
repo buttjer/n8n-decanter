@@ -150,11 +150,11 @@ them):
 - an `@ts-n8n` marker inside a `.js` file
 - an `import` in a `.js` node file — `.js` is pushed verbatim and n8n has no
   module loader; convert the node to `.ts`, where imports are bundled on push
-- an import in a `.ts` node that breaks the
+- an import in a `.ts` node that breaks the blocking half of the
   [bundling rules](/docs/concepts/typescript-nodes/#shared-code-and-npm-packages):
-  a Node builtin (`node:*`, `fs`, `crypto`, …), an npm package not opted into
-  `bundleDependencies`, an absolute path, or a relative path resolving outside
-  the [sync dir](/docs/concepts/sync-layout/#the-sync-dir)
+  a Node builtin (`node:*`, `fs`, `crypto`, …) or an npm package not opted
+  into `bundleDependencies` — esbuild is silent about both, so without the
+  block the failure would surface at runtime on the instance
 - dangling connection sources/targets
 - duplicate node names or ids
 - orphan `.js`/`.ts` files nothing references
@@ -167,7 +167,12 @@ them):
   fixtures mechanism and the old `--pin` flag are retired; recreate the data as
   a [scenario](/docs/cli/scenario/), then delete the dir
 
-Warn without blocking: **local work not yet registered with the instance** — a
+Warn without blocking: **the advisory half of the import rules** — a relative
+import resolving outside the
+[sync dir](/docs/concepts/sync-layout/#the-sync-dir), or an absolute path.
+Both bundle here and fail loudly wherever the target is genuinely absent, so
+they endanger only the author's own portability; `--fail-on=warn` is the
+strict variant. Also: **local work not yet registered with the instance** — a
 node whose `//@file:` placeholder has moved off what `.decanter.json` records
 (the shape of a `.js`→`.ts` conversion), or whose recorded file is gone from
 disk. `push` reconciles the map, so this is a pending sync, not a violation —

@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Two of the four import rules for `.ts` nodes now warn instead of
+  blocking a push**: a relative import resolving outside the sync dir, and an
+  absolute-path import. Both only endanger the author's own portability — the
+  bundle still builds locally and fails loudly (`Could not resolve`) wherever
+  the target is genuinely absent — so blocking them was decanter making the
+  user's call. The advisory prints on every surface (`preflight`'s `layout`
+  details, `push`, `node run`) and exactly once per push;
+  `preflight --fail-on=warn` is the strict variant for CI. **Node builtins
+  and npm packages not opted into `bundleDependencies` still block** —
+  esbuild is silent about both, so without the block the failure would
+  surface at runtime on the n8n instance.
 - **The scaffolded `mcp-route-check.mjs` session hook now also inspects
   user-level agent config for direct n8n MCP routes** — Claude Code's
   `~/.claude.json` (including its entry for the current project), Cursor's

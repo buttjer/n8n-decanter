@@ -555,13 +555,20 @@ carries every violation in its `details` (what `check` printed in full).
 Errors (block push / exit 1): inline `jsCode` in the snapshot instead of a
 placeholder; placeholders referencing missing files, `.remote.js` leftovers,
 non-`.js`/`.ts` files, or files outside `code/`; a `.js` file ending with an
-`@ts-n8n` marker; imports in `.js` nodes / bundling violations in `.ts`
-nodes (plans/14); missing/corrupt `workflow.json` or `.decanter.json`;
+`@ts-n8n` marker; imports in `.js` nodes / Node-builtin and
+un-opted-in-package imports in `.ts` nodes (plans/14, plans/79 — esbuild is
+silent about both, so the failure would otherwise surface at runtime on the
+instance); missing/corrupt `workflow.json` or `.decanter.json`;
 structural integrity of the snapshot (dangling connections, duplicate node
 names/ids, orphan code files, dangling literal `$('…')` references in code
 and expression parameters).
 
-Warnings (don't block): unresolved `.remote.js` / `workflow.remote.json`
+Warnings (don't block): a relative import resolving outside the sync dir, and
+an absolute-path import, in `.ts` nodes (plans/79 — advisory: they endanger
+only the author's portability, bundle locally, and esbuild fails loudly
+wherever the target is absent; the guard tier owns the printed line on push
+paths, `compileTs` stays quiet there and keeps emitting for `node run` /
+`diff`); unresolved `.remote.js` / `workflow.remote.json`
 leftovers — pre-Plan-32 artifacts; port and delete them.
 
 Typecheck gate: unchanged (see Type checking; scoping, and the template verify

@@ -61,20 +61,24 @@ describe("checkNodeImports", () => {
   const ctx = { syncRoot: "/sync", bundleDependencies: ["tiny-add", "@scope/pkg"] };
   const file = "/sync/workflows/WF/code/node.ts";
 
-  it("rejects builtins, absolute paths, escapes, and unlisted packages", () => {
-    assert.match(checkNodeImports(file, ["node:crypto"], ctx)[0], /builtin/);
-    assert.match(checkNodeImports(file, ["fs/promises"], ctx)[0], /builtin/);
-    assert.match(checkNodeImports(file, ["/etc/x"], ctx)[0], /absolute/);
-    assert.match(checkNodeImports(file, ["../../../../outside"], ctx)[0], /outside the sync dir/);
-    assert.match(checkNodeImports(file, ["lodash"], ctx)[0], /bundleDependencies/);
+  it("blocks builtins and unlisted packages; escapes and absolute paths are advisory (Plan 79 task 7)", () => {
+    assert.match(checkNodeImports(file, ["node:crypto"], ctx).blocking[0], /builtin/);
+    assert.match(checkNodeImports(file, ["fs/promises"], ctx).blocking[0], /builtin/);
+    assert.match(checkNodeImports(file, ["lodash"], ctx).blocking[0], /bundleDependencies/);
+    const abs = checkNodeImports(file, ["/etc/x"], ctx);
+    assert.match(abs.advisory[0], /absolute/);
+    assert.deepEqual(abs.blocking, [], "an absolute path must not block");
+    const escape = checkNodeImports(file, ["../../../../outside"], ctx);
+    assert.match(escape.advisory[0], /outside the sync dir/);
+    assert.deepEqual(escape.blocking, [], "a sync-dir escape must not block");
   });
 
   it("accepts contained relatives and allowlisted packages (incl. scoped subpaths)", () => {
-    assert.deepEqual(checkNodeImports(file, ["../../../shared/money", "./sibling", "tiny-add", "@scope/pkg/sub"], ctx), []);
+    assert.deepEqual(checkNodeImports(file, ["../../../shared/money", "./sibling", "tiny-add", "@scope/pkg/sub"], ctx), { blocking: [], advisory: [] });
   });
 
   it("skips containment when no sync root is in reach", () => {
-    assert.deepEqual(checkNodeImports(file, ["../../anywhere"], { syncRoot: null, bundleDependencies: [] }), []);
+    assert.deepEqual(checkNodeImports(file, ["../../anywhere"], { syncRoot: null, bundleDependencies: [] }), { blocking: [], advisory: [] });
   });
 });
 
@@ -183,6 +187,30 @@ describe("compileTs", () => {
     assert.equal(viaAlias, direct, "a symlinked path to the sync dir must not change the compiled bytes");
     assert.match(viaAlias, /\/\/ shared\/money\.ts/, "labels stay sync-root-relative");
     assert.doesNotMatch(viaAlias, /\/\/ \.\.\//, "no ..-climbing module labels");
+  });
+
+  it("a sync-dir escape warns and still bundles; the push paths can silence the repeat (Plan 79 task 7)", async () => {
+    const { root, codeDir } = makeSyncDir("escape");
+    // the escape target lives NEXT TO the sync dir — outside it
+    const outside = path.join(TMP, "escape-outside");
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(path.join(outside, "vat.ts"), "export const VAT = 0.19;\n");
+    const file = path.join(codeDir, "node.ts");
+    writeFileSync(file, 'import { VAT } from "../../../../escape-outside/vat";\nreturn [{ json: { vat: VAT } }];\n');
+    const warned: string[] = [];
+    const log = { info() {}, ok() {}, warn: (m: string) => warned.push(m), error() {} };
+    const code = await compileTs(file, log as never);
+    assert.equal(warned.filter((w) => /outside the sync dir/.test(w)).length, 1, "advisory, exactly once");
+    assert.match(code, /0\.19/, "the escape target still bundles");
+    const out = await new AsyncFunction(code)();
+    assert.deepEqual(out, [{ json: { vat: 0.19 } }]);
+    // the guard-owning callers silence the compile-time repeat
+    warned.length = 0;
+    await compileTs(file, log as never, { quietImportWarnings: true });
+    assert.deepEqual(warned, [], "quietImportWarnings must suppress the advisory channel");
+    // and a genuinely missing target still fails loudly, advisory or not
+    writeFileSync(file, 'import { X } from "../../../../escape-nowhere/x";\nreturn [X];\n');
+    await assert.rejects(() => compileTs(file), /bundling failed/);
   });
 
   it("guard and bundler agree when a symlink sits BETWEEN the sync root and the node file", async () => {
