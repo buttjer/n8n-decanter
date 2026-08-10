@@ -68,9 +68,9 @@ describe("checkNodeImports", () => {
     const abs = checkNodeImports(file, ["/etc/x"], ctx);
     assert.match(abs.advisory[0], /absolute/);
     assert.deepEqual(abs.blocking, [], "an absolute path must not block");
-    const escape = checkNodeImports(file, ["../../../../outside"], ctx);
-    assert.match(escape.advisory[0], /outside the sync dir/);
-    assert.deepEqual(escape.blocking, [], "a sync-dir escape must not block");
+    const escaped = checkNodeImports(file, ["../../../../outside"], ctx);
+    assert.match(escaped.advisory[0], /outside the sync dir/);
+    assert.deepEqual(escaped.blocking, [], "a sync-dir escape must not block");
   });
 
   it("accepts contained relatives and allowlisted packages (incl. scoped subpaths)", () => {
@@ -190,7 +190,7 @@ describe("compileTs", () => {
   });
 
   it("a sync-dir escape warns and still bundles; the push paths can silence the repeat (Plan 79 task 7)", async () => {
-    const { root, codeDir } = makeSyncDir("escape");
+    const { codeDir } = makeSyncDir("escape");
     // the escape target lives NEXT TO the sync dir — outside it
     const outside = path.join(TMP, "escape-outside");
     mkdirSync(outside, { recursive: true });
