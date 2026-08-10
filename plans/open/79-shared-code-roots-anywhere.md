@@ -253,12 +253,13 @@ import rule (auto-commit is already switchable off via `commitOnPush` /
 > field-test round** — the round's data decides whether the
 > `bundleDependencies` consent model can go advisory too; until then the
 > conservative default holds. **De-dup:** the guard tier owns the printed
-> line on push paths (`buildNodeCode` passes `quietImportWarnings` from
-> `push` and `backup`, whose `assertCompliant` already printed it);
-> `compileTs` keeps emitting for `node run`, `diff`, `test`, and `simulate`,
-> which run no guard tier. `--fail-on=warn` is preflight-only; push/watch
-> have no strict knob for the advisory rules — that is the deliberate shape,
-> recorded here.
+> line on every path that can reach a push (`buildNodeCode` passes
+> `quietImportWarnings` from `push`, `backup`, and `test`'s
+> local-differs hash compare — `test`'s push-local flow lands in
+> `pushWorkflow`, whose `assertCompliant` prints it once); `compileTs`
+> keeps emitting for `node run`, `diff`, and `simulate`, which run no guard
+> tier. `--fail-on=warn` is preflight-only; push/watch have no strict knob
+> for the advisory rules — that is the deliberate shape, recorded here.
 
 7. **Downgrade rules 2 + 3 to warnings; keep rule 1 blocking; decide rule 4.**
    - Mechanics: with two severity classes, `checkNodeImports`' flat `string[]`

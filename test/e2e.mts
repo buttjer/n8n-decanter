@@ -1010,6 +1010,31 @@ await step("watch: a dangling ref blocks the file that has it, not a save of a c
   writeFileSync(sibling, siblingBefore);
 });
 
+// Plan 79 task 7 on the watch path: an ADVISORY finding in the file being
+// saved must not refuse the save — and must print exactly once (the guard
+// tier owns the line; collectOps' compile stays quiet).
+await step("watch: an advisory import (sync-dir escape) warns once and lets the save through", async () => {
+  const { pushSingleNode } = await import(pathToFileURL(path.join(PROJECT, "lib/push.mts")).href);
+  const warns: string[] = [];
+  const log = { info: () => {}, ok: () => {}, warn: (m: string) => void warns.push(m), error: () => {} };
+  const client = await mcpClient();
+  const tsFile = path.join(dir1, "code", "amazon-feed.ts");
+  const before = readFileSync(tsFile, "utf8");
+  const outside = path.join(TMP, "..", `decanter-e2e-watch-outside-${process.pid}`);
+  try {
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(path.join(outside, "esc.ts"), "export const ESC = 7;\n");
+    writeFileSync(tsFile, `import { ESC } from "../../../../${path.basename(outside)}/esc";\nreturn [{ json: { ESC } }];\n`);
+    await pushSingleNode(client, dir1, "n3", {}, log);
+    assert.equal(warns.filter((w) => /outside the sync dir/.test(w)).length, 1, `advisory exactly once per save: ${warns.join("|")}`);
+    assert.match(remoteNode("wf123", "n3").parameters.jsCode, /ESC = 7/, "the save went through with the escape bundled");
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+    writeFileSync(tsFile, before);
+    await pushSingleNode(client, dir1, "n3", {}, log);
+  }
+});
+
 await step("watch: takes a workflow id, errors on an unknown one before watching", async () => {
   const r = await cli("watch", "nope");
   assert.equal(r.code, 1);

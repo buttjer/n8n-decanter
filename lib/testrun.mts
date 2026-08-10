@@ -108,7 +108,10 @@ async function localDiffersFromDraft(dir: string, remote: Workflow, log: Log): P
     const node = byId.get(nodeId);
     if (!node || !isJsCodeNode(node)) continue;
     if (!existsSync(path.join(dir, ns.file))) continue;
-    const { hash } = await buildNodeCode(dir, ns.file, log);
+    // quiet: this compile only COMPARES hashes. If the answer leads to a
+    // push, pushWorkflow's guard tier prints the advisory findings once —
+    // emitting here too would double them (Plan 79 task 7 de-dup).
+    const { hash } = await buildNodeCode(dir, ns.file, log, { quietImportWarnings: true });
     if (hash !== sha256(splitMarker(node.parameters.jsCode).body)) return true;
   }
   return false;
