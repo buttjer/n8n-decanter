@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inject an advisory line would break streaming for every response to deliver it
   on some. On that transport the stderr warning stays the only signal.
 
+- **`init` now says that its permission rules only bind the next session.** It
+  writes `.claude/settings.json` with the deny rules that keep an agent off
+  `.decanter.json`, `.env` and `push --force` — but agents read permission config
+  at startup, not on change, and `init` is normally run *from inside* the session
+  those rules are meant to constrain. They were silently inert until a restart,
+  and the docs mentioned a restart only for the skills plugin — so the rules that
+  actually gate the agent went unmentioned. Printed once, when the file is first
+  written; a re-init in a set-up directory stays quiet.
+
 ### Fixed
 
 - **A `watch` save now runs the same folder-wide compliance guard as `push`.** It

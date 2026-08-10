@@ -338,6 +338,18 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
   // the manifest (files present, no baseline) adopts in place — report as such.
   if (added.length === entries.length) log.info(`copied template -> ${destDir}`);
   else log.info(`template up to date (${uptodate} unchanged${added.length ? `, ${added.length} added` : ""})`);
+
+  // Permission rules do not hot-load, and `init` is normally run from INSIDE the
+  // session they are meant to constrain — so the deny rules it just wrote (no
+  // edits to `.decanter.json`, no reads of `.env`, no `push --force`) are inert
+  // until that session restarts. The docs said "restart" only for the skills
+  // plugin, so the rules that actually gate the agent went unmentioned: the tool
+  // knew something the user needed and never said it. Only when the file is new
+  // — re-running init in a set-up dir must not nag.
+  const settingsFile = path.join(".claude", "settings.json");
+  if (added.includes(settingsFile)) {
+    log.info(style.dim("  agent permission rules take effect on the NEXT session — restart your agent (or /reload) so they apply"));
+  }
 }
 
 /**

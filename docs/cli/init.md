@@ -158,6 +158,14 @@ working copy and the current template on each re-run:
 Commit `.decanter-template.json` — it's the shared baseline, so a teammate who
 clones and re-inits sees the same drift picture. `.env` is never tracked in it.
 
+**The permission rules only bind the NEXT session.** `.claude/settings.json`
+carries the deny rules that keep an agent off `.decanter.json`, `.env` and
+`push --force` — and agents read their permission config at startup, not on
+change. Since `init` is normally run *from inside* the session it is meant to
+constrain, those rules are inert until you restart that agent (or `/reload`).
+`init` says so when it first writes the file. Until then the scaffolded
+`AGENTS.md` is the only thing holding the line, and it asks rather than blocks.
+
 ## Flags
 
 - `--force` — the escape hatch: overwrites **every** template file with its
