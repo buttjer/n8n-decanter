@@ -34,3 +34,9 @@ The scaffolded `tsconfig.json` belongs to the workflow node files (with
 `n8n-globals.d.ts` typing `$input`, `$('…')`, `DateTime`, …). Its name is
 load-bearing — the typecheck discovers it by name, searching upward. Keep it
 where the config is.
+
+Its `include` covers the **whole sync dir** — helper code may live in any
+folder, so the typecheck and the editor own every root without a config edit.
+If you scaffolded into an **existing project** that had no `tsconfig.json`,
+that same reach sweeps the project's own `.ts`/`.js` into the node-file
+typecheck: add your app dirs to its `exclude` if they shouldn't gate pushes.

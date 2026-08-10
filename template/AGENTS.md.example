@@ -302,12 +302,12 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
   file doesn't declare yet, add it there.
 - **Imports**: `.js` nodes — none at all (they run verbatim; assume the
   instance allows no external or built-in modules). `.ts` nodes — imports
-  from inside this repo (any folder; `shared/` is the scaffolded default)
+  from inside the sync dir (any folder; `shared/` is the scaffolded default)
   and from npm packages
   listed in `decanter.config.json`'s `"bundleDependencies"` are **bundled
   into the compiled node on push** (self-contained output, works on any
   instance incl. n8n Cloud). Rules: imports at the **top of the file** only;
-  relative paths must stay inside this repo; unlisted npm packages and Node
+  relative paths must stay inside the sync dir; unlisted npm packages and Node
   builtins (`node:*`, `fs`, `crypto`, …) are compile errors. Never
   `require()`.
 - `console.log` is available for debugging (visible in the execution view).
@@ -357,8 +357,9 @@ marker line.
 
 **Shared code (`shared/` by default)**: put helpers and types used by several
 nodes in `shared/*.ts` and import them from `.ts` nodes — types *and*
-functions. The actual rule is the repo boundary, not the folder name: helper
-code may live in **any folder inside this repo, in any number of folders**
+functions. The actual rule is the sync-dir boundary, not the folder name:
+helper code may live in **any folder inside the sync dir** — this directory
+tree, the one holding `decanter.config.json` — **in any number of folders**
 (a second root, a per-workflow `local/` dir next to `code/` — all fine);
 `shared/` is simply what `init` scaffolds and what the editor allowlist
 covers. If you use another folder name and an editor/agent allowlist (the

@@ -202,6 +202,16 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
   // bytes, i.e. the exact cross-machine drift the sync-root-relative labels
   // exist to prevent (Plan 79 task 4).
   const workingDir = realDir(ctx.syncRoot ?? path.dirname(file));
+  // resolveDir follows, but ONLY when its realpath stays inside the real sync
+  // root (the whole-tree-behind-a-symlink shape, where realpathing keeps the
+  // entry label clean). When a symlink BETWEEN the root and the node file
+  // realpaths out of the tree, keep the caller's spelling: imports must
+  // resolve exactly where checkNodeImports approved them, or the guard and
+  // the bundler disagree — approving X/shared and then bundling (or failing
+  // on) something else entirely.
+  const spelledDir = path.dirname(file);
+  const realNodeDir = realDir(spelledDir);
+  const resolveDir = realNodeDir === workingDir || realNodeDir.startsWith(workingDir + path.sep) ? realNodeDir : spelledDir;
   // The entry must contain NO `export` syntax: n8n's task-runner sandbox
   // neuters getter property descriptors (Object.defineProperty with `get`
   // reads back undefined), and esbuild lowers module exports to exactly such
@@ -220,7 +230,7 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
       stdin: {
         contents: entry,
         loader: "ts",
-        resolveDir: realDir(path.dirname(file)),
+        resolveDir,
         sourcefile: ENTRY_SOURCEFILE,
       },
       bundle: true,

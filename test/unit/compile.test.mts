@@ -185,6 +185,32 @@ describe("compileTs", () => {
     assert.doesNotMatch(viaAlias, /\/\/ \.\.\//, "no ..-climbing module labels");
   });
 
+  it("guard and bundler agree when a symlink sits BETWEEN the sync root and the node file", async () => {
+    // The other symlink direction: workflows/ itself points out of the sync
+    // dir's real tree. The import guard approves ../../../shared/money in the
+    // SPELLED space, so the bundler must resolve it there too — realpathing
+    // resolveDir made esbuild resolve from the symlink target and disagree
+    // with the guard (failing, or worse, silently bundling a sibling
+    // checkout's file). Only the LABEL base may be realpathed.
+    const root = path.join(TMP, "midlink");
+    mkdirSync(path.join(root, "shared"), { recursive: true });
+    writeFileSync(path.join(root, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: [] }));
+    writeFileSync(
+      path.join(root, "shared", "money.ts"),
+      "export function total(l: { qty: number; price: number }[]): number {\n  return l.reduce((s, x) => s + x.qty * x.price, 0);\n}\n",
+    );
+    const realWfs = path.join(TMP, "midlink-wfs-real");
+    mkdirSync(path.join(realWfs, "WF", "code"), { recursive: true });
+    symlinkSync(realWfs, path.join(root, "workflows"), "dir");
+    const file = path.join(root, "workflows", "WF", "code", "node.ts");
+    writeFileSync(file, 'import { total } from "../../../shared/money";\nreturn [{ json: { t: total([{ qty: 2, price: 3 }]) } }];\n');
+    const code = await compileTs(file);
+    assert.match(code, /function total/, "the guard-approved helper is what gets bundled");
+    assert.match(code, /\/\/ shared\/money\.ts/, "label stays sync-root-relative");
+    const out = await new AsyncFunction(code)();
+    assert.deepEqual(out, [{ json: { t: 6 } }]);
+  });
+
   it("surfaces esbuild resolution failures with the node file named", async () => {
     const { codeDir } = makeSyncDir("missing");
     const file = path.join(codeDir, "node.ts");

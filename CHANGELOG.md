@@ -48,10 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the editor's tsserver now own every root without a config edit. Existing
   sync dirs keep their scaffolded file; to match, widen `include` to
   `["n8n-globals.d.ts", "**/*.ts", "**/*.js"]` and add
-  `"**/backups/**", "**/executions/**", "decanter-ts-plugin"` to `exclude`.
-  One consequence: a loose node-shaped scratch file (top-level `return`
-  outside any workflow's `code/`) is now part of the program and reports
-  TS1108 — move it into a workflow or add its folder to `exclude`.
+  `"**/backups/**", "**/executions/**", "decanter-ts-plugin", "dist"` to
+  `exclude`. Two consequences worth knowing: a loose node-shaped scratch file
+  (top-level `return` outside any workflow's `code/`) is now part of the
+  program and reports TS1108 — move it into a workflow or add its folder to
+  `exclude`; and when `init` scaffolds into an **existing project** that had
+  no `tsconfig.json`, the new config sweeps that project's own `.ts`/`.js`
+  into the node-file typecheck — add your app dirs to `exclude` if they
+  shouldn't gate pushes.
 
 ### Fixed
 

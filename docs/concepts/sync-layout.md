@@ -14,11 +14,14 @@ a relative import in a node file must resolve **inside the sync dir** (see
 [TypeScript nodes](/docs/concepts/typescript-nodes/#shared-code-and-npm-packages)).
 
 It is explicitly **not** "your git root": decanter never consults git to find
-it, the sync dir doesn't have to be a repository at all (only
-[auto-commit](#auto-commits) warns when it isn't), and in a monorepo it can
-sit anywhere below the repo root.
+it, and in a monorepo it can sit anywhere below the repo root. It doesn't
+have to be a repository at all — the git-dependent conveniences then stand
+down ([auto-commit](#auto-commits) warns and skips,
+[watch](/docs/cli/watch/) refuses its startup pull, and the guard's live
+mirror skips its snapshot refreshes) but syncing itself works.
 
-A scaffolded sync dir, top to bottom:
+The decanter-owned core of a scaffolded sync dir (`init` also copies agent
+configs, `package.json`, and editor tooling — elided here):
 
 ```
 my-n8n-code/             # ← the sync dir: the directory holding decanter.config.json
@@ -31,6 +34,8 @@ my-n8n-code/             # ← the sync dir: the directory holding decanter.conf
   workflows/             # the configured root; one folder per synced workflow
   .decanter-auth.json    # MCP OAuth credentials (gitignored, machine-owned)
   .decanter-template.json# template baseline for modification-aware re-init
+  …                      # plus AGENTS.md, .mcp.json & friends, package.json,
+                         #   decanter-ts-plugin/, editor configs — see init
 ```
 
 Each synced workflow is one folder under the configured root:

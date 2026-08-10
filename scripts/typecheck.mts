@@ -54,25 +54,36 @@ const SUFFIX = "\n}\nvoid __n8nNode;\n";
 // one workflow inheriting another workflow's *node* errors, but shared code
 // is common infrastructure — an error there fails `push` for every workflow,
 // so a scoped run reporting green on it would be a gate that lies (Plan 79).
-// Realpath the scope dirs: they arrive in the caller's spelling, but the
-// compiler's file names live under the REALPATHED cwd (the OS resolves
-// process.cwd()), so a symlinked sync-dir path (macOS /tmp -> /private/tmp,
-// a symlinked checkout) would otherwise never prefix-match — and every node
-// diagnostic would be silently dropped from a scoped run (Plan 79 task 4).
-const scopeDirs = process.argv.slice(2).map((d) => {
-  const resolved = path.resolve(d);
+// Scope matching compares BOTH spellings of both sides. Symlinks split the
+// path space in two directions at once: a symlinked sync-dir prefix (macOS
+// /tmp -> /private/tmp) leaves the compiler's file names REALPATHED (the OS
+// resolves process.cwd()) while the scope dirs arrive spelled — and a
+// symlinked dir INSIDE the project (workflows/ -> elsewhere) leaves the file
+// names SPELLED (tsc's include glob reports the traversal spelling) while a
+// realpathed scope dir no longer matches. Either mismatch silently drops
+// every node diagnostic from a scoped run (Plan 79 task 4).
+function realDirOf(p: string): string {
   try {
-    return realpathSync(resolved);
+    return realpathSync(p);
   } catch {
-    return resolved;
+    return p;
   }
+}
+const scopeDirs = process.argv.slice(2).flatMap((d) => {
+  const resolved = path.resolve(d);
+  const real = realDirOf(resolved);
+  return real === resolved ? [resolved] : [resolved, real];
 });
+function under(file: string, dir: string): boolean {
+  return file === dir || file.startsWith(dir + path.sep);
+}
 function inScope(fileName: string): boolean {
   if (scopeDirs.length === 0) return true;
-  const file = path.resolve(fileName);
-  if (scopeDirs.some((dir) => file === dir || file.startsWith(dir + path.sep))) return true;
-  if (file.includes(`${path.sep}node_modules${path.sep}`) || isNodeFile(file)) return false;
-  return file === projectDir || file.startsWith(projectDir + path.sep);
+  const spelled = path.resolve(fileName);
+  const real = realDirOf(spelled);
+  if (scopeDirs.some((dir) => under(spelled, dir) || under(real, dir))) return true;
+  if (spelled.includes(`${path.sep}node_modules${path.sep}`) || isNodeFile(spelled)) return false;
+  return under(spelled, projectDir) || under(real, projectDir);
 }
 
 const configPath = ts.findConfigFile(process.cwd(), ts.sys.fileExists, "tsconfig.json");

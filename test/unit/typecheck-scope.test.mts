@@ -10,7 +10,7 @@
 // attributes one run back to each workflow dir.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,10 @@ import { runTypecheckPerDir } from "../../lib/validate.mts";
 
 const execFile = promisify(execFileCb);
 const SCRIPT = fileURLToPath(new URL("../../scripts/typecheck.mts", import.meta.url));
+// The SCAFFOLDED tsconfig, verbatim — the fixture typechecks under exactly
+// what `init` ships, so narrowing the template's project-wide include back to
+// shared/ + workflows/ (Plan 79 task 3) fails the helpers/-root assertions.
+const TEMPLATE_TSCONFIG = fileURLToPath(new URL("../../template/tsconfig.json.example", import.meta.url));
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-typecheck-scope-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -33,25 +37,7 @@ before(() => {
     mkdirSync(path.join(wf, "code"), { recursive: true });
     writeFileSync(path.join(wf, ".decanter.json"), JSON.stringify({ workflowId: path.basename(wf), nodes: {} }));
   }
-  writeFileSync(
-    path.join(PROJ, "tsconfig.json"),
-    JSON.stringify({
-      compilerOptions: {
-        target: "ES2022",
-        module: "preserve",
-        moduleResolution: "bundler",
-        lib: ["ES2022"],
-        allowJs: true,
-        checkJs: true,
-        noEmit: true,
-        strict: true,
-        skipLibCheck: true,
-        moduleDetection: "force",
-      },
-      include: ["**/*.ts", "**/*.js"],
-      exclude: ["node_modules", "**/*.remote.js"],
-    }),
-  );
+  writeFileSync(path.join(PROJ, "tsconfig.json"), readFileSync(TEMPLATE_TSCONFIG, "utf8"));
   // clean node file in A (top-level return — the wrapper must still apply)
   writeFileSync(path.join(WF_A, "code", "node.ts"), "const rows: number[] = [];\nreturn rows.map((n) => ({ json: { n } }));\n");
   // node file in B with its own type error — must stay B's alone
@@ -64,15 +50,16 @@ before(() => {
   writeFileSync(path.join(PROJ, "helpers", "alt.ts"), 'export const y: string = 42;\n');
 });
 
-async function runScoped(...dirs: string[]): Promise<{ code: number; out: string }> {
+async function runScopedIn(cwd: string, ...dirs: string[]): Promise<{ code: number; out: string }> {
   try {
-    const r = await execFile(process.execPath, [SCRIPT, ...dirs], { cwd: PROJ, encoding: "utf8" });
+    const r = await execFile(process.execPath, [SCRIPT, ...dirs], { cwd, encoding: "utf8" });
     return { code: 0, out: r.stdout + r.stderr };
   } catch (err) {
     const e = err as { code?: number; stdout?: string; stderr?: string };
     return { code: e.code ?? 1, out: (e.stdout ?? "") + (e.stderr ?? "") };
   }
 }
+const runScoped = (...dirs: string[]) => runScopedIn(PROJ, ...dirs);
 
 describe("scoped typecheck sees shared code (Plan 79 F1)", () => {
   it("a run scoped to one workflow reports helper errors under ANY root, but not the other workflow's node error", async () => {
@@ -94,6 +81,24 @@ describe("scoped typecheck sees shared code (Plan 79 F1)", () => {
     const { code, out } = await runScoped(path.join(alias, "workflows", "b"));
     assert.equal(code, 1, out);
     assert.match(out, /workflows[/\\]b[/\\]code[/\\]node\.ts\(1,7\): error TS2322/, "the scoped node error must survive the symlinked spelling");
+  });
+
+  it("a workflows/ dir that is itself a symlink still scopes correctly (Plan 79 task 4)", async () => {
+    // The OTHER symlink direction: tsc's include glob reports these files in
+    // the SPELLED traversal form, so a realpathed-only scope dir never
+    // matched and the node error vanished — preflight green on code push
+    // rejects. Both spellings of both sides must match.
+    const proj2 = path.join(TMP, "proj2");
+    mkdirSync(proj2, { recursive: true });
+    writeFileSync(path.join(proj2, "tsconfig.json"), readFileSync(TEMPLATE_TSCONFIG, "utf8"));
+    const realWfs = path.join(TMP, "proj2-wfs-real");
+    mkdirSync(path.join(realWfs, "w", "code"), { recursive: true });
+    writeFileSync(path.join(realWfs, "w", ".decanter.json"), JSON.stringify({ workflowId: "w", nodes: {} }));
+    writeFileSync(path.join(realWfs, "w", "code", "node.ts"), 'const n: number = "oops";\nreturn [{ json: { n } }];\n');
+    symlinkSync(realWfs, path.join(proj2, "workflows"), "dir");
+    const { code, out } = await runScopedIn(proj2, path.join(proj2, "workflows", "w"));
+    assert.equal(code, 1, out);
+    assert.match(out, /workflows[/\\]w[/\\]code[/\\]node\.ts\(1,7\): error TS2322/, "the node error must survive the spelled-traversal file names");
   });
 
   it("runTypecheckPerDir attributes a helper diagnostic to EVERY workflow, a node diagnostic to its own dir only", async () => {
