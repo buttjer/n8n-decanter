@@ -191,7 +191,7 @@ node file importing from three differently-named roots:
 
 The per-workflow case passes the compliance guard because the orphan/stray scan
 only reads the folder root and `code/`
-([lib/validate.mts:291-300](../../lib/validate.mts#L291-L300)) — sibling subdirs
+([lib/validate.mts:314-323](../../lib/validate.mts#L314-L323)) — sibling subdirs
 are explicitly reserved for artifacts, so a helper dir next to `code/` never
 trips it.
 
@@ -244,7 +244,7 @@ From `workflows/<slug>/code/<node>.ts` that resolves to `workflows/shared/money`
 — copy-paste it and push fails with `Could not resolve "../../shared/money"`.
 The correct depth is `../../../shared/money`; the two-level form is a leftover
 from the pre-`code/` flat layout retired in
-[Plan 27](../done/27-verb-first-grammar.md). `test/e2e.mts:1750` and
+[Plan 27](../done/27-verb-first-grammar.md). `test/e2e.mts:1787` and
 `test/smoke-n8n.mts:347` already use the three-level form, which is why the
 suites proved bundling works while the documented snippet stayed broken.
 
@@ -259,7 +259,7 @@ it is never checked, and the editor's tsserver doesn't own it. Same glob in
 ### F6 — the rule is stated in an undefined word
 
 The one enforced rule is *"a relative import must resolve inside the **sync
-dir**"*. That term appears **19 times across `/docs`** (16 before #243 merged) — `init`, `quickstart`,
+dir**"*. That term appears **19 times across `/docs`** — `init`, `quickstart`,
 `installation`, `preflight`, `type-checking`, `typescript-nodes`, the agents
 pages — and is **defined nowhere**. There is no glossary. The Quickstart's first
 heading is literally "Bootstrap a sync dir" with no statement of what one is.
@@ -486,7 +486,7 @@ never even called for them:
 | File | Imports? | What happens | Check runs? |
 | --- | --- | --- | --- |
 | `.js` | none | pushed **verbatim**, esbuild never touches it | no |
-| `.js` | yes | **hard error** today — "convert the node to `.ts` or inline the code" ([lib/validate.mts:47](../../lib/validate.mts#L47)); that is [Plan 24](../open/24-shared-code-in-js-nodes.md)'s territory, untouched here | separate rule |
+| `.js` | yes | **hard error** today — "convert the node to `.ts` or inline the code" ([lib/validate.mts:62](../../lib/validate.mts#L62)); that is [Plan 24](../open/24-shared-code-in-js-nodes.md)'s territory, untouched here | separate rule |
 | `.ts` | none | esbuild `transform` only (TS→JS), no bundling, no path comments | no |
 | `.ts` | yes | bundled | **yes** |
 
@@ -530,6 +530,20 @@ blocking.
   because it is the only one whose failure is invisible at build time *and*
   breaks the self-contained promise (a bundled node is supposed to run anywhere,
   n8n Cloud included).
+- **Interaction with #243's scoped abort — measured, and smaller than it looks.**
+  Plan 69 built `errorsByFile` by feeding `blame(file, ...result.errors)` **errors
+  only**; there is no `warningsByFile`. So after the downgrade the import
+  messages leave the attribution channel and print via `assertCompliant`'s
+  warning path instead. The **printed line count on a normal save is unchanged** —
+  folder-wide import errors already print on every save today, through the
+  non-blocking loop in `lib/push.mts`. Two real deltas, both cosmetic: a
+  sibling's import warning loses the `— not blocking this save` suffix, and on a
+  save that aborts for an *unrelated* reason the sibling warnings now print
+  (warnings are logged before the throw, while the non-blocking loop is skipped).
+  **Do not "fix" this by scoping `folder.warnings` to the saved file** — that
+  would suppress eight pre-existing folder-wide warnings #243 deliberately
+  surfaces. A `warningsByFile` follow-up is possible but is its own PR, not a
+  prerequisite here.
 - **Nothing else moves.** `absWorkingDir` stays the project root, so no module
   label changes, no artifact churn, no hash re-baseline for anyone.
 - **Cost:** one branch in `checkNodeImports` plus the error/warning plumbing in
@@ -754,11 +768,18 @@ not a guarantee, and Plan 68's own docs work could add more. Re-measure
 immediately before PR 3, and land it when nothing else is open.
 
 **Post-#243 note.** PR #243 (Plan 69, merged 2026-08-09) landed while this was a
-draft. It shifted line numbers in `lib/validate.mts` (the import-rule
-`errors.push` is now **line 71**, `runTypecheckPerDir` now **401-425**) and added
-three `/docs` uses of "sync dir" (16 → 19). Those are corrected throughout this
-file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
-`docs/concepts/sync-layout.md` still never uses the term.
+draft. It shifted line numbers in `lib/validate.mts` — the import-rule
+`errors.push` is now **line 71**, `runTypecheckPerDir` **401-425**, and four
+further citations had drifted, two of them onto *different but plausible* rules
+(a reviewer checking `:47` or `:32` landed on real, adjacent, wrong code rather
+than on something obviously broken). All corrected here.
+
+**It changed no term counts.** `gh pr diff 243 | grep -c "sync dir"` is **0**,
+and `git grep -c` over `/docs` returns **19** at both `59079bb` and `d68eedd`.
+An earlier revision of this file said 16 and then blamed #243 for the jump —
+both wrong: **16 was a mis-count**, and #243 caused none of it. `lib/compile.mts`
+was untouched, and F6's sharpest half still holds: `docs/concepts/sync-layout.md`
+still never uses the term.
 
 ## Tasks *(contingent on the findings above being confirmed)*
 
@@ -800,7 +821,7 @@ file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
 4. **Document the actual rule (the core deliverable).** The organising idea is a
    distinction the docs never draw: **what is a rule versus what is a default.**
    `code/` is a *rule* — a node file outside it is a hard error
-   ([lib/validate.mts:32](../../lib/validate.mts#L32)). `shared/` has no such
+   ([lib/validate.mts:47](../../lib/validate.mts#L47)). `shared/` has no such
    counterpart: it is a *default with tooling attached* (the `init` scaffold, the
    tsconfig glob, the agent allowlist), which is why deviating costs three lines
    rather than none. Every surface below should read as an instance of that
@@ -821,13 +842,16 @@ file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
      "Shared code and npm packages": lead with the real boundary — *shared code
      may live in **any folder inside the sync dir**, in any number of folders;
      `shared/` is simply what `init` scaffolds*. Show the three working shapes
-     and the one hard error (with its exact message), plus the two asymmetries
-     (auto-commit pathspec, `watch`) and the same-name rule from F4/F5:
-     **different folders never collide; identical binding names do.**
-     State **why** the boundary exists (F7's three reasons — git, fresh clone,
-     hash determinism), and document the npm route
-     (`npm i file:../packages/x` + a `bundleDependencies` entry) as the
-     sanctioned way to reach code outside it, with the caveat that the target
+     and — no longer "the one hard error" — the **warning** an escape now
+     produces, plus the two asymmetries (auto-commit pathspec, `watch`) and the
+     same-name rule from F4/F5: **different folders never collide; identical
+     binding names do.** Also fix `:70-72` on that page, which calls unlisted
+     packages and builtins "compile errors".
+     Say **why** a boundary exists at all — but honestly: F7 struck the two
+     git-flavoured reasons as false and measured the third away, so the real
+     answer is *"so the failure is early and in our words"*, not a safety claim.
+     Document the npm route (`npm i file:../packages/x` + a `bundleDependencies`
+     entry) as the way to reach code outside it, with the caveat that the target
      should live in the same repo or the labels stop being machine-independent.
    - [docs/concepts/sync-layout.md](../../docs/concepts/sync-layout.md): add the
      sync-dir-level view with `shared/` marked *convention, rename or multiply
@@ -837,11 +861,18 @@ file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
      anywhere in the sync dir (`shared/` by default)".
    - [docs/cli/push.md](../../docs/cli/push.md) and
      [docs/cli/diff.md](../../docs/cli/diff.md): same wording widening.
-   - `CHANGELOG.md` `[Unreleased]`: **Fixed** — `preflight`'s `types` check now
-     reports type errors in shared helper files instead of passing green while
-     `push` fails on them; **Fixed** — the documented shared-import path was one
-     level short for the `code/` layout; **Changed** — the scaffolded
-     `tsconfig.json` covers the whole sync dir.
+   - `CHANGELOG.md` `[Unreleased]` — **five** entries, not three:
+     **Fixed** — `preflight`'s `types` check now reports type errors in shared
+     helper files instead of passing green while `push` fails on them;
+     **Fixed** — the documented shared-import path was one level short for the
+     `code/` layout; **Changed** — the scaffolded `tsconfig.json` covers the
+     whole project root; **Changed** — the four import rules (builtins,
+     absolute paths, un-opted-in packages, imports leaving the project root)
+     now **warn** instead of blocking a push, with `preflight --fail-on=warn`
+     as the strict variant; **Added** — a warning when a bundled package
+     resolves outside the project root, because teammates then compile
+     different bytes. The last two are the most user-facing changes in the plan
+     and an earlier revision of this task listed neither.
 
 5. **Template & agent surfaces.**
    [template/AGENTS.md.example](../../template/AGENTS.md.example), the
@@ -852,6 +883,10 @@ file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
    ships `Edit(shared/**)`) if you use one*. Per the root `AGENTS.md`
    agent-tooling rule the substance goes in `AGENTS.md.example`, with
    `CLAUDE.md.example` / the cursor rule staying pointers.
+   - **Also `:305-307` on that same file** — the Imports bullet calls unlisted
+     npm packages and Node builtins "**compile errors**". After Task 4 they warn.
+     Easy to miss because it sits far from the shared-code block this task is
+     named after.
 
 6. **Tests.**
    - Unit: `runTypecheckPerDir` attributes a diagnostic in a non-workflow file
@@ -861,7 +896,26 @@ file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
      importing from a **non-`shared`** folder pushes a bundled body; a type
      error in that helper makes `preflight --offline` report `types` **failed**
      (the F1 regression); two same-named helpers under aliased bindings bundle
-     side by side with distinct module labels; the sync-dir escape still errors.
+     side by side with distinct module labels; the sync-dir escape now **warns
+     and lets the push through**, and bundling still fails loudly when the target
+     is genuinely absent.
+   - **Existing assertions the downgrade breaks — all verified by reading, all
+     must flip in the same PR or CI goes red:**
+     - `test/unit/compile.test.mts:162` `assert.rejects(… /bundleDependencies/)`
+       and `:164` `assert.rejects(… /builtin/)`, plus the title at `:158`
+       ("rejects unlisted packages and builtins"). Once the throw becomes a warn,
+       `node:crypto` externalises cleanly and the rejection never happens.
+     - `test/unit/validate.test.mts:340` (`errors.some(/Node builtin "node:crypto"/)`)
+       and its title at `:334` ("errors on a builtin/unlisted import").
+     - `test/e2e.mts:1829, 1832, 1836, 1837` — four `assert.equal(r.code, 1)`
+       that become `0` — and the step title at `:1821` ("builtins and unlisted
+       npm packages **error**").
+     - **Explicitly leave alone:** `test/unit/validate.test.mts:327-331`, the
+       `.js`-with-an-import error. That is a *different* rule (Plan 24’s
+       territory) and must not be swept into the flip.
+     - **Not affected:** `test/unit/compile.test.mts:64-70` assert on
+       `checkNodeImports`’s return value, which Task 4 leaves unchanged. `:68`’s
+       `/outside the sync dir/` regex breaks under the **rename** (PR 3), not here.
    - `npm run check:docs` green (plus the new depth assertion if Task 2 adopts
      it).
 
@@ -903,8 +957,9 @@ file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
   it offline.
 - Two same-named helpers under aliased bindings appear as two distinctly
   labelled modules in the pushed artifact.
-- An import escaping the sync dir still fails with the existing
-  `resolves outside the sync dir` layout error.
+- An import escaping the project root **warns** and does not block; when the
+  target is actually missing, bundling still fails loudly with esbuild’s
+  `Could not resolve`.
 - The import snippets in `/docs` and `template/AGENTS.md.example` resolve when
   copy-pasted into a freshly `init`ed sync dir.
 - A reader who lands on any page using the term "sync dir" can reach a
@@ -928,10 +983,18 @@ file. `lib/compile.mts` was untouched, and F6's sharpest half still holds:
 
 ## Notes
 
-- **`PLAN.md` implication:** the data-model section's bundling note scopes
-  shared imports to "`shared/*` helpers". Reword to the sync-dir rule so the
-  design document stops implying a fixed folder. No data-model change — this
-  documents and repairs existing behavior.
+- **`PLAN.md` — two edits, and the second is a *task*, not a note.**
+  1. The data-model section's bundling note scopes shared imports to
+     "`shared/*` helpers" — reword to the project-root rule so the design
+     document stops implying a fixed folder.
+  2. **`PLAN.md:556-562` lists the guard's blocking set**, and it names
+     "imports in `.js` nodes / **bundling violations in `.ts` nodes**
+     (plans/14)" under *Errors (block push / exit 1)*. After Task 4 the `.ts`
+     half must move to the **Warnings** list at `:564`; the `.js` half stays
+     (it is a different rule, [Plan 24](../open/24-shared-code-in-js-nodes.md)'s
+     territory). No task named this — it was found by an audit, not by the
+     original pass, and it is the single most load-bearing stale sentence in
+     the repo once the downgrade lands. **Owner: PR 1.**
 - **[Plan 24](../open/24-shared-code-in-js-nodes.md) inherits all of it.**
   Bundled `.js` nodes will use the same `checkNodeImports` path, so every fix
   here applies unchanged; Plan 24's Task 6 (`status` reflects a shared edit) and
