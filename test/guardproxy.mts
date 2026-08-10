@@ -52,7 +52,16 @@ const upstream = http.createServer((req, res) => {
     if (typeof msg.method === "string" && msg.method.startsWith("notifications/")) return void res.writeHead(202).end();
     // answer as SSE (the shape the pass-through must not mangle)
     res.writeHead(200, { "content-type": "text/event-stream", "mcp-session-id": "up-sess-1" })
-      .end(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id ?? null, result: { echo: msg.params?.name ?? msg.method } })}\n\n`);
+      // `content` rides alongside `echo` for TOOL CALLS only — a real
+      // `initialize` result carries none, and that difference is what the Plan 68
+      // notice tests exercise: the queue must survive a message it cannot ride.
+      .end(`event: message\ndata: ${JSON.stringify({
+        jsonrpc: "2.0",
+        id: msg.id ?? null,
+        result: msg.method === "tools/call"
+          ? { echo: msg.params?.name, content: [{ type: "text", text: `ok: ${msg.params?.name}` }] }
+          : { echo: msg.method },
+      })}\n\n`);
   });
 });
 await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
@@ -84,7 +93,13 @@ const blockText = (msg: any): string => JSON.parse(msg.result.content[0].text).e
 // Recording mirror (Plan 51 Part A): the guard calls schedule(id) after
 // forwarding a non-blocked update_workflow; assert the hook fires correctly.
 const scheduled: string[] = [];
-const mirrorStub = { schedule: (id: string) => scheduled.push(id), drain: async () => {} };
+/** Notices the mirror wants delivered; a test pushes here, the guard drains it. */
+const pendingNotices: string[] = [];
+const mirrorStub = {
+  schedule: (id: string) => scheduled.push(id),
+  drain: async () => {},
+  takeNotices: () => pendingNotices.splice(0, pendingNotices.length),
+};
 
 const configDir = mkdtempSync(path.join(os.tmpdir(), "decanter-guard-"));
 const handle = await startGuardProxy({ mcp: mcpStub, host: upstreamHost, configDir, port: 0, mirror: mirrorStub, log });
@@ -343,6 +358,44 @@ await step("stdio guard: a jsCode write is answered locally, upstream untouched"
   assert.equal(msg.result.isError, true);
   assert.match(msg.result.content[0].text, /guard-proxy.*n8n-decanter push/s);
   assert.equal(seen.length, before, "the write never reached n8n");
+});
+
+// Plan 68: the live mirror runs a full `pull`, so it can overwrite an unpushed
+// local edit. It always warned — to a stderr-only logger, which is the one
+// stream an agent structurally cannot read, so the party able to react never
+// heard. The result of a tool call is the channel it does read.
+await step("stdio: a live-mirror clobber notice rides the next tool result, exactly once", async () => {
+  pendingNotices.push("n8n-decanter live mirror: overwrote unpushed local changes in code/main.js");
+
+  stdio.send({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  const carried = JSON.parse(await stdio.next());
+  assert.equal(carried.id, 5);
+  assert.match(carried.result.content[0].text, /^ok: search_workflows/, "the upstream result survives");
+  assert.match(carried.result.content[0].text, /overwrote unpushed local changes in code\/main\.js/, "the notice reached the agent");
+
+  // Drained, not repeated — a warning that re-appears on every later call is
+  // noise the agent learns to skip, which is how it stops being read at all.
+  stdio.send({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  const clean = JSON.parse(await stdio.next());
+  assert.equal(clean.id, 6);
+  assert.doesNotMatch(clean.result.content[0].text, /overwrote unpushed/, "the notice is delivered once");
+});
+
+// A notice must never be swallowed by a message that cannot carry it: the queue
+// is only drained once the guard knows this message has a text result to append
+// to. Otherwise a handshake landing between the pull and the next tool call
+// would eat the warning — the exact silent-loss shape this plan is about.
+await step("stdio: a notice survives a message that cannot carry it, and lands on the next one", async () => {
+  pendingNotices.push("n8n-decanter live mirror: overwrote unpushed local changes in code/other.js");
+
+  stdio.send({ jsonrpc: "2.0", id: 7, method: "initialize", params: {} });
+  const handshake = JSON.parse(await stdio.next());
+  assert.equal(handshake.id, 7);
+  assert.equal(handshake.result.content, undefined, "the handshake has no text result to carry it");
+
+  stdio.send({ jsonrpc: "2.0", id: 8, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+  const later = JSON.parse(await stdio.next());
+  assert.match(later.result.content[0].text, /code\/other\.js/, "the notice waited for a message that could carry it");
 });
 
 // The guard used to speak ONLY when it blocked, so an empty log meant either

@@ -721,6 +721,22 @@ transports:
   default; `liveMirror: false` disables it. The orchestrator is a pure
   scheduler over an injected `refresh`/clock/git-probe, so the debounce/overlap
   logic is tested without ports or a real pull.
+  - **It is a full `pull`, and the agent is told when that costs it something**
+    (Plan 68). Code files and `.decanter.json` are rewritten too, file moves
+    included, so an unpushed local edit can lose. `pullWorkflow` returns the
+    clobbered files; the mirror turns them into a notice, and
+    `attachMirrorNotices` (shared, in `mcpserve.mts`) appends it to the next
+    successful **tool result** — the one channel an agent reads, since the
+    mirror's own logger is stderr-only so stdout stays pure protocol. The queue
+    drains only once a message can actually carry it (a handshake in between must
+    not eat the warning), and delivers once — a notice repeated on every later
+    call is noise an agent learns to skip.
+  - **Deliberate transport asymmetry:** this reaches agents on `mcp connect`
+    only. `mcp serve` pipes upstream responses through untouched, SSE included;
+    buffering them to inject an advisory line would cost streaming on every
+    response to deliver it on some. The stderr warning stays the signal there.
+    Not a drift bug — the two *refusals* remain shared, which is the invariant
+    that matters; this is an advisory.
 - Template stack: `mcp-route-check.mjs` (SessionStart hook, shared script —
   config-drift detector, not an op inspector) warns when an agent MCP config
   in the sync dir reaches an n8n `/mcp-server/http` endpoint that isn't

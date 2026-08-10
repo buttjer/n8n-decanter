@@ -19,7 +19,7 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { MCP_PATH, type McpClient } from "./mcp.mts";
-import { guardMessage, guardPublish, logToolCall, mirrorTargetId } from "./mcpserve.mts";
+import { attachMirrorNotices, guardMessage, guardPublish, logToolCall, mirrorTargetId } from "./mcpserve.mts";
 import type { Mirror } from "./mirror.mts";
 import type { Log } from "./types.mts";
 
@@ -69,7 +69,9 @@ export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input =
 
   /** One protocol message (or batch) out — a single output line. */
   const emit = (message: unknown): void => {
-    output.write(`${JSON.stringify(message)}\n`);
+    // Every outgoing message passes here, which makes this the one place a
+    // background live-mirror notice can reach the agent (Plan 68).
+    output.write(`${JSON.stringify(attachMirrorNotices(message, () => mirror?.takeNotices() ?? []))}\n`);
   };
 
   /** Forward one already-guarded JSON-RPC unit (message or batch) upstream. */

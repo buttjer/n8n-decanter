@@ -68,4 +68,29 @@ describe("init (non-interactive flags)", () => {
     // mode must error with the fix-it hint and read no stdin at all.
     await assert.rejects(init(dir, { token: "tok" }, nullLog), /host is required — pass --host <url>/);
   });
+
+  // Agents read permission config at STARTUP, and `init` is normally run from
+  // inside the session those rules are meant to constrain — so the deny rules it
+  // writes (`.decanter.json`, `.env`, `push --force`) are inert until a restart.
+  // Saying so once is the whole fix; saying it on every re-init is how a hint
+  // becomes noise nobody reads.
+  it("says the permission rules need a restart — once, when it first writes them", async () => {
+    const dir = path.join(TMP, "settings-hint");
+    const lines: string[] = [];
+    const log: Log = { info: (m) => void lines.push(m), ok: () => {}, warn: () => {}, error: () => {} };
+    const opts = { host: "http://127.0.0.1:9", token: "tok" };
+
+    await init(dir, opts, log);
+    assert.ok(
+      lines.some((l) => /permission rules take effect on the NEXT session/.test(l)),
+      `first init must say it: ${lines.join("|")}`,
+    );
+
+    lines.length = 0;
+    await init(dir, opts, log);
+    assert.ok(
+      !lines.some((l) => /permission rules take effect/.test(l)),
+      `a re-init in a set-up dir must stay quiet: ${lines.join("|")}`,
+    );
+  });
 });
