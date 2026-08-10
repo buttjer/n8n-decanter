@@ -94,7 +94,7 @@ three landed inside #179 and were, until this close-out, cited nowhere.
 | Converted-but-not-pushed; green `check` read as done | [Plan 30](../open/30-agent-llm-working-ergonomics.md) Theme A → #154, then subsumed by [Plan 59](59-declutter-verify-verbs.md)/[60](60-preflight-first-verb-surface.md) |
 | Contract gated `push` behind an ask | Fixed #163 (+ #162's `preflight → push → test → publish`) |
 | Blinding leak via packed `package.json` | Fixed — `unblindTarball` in `stage.mts` |
-| Harness PATH crutch | Explicit + printed; `FIELD_NO_PATH_HELP=1` opts out ([Plan 58](../open/58-guard-route-robustness.md) Tasks 3/4) |
+| Harness PATH crutch | Explicit + printed; `FIELD_NO_PATH_HELP=1` opts out ([Plan 58](58-guard-route-robustness.md) Tasks 3/4) |
 | Round archives died with their worktree | Fixed — rounds auto-archive into git (#153/#157/#159) |
 
 ### The report Task 4 asked for
@@ -854,7 +854,7 @@ the missing hooks in mind.
 
 ## Finding — the harness's PATH crutch hides a real failure mode (2026-07-26)
 
-Surfaced while fixing [Plan 58](../open/58-guard-route-robustness.md) Task 1. The
+Surfaced while fixing [Plan 58](58-guard-route-robustness.md) Task 1. The
 harness stages **both** install shapes — host mode installs decanter
 **locally** (`npm install <tgz>` into the workDir), container mode installs it
 **globally** (`npm install -g`) — but then **masks the difference in both**:
@@ -874,7 +874,7 @@ supplied the one thing that made the bug invisible.
 what real agents hit. Until then, treat "the agent reached the CLI" results as
 *conditional on a crutch the field doesn't have*. The paired regression test
 (spawn the scaffolded command with a clean PATH, both install shapes) is
-[Plan 58](../open/58-guard-route-robustness.md) Task 3.
+[Plan 58](58-guard-route-robustness.md) Task 3.
 
 **Resolved 2026-07-26 (partially — deliberately).** The crutch is now explicit
 rather than invisible:
@@ -906,7 +906,7 @@ Remaining *(moved to [Plan 62](../done/62-field-test-unrun-conditions.md) at clo
 never run under this plan)*: a round with `FIELD_NO_PATH_HELP=1` to measure the
 unassisted Bash surface. **The fix is an invocation-form change, not an
 install-shape one**
-— see [Plan 58](../open/58-guard-route-robustness.md) Task 4. A per-sync-dir
+— see [Plan 58](58-guard-route-robustness.md) Task 4. A per-sync-dir
 devDependency is a documented, supported install and works correctly when
 invoked as `npx n8n-decanter <verb>`; requiring a global install is explicitly
 not the answer.
@@ -975,7 +975,7 @@ Two observations worth keeping:
 
 - **Rounds 3 and 4 probed for the CLI explicitly** (`which … || npx …`) — i.e.
   the agent's own reflex is to test PATH and fall back to `npx`. That is exactly
-  the recovery [Plan 58](../open/58-guard-route-robustness.md) Task 4 documents, arrived
+  the recovery [Plan 58](58-guard-route-robustness.md) Task 4 documents, arrived
   at unprompted.
 - **Round 2 learned the invocation from `.mcp.json`** — it read the guard entry
   and copied its `npx --no-install` form verbatim. The scaffolded MCP config is

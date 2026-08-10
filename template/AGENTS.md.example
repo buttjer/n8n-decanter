@@ -129,8 +129,12 @@ description says**, and the boundary is:
   the file, `push`), or repair the references it lists before publishing.
   For harnesses that only take an MCP URL, `n8n-decanter mcp serve` is the
   same guard as a localhost HTTP proxy (per-session secret). A session-start
-  hook (`mcp-route-check.mjs`) warns when a config in this dir bypasses the
-  guard.
+  hook (`mcp-route-check.mjs`) warns when an MCP config bypasses the guard —
+  the files in this dir *and* the user-level configs of known harnesses
+  (Claude Code's `~/.claude.json` including its entry for this project,
+  Cursor's `~/.cursor/mcp.json`, the VS Code user profile, opencode's global
+  config), since a globally configured second route is exactly the drift a
+  project file never shows.
 - **Knowledge skills** (`code-nodes`, `expressions`, `loops`,
   `error-handling`, `credentials-and-security`, `binary-and-data`,
   `data-tables`, `debugging`): lean on them freely — they document the

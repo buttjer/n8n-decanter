@@ -739,8 +739,12 @@ transports:
     that matters; this is an advisory.
 - Template stack: `mcp-route-check.mjs` (SessionStart hook, shared script —
   config-drift detector, not an op inspector) warns when an agent MCP config
-  in the sync dir reaches an n8n `/mcp-server/http` endpoint that isn't
-  loopback; `AGENTS.md.example` states the boundary proxy-first.
+  reaches an n8n `/mcp-server/http` endpoint that isn't loopback — project
+  files in the sync dir *and* the user-level configs of known harnesses
+  (`~/.claude.json` incl. its per-project entries, `~/.cursor/mcp.json`, the
+  VS Code user profile, opencode's global config; Plan 58 task 2, the
+  "second door" a project file never shows); `AGENTS.md.example` states the
+  boundary proxy-first.
 
 ## Scenarios — committed pin-data sets (`scenario`, plans/7 + 37)
 

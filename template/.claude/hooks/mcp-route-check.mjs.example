@@ -1,14 +1,40 @@
 #!/usr/bin/env node
 // SessionStart config-drift detector (Plan 33): warn when an agent MCP config
-// in this sync dir points at an n8n instance MCP endpoint DIRECTLY instead of
-// the decanter guard-proxy. Deliberately slim — it inspects config files, not
+// in this sync dir — or in the user-level config of a known harness (Plan 58
+// task 2) — points at an n8n instance MCP endpoint DIRECTLY instead of the
+// decanter guard-proxy. Deliberately slim — it inspects config files, not
 // tool calls (the proxy itself enforces the jsCode boundary). Exit 0 always:
 // this is guidance, not a gate. Harness-agnostic: any agent hook system (or a
 // shell profile) can run `node .claude/hooks/mcp-route-check.mjs`.
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 
-/** The agent MCP config files this checks (harness variety, n8n-io/skills style). */
+/** Project-scoped agent MCP config files (harness variety, n8n-io/skills style). */
 const CONFIG_FILES = [".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", "opencode.json"];
+
+/**
+ * User-scoped counterparts — the "second door" no project file shows:
+ * `claude mcp add -s user` (and its per-project entries), Cursor's global
+ * config, the VS Code user profile, opencode's global config. Labels stay
+ * `~/…` so the warning names the file the way the user knows it.
+ */
+function userConfigFiles() {
+  const home = homedir();
+  const files = [
+    ["~/.claude.json", path.join(home, ".claude.json")],
+    ["~/.cursor/mcp.json", path.join(home, ".cursor", "mcp.json")],
+    ["~/.config/opencode/opencode.json", path.join(home, ".config", "opencode", "opencode.json")],
+  ];
+  if (process.platform === "darwin") {
+    files.push(["~/Library/Application Support/Code/User/mcp.json", path.join(home, "Library", "Application Support", "Code", "User", "mcp.json")]);
+  } else if (process.platform === "win32" && process.env.APPDATA) {
+    files.push(["%APPDATA%/Code/User/mcp.json", path.join(process.env.APPDATA, "Code", "User", "mcp.json")]);
+  } else {
+    files.push(["~/.config/Code/User/mcp.json", path.join(home, ".config", "Code", "User", "mcp.json")]);
+  }
+  return files;
+}
 
 /** The running guard-proxy's endpoint, when `n8n-decanter mcp serve` is up. */
 function proxyUrl() {
@@ -35,19 +61,28 @@ function serverEntries(config) {
   for (const bag of bags) {
     if (bag && typeof bag === "object") entries.push(...Object.entries(bag));
   }
+  // opencode's shape is `mcp.<name>` directly (no `servers` nesting) — take its
+  // object values, minus a `servers` container the bag above already read.
+  if (config.mcp && typeof config.mcp === "object") {
+    entries.push(...Object.entries(config.mcp).filter(([key, value]) => key !== "servers" && value && typeof value === "object"));
+  }
   return entries;
+}
+
+function readJson(file) {
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null; // unparseable config is some other tool's problem
+  }
 }
 
 const proxy = proxyUrl();
 const offenders = [];
-for (const file of CONFIG_FILES) {
-  if (!existsSync(file)) continue;
-  let config;
-  try {
-    config = JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    continue; // unparseable config is some other tool's problem
-  }
+
+/** Scan one parsed config; `label` is how the warning names the file. */
+function scan(label, config) {
   for (const [name, server] of serverEntries(config)) {
     const text = JSON.stringify(server);
     // the built-in n8n MCP server's path is the giveaway; a loopback URL is
@@ -55,7 +90,23 @@ for (const file of CONFIG_FILES) {
     if (!text.includes("/mcp-server/http")) continue;
     const url = typeof server.url === "string" ? server.url : "";
     if (url !== "" && isLoopback(url)) continue;
-    offenders.push({ file, name, url });
+    offenders.push({ file: label, name, url });
+  }
+}
+
+for (const file of CONFIG_FILES) {
+  const config = readJson(file);
+  if (config) scan(file, config);
+}
+for (const [label, file] of userConfigFiles()) {
+  const config = readJson(file);
+  if (!config) continue;
+  scan(label, config);
+  // Claude Code's user file also carries per-project servers, keyed by
+  // absolute project path — only this project's entry can route this session.
+  const projectBag = config.projects?.[process.cwd()]?.mcpServers;
+  if (projectBag && typeof projectBag === "object") {
+    scan(`${label} (entry for this project)`, { mcpServers: projectBag });
   }
 }
 
