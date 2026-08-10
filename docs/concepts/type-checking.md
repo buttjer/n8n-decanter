@@ -21,7 +21,7 @@ The IDE's own tsserver doesn't apply the wrapper, so editors show a spurious
 TS1108/TS1375/TS1378 on top-level `return`/`await` in node files. Ignore it —
 `n8n-decanter preflight --offline` is authoritative.
 
-Scaffolded sync dirs ship a TypeScript language-service plugin
+Scaffolded [sync dirs](/docs/concepts/sync-layout/#the-sync-dir) ship a TypeScript language-service plugin
 (`decanter-ts-plugin/`) that suppresses exactly these three codes on node
 files (all other diagnostics stay live). It activates once tsserver runs the
 workspace TypeScript: `npm install`, then in VS Code accept *Use Workspace

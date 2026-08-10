@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { builtinModules } from "node:module";
 import path from "node:path";
 import { build, transform } from "esbuild";
@@ -127,6 +127,15 @@ export function findBundleContext(fromDir: string): BundleContext {
   }
 }
 
+/** realpath when resolvable, the input untouched otherwise (missing dirs). */
+function realDir(dir: string): string {
+  try {
+    return realpathSync(dir);
+  } catch {
+    return dir;
+  }
+}
+
 /** Package name of a bare specifier (`@scope/pkg/sub` → `@scope/pkg`). */
 function packageName(spec: string): string {
   return spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
@@ -186,7 +195,13 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
     throw new Error(`${file}:\n${problems.map((p) => `  ${p}`).join("\n")}`);
   }
 
-  const workingDir = ctx.syncRoot ?? path.dirname(file);
+  // Realpath the label base: esbuild resolves every bundled module to its
+  // realpath, so a symlink anywhere in the sync dir's own path (macOS /tmp,
+  // a symlinked checkout) would otherwise make `path.relative` climb across
+  // the symlink — machine-specific `../…` module labels inside the hashed
+  // bytes, i.e. the exact cross-machine drift the sync-root-relative labels
+  // exist to prevent (Plan 79 task 4).
+  const workingDir = realDir(ctx.syncRoot ?? path.dirname(file));
   // The entry must contain NO `export` syntax: n8n's task-runner sandbox
   // neuters getter property descriptors (Object.defineProperty with `get`
   // reads back undefined), and esbuild lowers module exports to exactly such
@@ -205,7 +220,7 @@ export async function compileTs(file: string, log?: Log): Promise<string> {
       stdin: {
         contents: entry,
         loader: "ts",
-        resolveDir: path.dirname(file),
+        resolveDir: realDir(path.dirname(file)),
         sourcefile: ENTRY_SOURCEFILE,
       },
       bundle: true,

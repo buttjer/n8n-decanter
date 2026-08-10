@@ -12,8 +12,9 @@ Compiles and uploads each workflow's **Code-node source** over n8n's MCP
 server — one atomic batch of `jsCode`-only updates, addressed to each node by
 its current name (ids anchor the mapping, so renames made elsewhere don't
 matter). `.js` node files are pushed verbatim (byte-lossless); `.ts` files
-are compiled with esbuild and their imports from `shared/` and opted-in npm
-packages are bundled in — see
+are compiled with esbuild and their imports — helper files from anywhere in
+the sync dir (`shared/` by default) and opted-in npm
+packages — are bundled in — see
 [TypeScript nodes](/docs/concepts/typescript-nodes/). Structure is never
 pushed — `workflow.json` is a read-only snapshot.
 

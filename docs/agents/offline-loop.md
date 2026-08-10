@@ -51,7 +51,7 @@ and the first push seeds the node's source. The
 [sync layout](/docs/concepts/sync-layout/) page shows the shapes.
 
 Because verification routes through the CLI, `n8n-decanter` must be on the
-sync dir's PATH — see [Installation](/docs/getting-started/installation/).
+[sync dir](/docs/concepts/sync-layout/#the-sync-dir)'s PATH — see [Installation](/docs/getting-started/installation/).
 
 ## Exit codes: one gate, one view
 

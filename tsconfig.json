@@ -14,8 +14,12 @@
     "moduleDetection": "force",
     "esModuleInterop": true
   },
-  "include": ["n8n-globals.d.ts", "shared/**/*.ts", "shared/**/*.js", "workflows/**/*.ts", "workflows/**/*.js"],
-  "exclude": ["node_modules", "**/*.remote.js"],
+  // Project-wide on purpose (Plan 79): helper code may live in ANY folder
+  // inside the sync dir — `shared/` is only what `init` scaffolds — so the
+  // typecheck and the editor's tsserver must own every root, not just the
+  // scaffolded one. What the wider glob must NOT sweep in goes in `exclude`.
+  "include": ["n8n-globals.d.ts", "**/*.ts", "**/*.js"],
+  "exclude": ["node_modules", "**/*.remote.js", "**/backups/**", "**/executions/**", "dist", "decanter-ts-plugin", "website", ".claude", ".worktrees"],
   // Editor-only hint: lets tsserver bind the CLI's .mts sources to their own
   // project. Ignored by scripts/typecheck.mts (references add no fileNames).
   "references": [{ "path": "./tsconfig.cli.json" }]

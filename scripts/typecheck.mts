@@ -5,6 +5,7 @@
 // in memory only — files on disk stay verbatim — and maps diagnostic line
 // numbers back. Node files are recognized by a .decanter.json sibling, or —
 // code/ layout — one in the parent of their code/ dir.
+import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { scanNodeImports } from "../lib/compile.mts";
@@ -48,12 +49,30 @@ const SUFFIX = "\n}\nvoid __n8nNode;\n";
 // compiled (cross-file types need the full graph), but only diagnostics whose
 // file lives under one of the given dirs are reported and counted. Global
 // (file-less) diagnostics are always reported — a broken tsconfig must not
-// pass as green just because a scope was given.
-const scopeDirs = process.argv.slice(2).map((d) => path.resolve(d));
+// pass as green just because a scope was given. Neither may a diagnostic in a
+// NON-node file inside the project (a shared helper): scoping exists to stop
+// one workflow inheriting another workflow's *node* errors, but shared code
+// is common infrastructure — an error there fails `push` for every workflow,
+// so a scoped run reporting green on it would be a gate that lies (Plan 79).
+// Realpath the scope dirs: they arrive in the caller's spelling, but the
+// compiler's file names live under the REALPATHED cwd (the OS resolves
+// process.cwd()), so a symlinked sync-dir path (macOS /tmp -> /private/tmp,
+// a symlinked checkout) would otherwise never prefix-match — and every node
+// diagnostic would be silently dropped from a scoped run (Plan 79 task 4).
+const scopeDirs = process.argv.slice(2).map((d) => {
+  const resolved = path.resolve(d);
+  try {
+    return realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+});
 function inScope(fileName: string): boolean {
   if (scopeDirs.length === 0) return true;
   const file = path.resolve(fileName);
-  return scopeDirs.some((dir) => file === dir || file.startsWith(dir + path.sep));
+  if (scopeDirs.some((dir) => file === dir || file.startsWith(dir + path.sep))) return true;
+  if (file.includes(`${path.sep}node_modules${path.sep}`) || isNodeFile(file)) return false;
+  return file === projectDir || file.startsWith(projectDir + path.sep);
 }
 
 const configPath = ts.findConfigFile(process.cwd(), ts.sys.fileExists, "tsconfig.json");
@@ -61,6 +80,7 @@ if (!configPath) {
   console.error("tsconfig.json not found");
   process.exit(2);
 }
+const projectDir = path.dirname(path.resolve(configPath));
 const parsed = ts.getParsedCommandLineOfConfigFile(configPath, {}, {
   ...ts.sys,
   onUnRecoverableConfigFileDiagnostic: (d) => {

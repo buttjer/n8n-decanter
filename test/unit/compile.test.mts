@@ -1,7 +1,7 @@
 // Unit tests for the node compiler (lib/compile.mts) — the plans/14 bundling
 // path and, critically, the byte-identity of the no-import fast path.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -162,6 +162,27 @@ describe("compileTs", () => {
     await assert.rejects(() => compileTs(file), /bundleDependencies/);
     writeFileSync(file, 'import { createHash } from "node:crypto";\nreturn [];\n');
     await assert.rejects(() => compileTs(file), /builtin/);
+  });
+
+  it("compiles byte-identically through a symlinked sync-dir path (Plan 79 task 4)", async () => {
+    // esbuild resolves bundled modules to their REALPATHS; without realpathing
+    // the label base too, a symlink anywhere in the sync dir's own path (macOS
+    // /tmp, a symlinked checkout) yields machine-specific `../…`-climbing
+    // module labels inside the hashed bytes — cross-machine "push pending"
+    // ping-pong with nobody touching code.
+    const { root, codeDir } = makeSyncDir("realpath");
+    const file = path.join(codeDir, "node.ts");
+    writeFileSync(
+      file,
+      'import { total, type Line } from "../../../shared/money";\nconst lines: Line[] = [];\nreturn [{ json: { total: total(lines) } }];\n',
+    );
+    const direct = await compileTs(file);
+    const alias = path.join(TMP, "realpath-alias");
+    symlinkSync(root, alias, "dir");
+    const viaAlias = await compileTs(path.join(alias, "workflows", "WF", "code", "node.ts"));
+    assert.equal(viaAlias, direct, "a symlinked path to the sync dir must not change the compiled bytes");
+    assert.match(viaAlias, /\/\/ shared\/money\.ts/, "labels stay sync-root-relative");
+    assert.doesNotMatch(viaAlias, /\/\/ \.\.\//, "no ..-climbing module labels");
   });
 
   it("surfaces esbuild resolution failures with the node file named", async () => {

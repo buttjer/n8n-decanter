@@ -396,7 +396,10 @@ function findTsconfigDir(startDir: string): string | null {
  * it once and splitting the output by path prefix restores parity.
  *
  * A diagnostic with no file (a broken tsconfig, a global error) belongs to
- * every workflow — it blocks all of them — so it is attributed to each.
+ * every workflow — it blocks all of them — so it is attributed to each. So
+ * does a diagnostic in a file NO workflow owns (a shared helper): it fails
+ * the unscoped typecheck `push` runs, for every workflow alike, so dropping
+ * it here would grade `ready` on code `push` rejects (Plan 79 F1).
  */
 export async function runTypecheckPerDir(startDir: string, dirs: string[]): Promise<Map<string, TypecheckResult>> {
   const result = await runTypecheckResult(startDir, dirs);
@@ -415,7 +418,12 @@ export async function runTypecheckPerDir(startDir: string, dirs: string[]): Prom
     const abs = path.resolve(tsconfigDir, m[1]);
     return dirs.find((d) => abs === d || abs.startsWith(path.resolve(d) + path.sep));
   };
-  const shared = lines.filter((l) => l.trim() !== "" && !/^(.+?)\(\d+,\d+\): /.test(l) && !/^\d+ error\(s\)$/.test(l.trim()));
+  const shared = lines.filter((l) => {
+    const t = l.trim();
+    if (t === "" || /^\d+ error\(s\)$/.test(t)) return false;
+    if (!/^(.+?)\(\d+,\d+\): /.test(l)) return true;
+    return owner(l) === undefined;
+  });
   for (const d of dirs) {
     const mine = lines.filter((l) => owner(l) === path.resolve(d));
     const all = [...mine, ...shared];

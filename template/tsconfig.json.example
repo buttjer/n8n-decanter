@@ -15,12 +15,13 @@
     "esModuleInterop": true,
     "plugins": [{ "name": "decanter-ts-plugin" }]
   },
-  "include": [
-    "n8n-globals.d.ts",
-    "shared/**/*.ts",
-    "shared/**/*.js",
-    "workflows/**/*.ts",
-    "workflows/**/*.js"
-  ],
-  "exclude": ["node_modules", "**/*.remote.js"]
+  "include": ["n8n-globals.d.ts", "**/*.ts", "**/*.js"],
+  "exclude": [
+    "node_modules",
+    "**/*.remote.js",
+    "**/backups/**",
+    "**/executions/**",
+    "decanter-ts-plugin",
+    "dist"
+  ]
 }

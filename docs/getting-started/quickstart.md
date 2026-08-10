@@ -4,7 +4,7 @@ description: Bootstrap a sync dir with init, pull a workflow, edit, and push it 
 order: 2
 ---
 
-## 1. Bootstrap a sync dir
+## 1. Bootstrap a [sync dir](/docs/concepts/sync-layout/#the-sync-dir)
 
 ```sh
 n8n-decanter init [dir]

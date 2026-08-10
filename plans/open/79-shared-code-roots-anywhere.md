@@ -1,7 +1,9 @@
 # Plan 79 — Shared code lives anywhere in the sync dir
 
-**Status:** Not started
-**Priority:** P1 (Tasks 1–5, one PR) / P2 (Task 6 — the warnings split, its own PR with its own decision record)
+**Status:** In progress — PR 1 (Tasks 1–6, the P1 core incl. the task-4
+realpath fix and its typecheck-scope sibling) shipped 2026-08-10; PR 2
+(Task 7, the warnings split) not started
+**Priority:** P1 (Tasks 1–5, one PR) / P2 (Task 7 — the warnings split, its own PR with its own decision record)
 **Source:** User question 2026-08-09 — *"Ist es möglich den Pfad zum shared
 Ordner zu verändern oder sogar mehrere zu haben?"* — plus the follow-up *"wie
 verhält sich das bei 2 gleichnamigen Dateien aus 2 Ordnern?"*. Drafted
@@ -11,7 +13,7 @@ evidence-first; **validated and re-scoped 2026-08-10** (see Why / Decisions).
 document the real rule (imports stay inside the sync dir), fix the two real
 bugs the investigation surfaced, and split the contested import-rule downgrade
 into its own gated PR.
-**Model:** Sonnet for Tasks 1–5 (well-specified breadth); Opus for Task 6
+**Model:** Sonnet for Tasks 1–5 (well-specified breadth); Opus for Task 7
 (design + decision record)
 
 Renaming `shared/`, several shared roots, and per-workflow helper dirs all
@@ -122,7 +124,7 @@ Mechanism facts the tasks depend on (all citations verified at `d65a28d`):
    draft's 49-count silently excluded 8 occurrences in live plans
    (`open/24`, `open/30`, `blocked/8`, `draft/72`, `draft/73`).
 3. **The metafile warning (old Task 7) is deferred** — see Deferred.
-4. **Task 6 is gated on a blind field-test round against a warnings build.**
+4. **Task 7 is gated on a blind field-test round against a warnings build.**
    The archives show agents recover from *blocking* errors in one hop; there
    is zero data on whether they heed warnings. The repo owns the
    infrastructure to measure exactly that (`test/field-test/`) — run one round
@@ -220,7 +222,7 @@ import rule (auto-commit is already switchable off via `commitOnPush` /
      (docs/concepts/typescript-nodes.md:70-72,
      template/AGENTS.md.example:305-307) stay accurate under the split —
      builtins and unlisted packages still error after PR 1 and (for rule 1)
-     after Task 6 too. Task 6's PR rewords only what it changes.
+     after Task 7 too. Task 7's PR rewords only what it changes.
    - `CHANGELOG.md` `[Unreleased]`, four entries: **Fixed** — `preflight`'s
      `types` check now reports type errors in shared helper files instead of
      passing green while `push` fails on them; **Fixed** — the documented
@@ -240,7 +242,7 @@ import rule (auto-commit is already switchable off via `commitOnPush` /
      distinct labels.
    - `npm run check:docs` green (plus the depth assertion if Task 2 adopts it).
 
-### PR 2 — Task 6: the warnings split (P2 — own PR, own decision record, field-test-gated)
+### PR 2 — Task 7: the warnings split (P2 — own PR, own decision record, field-test-gated)
 
 7. **Downgrade rules 2 + 3 to warnings; keep rule 1 blocking; decide rule 4.**
    - Mechanics: with two severity classes, `checkNodeImports`' flat `string[]`
@@ -347,7 +349,7 @@ PR 1:
   `docs/cli/preflight.md`'s guard list names the import rules.
 - `npm test`, `npm run typecheck`, `npm run lint`, `npm run check:docs` green.
 
-PR 2 (Task 6):
+PR 2 (Task 7):
 
 - An import escaping the sync dir, and an absolute-path import, **warn** and
   do not block; when the target is genuinely absent, bundling still fails
@@ -379,5 +381,5 @@ PR 2 (Task 6):
   snapshot-drift rule; its `shared/`-worded docs tasks pick up Task 5's
   wording.
 - **PLAN.md duty:** Task 5 rewords nothing in PLAN.md (the rule-vs-default
-  framing is docs-level); Task 6's PR owns the PLAN.md guard-list move and
-  the AGENTS.md:535 reword. If Task 6 never ships, neither sentence is stale.
+  framing is docs-level); Task 7's PR owns the PLAN.md guard-list move and
+  the AGENTS.md:535 reword. If Task 7 never ships, neither sentence is stale.
