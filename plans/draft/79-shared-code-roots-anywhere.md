@@ -5,7 +5,7 @@
 **Source:** User question 2026-08-09 — *"Ist es möglich den Pfad zum shared
 Ordner zu verändern oder sogar mehrere zu haben?"* — plus the follow-up *"wie
 verhält sich das bei 2 gleichnamigen Dateien aus 2 Ordnern?"*
-**Snapshot:** 2026-08-09T16:45Z @ d68eedd *(rebased after #243 merged; line refs and term counts re-measured)*
+**Snapshot:** 2026-08-10T06:20Z @ 432bb7f *(rebased after #243 and #245 merged; line refs and term counts re-measured against both)*
 **Theme:** Renaming `shared/` and having several shared roots appears to **work
 already** — nothing in the CLI hardcodes the name. This draft writes the claim
 down as individually checkable findings, with a one-command reproduction, so it
@@ -601,16 +601,28 @@ scope:
 | --- | --- |
 | `syncRoot` identifier | 11, across `lib/compile.mts` and `test/unit/compile.test.mts` |
 | "sync dir" in `/docs` | 19 |
-| "sync dir" elsewhere (code comments, `PLAN.md`, `README.md`, `AGENTS.md`, `template/`, tests) | 59 |
+| "sync dir" elsewhere, renameable (code comments, `PLAN.md`, `README.md`, `AGENTS.md`, `template/`, `website/`, tests) | 49 |
+| "sync dir" in frozen field-test archives — **excluded, see below** | 24 |
 
 The identifier rename is small and mechanical; the prose is the bulk. Do it as
 **one pass**, not incrementally, or the two terms coexist and the confusion gets
 worse than before.
 
-**Do not rewrite history.** `CHANGELOG.md` carries 14 occurrences and
-`plans/done/*` more — both record what was true when written, and retitling a
-shipped changelog entry is falsification, not maintenance. Only new entries use
-the new term. Same for this file's own quoted output.
+**Do not rewrite history.** Three classes are excluded, all for the same reason —
+they record what was true when written, and editing them is falsification, not
+maintenance:
+
+- `CHANGELOG.md` (14) — only *new* entries use the new term.
+- `plans/done/*` — closed plans stay as written.
+- **`test/field-test/runs/*/report.html` (24 occurrences across 8 rounds)** —
+  frozen archives of agentic rounds, committed precisely because a round is
+  expensive and irreproducible. The `raw.tgz` siblings hold the transcripts and
+  are binary besides. Found only by re-measuring after #245; a naive
+  `grep -rl | xargs sed` would have silently rewritten eight historical records.
+
+Also easy to miss, and **in** scope: `website/src/pages/index.astro` carries the
+term once. The rename table's "code comments, `PLAN.md`, `README.md`, …" phrasing
+did not suggest the website was a surface at all.
 
 ## Two same-named files from two folders (the follow-up question)
 
@@ -742,7 +754,7 @@ specifiers), not configured. Out of scope here.
 
 ## Rollout — split the rename off
 
-The rename is low-risk and high-diff: ~89 sites that no reviewer can read by
+The rename is low-risk and high-diff: ~79 sites that no reviewer can read by
 eye. Landing it together with the behavioural changes would bury them. So:
 
 - **PR 1 — behaviour.** F1's typecheck fix, the four rules downgraded to
@@ -756,16 +768,14 @@ eye. Landing it together with the behavioural changes would bury them. So:
 Order matters only in that PR 3 comes last — renaming before the prose is
 settled means renaming twice.
 
-**PR 3 also has to wait for whatever else is in flight.** A ~89-site rename
+**PR 3 also has to wait for whatever else is in flight.** A ~79-site rename
 conflicts with any concurrent branch that touches the same prose, and the
 conflicts are the worst kind: textually trivial, individually meaningless, and
-too numerous to review. [Plan 68](68-live-mirror-visibility.md) is being worked
-in parallel — its surface (`lib/mirror.mts`, `lib/pull.mts`, `lib/state.mts`,
-`docs/cli/mcp-connect.md`, `docs/concepts/configuration.md`,
-`template/AGENTS.md.example`) currently carries the term in exactly one place
-(`lib/mirror.mts`), so the collision is small **today** — but that is a snapshot,
-not a guarantee, and Plan 68's own docs work could add more. Re-measure
-immediately before PR 3, and land it when nothing else is open.
+too numerous to review. Re-measure immediately before PR 3, and land it when
+nothing else is open — **the counts move under you.** Plan 68 shipped as #245 the
+morning after this was written and changed the renameable total from 59 to 49,
+while adding three whole field-test archives that must be *excluded*. Neither
+shift was predictable from the plan; both were found by re-measuring.
 
 **Post-#243 note.** PR #243 (Plan 69, merged 2026-08-09) landed while this was a
 draft. It shifted line numbers in `lib/validate.mts` — the import-rule
@@ -774,7 +784,14 @@ further citations had drifted, two of them onto *different but plausible* rules
 (a reviewer checking `:47` or `:32` landed on real, adjacent, wrong code rather
 than on something obviously broken). All corrected here.
 
-**It changed no term counts.** `gh pr diff 243 | grep -c "sync dir"` is **0**,
+**Post-#245 note.** Plan 68 merged 2026-08-10 (`432bb7f`). It touches
+`PLAN.md`, `lib/init.mts`, `lib/mcpconnect.mts`, `lib/mcpserve.mts`,
+`lib/mirror.mts`, `lib/pull.mts`, `docs/cli/init.md`, `docs/cli/mcp-connect.md`
+and two test files — **none of them a file Plan 79 edits**, so every code
+citation above still resolves. One thing moved: `PLAN.md`'s guard list is now
+**555-562** (`Errors`) with `Warnings` at `:564`. `/docs` still carries 19.
+
+**#243 changed no term counts.** `gh pr diff 243 | grep -c "sync dir"` is **0**,
 and `git grep -c` over `/docs` returns **19** at both `59079bb` and `d68eedd`.
 An earlier revision of this file said 16 and then blamed #243 for the jump —
 both wrong: **16 was a mis-count**, and #243 caused none of it. `lib/compile.mts`
@@ -987,7 +1004,7 @@ still never uses the term.
   1. The data-model section's bundling note scopes shared imports to
      "`shared/*` helpers" — reword to the project-root rule so the design
      document stops implying a fixed folder.
-  2. **`PLAN.md:556-562` lists the guard's blocking set**, and it names
+  2. **`PLAN.md:555-562` lists the guard's blocking set**, and it names
      "imports in `.js` nodes / **bundling violations in `.ts` nodes**
      (plans/14)" under *Errors (block push / exit 1)*. After Task 4 the `.ts`
      half must move to the **Warnings** list at `:564`; the `.js` half stays
