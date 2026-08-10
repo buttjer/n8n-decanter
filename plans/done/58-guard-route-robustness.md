@@ -1,10 +1,10 @@
 # Plan 58 — the stdio guard should not silently fail to be the route the user configured
 
-**Status:** In progress (Tasks 1, 3, 4 done; Task 2 open)
-**Priority:** P1 for tasks 1, 3, 4 (all done — the silent-fail, the missing
+**Status:** Done (Tasks 1, 3, 4 shipped 2026-07; Task 2 shipped 2026-08-10)
+**Priority:** P1 for tasks 1, 3, 4 (the silent-fail, the missing
 spawn coverage that let it through, and the same gap on the Bash surface);
 P2 for task 2.
-**Source:** 2026-07-24 discussion off [Plan 57](../done/57-cli-discoverability-for-agents.md).
+**Source:** 2026-07-24 discussion off [Plan 57](57-cli-discoverability-for-agents.md).
 Two concrete gaps found by inspecting the guard's discovery + startup path;
 Plan 57 is the *discoverability* half (agent finds the CLI), this is the
 *route-integrity* half (once found, the guard is the reliable/only route).
@@ -83,13 +83,42 @@ all**. That is exactly the "second door" case the hook exists to catch.
    *Follow-up: the same local-install PATH gap affects the agent's allowlisted
    Bash `n8n-decanter …` calls — now Task 4 below.*
 
-2. **(P2) Teach the route-check to see user-level MCP config.** Extend the hook's
+2. **(P2) Teach the route-check to see user-level MCP config. — DONE
+   (2026-08-10).** Extend the hook's
    `CONFIG_FILES` to also read the known user-scoped locations (`~/.claude.json`,
    `~/.cursor/mcp.json`, and any others worth covering), with the same
    `/mcp-server/http`-direct heuristic and loopback allowance. Still a
    SessionStart **warning, not a gate** (exit 0). Because it's harness-agnostic
    material, the substance goes in the tool-agnostic guidance and the per-agent
    hook stays a thin runner (root `AGENTS.md` "Agent tooling").
+
+   **What shipped:** the hook now scans, alongside the four project files, the
+   user-scoped configs of the known harnesses — `~/.claude.json` (top-level
+   `mcpServers` **plus** its `projects[<cwd>]` entry, since `claude mcp add`'s
+   default scope lands there, keyed by absolute project path), Cursor's
+   `~/.cursor/mcp.json`, the VS Code user-profile `mcp.json` (per-platform
+   path), and opencode's `~/.config/opencode/opencode.json` — same heuristic,
+   same loopback allowance, offenders labelled by their `~/…` path, still
+   exit 0 always.
+
+   **Found and fixed en route:** `serverEntries` knew the
+   `mcpServers`/`mcp.servers`/`servers` bag shapes but not opencode's real
+   `mcp.<name>` shape — so even the **project-level** `opencode.json` the hook
+   claimed to check was never actually scanned. The scaffolded config itself
+   uses that shape; a direct route in it earned no warning. (CHANGELOG: Fixed.)
+
+   **First test coverage for this hook:** `test/unit/mcp-route-check-hook.test.mts`
+   materializes the `.example` the way `init` does and spawns it with `HOME`
+   pointed at a scratch dir — 8 cases: the project-level regression, both guard
+   routes staying silent (stdio command, loopback URL), each user-scope file,
+   the this-project-vs-other-project `~/.claude.json` entry split, opencode's
+   shape at both levels, and junk config never breaking the session (exit 0).
+   The Task 3 lesson applied: the gap survived because nothing executed the
+   hook; now something does.
+
+   Surfaces updated in lockstep: the hook template, `template/AGENTS.md.example`
+   (the route-check sentence now names the user-level scope), `PLAN.md`'s
+   template-stack bullet, `CHANGELOG.md` (Changed + Fixed).
 
 3. **(P1) Prove the scaffolded command actually starts a guard — under BOTH
    install shapes. — DONE** (`test/mcpspawn.mts`, wired into `npm test`).
@@ -139,7 +168,7 @@ all**. That is exactly the "second door" case the hook exists to catch.
    **LOCAL — the actual regression — always runs.**
 
    The paired field-test PATH crutch is resolved on
-   [Plan 35](../done/35-blind-agent-field-test.md): the guard no longer needs the
+   [Plan 35](35-blind-agent-field-test.md): the guard no longer needs the
    prepend (npx resolves it), the prepend stays for the agent's *Bash* surface
    but is now named as a global-install simulation, `FIELD_NO_PATH_HELP=1` drops
    it, and every run prints its `PATH policy`.
@@ -217,7 +246,7 @@ discoverable (Task 2 + Plan 57); it does not police the instance.
 
 ## Cross-links
 
-- [Plan 57](../done/57-cli-discoverability-for-agents.md) — discoverability
+- [Plan 57](57-cli-discoverability-for-agents.md) — discoverability
   half; a guard that silently fails to start (task 1) is itself a discoverability
   failure.
 - Plan 50 *(dropped)* — the skill route (steer

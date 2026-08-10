@@ -31,8 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually gate the agent went unmentioned. Printed once, when the file is first
   written; a re-init in a set-up directory stays quiet.
 
+### Changed
+
+- **The scaffolded `mcp-route-check.mjs` session hook now also inspects
+  user-level agent config for direct n8n MCP routes** — Claude Code's
+  `~/.claude.json` (including its entry for the current project), Cursor's
+  `~/.cursor/mcp.json`, the VS Code user profile, and opencode's global
+  config. Previously it read only project files, so an `n8n` server added
+  with `claude mcp add -s user` (or any other user-scoped config) bypassed
+  the decanter guard without a word — exactly the "second door" the hook
+  exists to catch. Still a warning, never a gate. Re-run `init` in an
+  existing sync dir (or re-copy the hook from the template) to pick it up.
+
 ### Fixed
 
+- **The route-check hook now reads opencode's real config shape**
+  (`mcp.<name>`). It previously looked only for `mcpServers` / `mcp.servers` /
+  `servers` bags, so an `opencode.json` routing straight at the instance was
+  listed as checked but never actually flagged.
 - **A `watch` save now runs the same folder-wide compliance guard as `push`.** It
   used to check only the saved file, which cannot see the workflow's node names —
   so it could not catch a dangling `$('Renamed Node')` and pushed straight to the
