@@ -1,8 +1,42 @@
 ---
 title: Sync layout & data model
-description: The folder-per-workflow layout — placeholders, code/, the structure snapshot, .decanter.json.
+description: What the sync dir is, the folder-per-workflow layout — placeholders, code/, the structure snapshot, .decanter.json.
 order: 1
 ---
+
+## The sync dir
+
+The **sync dir** is the directory holding `decanter.config.json`. That is the
+whole definition: every verb finds it by searching **upward** from wherever
+you run it (and, for bundling, upward from the node file), the same way npm
+finds a `package.json`. It is also the one boundary the import rules enforce —
+a relative import in a node file must resolve **inside the sync dir** (see
+[TypeScript nodes](/docs/concepts/typescript-nodes/#shared-code-and-npm-packages)).
+
+It is explicitly **not** "your git root": decanter never consults git to find
+it, and in a monorepo it can sit anywhere below the repo root. It doesn't
+have to be a repository at all — the git-dependent conveniences then stand
+down ([auto-commit](#auto-commits) warns and skips,
+[watch](/docs/cli/watch/) refuses its startup pull, and the guard's live
+mirror skips its snapshot refreshes) but syncing itself works.
+
+The decanter-owned core of a scaffolded sync dir (`init` also copies agent
+configs, `package.json`, and editor tooling — elided here):
+
+```
+my-n8n-code/             # ← the sync dir: the directory holding decanter.config.json
+  decanter.config.json   # workflow list, root, bundleDependencies — defines this dir
+  .env                   # host + credentials (gitignored)
+  tsconfig.json          # covers the whole sync dir (editor + typecheck)
+  n8n-globals.d.ts       # the typed n8n globals surface
+  shared/                # scaffolded helper-code folder — a convention, not a rule:
+                         #   helpers may live in ANY folder(s) inside the sync dir
+  workflows/             # the configured root; one folder per synced workflow
+  .decanter-auth.json    # MCP OAuth credentials (gitignored, machine-owned)
+  .decanter-template.json# template baseline for modification-aware re-init
+  …                      # plus AGENTS.md, .mcp.json & friends, package.json,
+                         #   decanter-ts-plugin/, editor configs — see init
+```
 
 Each synced workflow is one folder under the configured root:
 

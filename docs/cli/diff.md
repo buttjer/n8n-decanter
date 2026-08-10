@@ -79,7 +79,7 @@ without a hunk. Everything else prints the unified diff underneath.
 ## `.ts` nodes are compiled before comparing
 
 For a `.ts` node the local side of the diff is the **compiled** JavaScript —
-the exact bytes `push` would send, `shared/*.ts` imports bundled in. So editing
+the exact bytes `push` would send, helper imports bundled in. So editing
 one shared helper shows up as a diff in **every node that imports it**, which is
 the honest answer to "what does this helper change touch?". See
 [TypeScript nodes](/docs/concepts/typescript-nodes/). Compile warnings for a

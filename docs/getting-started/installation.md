@@ -16,7 +16,7 @@ Alternatives:
 - **From a git checkout:** `npm link` (run `npm run build` once first — the
   installed bin is the compiled `dist/`), or invoke `node n8n-decanter.mts …`
   directly, no build needed.
-- **Per sync dir:** add `n8n-decanter` to the sync dir's `devDependencies`
+- **Per [sync dir](/docs/concepts/sync-layout/#the-sync-dir):** add `n8n-decanter` to the sync dir's `devDependencies`
   instead of installing globally. A local install lands in
   `node_modules/.bin`, **not** on your `PATH`, so invoke it as
   **`npx n8n-decanter <verb>`** (or via an `npm run` script — npm puts

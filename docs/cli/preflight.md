@@ -150,6 +150,11 @@ them):
 - an `@ts-n8n` marker inside a `.js` file
 - an `import` in a `.js` node file — `.js` is pushed verbatim and n8n has no
   module loader; convert the node to `.ts`, where imports are bundled on push
+- an import in a `.ts` node that breaks the
+  [bundling rules](/docs/concepts/typescript-nodes/#shared-code-and-npm-packages):
+  a Node builtin (`node:*`, `fs`, `crypto`, …), an npm package not opted into
+  `bundleDependencies`, an absolute path, or a relative path resolving outside
+  the [sync dir](/docs/concepts/sync-layout/#the-sync-dir)
 - dangling connection sources/targets
 - duplicate node names or ids
 - orphan `.js`/`.ts` files nothing references
@@ -183,7 +188,7 @@ in memory and maps diagnostics back to real line numbers — see
 [Type checking](/docs/concepts/type-checking/) for how this works and why your
 editor may still show a spurious TS1108.
 
-`npm run typecheck` in a scaffolded sync dir is an alias for this. Every `tsc`
+`npm run typecheck` in a scaffolded [sync dir](/docs/concepts/sync-layout/#the-sync-dir) is an alias for this. Every `tsc`
 line lands in the finding's `details`. `--no-typecheck` skips the check (it
 reports as a skip with the unlock, so the coverage line stays honest), and a
 sync dir with no `tsconfig.json` skips it automatically.

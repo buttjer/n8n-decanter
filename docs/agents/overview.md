@@ -5,7 +5,7 @@ order: 1
 ---
 
 n8n-decanter is built to let AI coding agents work on workflows safely. A
-scaffolded sync dir ([init](/docs/cli/init/)) contains everything an agent
+scaffolded [sync dir](/docs/concepts/sync-layout/#the-sync-dir) ([init](/docs/cli/init/)) contains everything an agent
 needs to behave:
 
 - **`AGENTS.md`** — the tool-agnostic contract for the repo: how code is

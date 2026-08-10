@@ -1,7 +1,7 @@
 // Unit tests for the node compiler (lib/compile.mts) — the plans/14 bundling
 // path and, critically, the byte-identity of the no-import fast path.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -162,6 +162,53 @@ describe("compileTs", () => {
     await assert.rejects(() => compileTs(file), /bundleDependencies/);
     writeFileSync(file, 'import { createHash } from "node:crypto";\nreturn [];\n');
     await assert.rejects(() => compileTs(file), /builtin/);
+  });
+
+  it("compiles byte-identically through a symlinked sync-dir path (Plan 79 task 4)", async () => {
+    // esbuild resolves bundled modules to their REALPATHS; without realpathing
+    // the label base too, a symlink anywhere in the sync dir's own path (macOS
+    // /tmp, a symlinked checkout) yields machine-specific `../…`-climbing
+    // module labels inside the hashed bytes — cross-machine "push pending"
+    // ping-pong with nobody touching code.
+    const { root, codeDir } = makeSyncDir("realpath");
+    const file = path.join(codeDir, "node.ts");
+    writeFileSync(
+      file,
+      'import { total, type Line } from "../../../shared/money";\nconst lines: Line[] = [];\nreturn [{ json: { total: total(lines) } }];\n',
+    );
+    const direct = await compileTs(file);
+    const alias = path.join(TMP, "realpath-alias");
+    symlinkSync(root, alias, "dir");
+    const viaAlias = await compileTs(path.join(alias, "workflows", "WF", "code", "node.ts"));
+    assert.equal(viaAlias, direct, "a symlinked path to the sync dir must not change the compiled bytes");
+    assert.match(viaAlias, /\/\/ shared\/money\.ts/, "labels stay sync-root-relative");
+    assert.doesNotMatch(viaAlias, /\/\/ \.\.\//, "no ..-climbing module labels");
+  });
+
+  it("guard and bundler agree when a symlink sits BETWEEN the sync root and the node file", async () => {
+    // The other symlink direction: workflows/ itself points out of the sync
+    // dir's real tree. The import guard approves ../../../shared/money in the
+    // SPELLED space, so the bundler must resolve it there too — realpathing
+    // resolveDir made esbuild resolve from the symlink target and disagree
+    // with the guard (failing, or worse, silently bundling a sibling
+    // checkout's file). Only the LABEL base may be realpathed.
+    const root = path.join(TMP, "midlink");
+    mkdirSync(path.join(root, "shared"), { recursive: true });
+    writeFileSync(path.join(root, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: [] }));
+    writeFileSync(
+      path.join(root, "shared", "money.ts"),
+      "export function total(l: { qty: number; price: number }[]): number {\n  return l.reduce((s, x) => s + x.qty * x.price, 0);\n}\n",
+    );
+    const realWfs = path.join(TMP, "midlink-wfs-real");
+    mkdirSync(path.join(realWfs, "WF", "code"), { recursive: true });
+    symlinkSync(realWfs, path.join(root, "workflows"), "dir");
+    const file = path.join(root, "workflows", "WF", "code", "node.ts");
+    writeFileSync(file, 'import { total } from "../../../shared/money";\nreturn [{ json: { t: total([{ qty: 2, price: 3 }]) } }];\n');
+    const code = await compileTs(file);
+    assert.match(code, /function total/, "the guard-approved helper is what gets bundled");
+    assert.match(code, /\/\/ shared\/money\.ts/, "label stays sync-root-relative");
+    const out = await new AsyncFunction(code)();
+    assert.deepEqual(out, [{ json: { t: 6 } }]);
   });
 
   it("surfaces esbuild resolution failures with the node file named", async () => {

@@ -78,7 +78,7 @@ it); the skills and MCP own the rest.**
 **A first [`init`](/docs/cli/init/) prints these commands for you**, with the
 agent it detects listed first. It prints them — it doesn't run them: installing
 would mean decanter spawning a third-party CLI to mutate agent state outside
-the sync dir, and a plugin installed mid-session isn't active until the agent
+the [sync dir](/docs/concepts/sync-layout/#the-sync-dir), and a plugin installed mid-session isn't active until the agent
 reloads anyway.
 
 Pick your agent — note that Claude Code's `/plugin …` are **in-session slash

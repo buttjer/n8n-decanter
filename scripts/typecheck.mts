@@ -5,6 +5,7 @@
 // in memory only — files on disk stay verbatim — and maps diagnostic line
 // numbers back. Node files are recognized by a .decanter.json sibling, or —
 // code/ layout — one in the parent of their code/ dir.
+import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { scanNodeImports } from "../lib/compile.mts";
@@ -48,12 +49,41 @@ const SUFFIX = "\n}\nvoid __n8nNode;\n";
 // compiled (cross-file types need the full graph), but only diagnostics whose
 // file lives under one of the given dirs are reported and counted. Global
 // (file-less) diagnostics are always reported — a broken tsconfig must not
-// pass as green just because a scope was given.
-const scopeDirs = process.argv.slice(2).map((d) => path.resolve(d));
+// pass as green just because a scope was given. Neither may a diagnostic in a
+// NON-node file inside the project (a shared helper): scoping exists to stop
+// one workflow inheriting another workflow's *node* errors, but shared code
+// is common infrastructure — an error there fails `push` for every workflow,
+// so a scoped run reporting green on it would be a gate that lies (Plan 79).
+// Scope matching compares BOTH spellings of both sides. Symlinks split the
+// path space in two directions at once: a symlinked sync-dir prefix (macOS
+// /tmp -> /private/tmp) leaves the compiler's file names REALPATHED (the OS
+// resolves process.cwd()) while the scope dirs arrive spelled — and a
+// symlinked dir INSIDE the project (workflows/ -> elsewhere) leaves the file
+// names SPELLED (tsc's include glob reports the traversal spelling) while a
+// realpathed scope dir no longer matches. Either mismatch silently drops
+// every node diagnostic from a scoped run (Plan 79 task 4).
+function realDirOf(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+const scopeDirs = process.argv.slice(2).flatMap((d) => {
+  const resolved = path.resolve(d);
+  const real = realDirOf(resolved);
+  return real === resolved ? [resolved] : [resolved, real];
+});
+function under(file: string, dir: string): boolean {
+  return file === dir || file.startsWith(dir + path.sep);
+}
 function inScope(fileName: string): boolean {
   if (scopeDirs.length === 0) return true;
-  const file = path.resolve(fileName);
-  return scopeDirs.some((dir) => file === dir || file.startsWith(dir + path.sep));
+  const spelled = path.resolve(fileName);
+  const real = realDirOf(spelled);
+  if (scopeDirs.some((dir) => under(spelled, dir) || under(real, dir))) return true;
+  if (spelled.includes(`${path.sep}node_modules${path.sep}`) || isNodeFile(spelled)) return false;
+  return under(spelled, projectDir) || under(real, projectDir);
 }
 
 const configPath = ts.findConfigFile(process.cwd(), ts.sys.fileExists, "tsconfig.json");
@@ -61,6 +91,7 @@ if (!configPath) {
   console.error("tsconfig.json not found");
   process.exit(2);
 }
+const projectDir = path.dirname(path.resolve(configPath));
 const parsed = ts.getParsedCommandLineOfConfigFile(configPath, {}, {
   ...ts.sys,
   onUnRecoverableConfigFileDiagnostic: (d) => {

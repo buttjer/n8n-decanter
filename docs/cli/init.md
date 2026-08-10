@@ -9,7 +9,7 @@ n8n-decanter init [dir] [--force]
 n8n-decanter init [dir] --host <url> [--token <mcp-token>] [--api-key <key>]   # non-interactive
 ```
 
-Interactive setup for a new (or existing) sync dir:
+Interactive setup for a new (or existing) [sync dir](/docs/concepts/sync-layout/#the-sync-dir):
 
 - Prompts for the n8n host. If you leave off the scheme, local addresses
   (`localhost`, loopback, private LAN ranges, `*.local`) default to `http://`

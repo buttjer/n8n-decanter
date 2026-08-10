@@ -42,9 +42,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the decanter guard without a word — exactly the "second door" the hook
   exists to catch. Still a warning, never a gate. Re-run `init` in an
   existing sync dir (or re-copy the hook from the template) to pick it up.
+- **The scaffolded `tsconfig.json` now covers the whole sync dir**, not just
+  `shared/` and `workflows/` — helper code may live in any folder inside the
+  sync dir (`shared/` is only the scaffolded default), so the typecheck and
+  the editor's tsserver now own every root without a config edit. Existing
+  sync dirs keep their scaffolded file; to match, widen `include` to
+  `["n8n-globals.d.ts", "**/*.ts", "**/*.js"]` and add
+  `"**/backups/**", "**/executions/**", "decanter-ts-plugin", "dist"` to
+  `exclude`. Two consequences worth knowing: a loose node-shaped scratch file
+  (top-level `return` outside any workflow's `code/`) is now part of the
+  program and reports TS1108 — move it into a workflow or add its folder to
+  `exclude`; and when `init` scaffolds into an **existing project** that had
+  no `tsconfig.json`, the new config sweeps that project's own `.ts`/`.js`
+  into the node-file typecheck — add your app dirs to `exclude` if they
+  shouldn't gate pushes.
 
 ### Fixed
 
+- **`preflight`'s `types` check now reports type errors in shared helper
+  files** instead of passing green while `push` fails on them. The scoped
+  typecheck dropped every diagnostic outside the graded workflow's own dir —
+  and helper code lives outside every workflow dir by definition — so a
+  workflow could grade `ready` on code `push` then rejected. Helper
+  diagnostics (under `shared/` or any other folder) now surface in every
+  workflow's `types` line, while another workflow's *node* errors stay out of
+  scope as before.
+- **The documented shared-import path was one level short** for the `code/`
+  layout: `../../shared/money` in the TypeScript-nodes docs and the scaffolded
+  `AGENTS.md` resolved to `workflows/shared/money` and failed on copy-paste.
+  The correct depth from `workflows/<folder>/code/` is `../../../shared/money`.
+- **Compiled module labels — and therefore sync hashes — are now stable when
+  the sync dir is reached through a symlinked path** (macOS `/tmp`, a
+  symlinked checkout). esbuild resolves bundled files to their realpaths, so
+  an un-realpathed label base produced machine-specific `../…`-climbing
+  labels inside the hashed bytes — nodes reading "push pending" across
+  machines with nobody touching code. The same spelling mismatch made a
+  *scoped* typecheck silently drop every node diagnostic under a symlinked
+  path; both now realpath. If a sync dir lives behind a symlink, the first
+  push after this release re-baselines the affected nodes' hashes once.
 - **The route-check hook now reads opencode's real config shape**
   (`mcp.<name>`). It previously looked only for `mcpServers` / `mcp.servers` /
   `servers` bags, so an `opencode.json` routing straight at the instance was

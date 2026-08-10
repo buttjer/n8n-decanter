@@ -1853,6 +1853,81 @@ await step("bundle: builtins and unlisted npm packages error; bundleDependencies
   assert.equal(r.code, 0, r.out);
 });
 
+// Plan 79: `shared/` is a convention, not a rule — the enforced boundary is
+// the sync dir. Helpers may live in ANY folder(s) inside it, and the scoped
+// preflight typecheck must see type errors in helper code (the F1 gate-lies
+// regression: preflight graded `types` green on code `push` then rejected).
+await step("bundle: helper roots beyond shared/ bundle together; preflight types sees helper errors (Plan 79)", async () => {
+  const tsFile = path.join(dirF, "code", "amazon-export.ts");
+  const originalTs = read(dirF, "code", "amazon-export.ts");
+  const originalTsc = read(TMP, "tsconfig.json");
+  try {
+    // the widened scaffold shape (Plan 79 task 3): whole sync dir
+    const tsc = JSON.parse(originalTsc);
+    // The scaffold's project-wide `**` include is pinned at the unit level
+    // (typecheck-scope.test.mts + the template content); this TMP is not a
+    // clean sync dir — earlier steps left whole init'ed scaffolds and bare
+    // `node run` fixtures behind — so name the helper roots explicitly. The
+    // F1 point is unchanged: helpers/ and domain/ lie outside every workflow
+    // dir, exactly what the scoped typecheck used to drop.
+    tsc.include = ["n8n-globals.d.ts", "shared/**/*.ts", "helpers/**/*.ts", "domain/**/*.ts", "workflows/**/*.ts", "workflows/**/*.js"];
+    writeFileSync(path.join(TMP, "tsconfig.json"), JSON.stringify(tsc, null, 2));
+    // canonical shared helper (the earlier bundle step left the "+ 1" edit in place)
+    writeFileSync(path.join(TMP, "shared", "money.ts"),
+      "export interface Line { qty: number; price: number }\nexport function total(lines: Line[]): number {\n  return lines.reduce((s, l) => s + l.qty * l.price, 0);\n}\n");
+    // three more roots: renamed top-level, nested, and per-workflow next to code/
+    mkdirSync(path.join(TMP, "helpers"), { recursive: true });
+    mkdirSync(path.join(TMP, "domain"), { recursive: true });
+    mkdirSync(path.join(dirF, "local"), { recursive: true });
+    writeFileSync(path.join(TMP, "helpers", "strings.ts"),
+      'export function shout(s: string): string {\n  return s.toUpperCase() + "!";\n}\n');
+    // same basename as shared/money.ts — aliased bindings bundle side by side
+    writeFileSync(path.join(TMP, "domain", "money.ts"),
+      "export function total(l: unknown[]): number {\n  return l.length;\n}\n");
+    writeFileSync(path.join(dirF, "local", "tag.ts"), 'export const TAG = "wf-local";\n');
+    writeFileSync(tsFile, [
+      'import { total as orderTotal, type Line } from "../../../shared/money";',
+      'import { total as countTotal } from "../../../domain/money";',
+      'import { shout } from "../../../helpers/strings";',
+      'import { TAG } from "../local/tag";',
+      "const lines: Line[] = $input.all().map((i) => ({ qty: Number(i.json.qty), price: Number(i.json.price) }));",
+      "return [{ json: { sum: orderTotal(lines), n: countTotal(lines), label: shout(TAG) } }];",
+    ].join("\n") + "\n");
+    // layout guard: every root, incl. the per-workflow dir, is compliant
+    let r = await cli("preflight", "--offline", "--no-typecheck");
+    assert.equal(r.code, 0, "helper roots beyond shared/ must be layout-compliant: " + r.out);
+    // full push (typecheck on): all four roots bundle into one body
+    r = await cli("push");
+    assert.equal(r.code, 0, r.out);
+    const code = remoteNode("wf123", "n3").parameters.jsCode;
+    assert.match(code, /shared\/money\.ts/, "shared/ module label");
+    assert.match(code, /domain\/money\.ts/, "same-basename helper keeps its own label");
+    assert.match(code, /helpers\/strings\.ts/, "renamed root label");
+    assert.match(code, /local\/tag\.ts/, "per-workflow helper label");
+    // run executes the four-root node offline: sum 25, count 2, label WF-LOCAL!
+    writeFileSync(path.join(TMP, "fx-roots.json"),
+      JSON.stringify({ input: [{ json: { qty: 2, price: 10 } }, { json: { qty: 1, price: 5 } }] }));
+    r = await cli("node", "run", path.join("workflows", "order-sync", "code", "amazon-export.ts"), "fx-roots.json");
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(runOutput(r.out), [{ json: { sum: 25, n: 2, label: "WF-LOCAL!" } }]);
+    // F1 regression: a type error in a helper (non-shared root, even) must
+    // fail preflight's `types` check, naming the real file and line
+    writeFileSync(path.join(TMP, "helpers", "strings.ts"),
+      'export function shout(s: string): string {\n  const broken: number = "not a number";\n  return s + broken;\n}\n');
+    r = await cli("preflight", "--offline");
+    assert.equal(r.code, 1, "preflight must fail `types` on a helper type error: " + r.out);
+    assert.match(r.out, /helpers\/strings\.ts\(2,9\): error TS2322/, "the helper file and line are named");
+  } finally {
+    writeFileSync(path.join(TMP, "tsconfig.json"), originalTsc);
+    writeFileSync(tsFile, originalTs);
+    rmSync(path.join(TMP, "helpers"), { recursive: true, force: true });
+    rmSync(path.join(TMP, "domain"), { recursive: true, force: true });
+    rmSync(path.join(dirF, "local"), { recursive: true, force: true });
+  }
+  const r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+});
+
 // Plan 59: the summary half of the retired `status` verb is preflight's sync
 // tier. The state machine is unchanged — what moved is the grading: remote
 // drift is a `drift` WARN (caution, exit 0 unless --fail-on=warn) where

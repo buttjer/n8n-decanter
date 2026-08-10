@@ -1,6 +1,6 @@
 ---
 title: TypeScript nodes & bundling
-description: Lossless .js vs one-way .ts, the marker line, shared/ imports, npm bundling.
+description: Lossless .js vs one-way .ts, the marker line, shared-code imports, npm bundling.
 order: 2
 ---
 
@@ -48,16 +48,50 @@ marker and treats the node as TS-managed (renaming the file back to `.ts`).
 
 ## Shared code and npm packages
 
-`.ts` nodes can import from `shared/*.ts` (values *and* types) and from npm
-packages installed in the sync dir and opted in via `"bundleDependencies"` in
-the [config](/docs/concepts/configuration/):
+`.ts` nodes can import helper files (values *and* types) from **any folder
+inside the [sync dir](/docs/concepts/sync-layout/#the-sync-dir), in any number
+of folders** — `shared/` is simply the default [init](/docs/cli/init/)
+scaffolds, not a rule — and from npm packages installed in the sync dir and
+opted in via `"bundleDependencies"` in the
+[config](/docs/concepts/configuration/):
 
 ```ts
-import { total, type OrderLine } from "../../shared/money";
+import { total, type OrderLine } from "../../../shared/money";
 
 const lines: OrderLine[] = $input.all().map((i) => i.json as OrderLine);
 return [{ json: { total: total(lines) } }];
 ```
+
+(Node files live in `workflows/<folder>/code/`, so a top-level helper root is
+three levels up.) All three of these shapes work, together in one node if you
+like:
+
+- the scaffolded `shared/` — the default, covered by the scaffolded editor
+  tooling (the agent allowlist ships `Edit(shared/**)`; widen it if you use
+  another name)
+- **any other folder**, at any nesting (`helpers/`, `domain/money/`)
+- a **per-workflow helper dir** next to `code/`
+  (`workflows/<folder>/local/…`) — sibling subdirs of a workflow folder are
+  reserved for exactly this kind of thing
+
+The one enforced boundary: a relative import must resolve **inside the sync
+dir** — the failure is then early, offline, on your machine, and in
+decanter's words rather than a colleague's broken clone. To reach code
+outside it, package it and go the npm route
+(`npm i file:../packages/x` + a `bundleDependencies` entry) — with the caveat
+that a `file:`/`npm link` target *outside your repo* resolves to a
+machine-specific path, so teammates would compile different bytes.
+
+**Same-named helpers never collide by path** — `shared/money.ts` and
+`domain/money.ts` are unrelated modules. What can collide is the **binding
+name** you import under: aliased
+(`import { total as orderTotal } from "../../../shared/money"`) the two
+bundle side by side; **unaliased duplicate bindings silently last-win** —
+esbuild lets the second import shadow the first with no warning, and only the
+typecheck (TS2300 *Duplicate identifier*) catches it. That typecheck gates
+`push`; it does **not** gate `node run`, `preflight --no-typecheck`, or a
+project where `typescript` isn't installed (the check skips) — alias, or keep
+basenames distinct.
 
 Push bundles the imports into the compiled node, so the pushed code is
 **self-contained and runs anywhere — n8n Cloud included**, no
@@ -67,7 +101,16 @@ differ from the draft — [diff](/docs/cli/diff/) compiles before comparing, so
 it lists them all, and [preflight](/docs/cli/preflight/)'s `parity` check
 counts them.
 
+Two asymmetries to know about helper files (both by design):
+
+- **Auto-commit is scoped to the workflow folder** — a push/pull auto-commit
+  includes a per-workflow helper dir, but a *top-level* helper edit is yours
+  to commit.
+- **`watch` observes the workflow folder and its `code/` only** — saving a
+  helper does not re-push its importers; they sync on their next save or
+  `push`.
+
 Rules: imports at the top of the file only; relative paths must stay inside
-the repo; pure-JS packages only — unlisted npm packages and Node builtins
+the sync dir; pure-JS packages only — unlisted npm packages and Node builtins
 (`node:*`, `fs`, `crypto`, …) are compile errors; never `require()`. `.js`
 nodes stay import-free — that tier is byte-lossless by contract.

@@ -34,8 +34,9 @@ clean git diffs.
   every push and pull is auto-committed.
 - **TypeScript or typed JS** — write nodes in TS (compiled on push) or plain
   JS; n8n globals (`$input`, `$('…')`, …) are typed in both.
-- **Shared code and small libraries** — `.ts` nodes import from `shared/` and
-  opted-in npm packages, bundled on push to run anywhere, n8n Cloud included.
+- **Shared code and small libraries** — `.ts` nodes import helper files from
+  anywhere in the sync dir (`shared/` by default) and opted-in npm packages,
+  bundled on push to run anywhere, n8n Cloud included.
 - **Agent-native** — `init` scaffolds Claude Code / Cursor / Codex configs;
   `preflight --offline` and `node run` give agents a credential-free loop.
 - **Guarded agent access to n8n's MCP, wired by default** — the scaffolded
@@ -142,7 +143,7 @@ a broader whole-workflow authoring toolkit:
 | Capability | Native n8n (browser) | n8n-as-code | n8n-decanter |
 |---|---|---|---|
 | **TypeScript for Code nodes** | ❌ JavaScript or Python only | ❌ TS at workflow level, not node logic | ✅ `.ts` nodes, compiled on push, typed n8n globals |
-| **Shared types & helpers in Code nodes** | ❌ self-host `NODE_FUNCTION_ALLOW_*` only | ❌ not part of its model | ✅ `shared/*.ts` + npm bundled into self-contained nodes (Cloud-safe) |
+| **Shared types & helpers in Code nodes** | ❌ self-host `NODE_FUNCTION_ALLOW_*` only | ❌ not part of its model | ✅ helper `.ts` anywhere in the sync dir + npm, bundled into self-contained nodes (Cloud-safe) |
 | **Code as individual files** | ❌ no source files (JSON blob) | 🟡 one `.workflow.ts` per workflow | ✅ folder per workflow; each Code node its own file |
 | **Code-level git versioning** | 🟡 in-app history; Git source control is Enterprise-only | ✅ GitOps sync of workflow source | ✅ real git — diffs, PRs, blame per Code node; auto-commit each sync |
 | **Preflights** (`preflight`, then `test`) | 🟡 re-run past executions, but online in-editor | 🟡 inspect executions against a live env | ✅ one read-only, CI-gateable verdict *before* the push; then `test` runs the pushed draft — each diffs every node vs a real capture |
