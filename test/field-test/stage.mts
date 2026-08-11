@@ -82,6 +82,11 @@ if (process.argv.includes("--down")) {
   }
   rmSync(mf.harnessRoot, { recursive: true, force: true });
   rmSync(mf.workDir, { recursive: true, force: true });
+  // The per-run parent (ops-<pid>) carries sibling fixtures like S15's
+  // company-lib — remove it too. Guarded by name so a pre-parent manifest
+  // (workDir directly under tmp) can never take the tmp root with it.
+  const workParent = path.dirname(mf.workDir);
+  if (path.basename(workParent).startsWith("ops-")) rmSync(workParent, { recursive: true, force: true });
   console.log(`removed ${mf.harnessRoot} and ${mf.workDir}`);
   process.exit(0);
 }
@@ -569,9 +574,16 @@ async function unblindTarball(tgz: string): Promise<string[]> {
 // ---------- scaffold the neutral scratch project ----------
 async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean }> {
   const base = os.tmpdir();
-  const workDir = path.join(base, `flows-ops-${PID}`);
+  // The scratch project gets its OWN parent dir, never the system tmp root: a
+  // real project's `..` holds a handful of entries, not thousands. Round
+  // ftrun-21850 (S15) failed on exactly this — the planted ../company-lib
+  // sibling existed, but the agent's `ls ..` hit 3686 tmp entries, the output
+  // was persisted unread, and the round measured tmp noise instead of the
+  // scenario. Sibling fixtures now land next to flows-ops in a two-entry dir.
+  const parentDir = path.join(base, `ops-${PID}`);
+  const workDir = path.join(parentDir, `flows-ops-${PID}`);
   const harnessRoot = path.join(base, `ftrun-${PID}`);
-  rmSync(workDir, { recursive: true, force: true });
+  rmSync(parentDir, { recursive: true, force: true });
   rmSync(harnessRoot, { recursive: true, force: true });
   mkdirSync(workDir, { recursive: true });
   mkdirSync(path.join(harnessRoot, "transcripts"), { recursive: true });
