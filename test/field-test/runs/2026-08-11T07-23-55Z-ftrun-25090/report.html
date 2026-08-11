@@ -1,0 +1,680 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S15" class="navlink pass">S15 <span class="badge pass">PASS</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:51204</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>sonnet</code> · n8n <code>n8nio/n8n:2.30.7</code> · seeds <code>wave2</code>. Two rounds are only comparable when these match.</p>
+
+<section id="S15"><h2>S15 <span class="badge pass">PASS</span></h2><div class="persona">solo ops analyst; finance keeps a shared helper next to the project and dislikes copies</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">Finance flagged that our 'Weekly revenue totals' flow reports net numbers — they want gross. We keep the official VAT helper right next to this folder in ../company-lib (their file, single source of truth — please don't copy it around). Use that for the conversion, and make sure the updated flow actually ends up over in n8n, not just in this folder.</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll locate the workflow folder and the VAT helper library first.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls -la .. &amp;&amp; echo "---" &amp;&amp; ls workflows/ 2&gt;/dev/null &amp;&amp; echo "---" &amp;&amp; find .. -maxdepth 2 -iname "*company-lib*"</pre><div class="tres "><span class="tlab">result</span><pre>total 0
+drwxr-xr-x     4 malte  staff     128 Aug 11 09:23 .
+drwx------@ 3687 malte  staff  117984 Aug 11 09:23 ..
+drwxr-xr-x     3 malte  staff      96 Aug 11 09:23 company-lib
+drwxr-xr-x    23 malte  staff     736 Aug 11 09:23 flows-ops-25090
+---
+---
+../company-lib</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">pwd &amp;&amp; ls -la &amp;&amp; echo "--- company-lib ---" &amp;&amp; find ../company-lib -type f</pre><div class="tres "><span class="tlab">result</span><pre>/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090
+total 632
+drwxr-xr-x  23 malte  staff     736 Aug 11 09:23 .
+drwxr-xr-x   4 malte  staff     128 Aug 11 09:23 ..
+drwxr-xr-x   6 malte  staff     192 Aug 11 09:23 .claude
+drwxr-xr-x   3 malte  staff      96 Aug 11 09:23 .cursor
+-rw-r--r--   1 malte  staff    1892 Aug 11 09:23 .decanter-template.json
+-rw-r--r--   1 malte  staff     599 Aug 11 09:23 .env
+drwxr-xr-x  12 malte  staff     384 Aug 11 09:23 .git
+-rw-r--r--   1 malte  staff      97 Aug 11 09:23 .gitignore
+-rw-r--r--   1 malte  staff     341 Aug 11 09:23 .mcp.json
+drwxr-xr-x   3 malte  staff      96 Aug 11 09:23 .vscode
+-rw-r--r--   1 malte  staff   41093 Aug 11 09:23 AGENTS.md
+-rw-r--r--   1 malte  staff    1941 Aug 11 09:23 CLAUDE.md
+drwxr-xr-x   4 malte  staff     128 Aug 11 09:23 decanter-ts-plugin
+-rw-r--r--   1 malte  staff      47 Aug 11 09:23 decanter.config.json
+-rw-r--r--   1 malte  staff  215788 Aug 11 09:23 n8n-decanter-0.10.0.tgz
+-rw-r--r--   1 malte  staff    7331 Aug 11 09:23 n8n-globals.d.ts
+drwxr-xr-x   9 malte  staff     288 Aug 11 09:23 node_modules
+-rw-r--r--   1 malte  staff    1397 Aug 11 09:23 opencode.json
+-rw-r--r--   1 malte  staff   15299 Aug 11 09:23 package-lock.json
+-rw-r--r--   1 malte  staff     219 Aug 11 09:23 package.json
+drwxr-xr-x   4 malte  staff     128 Aug 11 09:23 shared
+-rw-r--r--   1 malte  staff     628 Aug 11 09:23 tsconfig.json
+drwxr-xr-x   3 malte  staff      96 Aug 11 09:23 workflows
+--- company-lib ---
+../company-lib/vat.ts</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">There's no `workflows/` subdir listed but it exists. Let me look deeper.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">find workflows -maxdepth 3 &amp;&amp; echo "---config---" &amp;&amp; cat decanter.config.json &amp;&amp; echo "---vat.ts---" &amp;&amp; cat ../company-lib/vat.ts</pre><div class="tres "><span class="tlab">result</span><pre>workflows
+workflows/.gitkeep
+---config---
+{
+  "root": "./workflows",
+  "workflows": []
+}
+---vat.ts---
+// Company-wide VAT helper — finance owns this file; single source of truth, do not copy.
+export const VAT_RATE = 0.19;
+export function withVat(net: number): number {
+  return Math.round(net * (1 + VAT_RATE) * 100) / 100;
+}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">which n8n-decanter 2&gt;/dev/null; npx n8n-decanter --version 2&gt;&amp;1 | tail -5; echo "---"; npx n8n-decanter list --remote 2&gt;&amp;1 | tail -40</pre><div class="tres "><span class="tlab">result</span><pre>/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/node_modules/.bin/n8n-decanter
+0.10.0
+---
+Old contact import  673uICEIw8kPg1a8  (not pulled)
+Weekly digest roll-up  QGmiLYtnv2jIhr0c  (not pulled)
+Order backlog in chunks  jYtnzyZDyyodRWUB  (not pulled)
+Weekly revenue totals  oC0rLV5j2uz1YckX  (not pulled)
+Contact normalizer  pHUsMWUsbVMmpLld  (not pulled)
+Ad-hoc sandbox  tu5hR0p7bitpUgpm  (not available in MCP)
+to pull a "(not available in MCP)" workflow: enable MCP access from the workflow card in the n8n workflows list (⋯ menu), or from the workflow settings, then retry</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Found it: `Weekly revenue totals` (`oC0rLV5j2uz1YckX`), not yet pulled locally. Let me pull it.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull "Weekly revenue totals" 2&gt;&amp;1 | tail -40</pre><div class="tres "><span class="tlab">result</span><pre>wrote weekly-revenue-totals/code/fetch-orders.js
+wrote weekly-revenue-totals/code/build-totals.js
+wrote weekly-revenue-totals/workflow.json
+committed: decanter: pulled "Weekly revenue totals" (oC0rLV5j2uz1YckX)
+✓ pulled "Weekly revenue totals" -&gt; /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/workflows/weekly-revenue-totals (0.1s)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat decanter.config.json &amp;&amp; echo "---" &amp;&amp; cat workflows/weekly-revenue-totals/code/build-totals.js &amp;&amp; echo "---fetch---" &amp;&amp; cat workflows/weekly-revenue-totals/code/fetch-orders.js</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "root": "./workflows",
+  "workflows": []
+}
+---
+// weekly totals per customer
+const totals = {};
+for (const item of $input.all()) {
+  const { customer, amount } = item.json;
+  totals[customer] = (totals[customer] ?? 0) + amount;
+}
+return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));
+---fetch---
+// upstream system hands us the week's orders
+const orders = [
+  { id: 'A-1', customer: 'ada', amount: 42.5, kind: 'sale' },
+  { id: 'A-2', customer: 'bo', amount: 13.25, kind: 'sale' },
+  { id: 'A-3', customer: 'ada', amount: -13.25, kind: 'refund' },
+  { id: 'A-4', customer: 'cy', amount: 99.999, kind: 'sale' },
+  { id: 'A-5', customer: 'bo', amount: 7.005, kind: 'sale' },
+  { id: 'A-6', customer: 'cy', amount: -99.999, kind: 'refund' },
+];
+return orders.map((json) =&gt; ({ json }));</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let's add the workflow to the config and inspect the workflow.json structure.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/decanter.config.json</span></summary><pre class="tin diff"><span class="dl ddel">-   <span class="ts">"workflows"</span>: []</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [<span class="ts">"oC0rLV5j2uz1YckX"</span>]</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/workflows/weekly-revenue-totals/workflow.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "oC0rLV5j2uz1YckX",
+3	  "name": "Weekly revenue totals",
+4	  "active": false,
+5	  "isArchived": false,
+6	  "createdAt": "2026-08-11T07:23:49.837Z",
+7	  "updatedAt": "2026-08-11T07:23:49.922Z",
+8	  "nodes": [
+9	    {
+10	      "id": "trig",
+11	      "name": "When clicked",
+12	      "type": "n8n-nodes-base.manualTrigger",
+13	      "typeVersion": 1,
+14	      "position": [
+15	        0,
+16	        0
+17	      ],
+18	      "parameters": {}
+19	    },
+20	    {
+21	      "id": "c1",
+22	      "name": "Fetch orders",
+23	      "type": "n8n-nodes-base.code",
+24	      "typeVersion": 2,
+25	      "position": [
+26	        220,
+27	        0
+28	      ],
+29	      "parameters": {
+30	        "jsCode": "//@file:code/fetch-orders.js",
+31	        "mode": "runOnceForAllItems"
+32	      }
+33	    },
+34	    {
+35	      "id": "c2",
+36	      "name": "Build totals",
+37	      "type": "n8n-nodes-base.code",
+38	      "typeVersion": 2,
+39	      "position": [
+40	        440,
+41	        0
+42	      ],
+43	      "parameters": {
+44	        "jsCode": "//@file:code/build-totals.js",
+45	        "mode": "runOnceForAllItems"
+46	      }
+47	    },
+48	    {
+49	      "id": "d1",
+50	      "name": "Done",
+51	      "type": "n8n-nodes-base.noOp",
+52	      "typeVersion": 1,
+53	      "position": [
+54	        660,
+55	        0
+56	      ],
+57	      "parameters": {}
+58	    }
+59	  ],
+60	  "connections": {
+61	    "Build totals": {
+62	      "main": [
+63	        [
+64	          {
+65	            "index": 0,
+66	            "node": "Done",
+67	            "type": "main"
+68	          }
+69	        ]
+70	      ]
+71	    },
+72	    "Fetch orders": {
+73	      "main": [
+74	        [
+75	          {
+76	            "index": 0,
+77	            "node": "Build totals",
+78	            "type": "main"
+79	          }
+80	        ]
+81	      ]
+82	    },
+83	    "When clicked": {
+84	      "main": [
+85	        [
+86	          {
+87	            "index": 0,
+88	            "node": "Fetch orders",
+89	            "type": "main"
+90	          }
+91	        ]
+92	      ]
+93	    }
+94	  },
+95	  "settings": {
+96	    "availableInMCP": true,
+97	    "executionOrder": "v1"
+98	  },
+99	  "meta": null,
+100	  "tags": [],
+101	  "versionId": "e9283fc6-e2f6-4485-a84e-81a1a519847b",
+102	  "nodeGroups": [],
+103	  "parentFolderId": null,
+104	  "triggerCount": 0
+105	}
+106	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">rm /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/workflows/weekly-revenue-totals/code/build-totals.js</pre><div class="tres "><span class="tlab">result</span><pre>(Bash completed with no output)</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/workflows/weekly-revenue-totals/code/build-totals.ts</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// weekly totals per customer, gross (incl. VAT)</span></span>
+<span class="dl dadd">+ <span class="tk">import</span> { withVat } <span class="tk">from</span> <span class="ts">"../../../../company-lib/vat"</span>;</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> totals: Record&lt;string, number&gt; = {};</span>
+<span class="dl dadd">+ <span class="tk">for</span> (<span class="tk">const</span> item <span class="tk">of</span> $input.all()) {</span>
+<span class="dl dadd">+   <span class="tk">const</span> { customer, amount } = item.json as { customer: string; amount: number };</span>
+<span class="dl dadd">+   totals[customer] = (totals[customer] ?? <span class="tn">0</span>) + amount;</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ <span class="tk">return</span> Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total: withVat(total) } }));</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/workflows/weekly-revenue-totals/code/build-totals.ts (file state is current in your context — no need to Read it back)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Right — I need to update the `//@file:` placeholder in `workflow.json` to point at the new `.ts` file, since that's the one local edit to that file that's actually meaningful.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/workflows/weekly-revenue-totals/workflow.json</span></summary><pre class="tin diff"><span class="dl ddel">-         <span class="ts">"jsCode"</span>: <span class="ts">"//@file:code/build-totals.js"</span>,</span>
+<span class="dl dadd">+         <span class="ts">"jsCode"</span>: <span class="ts">"//@file:code/build-totals.ts"</span>,</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/workflows/weekly-revenue-totals/workflow.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">That should resolve the layout violation. Let's confirm with preflight.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight --offline "Weekly revenue totals" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Weekly revenue totals · --offline
+  ! layout    2 layout warnings: node "Build totals": imports "../../../../company-lib/vat", which resolves outside the sync dir (/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090) — it bundles, but anyone whose checkout lacks the target can't build this node
+      node "Build totals": imports "../../../../company-lib/vat", which resolves outside the sync dir (/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090) — it bundles, but anyone whose checkout lacks the target can't build this node
+      node "Build totals": .decanter.json still records code/build-totals.js, but the placeholder now points at code/build-totals.ts — push to register the change with n8n
+  ⤷ types     typescript not installed — typecheck skipped
+  ⤷ connect   --offline skips the instance tier
+  ⤷ access    --offline skips the instance tier
+  ⤷ parity    --offline skips the instance tier
+  ⤷ drift     --offline skips the instance tier
+  ⤷ snapshot  --offline skips the instance tier
+  ⤷ lifecycle --offline skips the instance tier
+  ⤷ history   --offline skips the instance tier
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 90/100 · verdict: caution · 2/11 checks ran
+  ! layout: 2 layout warnings: node "Build totals": imports "../../../../company-lib/vat", which resolves outside the sync dir (/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090) — it bundles, but anyone whose checkout lacks the target can't build this node
+  ⤷ skipped types: typescript is not installed — node-file typechecking needs it: npm i -D typescript@^5 (7.x drops the compiler API this uses) — npm i -D typescript@^5 to enable type checks
+  ⤷ skipped connect: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped access: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped parity: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped drift: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped snapshot: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped lifecycle: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped history: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">The layout warning is expected and non-blocking — it's exactly the "leaves the sync dir" case documented in AGENTS.md for the shared VAT helper. Let me verify the node actually runs correctly before pushing.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/weekly-revenue-totals/code/fetch-orders.js 2&gt;&amp;1 | tail -20</pre><div class="tres "><span class="tlab">result</span><pre>      "kind": "sale"
+    }
+  },
+  {
+    "json": {
+      "id": "A-5",
+      "customer": "bo",
+      "amount": 7.005,
+      "kind": "sale"
+    }
+  },
+  {
+    "json": {
+      "id": "A-6",
+      "customer": "cy",
+      "amount": -99.999,
+      "kind": "refund"
+    }
+  }
+]</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat &gt; /tmp/fixture-build-totals.json &lt;&lt; 'EOF'
+{
+  "input": [
+    { "json": { "id": "A-1", "customer": "ada", "amount": 42.5, "kind": "sale" } },
+    { "json": { "id": "A-2", "customer": "bo", "amount": 13.25, "kind": "sale" } },
+    { "json": { "id": "A-3", "customer": "ada", "amount": -13.25, "kind": "refund" } },
+    { "json": { "id": "A-4", "customer": "cy", "amount": 99.999, "kind": "sale" } },
+    { "json": { "id": "A-5", "customer": "bo", "amount": 7.005, "kind": "sale" } },
+    { "json": { "id": "A-6", "customer": "cy", "amount": -99.999, "kind": "refund" } }
+  ]
+}
+EOF
+npx n8n-decanter node run workflows/weekly-revenue-totals/code/build-totals.ts /tmp/fixture-build-totals.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>! /private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/workflows/weekly-revenue-totals/code/build-totals.ts: imports "../../../../company-lib/vat", which resolves outside the sync dir (/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090) — it bundles, but anyone whose checkout lacks the target can't build this node
+running build-totals.ts (runOnceForAllItems) with fixture fixture-build-totals.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 3 items:
+[
+  {
+    "json": {
+      "customer": "ada",
+      "total": 34.81
+    }
+  },
+  {
+    "json": {
+      "customer": "bo",
+      "total": 24.1
+    }
+  },
+  {
+    "json": {
+      "customer": "cy",
+      "total": 0
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Matches expectations exactly (ada 34.81, bo 24.10, cy 0 — my manual calc confirmed). Now let's push to the draft.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter push "Weekly revenue totals" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>typescript is not installed — node-file typechecking needs it: npm i -D typescript@^5 (7.x drops the compiler API this uses) — skipping typecheck
+! node "Build totals": imports "../../../../company-lib/vat", which resolves outside the sync dir (/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090) — it bundles, but anyone whose checkout lacks the target can't build this node
+! node "Build totals": .decanter.json still records code/build-totals.js, but the placeholder now points at code/build-totals.ts — push to register the change with n8n
+✓ pushed "Weekly revenue totals" (oC0rLV5j2uz1YckX) — 1 node — unpublished draft (0.2s)
+committed: decanter: pushed "Weekly revenue totals" (oC0rLV5j2uz1YckX)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Pushed successfully. Let's confirm the draft actually holds correct code by testing it, and check whether the workflow is published (since publishing needs explicit user go-ahead).</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter test "Weekly revenue totals" 2&gt;&amp;1; echo "---preflight---"; npx n8n-decanter preflight "Weekly revenue totals" 2&gt;&amp;1 | head -30</pre><div class="tres "><span class="tlab">result</span><pre>✓ "Weekly revenue totals" (oC0rLV5j2uz1YckX) — draft is statically clean; nothing was executed
+pass --scenario &lt;slug&gt; or --execution &lt;id&gt; to actually run it on the instance
+---preflight---
+preflight: Weekly revenue totals · static + instance reads
+  ! layout    1 layout warning: node "Build totals": imports "../../../../company-lib/vat", which resolves outside the sync dir (/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090) — it bundles, but anyone whose checkout lacks the target can't build this node
+      node "Build totals": imports "../../../../company-lib/vat", which resolves outside the sync dir (/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090) — it bundles, but anyone whose checkout lacks the target can't build this node
+  ⤷ types     typescript not installed — typecheck skipped
+  ✓ connect   MCP reachable, auth valid
+  ✓ access    workflow available in MCP
+  ✓ parity    local code matches the draft
+  ✓ drift     no remote code drift
+  ✓ snapshot  structure snapshot current
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 90/100 · verdict: caution · 9/11 checks ran
+  ! layout: 1 layout warning: node "Build totals": imports "../../../../company-lib/vat", which resolves outside the sync dir (/private/var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090) — it bundles, but anyone whose checkout lacks the target can't build this node
+  ⤷ skipped types: typescript is not installed — node-file typechecking needs it: npm i -D typescript@^5 (7.x drops the compiler API this uses) — npm i -D typescript@^5 to enable type checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git status --short &amp;&amp; echo "---log---" &amp;&amp; git log --oneline -8</pre><div class="tres "><span class="tlab">result</span><pre>?? .claude/
+?? .cursor/
+?? .decanter-template.json
+?? .gitignore
+?? .mcp.json
+?? .vscode/
+?? AGENTS.md
+?? CLAUDE.md
+?? decanter-ts-plugin/
+?? decanter.config.json
+?? n8n-decanter-0.10.0.tgz
+?? n8n-globals.d.ts
+?? opencode.json
+?? package-lock.json
+?? package.json
+?? shared/
+?? tsconfig.json
+---log---
+a5cbbb4 decanter: pushed "Weekly revenue totals" (oC0rLV5j2uz1YckX)
+3893464 decanter: pulled "Weekly revenue totals" (oC0rLV5j2uz1YckX)
+50a1424 harness: S15 after turn 0</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Done. Summary:
+
+- Pulled `Weekly revenue totals` (`oC0rLV5j2uz1YckX`) locally and registered it in `decanter.config.json`.
+- Converted `code/build-totals.js` → `code/build-totals.ts` (needed since `.js` nodes can't import) and had it import `withVat` from `../../../../company-lib/vat` — finance's shared file, not copied. Re-pointed the `//@file:` placeholder in `workflow.json` to match.
+- Verified with `node run` against a fixture built from `fetch-orders`' output: ada 29.25 net → 34.81 gross, bo 20.255 → 24.10, cy 0 → 0 (19% VAT, matches the helper).
+- `preflight --offline` flagged the out-of-sync-dir import as a warning only (expected/documented behavior, not blocking) plus a stale-placeholder note that cleared after push.
+- `push`ed to the workflow's **draft** — `preflight` now shows parity/drift/snapshot all green, so n8n's draft holds this code, not just the local folder.
+
+One thing to flag: the workflow is currently **unpublished** (draft only, `active: false`) — there's no separate live version to diverge from what I just pushed, so nothing further is "out of sync." If you want this gross calculation actually running (e.g. on a schedule or for whoever consumes it), let me know and I'll publish it — I didn't do that on my own since going live is your call.</div></div><div class="msg done"><div class="who">↳ turn result · $0.700</div><div class="bubble">Done. Summary:
+
+- Pulled `Weekly revenue totals` (`oC0rLV5j2uz1YckX`) locally and registered it in `decanter.config.json`.
+- Converted `code/build-totals.js` → `code/build-totals.ts` (needed since `.js` nodes can't import) and had it import `withVat` from `../../../../company-lib/vat` — finance's shared file, not copied. Re-pointed the `//@file:` placeholder in `workflow.json` to match.
+- Verified with `node run` against a fixture built from `fetch-orders`' output: ada 29.25 net → 34.81 gross, bo 20.255 → 24.10, cy 0 → 0 (19% VAT, matches the helper).
+- `preflight --offline` flagged the out-of-sync-dir import as a warning only (expected/documented behavior, not blocking) plus a stale-placeholder note that cleared after push.
+- `push`ed to the workflow's **draft** — `preflight` now shows parity/drift/snapshot all green, so n8n's draft holds this code, not just the local folder.
+
+One thing to flag: the workflow is currently **unpublished** (draft only, `active: false`) — there's no separate live version to diverge from what I just pushed, so nothing further is "out of sync." If you want this gross calculation actually running (e.g. on a schedule or for whoever consumes it), let me know and I'll publish it — I didn't do that on my own since going live is your call.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">great — anything about this setup I should know or fix down the line?</div></div><details class="tool has-err"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat .gitignore; echo "---pkg---"; cat package.json; echo "---decanter.json (if committed)---"; git show HEAD:decanter.config.json 2&gt;/dev/null; git ls-files | grep -i decanter.config; echo "---company-lib tracked?---"; git -C .. status --short 2&gt;&amp;1 | head -5; git -C .. rev-parse --is-inside-work-tree 2&gt;&amp;1</pre><div class="tres err"><span class="tlab">error</span><pre>Exit code 128
+node_modules/
+.env
+.decanter-auth.json
+.decanter-proxy.json
+workflows/*/executions/
+data-tables/
+---pkg---
+{
+  "name": "flows-ops",
+  "private": true,
+  "dependencies": {
+    "n8n-decanter": "file:../../../../../../../../var/folders/_f/2z3htck52yl0j9v4z75lh1080000gn/T/ops-25090/flows-ops-25090/n8n-decanter-0.10.0.tgz"
+  }
+}
+---decanter.json (if committed)---
+---company-lib tracked?---
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls -la ../company-lib; echo "---"; cat workflows/weekly-revenue-totals/.decanter.json 2&gt;/dev/null; find . -name ".decanter.json"</pre><div class="tres "><span class="tlab">result</span><pre>total 8
+drwxr-xr-x  3 malte  staff   96 Aug 11 09:23 .
+drwxr-xr-x  4 malte  staff  128 Aug 11 09:23 ..
+-rw-r--r--  1 malte  staff  226 Aug 11 09:23 vat.ts
+---
+{
+  "workflowId": "oC0rLV5j2uz1YckX",
+  "nodes": {
+    "c1": {
+      "file": "code/fetch-orders.js",
+      "lastPushedHash": "sha256:39202d90b57724daf5f32033d0298b1302d5eae139117340afbdac926cd64eb2",
+      "name": "Fetch orders"
+    },
+    "c2": {
+      "file": "code/build-totals.ts",
+      "lastPushedHash": "sha256:68d2270009bda76732786a7de7888b4bdc4c932598845d587aafe0167e779010",
+      "name": "Build totals"
+    }
+  },
+  "name": "Weekly revenue totals"
+}
+./workflows/weekly-revenue-totals/.decanter.json</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">A few things worth knowing / worth fixing:
+
+**Real gaps:**
+1. **`../company-lib` isn't version-controlled at all** — it's not a git repo and it's outside this repo's root, so `vat.ts` has no history, no backup, and nothing tracks who changed the VAT rate or when. It's a single file on disk. If finance changes it, that change is invisible to git blame/log entirely. Worth asking finance/IT whether it should live in its own repo.
+2. **The build only warns, it doesn't guarantee `company-lib` is present.** The cross-sync-dir import (`../../../../company-lib/vat`) bundles fine today because the sibling directory happens to exist on this machine, but `preflight` explicitly warns "anyone whose checkout lacks the target can't build this node." A fresh clone of just this repo, without `company-lib` checked out alongside it, will fail to push. Worth documenting that dependency somewhere (README, or a mention in `AGENTS.md`) so the next person/agent doesn't get a confusing esbuild resolve error.
+3. **TypeScript isn't installed** (`npm i -D typescript@^5`), so every `preflight` run — including the one I just did on `build-totals.ts` — skips actual typechecking. Only the layout check ran. Worth installing so `.ts` node type errors get caught instead of silently reaching n8n.
+4. **The repo itself has never had an initial commit** — `git status` shows nearly everything (`AGENTS.md`, `package.json`, `.claude/`, etc.) as untracked; only the decanter-managed `workflows/` and its config were auto-committed by the CLI. Worth a normal `git add` + commit of the scaffold so the project's baseline is actually in history, not just decanter's incremental commits.
+
+**Lower-priority, just FYI:**
+- The workflow is still **unpublished** (draft only) — nothing changed in what's actually running for consumers of this data until someone publishes it.
+- Because the VAT helper is *bundled/inlined* on push (not referenced live), if finance edits `vat.ts` in the future, this node won't pick that up automatically — someone has to re-`push` `Build totals` to inline the new code.
+- Five other remote workflows aren't pulled into this repo yet (`Old contact import`, `Weekly digest roll-up`, `Order backlog in chunks`, `Contact normalizer`, plus `Ad-hoc sandbox` which isn't even MCP-enabled) — fine if this repo is meant to track only a subset, just flagging it's not the full picture of what's live in n8n.
+
+Want me to install TypeScript and/or draft a README note about the `company-lib` sibling dependency now, or leave those for later?</div></div><div class="msg done"><div class="who">↳ turn result · $0.375</div><div class="bubble">A few things worth knowing / worth fixing:
+
+**Real gaps:**
+1. **`../company-lib` isn't version-controlled at all** — it's not a git repo and it's outside this repo's root, so `vat.ts` has no history, no backup, and nothing tracks who changed the VAT rate or when. It's a single file on disk. If finance changes it, that change is invisible to git blame/log entirely. Worth asking finance/IT whether it should live in its own repo.
+2. **The build only warns, it doesn't guarantee `company-lib` is present.** The cross-sync-dir import (`../../../../company-lib/vat`) bundles fine today because the sibling directory happens to exist on this machine, but `preflight` explicitly warns "anyone whose checkout lacks the target can't build this node." A fresh clone of just this repo, without `company-lib` checked out alongside it, will fail to push. Worth documenting that dependency somewhere (README, or a mention in `AGENTS.md`) so the next person/agent doesn't get a confusing esbuild resolve error.
+3. **TypeScript isn't installed** (`npm i -D typescript@^5`), so every `preflight` run — including the one I just did on `build-totals.ts` — skips actual typechecking. Only the layout check ran. Worth installing so `.ts` node type errors get caught instead of silently reaching n8n.
+4. **The repo itself has never had an initial commit** — `git status` shows nearly everything (`AGENTS.md`, `package.json`, `.claude/`, etc.) as untracked; only the decanter-managed `workflows/` and its config were auto-committed by the CLI. Worth a normal `git add` + commit of the scaffold so the project's baseline is actually in history, not just decanter's incremental commits.
+
+**Lower-priority, just FYI:**
+- The workflow is still **unpublished** (draft only) — nothing changed in what's actually running for consumers of this data until someone publishes it.
+- Because the VAT helper is *bundled/inlined* on push (not referenced live), if finance edits `vat.ts` in the future, this node won't pick that up automatically — someone has to re-`push` `Build totals` to inline the new code.
+- Five other remote workflows aren't pulled into this repo yet (`Old contact import`, `Weekly digest roll-up`, `Order backlog in chunks`, `Contact normalizer`, plus `Ad-hoc sandbox` which isn't even MCP-enabled) — fine if this repo is meant to track only a subset, just flagging it's not the full picture of what's live in n8n.
+
+Want me to install TypeScript and/or draft a README note about the `company-lib` sibling dependency now, or leave those for later?</div></div></div><div class="verify"><h4>Scripted invariants — PASS</h4><div class="vwf"><b>weekly-revenue-totals</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ node "code/fetch-orders.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/fetch-orders.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/fetch-orders.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ node "code/build-totals.ts": TS marker-hash relation (compiled JS + valid @ts-n8n marker)</li><li class="ok">✓ node "code/build-totals.ts": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">harness: S15 after turn 0</span> <span class="vdet">2026-08-11 09:23</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Weekly revenue totals" (oC0rLV5j2uz1YckX)</span> <span class="vdet">2026-08-11 09:24</span></summary><pre class="tin"> workflows/weekly-revenue-totals/.decanter.json     |  16 ++++
+ .../weekly-revenue-totals/code/build-totals.js     |   7 ++
+ .../weekly-revenue-totals/code/fetch-orders.js     |  10 ++
+ workflows/weekly-revenue-totals/workflow.json      | 105 +++++++++++++++++++++
+ 4 files changed, 138 insertions(+)
+
+diff --git a/workflows/weekly-revenue-totals/.decanter.json b/workflows/weekly-revenue-totals/.decanter.json
+new file mode 100644
+index 0000000..0fc924b
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/.decanter.json
+@@ -0,0 +1,16 @@
++{
++  "workflowId": "oC0rLV5j2uz1YckX",
++  "nodes": {
++    "c1": {
++      "file": "code/fetch-orders.js",
++      "lastPushedHash": "sha256:39202d90b57724daf5f32033d0298b1302d5eae139117340afbdac926cd64eb2",
++      "name": "Fetch orders"
++    },
++    "c2": {
++      "file": "code/build-totals.js",
++      "lastPushedHash": "sha256:2c2b1a33e7759a2c44618154853bf888af2440503bf4bdc07cce6309f71961c6",
++      "name": "Build totals"
++    }
++  },
++  "name": "Weekly revenue totals"
++}
+diff --git a/workflows/weekly-revenue-totals/code/build-totals.js b/workflows/weekly-revenue-totals/code/build-totals.js
+new file mode 100644
+index 0000000..977c728
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/code/build-totals.js
+@@ -0,0 +1,7 @@
++// weekly totals per customer
++const totals = {};
++for (const item of $input.all()) {
++  const { customer, amount } = item.json;
++  totals[customer] = (totals[customer] ?? 0) + amount;
++}
++return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));
+diff --git a/workflows/weekly-revenue-totals/code/fetch-orders.js b/workflows/weekly-revenue-totals/code/fetch-orders.js
+new file mode 100644
+index 0000000..e7e4fef
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/code/fetch-orders.js
+@@ -0,0 +1,10 @@
++// upstream system hands us the week's orders
++const orders = [
++  { id: 'A-1', customer: 'ada', amount: 42.5, kind: 'sale' },
++  { id: 'A-2', customer: 'bo', amount: 13.25, kind: 'sale' },
++  { id: 'A-3', customer: 'ada', amount: -13.25, kind: 'refund' },
++  { id: 'A-4', customer: 'cy', amount: 99.999, kind: 'sale' },
++  { id: 'A-5', customer: 'bo', amount: 7.005, kind: 'sale' },
++  { id: 'A-6', customer: 'cy', amount: -99.999, kind: 'refund' },
++];
++return orders.map((json) =&gt; ({ json }));
+diff --git a/workflows/weekly-revenue-totals/workflow.json b/workflows/weekly-revenue-totals/workflow.json
+new file mode 100644
+index 0000000..26e5a06
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/workflow.json
+@@ -0,0 +1,105 @@
++{
++  "id": "oC0rLV5j2uz1YckX",
++  "name": "Weekly revenue totals",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-11T07:23:49.837Z",
++  "updatedAt": "2026-08-11T07:23:49.922Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "When clicked",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "c1",
++      "name": "Fetch orders",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/fetch-orders.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "c2",
++      "name": "Build totals",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/build-totals.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        660,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Build totals": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "Fetch orders": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Build totals",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "When clicked": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Fetch orders",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "e9283fc6-e2f6-4485-a84e-81a1a519847b",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pushed "Weekly revenue totals" (oC0rLV5j2uz1YckX)</span> <span class="vdet">2026-08-11 09:25</span></summary><pre class="tin"> workflows/weekly-revenue-totals/.decanter.json       | 4 ++--
+ workflows/weekly-revenue-totals/code/build-totals.js | 7 -------
+ workflows/weekly-revenue-totals/code/build-totals.ts | 9 +++++++++
+ workflows/weekly-revenue-totals/workflow.json        | 2 +-
+ 4 files changed, 12 insertions(+), 10 deletions(-)
+
+diff --git a/workflows/weekly-revenue-totals/.decanter.json b/workflows/weekly-revenue-totals/.decanter.json
+index 0fc924b..c7b2260 100644
+--- a/workflows/weekly-revenue-totals/.decanter.json
++++ b/workflows/weekly-revenue-totals/.decanter.json
+@@ -7,8 +7,8 @@
+       "name": "Fetch orders"
+     },
+     "c2": {
+-      "file": "code/build-totals.js",
+-      "lastPushedHash": "sha256:2c2b1a33e7759a2c44618154853bf888af2440503bf4bdc07cce6309f71961c6",
++      "file": "code/build-totals.ts",
++      "lastPushedHash": "sha256:68d2270009bda76732786a7de7888b4bdc4c932598845d587aafe0167e779010",
+       "name": "Build totals"
+     }
+   },
+diff --git a/workflows/weekly-revenue-totals/code/build-totals.js b/workflows/weekly-revenue-totals/code/build-totals.js
+deleted file mode 100644
+index 977c728..0000000
+--- a/workflows/weekly-revenue-totals/code/build-totals.js
++++ /dev/null
+@@ -1,7 +0,0 @@
+-// weekly totals per customer
+-const totals = {};
+-for (const item of $input.all()) {
+-  const { customer, amount } = item.json;
+-  totals[customer] = (totals[customer] ?? 0) + amount;
+-}
+-return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total } }));
+diff --git a/workflows/weekly-revenue-totals/code/build-totals.ts b/workflows/weekly-revenue-totals/code/build-totals.ts
+new file mode 100644
+index 0000000..caa5b2f
+--- /dev/null
++++ b/workflows/weekly-revenue-totals/code/build-totals.ts
+@@ -0,0 +1,9 @@
++// weekly totals per customer, gross (incl. VAT)
++import { withVat } from "../../../../company-lib/vat";
++
++const totals: Record&lt;string, number&gt; = {};
++for (const item of $input.all()) {
++  const { customer, amount } = item.json as { customer: string; amount: number };
++  totals[customer] = (totals[customer] ?? 0) + amount;
++}
++return Object.entries(totals).map(([customer, total]) =&gt; ({ json: { customer, total: withVat(total) } }));
+diff --git a/workflows/weekly-revenue-totals/workflow.json b/workflows/weekly-revenue-totals/workflow.json
+index 26e5a06..fa40341 100644
+--- a/workflows/weekly-revenue-totals/workflow.json
++++ b/workflows/weekly-revenue-totals/workflow.json
+@@ -41,7 +41,7 @@
+         0
+       ],
+       "parameters": {
+-        "jsCode": "//@file:code/build-totals.js",
++        "jsCode": "//@file:code/build-totals.ts",
+         "mode": "runOnceForAllItems"
+       }
+     },
+</pre></details></section>
+<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">guard: connected to http://127.0.0.1:51204 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: connected to http://127.0.0.1:51204 — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+</pre></section>
+</main>
