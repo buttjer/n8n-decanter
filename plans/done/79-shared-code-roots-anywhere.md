@@ -1,6 +1,6 @@
 # Plan 79 — Shared code lives anywhere in the sync dir
 
-**Status:** In progress — PR 1 (Tasks 1–6, the P1 core incl. the task-4
+**Status:** Done — PR 1 (Tasks 1–6, the P1 core incl. the task-4
 realpath fix and its typecheck-scope sibling) merged 2026-08-10 (#248); PR 2
 (Task 7, the warnings split) built 2026-08-10, **gate satisfied 2026-08-11**
 (blind round `ftrun-25090` against the warnings build — outcome
