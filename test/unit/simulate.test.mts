@@ -18,6 +18,7 @@ import {
   scenarioIsSynthetic,
   scenarioProvenance,
   SIM_CAP_PREFIX,
+  SIM_OUT_PREFIX,
   SIM_START_NODE,
   SimulationGapError,
   sourceFile,
@@ -349,6 +350,85 @@ describe("buildSimulation — branch-aware reachability", () => {
     const notTaken = gaps.find((g) => g.node === "NotTaken");
     assert.ok(notTaken, `expected NotTaken to be the gap, got ${gaps.map((g) => g.node).join(", ") || "none"}`);
     assert.deepEqual(notTaken.input.map((i) => (i as { json: { side: string } }).json.side), ["no"]);
+  });
+});
+
+// Plan 66 task 3: a pinned node's stand-in is a Code node, which has ONE
+// output — so everything behind its error output (or any further output) used
+// to get no input at all, emit nothing, and let the run pass anyway. Each extra
+// output now replays through its own stand-in.
+describe("multi-output pins (Plan 66)", () => {
+  /** Webhook -> Fetch(http, error output): main[0] -> OnOk(set), main[1] -> OnError(noOp). */
+  function errorOutputWf(): Workflow {
+    return {
+      id: "wf1", name: "Err WF", versionId: "v1",
+      nodes: [
+        { id: "w", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: {} },
+        { id: "h", name: "Fetch", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [200, 0], parameters: { url: "http://x" }, onError: "continueErrorOutput" },
+        { id: "o", name: "OnOk", type: "n8n-nodes-base.set", typeVersion: 3.4, position: [400, -80], parameters: {} },
+        { id: "e", name: "OnError", type: "n8n-nodes-base.noOp", typeVersion: 1, position: [400, 80], parameters: {} },
+      ] as WorkflowNode[],
+      connections: {
+        Webhook: { main: [[{ node: "Fetch", type: "main", index: 0 }]] },
+        Fetch: { main: [[{ node: "OnOk", type: "main", index: 0 }], [{ node: "OnError", type: "main", index: 0 }]] },
+      },
+      settings: { executionOrder: "v1" },
+    };
+  }
+
+  const scaffoldErrorOutput = (fetchRuns: unknown) => scaffold({
+    "workflow.json": JSON.stringify(errorOutputWf()),
+    ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: {} }),
+    "executions/1.json": JSON.stringify({
+      id: 1, status: "success", workflowId: "wf1", workflowVersionId: "v1",
+      data: { resultData: { runData: { Webhook: run([item({ n: 1 })]), Fetch: fetchRuns, OnOk: run([item({ ok: true })]) } } },
+    }),
+  });
+
+  const bothOutputs = [{ data: { main: [[item({ status: "ok" })], [item({ error: "boom" })]] } }];
+  const conn = (wf: Workflow, name: string) => (wf.connections as Record<string, { main: Array<Array<{ node: string }>> }>)[name];
+
+  it("gives each extra output its own stand-in, carrying that output's items", async () => {
+    const sim = await buildSimulation(scaffoldErrorOutput(bothOutputs), "1", log);
+    assert.deepEqual(sim.splitOutputs, ["Fetch output 1"]);
+    const standIn = nodeNamed(sim.workflow, `${SIM_OUT_PREFIX}1__Fetch`);
+    assert.equal(standIn.type, "n8n-nodes-base.code");
+    assert.match(String(standIn.parameters.jsCode), /boom/);
+    assert.doesNotMatch(String(nodeNamed(sim.workflow, "Fetch").parameters.jsCode), /boom/, "output 0's stand-in keeps output 0's items only");
+  });
+
+  it("hands the error branch to the stand-in and empties the output it could never reach", async () => {
+    const sim = await buildSimulation(scaffoldErrorOutput(bothOutputs), "1", log);
+    assert.deepEqual(conn(sim.workflow, "Fetch").main[0].map((t) => t.node), ["OnOk"]);
+    assert.deepEqual(conn(sim.workflow, "Fetch").main[1], [], "a Code node has no output 1 — leaving targets there strands them");
+    assert.deepEqual(conn(sim.workflow, `${SIM_OUT_PREFIX}1__Fetch`).main[0].map((t) => t.node), ["OnError"]);
+  });
+
+  it("fires the stand-in from the original's input, NOT from the synthetic trigger", async () => {
+    const sim = await buildSimulation(scaffoldErrorOutput(bothOutputs), "1", log);
+    // Same upstream as the original: it replays only when the original would.
+    assert.deepEqual(conn(sim.workflow, "Webhook").main[0].map((t) => t.node).sort(), ["Fetch", `${SIM_OUT_PREFIX}1__Fetch`].sort());
+    // An entry-wired stand-in would inject the error branch even on a replay
+    // whose upstream took another path — the run would contradict itself.
+    assert.equal(conn(sim.workflow, SIM_START_NODE).main[0].some((t) => t.node.startsWith(SIM_OUT_PREFIX)), false);
+  });
+
+  it("replays an error-ONLY run: output 0 empty, the error branch still gets its items", async () => {
+    const sim = await buildSimulation(scaffoldErrorOutput([{ data: { main: [[], [item({ error: "boom" })]] } }]), "1", log);
+    assert.deepEqual(sim.splitOutputs, ["Fetch output 1"]);
+    assert.match(String(nodeNamed(sim.workflow, `${SIM_OUT_PREFIX}1__Fetch`).parameters.jsCode), /boom/);
+    assert.match(String(nodeNamed(sim.workflow, "Fetch").parameters.jsCode), /return \[\]/, "the node itself emitted nothing on output 0");
+  });
+
+  it("splits nothing — and adds no node — when the capture used one output", async () => {
+    const sim = await buildSimulation(scaffoldErrorOutput(run([item({ status: "ok" })])), "1", log);
+    assert.deepEqual(sim.splitOutputs, []);
+    assert.equal(sim.workflow.nodes.some((n) => n.name.startsWith(SIM_OUT_PREFIX)), false);
+  });
+
+  it("keeps the dry-run guarantee — stand-ins are Code nodes, so nothing executable slipped in", async () => {
+    const sim = await buildSimulation(scaffoldErrorOutput(bothOutputs), "1", log);
+    assert.doesNotThrow(() => assertDryRunSafe(sim.workflow)); // also asserted inside buildSimulation
   });
 });
 
@@ -791,7 +871,7 @@ describe("scenario check (checkScenarios) + listScenarioSlugs", () => {
   // --- Plan 66: say what the replay will THROW AWAY ---------------------------
   const multiOutput = (items: unknown[][]) => [{ data: { main: items } }];
 
-  it("warns when a pin carries items on more than one output — both replays read main[0]", () => {
+  it("warns when a pin carries items on more than one output — `test` still truncates them", () => {
     const dir = scaffold({
       "workflow.json": JSON.stringify(baseWorkflow()),
       [`${SCENARIOS_DIR}/branchy.json`]: JSON.stringify({
@@ -800,8 +880,10 @@ describe("scenario check (checkScenarios) + listScenarioSlugs", () => {
       }),
     });
     assert.equal(checkScenarios(dir, "branchy", log), 0, "structurally valid — this is a warning, not an error");
-    assert.ok(warnings.some((w) => /"Webhook" has items on outputs 0, 1.*main\[0\] only/s.test(w)), `got: ${warnings.join(" | ")}`);
-    assert.ok(warnings.some((w) => /dropped by `test` AND `preflight --simulate`/.test(w)), "both replay paths must be named");
+    assert.ok(warnings.some((w) => /"Webhook" has items on outputs 0, 1/.test(w)), `got: ${warnings.join(" | ")}`);
+    // The two paths differ since task 3 — saying "both drop it" would now be wrong.
+    assert.ok(warnings.some((w) => /`preflight --simulate` replays all of them/.test(w)), "the sim replays extra outputs");
+    assert.ok(warnings.some((w) => /`test` pins ONE items array per node/.test(w)), "the instance run is the one that truncates");
   });
 
   it("warns when a node source reads a pinned node's second output — the reported failure's cause", () => {
@@ -815,7 +897,22 @@ describe("scenario check (checkScenarios) + listScenarioSlugs", () => {
     });
     assert.equal(checkScenarios(dir, "reads", log), 0);
     assert.ok(warnings.some((w) => /code\/compute\.js calls \$\('Webhook'\)\.all\(1\)/.test(w)), `got: ${warnings.join(" | ")}`);
-    assert.ok(warnings.some((w) => /sees nothing and this node emits nothing/.test(w)), "the consequence must be spelled out");
+    assert.ok(warnings.some((w) => /this node emits nothing/.test(w)), "the consequence must be spelled out");
+    // This scenario has no items on output 1 at all, so neither path can answer.
+    assert.ok(warnings.some((w) => /no items on output 1 either/.test(w)), `got: ${warnings.join(" | ")}`);
+  });
+
+  it("tells a branch reader that the SIM can answer it when the scenario does cover that output", () => {
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(baseWorkflow()),
+      "code/compute.js": "return $('Webhook').all(1);\n",
+      [`${SCENARIOS_DIR}/covered.json`]: JSON.stringify({
+        id: "covered", _decanterScenario: { fill: [{ node: "Webhook" }] },
+        data: { resultData: { runData: { Webhook: [{ data: { main: [[item({ n: 1 })], [item({ n: 2 })]] } }] } } },
+      }),
+    });
+    assert.equal(checkScenarios(dir, "covered", log), 0);
+    assert.ok(warnings.some((w) => /`preflight --simulate` does replay output 1, so run it there/.test(w)), `got: ${warnings.join(" | ")}`);
   });
 
   it("stays quiet on a single-output scenario whose code reads output 0", () => {

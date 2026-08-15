@@ -28,6 +28,13 @@ export const SIM_START_NODE = "__sim_start__";
 export const SIM_CAP_PREFIX = "__sim_cap__";
 
 /**
+ * Name prefix of a synthetic per-output stand-in (Plan 66): `__sim_out__<i>__<node>`
+ * replays output `i` of a pinned node, which the node's own single-output Code
+ * stand-in cannot carry.
+ */
+export const SIM_OUT_PREFIX = "__sim_out__";
+
+/**
  * Side-effect-free node types that execute for real in a simulation. Curated,
  * versioned, and **default-deny**: any type NOT in this set is treated as a
  * network node and pinned — safety never depends on knowing a type. Additions
@@ -125,6 +132,13 @@ export interface Simulation {
   loops: string[];
   /** Per-node captured items, for diffing the engine's output against (task 3). */
   captured: Map<string, RunItem[]>;
+  /**
+   * Plan 66: synthetic per-output stand-ins spliced in for pinned nodes whose
+   * capture carries items on more than one output (an error output, a
+   * multi-output trigger). `"<node> output <i>"` per entry — the sim's own
+   * topology, reported so a reader knows the branch really replayed.
+   */
+  splitOutputs: string[];
   /**
    * Tier-2 (viewer-only): true when this is a best-effort *single iteration* of a
    * genuine multi-batch loop — the loop driver's input is capped to one batch so
@@ -396,6 +410,12 @@ function guardCode(name: string): string {
   return `throw new Error(${JSON.stringify(`[decanter simulate] network node "${name}" has no pinned data and was reached unexpectedly — re-capture the execution or add it to the scenario`)});\n`;
 }
 
+/** Stand-in position: below the original, one row per extra output, so a viewer read is legible. */
+function offsetPosition(original: WorkflowNode, outputIndex: number): [number, number] {
+  const [x, y] = ((original as { position?: [number, number] }).position ?? [0, 0]);
+  return [x, y + 140 * outputIndex];
+}
+
 /** A name-preserving Code node standing in for a replaced trigger/network node. */
 function replacementNode(original: WorkflowNode, jsCode: string): WorkflowNode {
   return {
@@ -407,6 +427,57 @@ function replacementNode(original: WorkflowNode, jsCode: string): WorkflowNode {
     parameters: { jsCode },
     ...(original.disabled ? { disabled: true } : {}),
   };
+}
+
+/**
+ * One extra output of a pinned node that needs its own stand-in (Plan 66).
+ * `standIn` is the synthetic node's name; `outputIndex` is the output of the
+ * ORIGINAL node whose targets it takes over.
+ */
+interface OutputSplit {
+  node: string;
+  outputIndex: number;
+  standIn: string;
+}
+
+/** Name of the stand-in carrying output `i` of a pinned node. */
+function outputStandInName(node: string, outputIndex: number): string {
+  return `${SIM_OUT_PREFIX}${outputIndex}__${node}`;
+}
+
+/**
+ * Rewire the sim's connections so each extra output replays through its own
+ * stand-in (Plan 66). Two edges per split:
+ *
+ * - **downstream** — the original's `main[i]` targets move to the stand-in's
+ *   `main[0]`, and `main[i]` is emptied. A Code node has one output, so those
+ *   targets were unreachable where they sat: this is what makes the branch run.
+ * - **upstream** — the stand-in copies the original's *incoming* edges, so it
+ *   fires exactly when the original does. Deliberately not left input-less:
+ *   an entry node is wired to the synthetic trigger and would then inject the
+ *   branch's items even on a replay where the pure nodes upstream took a
+ *   different path — replaying data the run itself contradicts.
+ */
+function splitPinnedOutputs(connections: Record<string, unknown>, splits: OutputSplit[]): void {
+  for (const { node, outputIndex, standIn } of splits) {
+    // Collect the original's inputs BEFORE adding the stand-in's own entry, so
+    // a (pathological) self-loop can't make the stand-in feed itself.
+    const feeders: Array<Array<{ node: string; type: string; index: number }>> = [];
+    for (const conn of Object.values(connections)) {
+      const groups = (conn as { main?: unknown }).main;
+      if (!Array.isArray(groups)) continue;
+      for (const group of groups) {
+        if (Array.isArray(group) && group.some((t) => (t as { node?: unknown }).node === node)) feeders.push(group as Array<{ node: string; type: string; index: number }>);
+      }
+    }
+    const own = connections[node] as { main?: Array<Array<{ node: string; type: string; index: number }> | null> } | undefined;
+    const group = own?.main?.[outputIndex];
+    connections[standIn] = { main: [Array.isArray(group) ? group.map((t) => ({ ...t })) : []] };
+    if (own?.main !== undefined && Array.isArray(group)) own.main[outputIndex] = [];
+    // A Code stand-in has exactly one input, so index 0 regardless of which
+    // input of the original the edge fed.
+    for (const feeder of feeders) feeder.push({ node: standIn, type: "main", index: 0 });
+  }
 }
 
 /**
@@ -472,6 +543,7 @@ export async function buildSimulation(
   const itemsFor = (name: string): RunItem[] | undefined => firstRunItems(runData[name]);
 
   const captured = new Map<string, RunItem[]>();
+  const splits: OutputSplit[] = [];
   const pinned: string[] = [];
   const pure: string[] = [];
   const loopDrivers: string[] = [];
@@ -506,6 +578,22 @@ export async function buildSimulation(
       pinned.push(node.name);
       captured.set(node.name, items);
       nodes.push(replacementNode(node, emitCode(items)));
+      // Plan 66: the capture may carry items on further outputs — an error
+      // output, a multi-output trigger. A Code stand-in has ONE output, so
+      // replaying only `main[0]` leaves everything behind those outputs with no
+      // input at all: it emits nothing, and the run still "succeeds". Give each
+      // extra output its own stand-in and hand it that output's targets.
+      for (const outputIndex of populatedOutputs(runData[node.name])) {
+        if (outputIndex === 0) continue;
+        const standIn = outputStandInName(node.name, outputIndex);
+        splits.push({ node: node.name, outputIndex, standIn });
+        nodes.push({
+          ...replacementNode(node, emitCode(firstRunItems(runData[node.name], outputIndex) ?? [])),
+          id: standIn,
+          name: standIn,
+          position: offsetPosition(node, outputIndex),
+        });
+      }
     } else if (!disabled && reachableInCapture(node.name, wf.connections, runData)) {
       // Reached in capture but no data → real gap. Collect context so
       // `scenario create` can scaffold a fillable scenarios/ file for it.
@@ -535,6 +623,10 @@ export async function buildSimulation(
   // Prepend a synthetic Manual Trigger wired to every entry node (no input edge),
   // giving `n8n execute` a valid CLI entry point (the spike's route-B recipe).
   const connections: Record<string, unknown> = structuredClone(wf.connections) ?? {};
+  // Plan 66: hand each extra output its targets before entries are computed —
+  // a stand-in inherits the original's inputs, so it must not look input-less
+  // (that would wire it to the synthetic trigger and fire it unconditionally).
+  if (splits.length > 0) splitPinnedOutputs(connections, splits);
   // Tier-2: splice in the loop caps before computing entries, so the driver's new
   // upstream (the cap) is seen as its input edge and the cap isn't a stray entry.
   if (bestEffortLoop) capLoopDrivers(nodes, connections, loopDrivers);
@@ -561,8 +653,10 @@ export async function buildSimulation(
   const loopNote = loopDrivers.length > 0
     ? `, ${loopDrivers.length} loop driver(s) run for real (${bestEffortLoop ? `capped to iteration 1 of ${loopIterations}` : "single-iteration"})`
     : "";
-  log.info(`simulation: ${pure.length} node(s) execute for real, ${pinned.length} pinned from ${source} ${ref}${loopNote}`);
-  return { workflow: simWorkflow, pinned, pure, loops: loopDrivers, captured, bestEffortLoop, loopIterations };
+  const splitOutputs = splits.map((s) => `${s.node} output ${s.outputIndex}`);
+  const splitNote = splitOutputs.length > 0 ? `, ${splitOutputs.length} extra output(s) replayed through a stand-in: ${splitOutputs.join(", ")}` : "";
+  log.info(`simulation: ${pure.length} node(s) execute for real, ${pinned.length} pinned from ${source} ${ref}${loopNote}${splitNote}`);
+  return { workflow: simWorkflow, pinned, pure, loops: loopDrivers, captured, splitOutputs, bestEffortLoop, loopIterations };
 }
 
 /**
@@ -877,17 +971,21 @@ function readSnapshot(dir: string): Workflow | null {
 }
 
 /**
- * Say out loud what the replay is about to **throw away** (Plan 66).
+ * Say out loud what the **instance** replay is about to throw away (Plan 66).
  *
- * A scenario may carry items on several outputs — `validateScenarioRunData`
- * checks every one of them and happily reports `✓ valid` — but both replay
- * paths read `main[0]` per node and drop the rest. So the author who correctly
- * filled an IF's false branch gets a green check, then a run where the nodes
- * behind that branch receive nothing and emit nothing, which n8n calls success.
- * Two warnings close that gap, both offline, both reported rather than enforced:
- * the multi-output pins themselves, and any node source that reads a non-first
- * output of a pinned node (`$('X').all(1)`) — the second is what would have
- * named the cause in the field report this plan comes from.
+ * A scenario may carry items on several outputs, and `validateScenarioRunData`
+ * checks every one of them and reports `✓ valid`. `preflight --simulate` now
+ * honours that (task 3: each extra output replays through its own stand-in —
+ * decanter owns the sim's topology), but **`test` cannot**: it hands n8n a
+ * `pinData` map, which is one flat items array per node with no output
+ * dimension. So the same scenario is faithful offline and truncated on the
+ * instance, and the author who filled an error branch gets a run where the
+ * nodes behind it receive nothing — which n8n calls success.
+ *
+ * Two warnings, both offline, both reported rather than enforced: the
+ * multi-output pins themselves, and any node source reading a non-first output
+ * of a pinned node (`$('X').all(1)`) — the second is what would have named the
+ * cause in the field report this plan comes from.
  */
 function reportReplayTruncation(dir: string, wf: Workflow, runData: RunData, slug: string, log: Log): void {
   const pinnedWithItems = new Set(Object.keys(runData).filter((n) => populatedOutputs(runData[n]).length > 0));
@@ -895,9 +993,9 @@ function reportReplayTruncation(dir: string, wf: Workflow, runData: RunData, slu
     const outs = populatedOutputs(runs);
     if (outs.length < 2) continue;
     log.warn(
-      `scenario "${slug}": "${node}" has items on outputs ${outs.join(", ")}, but every replay reads main[0] only — ` +
-        `the items on output${outs.length > 2 ? "s" : ""} ${outs.slice(1).join(", ")} are dropped by \`test\` AND \`preflight --simulate\`. ` +
-        `Whatever those outputs feed will receive nothing.`,
+      `scenario "${slug}": "${node}" has items on outputs ${outs.join(", ")}. \`preflight --simulate\` replays all of them (each extra output gets its own stand-in), ` +
+        `but \`test\` pins ONE items array per node — n8n's pinData has no output dimension — so on the instance the items on output${outs.length > 2 ? "s" : ""} ${outs.slice(1).join(", ")} are dropped ` +
+        `and whatever they feed receives nothing.`,
     );
   }
   for (const node of wf.nodes) {
@@ -914,9 +1012,13 @@ function reportReplayTruncation(dir: string, wf: Workflow, runData: RunData, slu
     }
     for (const read of findBranchReads(source)) {
       if (!pinnedWithItems.has(read.name)) continue;
+      const covered = populatedOutputs(runData[read.name]).includes(read.output);
       log.warn(
-        `scenario "${slug}": ${file} calls ${read.ref} — "${read.name}" is replayed from this scenario's pin, and a pin carries ONE items array (output 0), ` +
-          `so that call sees nothing and this node emits nothing. Pin output ${read.output} as its own node, or run it live with \`n8n-decanter test\`.`,
+        `scenario "${slug}": ${file} calls ${read.ref} — on \`test\` that returns nothing, because n8n's pinData carries ONE items array per node (output 0) ` +
+          `and "${read.name}" is pinned from this scenario, so this node emits nothing. ` +
+          (covered
+            ? `\`preflight --simulate\` does replay output ${read.output}, so run it there — or pin that output as its own node.`
+            : `The scenario has no items on output ${read.output} either, so \`preflight --simulate\` replays nothing for it — add them, or pin that output as its own node.`),
       );
     }
   }
@@ -990,6 +1092,8 @@ export interface SimulationReport {
   pure: string[];
   /** Loop-driver nodes that ran for real (single-iteration loops); not diffed. */
   loops: string[];
+  /** `"<node> output <i>"` per extra output replayed through its own stand-in (Plan 66). */
+  splitOutputs: string[];
   /**
    * True when the scenario carries any non-`capture` (authored/scaffolded) pins
    * (Plan 37): the run proves **executability, not output correctness** — no
@@ -1055,7 +1159,7 @@ export async function runSimulation(
   const syntheticPins = src === "scenario" && scenarioIsSynthetic(exec);
   const base = {
     execId: ref, version: opts.version, networkNone: opts.networkNone === true,
-    pinned: sim.pinned, pure: sim.pure, loops: sim.loops,
+    pinned: sim.pinned, pure: sim.pure, loops: sim.loops, splitOutputs: sim.splitOutputs,
     syntheticPins, provenance: Object.fromEntries(provenanceMap),
   };
 

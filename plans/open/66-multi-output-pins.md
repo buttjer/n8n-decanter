@@ -1,8 +1,8 @@
 # Plan 66 — Pins only ever replay `main[0]`, and a 0-item run still reports success
 
-**Status:** In progress — **tasks 1 + 2 done** (the two amplifiers: the `test`
-coverage line + verdict, and `scenario check`'s truncation warnings); tasks 3
-(multi-output sim stand-in) and 4 (`node run` branch fixtures) open
+**Status:** In progress — **tasks 1–3 done** (the two amplifiers: the `test`
+coverage line + verdict and `scenario check`'s truncation warnings; plus the
+multi-output sim stand-in); task 4 (`node run` branch fixtures) open
 **Priority:** P1 for task 1 (the coverage line: small, offline, catches the
 reported failure on its own); P2 for tasks 2–4.
 **Source:** claim 3 of the 2026-07-30 field report (every pinned run died at
