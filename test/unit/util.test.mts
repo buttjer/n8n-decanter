@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Workflow } from "../../lib/types.mts";
 import {
+  findBranchReads,
   findNodeRefs,
   forEachConnectionTarget,
   kebabCase,
@@ -159,6 +160,26 @@ describe("findNodeRefs", () => {
   });
   it("still collapses an identical reference written twice", () => {
     assert.deepEqual(findNodeRefs("$('Fetch') and $('Fetch')"), [{ name: "Fetch", ref: "$('Fetch')" }]);
+  });
+
+  // Plan 66: the same text, asked a different question — which calls read an
+  // output a pin cannot answer, because a pin carries output 0 alone.
+  describe("findBranchReads", () => {
+    it("finds both non-first-output forms, with the index", () => {
+      assert.deepEqual(findBranchReads("$('IF').all(1) + $items(\"IF\", 2)").sort((a, b) => a.output - b.output), [
+        { name: "IF", ref: "$('IF').all(1)", output: 1 },
+        { name: "IF", ref: '$items("IF", 2)', output: 2 },
+      ]);
+    });
+    it("ignores output 0 — that is the one a pin DOES answer", () => {
+      assert.deepEqual(findBranchReads("$('IF').all(0) + $('IF').all() + $items('IF', 0)"), []);
+    });
+    it("ignores a non-literal name, same ceiling as findNodeRefs", () => {
+      assert.deepEqual(findBranchReads("$(`Node ${x}`).all(1) + $(v).all(1)"), []);
+    });
+    it("tolerates whitespace and keeps the call verbatim for the message", () => {
+      assert.deepEqual(findBranchReads("$( 'IF' ) . all( 1 )"), [{ name: "IF", ref: "$( 'IF' ) . all( 1 )", output: 1 }]);
+    });
   });
 
   // The `ref` is what the error message shows, so it has to read as the thing

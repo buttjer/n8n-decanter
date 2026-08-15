@@ -140,6 +140,41 @@ export function findNodeRefs(source: string): NodeRef[] {
   return [...byRef.values()];
 }
 
+/**
+ * The two ways a node reads another node's **non-first output**:
+ * `$('Name').all(n)` and `$items('Name', n)` with `n > 0`. Every replay path
+ * pins one items array per node — output 0 — so such a read is answered with
+ * nothing (`test`, `preflight --simulate`) or refused outright (`node run`'s
+ * `branchSignpost`). Finding them statically is what turns "my pinned run
+ * mysteriously emitted 0 items" into a named cause (Plan 66).
+ *
+ * Same heuristic ceiling as `findNodeRefs`: literal name + literal index only.
+ */
+const BRANCH_READ_PATTERNS = [
+  new RegExp(String.raw`\$\(\s*${QUOTED}\s*\)\s*\.\s*all\(\s*([1-9]\d*)\s*\)`, "g"),
+  new RegExp(String.raw`\$items\(\s*${QUOTED}\s*,\s*([1-9]\d*)\s*[,)]`, "g"),
+] as const;
+
+/** A read of a node's output other than the first — `{ name, ref, output }`. */
+export interface BranchRead extends NodeRef {
+  /** The output index the call asks for (always > 0). */
+  output: number;
+}
+
+/** Distinct non-first-output reads in a piece of source text. */
+export function findBranchReads(source: string): BranchRead[] {
+  const byRef = new Map<string, BranchRead>();
+  for (const re of BRANCH_READ_PATTERNS) {
+    for (const m of source.matchAll(re)) {
+      const ref = m[0].replace(/,$/, ")");
+      const name = unescapeRef(m[2]);
+      if (name.includes("${") || byRef.has(ref)) continue;
+      byRef.set(ref, { name, ref, output: Number(m[3]) });
+    }
+  }
+  return [...byRef.values()];
+}
+
 /** Kebab-case node-file name from a node name ("Parse Order" -> "parse-order"). */
 export function kebabCase(name: string): string {
   const kebab = sanitizeFilename(name)

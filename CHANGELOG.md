@@ -31,6 +31,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually gate the agent went unmentioned. Printed once, when the file is first
   written; a re-init in a set-up directory stays quiet.
 
+### Added
+
+- **`test` now reports what the run actually moved, not just that it
+  finished** — a coverage line over the nodes that executed (enabled and
+  unpinned; a pinned node's items are the input you supplied):
+  `coverage: 7/9 unpinned node(s) emitted items — 2 emitted none: Group
+  products, Write rows`. A node counts as emitting if it put an item on **any**
+  output. Some empty nodes are normal — a filter that dropped everything — so
+  the line warns and nothing more.
+
+  **But a run in which not one unpinned node emitted an item now fails
+  (exit 1), even with synthetic pins.** n8n calls such a run `success` and
+  it is: nothing errored. No data moved either, so nothing was demonstrated,
+  and reporting it as a pass was the check lying. The message names the usual
+  cause — a pin replays a node's first output only.
+
+- **`scenario check` warns about what the replay will throw away.** Both replay
+  paths (`test`'s `pinData`, `preflight --simulate`'s stand-in node) read
+  `main[0]` only, while the validator happily accepts — and `✓ valid`s — a
+  scenario carrying items on several outputs. The check now says so offline:
+  once for a node whose data populates more than one output, naming the indices
+  that get dropped, and once for a node source that reads a pinned node's
+  non-first output (`$('Enrich').all(1)`, `$items('Enrich', 1)`) — the call that
+  returns nothing and leaves the node emitting nothing. Warnings only; the
+  scenario stays valid for the outputs that do replay.
+
 ### Changed
 
 - **An explicit `.ts` extension in a node file's import no longer fails the

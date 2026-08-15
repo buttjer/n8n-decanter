@@ -9,7 +9,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { McpClient } from "../../lib/mcp.mts";
 import type { DecanterConfig, Log, Workflow } from "../../lib/types.mts";
-import { buildTestPins, runStaticTest, runTest } from "../../lib/testrun.mts";
+import { buildTestPins, printTestReport, runStaticTest, runTest } from "../../lib/testrun.mts";
 
 const capturingLog = (): { log: Log; lines: string[] } => {
   const lines: string[] = [];
@@ -73,6 +73,17 @@ describe("runTest (non-TTY)", () => {
     writeFileSync(path.join(dir, ".decanter.json"), JSON.stringify({ workflowId: "wf1", nodes: { c: { file: "code/compute.js", lastPushedHash: null, name: "Compute" } } }));
     writeFileSync(path.join(dir, "workflow.json"), JSON.stringify({ ...wf(), nodes: wf().nodes.map((n) => n.id === "c" ? { ...n, parameters: { jsCode: "//@file:code/compute.js" } } : n) }));
     writeFileSync(path.join(dir, "executions", "301.json"), JSON.stringify({ id: 301, workflowId: "wf1", data: { resultData: { runData: { Hook: runData([{ n: 1 }]), Compute: runData([{ x: 1 }]) } } } }));
+    return dir;
+  }
+
+  /** Same folder, but the pins come from a SYNTHETIC scenario (authored fill). */
+  function seedScenario(root: string): string {
+    const dir = seed(root);
+    mkdirSync(path.join(dir, "scenarios"), { recursive: true });
+    writeFileSync(
+      path.join(dir, "scenarios", "mock.json"),
+      JSON.stringify({ id: "mock", workflowId: "wf1", _decanterScenario: { fill: [{ node: "Hook" }] }, data: { resultData: { runData: { Hook: runData([{ n: 1 }]) } } } }),
+    );
     return dir;
   }
 
@@ -150,6 +161,57 @@ describe("runTest (non-TTY)", () => {
       /refusing to run it on the instance/,
     );
     assert.ok(!calls.includes("test_workflow"), "aborted before any run: " + calls.join(","));
+  });
+
+  // --- Plan 66: what the run MOVED, not just that it finished ----------------
+  it("reports item coverage over the unpinned nodes — pinned ones are input, not evidence", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-testrun-"));
+    const dir = seed(tmp);
+    const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
+    const { log, lines } = capturingLog();
+    const report = await runTest(mcp, config(tmp), dir, "wf1", { ref: "301", source: "capture" }, log);
+    assert.deepEqual(report.coverage, { total: 1, emitted: 1, empty: [] }, "Hook is pinned, so only Compute counts");
+    printTestReport(report, log);
+    assert.ok(lines.some((l) => /coverage: 1\/1 unpinned node\(s\) emitted items/.test(l)), lines.join("\n"));
+  });
+
+  it("counts a node that emitted on its SECOND output as having emitted", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-testrun-"));
+    const dir = seed(tmp);
+    // main[0] empty, main[1] carries the items — reading output 0 only would
+    // report this node as silent, which is the truncation Plan 66 is about.
+    const { mcp } = stub(wf(), { Compute: [{ data: { main: [[], [{ json: { x: 1 } }]] } }] });
+    const { log } = capturingLog();
+    const report = await runTest(mcp, config(tmp), dir, "wf1", { ref: "301", source: "capture" }, log);
+    assert.deepEqual(report.coverage, { total: 1, emitted: 1, empty: [] });
+  });
+
+  it("a synthetic-pin run where NOTHING emitted is not ok — n8n calls it success, we don't", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-testrun-"));
+    const dir = seedScenario(tmp);
+    const { mcp } = stub(wf(), { Compute: runData([]) }); // ran, emitted nothing
+    const { log, lines } = capturingLog();
+    const report = await runTest(mcp, config(tmp), dir, "wf1", { ref: "mock", source: "scenario" }, log);
+    assert.equal(report.syntheticPins, true, "synthetic pins normally make any successful run ok");
+    assert.deepEqual(report.coverage, { total: 1, emitted: 0, empty: ["Compute"] });
+    assert.equal(report.ok, false, "a run that moved no data demonstrated nothing");
+    printTestReport(report, log);
+    assert.ok(lines.some((l) => /NOT ONE emitted an item/.test(l)), lines.join("\n"));
+    assert.ok(!lines.some((l) => /^ok .*instance run succeeded/.test(l)), "the green synthetic line must not also print");
+  });
+
+  it("partial emptiness only warns — a filter that drops everything is still a pass", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-testrun-"));
+    const dir = seedScenario(tmp);
+    const remote = wf();
+    remote.nodes.push({ id: "s", name: "Skip", type: "n8n-nodes-base.filter", typeVersion: 2, position: [400, 0], parameters: {} } as any);
+    const { mcp } = stub(remote, { Compute: runData([{ x: 1 }]), Skip: runData([]) });
+    const { log, lines } = capturingLog();
+    const report = await runTest(mcp, config(tmp), dir, "wf1", { ref: "mock", source: "scenario" }, log);
+    assert.deepEqual(report.coverage, { total: 2, emitted: 1, empty: ["Skip"] });
+    assert.equal(report.ok, true, "something moved — one empty node is a warning, not a failure");
+    printTestReport(report, log);
+    assert.ok(lines.some((l) => /^warn .*coverage: 1\/2 .*emitted none: Skip/.test(l)), lines.join("\n"));
   });
 
   it("surfaces an instance-side failure (e.g. the 5-min timeout)", async () => {

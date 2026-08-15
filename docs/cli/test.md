@@ -58,8 +58,32 @@ instance. `--trigger <node>` picks the start trigger in multi-trigger workflows.
 [provenance](/docs/cli/scenario/#provenance-and-synthetic-pins)) is reported
 "**synthetic pins — proves executability, not output correctness**": no
 per-node diff is asserted, and `ok` reflects only that the instance run
-succeeded. A capture-only run keeps the diff/exit-1 semantics above
-unchanged. `--json` adds `syntheticPins: boolean` and `provenance`.
+succeeded and moved data (see coverage below). A capture-only run keeps the
+diff/exit-1 semantics above unchanged. `--json` adds `syntheticPins: boolean`
+and `provenance`.
+
+## Coverage: what the run moved
+
+Every report ends with a **coverage line** over the nodes that actually
+executed — enabled and *unpinned*; a pinned node's items are the input you
+supplied, not evidence the workflow produced anything:
+
+```
+coverage: 7/9 unpinned node(s) emitted items — 2 emitted none: Group products, Write rows
+```
+
+A node counts as having emitted if it put an item on **any** output, not just
+its first. Some empty nodes are perfectly normal (a filter that dropped
+everything), so that line is a warning, never a failure.
+
+**A run where not one unpinned node emitted an item is not `ok`** — it exits 1
+even with synthetic pins. n8n reports such a run as `success`, and it is:
+nothing errored. But no data moved, so nothing about the workflow was
+demonstrated, and a green check there is the gate lying to you. The usual
+cause is named in the message: a pin replays a node's **first output only**, so
+anything fed by an IF's false branch or an error output receives nothing.
+[`scenario check`](/docs/cli/scenario/#what-the-replay-drops) warns about that
+offline, before you spend a run.
 
 ## Where `test` sits: after the push
 
