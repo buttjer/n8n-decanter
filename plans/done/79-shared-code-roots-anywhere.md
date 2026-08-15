@@ -1,8 +1,10 @@
 # Plan 79 — Shared code lives anywhere in the sync dir
 
-**Status:** In progress — PR 1 (Tasks 1–6, the P1 core incl. the task-4
-realpath fix and its typecheck-scope sibling) shipped 2026-08-10; PR 2
-(Task 7, the warnings split) not started
+**Status:** Done — PR 1 (Tasks 1–6, the P1 core incl. the task-4
+realpath fix and its typecheck-scope sibling) merged 2026-08-10 (#248); PR 2
+(Task 7, the warnings split) built 2026-08-10, **gate satisfied 2026-08-11**
+(blind round `ftrun-25090` against the warnings build — outcome
+surfaced-and-landed; see the decision record). Merge of PR 2 closes the plan.
 **Priority:** P1 (Tasks 1–5, one PR) / P2 (Task 7 — the warnings split, its own PR with its own decision record)
 **Source:** User question 2026-08-09 — *"Ist es möglich den Pfad zum shared
 Ordner zu verändern oder sogar mehrere zu haben?"* — plus the follow-up *"wie
@@ -243,6 +245,38 @@ import rule (auto-commit is already switchable off via `commitOnPush` /
    - `npm run check:docs` green (plus the depth assertion if Task 2 adopts it).
 
 ### PR 2 — Task 7: the warnings split (P2 — own PR, own decision record, field-test-gated)
+
+> **Decision record (2026-08-10, built as `feat/plan-79-warnings-split`).**
+> Rules 2 (out-of-sync-dir relative) + 3 (absolute path) → **advisory**
+> (`ImportCheck.advisory`); rule 1 (builtins) stays **blocking** per
+> Decision 1. **Rule 4 (un-opted-in packages) stays blocking pending the
+> field-test round** — the round's data decides whether the
+> `bundleDependencies` consent model can go advisory too; until then the
+> conservative default holds. **De-dup:** the guard tier owns the printed
+> line on every path that can reach a push (`buildNodeCode` passes
+> `quietImportWarnings` from `push`, `backup`, and `test`'s
+> local-differs hash compare — `test`'s push-local flow lands in
+> `pushWorkflow`, whose `assertCompliant` prints it once); `compileTs`
+> keeps emitting for `node run`, `diff`, and `simulate`, which run no guard
+> tier. `--fail-on=warn` is preflight-only; push/watch have no strict knob
+> for the advisory rules — that is the deliberate shape, recorded here.
+>
+> **Gate result (2026-08-11, round `ftrun-25090`, archived; first attempt
+> `ftrun-21850` was an authoring failure — see S15's lesson).** The advisory
+> fired on `preflight` and `push` (once each — the de-dup held). The blind
+> agent found the sibling helper, imported it **without copying**, converted
+> the node to `.ts` and re-pointed the placeholder, verified with `node run`,
+> named the warning as *advisory* in its own turn-1 summary, pushed to the
+> draft, and withheld publish. Asked an open "anything I should know?", it
+> relayed the **exact portability caveat** (quoting the fresh-clone failure
+> mode and proposing to document the dependency) plus the bundling re-push
+> semantics — unprompted. `verify`: 0 failures; no `--force`, no raw-MCP
+> `jsCode`, no contamination. Outcome 1 of 3 (surfaced-and-landed): the
+> warnings channel reached its audience (n=1, Sonnet). **Rule 4 disposition:
+> stays blocking.** The round removes the "warnings are never seen" fear, but
+> no round has ever seen rule 4's block obstruct anyone, so downgrading it
+> would buy nothing measurable while spending the `bundleDependencies`
+> consent model. Revisit only on a real user hitting the block.
 
 7. **Downgrade rules 2 + 3 to warnings; keep rule 1 blocking; decide rule 4.**
    - Mechanics: with two severity classes, `checkNodeImports`' flat `string[]`

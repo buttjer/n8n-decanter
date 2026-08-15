@@ -74,10 +74,14 @@ like:
   (`workflows/<folder>/local/…`) — sibling subdirs of a workflow folder are
   reserved for exactly this kind of thing
 
-The one enforced boundary: a relative import must resolve **inside the sync
-dir** — the failure is then early, offline, on your machine, and in
-decanter's words rather than a colleague's broken clone. To reach code
-outside it, package it and go the npm route
+The boundary: a relative import should resolve **inside the sync dir**. An
+import that escapes it **warns without blocking** — the finding is early,
+offline, on your machine, and in decanter's words — because the escape only
+endangers your own portability: the bundle still builds here, and fails
+loudly (`Could not resolve`) wherever the target is genuinely absent, e.g. a
+colleague's clone or CI. `preflight --fail-on=warn` is the strict variant if
+you want the warning to gate. To reach code outside the sync dir in a way
+that travels, package it and go the npm route
 (`npm i file:../packages/x` + a `bundleDependencies` entry) — with the caveat
 that a `file:`/`npm link` target *outside your repo* resolves to a
 machine-specific path, so teammates would compile different bytes.
@@ -110,7 +114,8 @@ Two asymmetries to know about helper files (both by design):
   helper does not re-push its importers; they sync on their next save or
   `push`.
 
-Rules: imports at the top of the file only; relative paths must stay inside
-the sync dir; pure-JS packages only — unlisted npm packages and Node builtins
-(`node:*`, `fs`, `crypto`, …) are compile errors; never `require()`. `.js`
-nodes stay import-free — that tier is byte-lossless by contract.
+Rules: imports at the top of the file only; pure-JS packages only — unlisted
+npm packages and Node builtins (`node:*`, `fs`, `crypto`, …) are **compile
+errors**; a relative path leaving the sync dir, or an absolute path,
+**warns without blocking**; never `require()`. `.js` nodes stay import-free —
+that tier is byte-lossless by contract.

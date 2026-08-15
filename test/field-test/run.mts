@@ -885,6 +885,26 @@ function injectLayoutViolation(): void {
 }
 
 /**
+ * S15 (Plan 79 task 7): plant a "company-wide" helper NEXT TO the sync dir —
+ * outside it — so the natural implementation of the scenario's task is a
+ * relative import that escapes the sync dir and meets the ADVISORY warning.
+ * Nothing is broken and nothing blocks; what the round measures is whether a
+ * blind agent notices the warning and surfaces or acts on it. The dir is a
+ * sibling of the scratch workDir inside the per-run `ops-<pid>` parent, so
+ * `ls ..` shows exactly two entries (round ftrun-21850's lesson) and stage
+ * teardown removes it with the parent.
+ */
+function plantOutsideHelper(): void {
+  const dir = path.join(WORKDIR, "..", "company-lib");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, "vat.ts"),
+    "// Company-wide VAT helper — finance owns this file; single source of truth, do not copy.\nexport const VAT_RATE = 0.19;\nexport function withVat(net: number): number {\n  return Math.round(net * (1 + VAT_RATE) * 100) / 100;\n}\n",
+  );
+  console.log(`  plant-outside-helper: wrote ${path.relative(WORKDIR, path.join(dir, "vat.ts"))} (a sibling of the sync dir — outside it)`);
+}
+
+/**
  * S13: point the agent's MCP config straight at the instance, so the guard is
  * not in the path at all and NOTHING blocks a `jsCode` write. The one condition
  * that tests the product's core invariant without the guard enforcing it.
@@ -995,6 +1015,7 @@ const PRE_HOOKS: Record<string, () => Promise<void>> = {
   "inject-layout-violation": async () => injectLayoutViolation(),
   "misroute-mcp": async () => misrouteMcp(),
   "fill-backup-store": fillBackupStore,
+  "plant-outside-helper": async () => plantOutsideHelper(),
 };
 
 /**

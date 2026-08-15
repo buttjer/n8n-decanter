@@ -1010,6 +1010,31 @@ await step("watch: a dangling ref blocks the file that has it, not a save of a c
   writeFileSync(sibling, siblingBefore);
 });
 
+// Plan 79 task 7 on the watch path: an ADVISORY finding in the file being
+// saved must not refuse the save — and must print exactly once (the guard
+// tier owns the line; collectOps' compile stays quiet).
+await step("watch: an advisory import (sync-dir escape) warns once and lets the save through", async () => {
+  const { pushSingleNode } = await import(pathToFileURL(path.join(PROJECT, "lib/push.mts")).href);
+  const warns: string[] = [];
+  const log = { info: () => {}, ok: () => {}, warn: (m: string) => void warns.push(m), error: () => {} };
+  const client = await mcpClient();
+  const tsFile = path.join(dir1, "code", "amazon-feed.ts");
+  const before = readFileSync(tsFile, "utf8");
+  const outside = path.join(TMP, "..", `decanter-e2e-watch-outside-${process.pid}`);
+  try {
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(path.join(outside, "esc.ts"), "export const ESC = 7;\n");
+    writeFileSync(tsFile, `import { ESC } from "../../../../${path.basename(outside)}/esc";\nreturn [{ json: { ESC } }];\n`);
+    await pushSingleNode(client, dir1, "n3", {}, log);
+    assert.equal(warns.filter((w) => /outside the sync dir/.test(w)).length, 1, `advisory exactly once per save: ${warns.join("|")}`);
+    assert.match(remoteNode("wf123", "n3").parameters.jsCode, /ESC = 7/, "the save went through with the escape bundled");
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+    writeFileSync(tsFile, before);
+    await pushSingleNode(client, dir1, "n3", {}, log);
+  }
+});
+
 await step("watch: takes a workflow id, errors on an unknown one before watching", async () => {
   const r = await cli("watch", "nope");
   assert.equal(r.code, 1);
@@ -1847,6 +1872,45 @@ await step("bundle: builtins and unlisted npm packages error; bundleDependencies
     assert.match(remoteNode("wf123", "n3").parameters.jsCode, /a \+ b/, "package code inlined");
   } finally {
     writeFileSync(path.join(TMP, "decanter.config.json"), cfg);
+    writeFileSync(tsFile, originalTs);
+  }
+  const r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+});
+
+// Plan 79 task 7: a sync-dir escape is ADVISORY — it warns on every surface
+// and blocks none, because it only endangers the author's own portability and
+// esbuild fails loudly wherever the target is genuinely absent. Builtins and
+// unlisted packages stay hard errors (previous step) — esbuild is silent
+// about those, so the failure would surface at runtime on the instance.
+await step("bundle: a sync-dir escape warns and pushes (once); --fail-on=warn is the teeth; a missing target still fails loudly", async () => {
+  const tsFile = path.join(dirF, "code", "amazon-export.ts");
+  const originalTs = read(dirF, "code", "amazon-export.ts");
+  const outside = path.join(TMP, "..", `decanter-e2e-outside-${process.pid}`);
+  try {
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(path.join(outside, "vat.ts"), "export const VAT = 0.19;\n");
+    writeFileSync(tsFile, `import { VAT } from "../../../../${path.basename(outside)}/vat";\nreturn [{ json: { vat: VAT } }];\n`);
+    // preflight: layout stays green-with-warning — caution, exit 0
+    let r = await cli("preflight", "--offline", "--no-typecheck");
+    assert.equal(r.code, 0, "an escape must not fail the gate: " + r.out);
+    assert.match(r.out, /outside the sync dir/);
+    // ...and --fail-on=warn is the strict variant (CI teeth)
+    r = await cli("preflight", "--offline", "--no-typecheck", "--fail-on=warn");
+    assert.equal(r.code, 1, "--fail-on=warn must promote the advisory to exit 1: " + r.out);
+    // push: goes through, warns EXACTLY once (the guard tier owns the line;
+    // the compile-time repeat is silenced — the de-dup decision)
+    r = await cli("push", "--no-typecheck");
+    assert.equal(r.code, 0, "an escape must not block a push: " + r.out);
+    assert.equal((r.out.match(/outside the sync dir/g) ?? []).length, 1, "the advisory must print exactly once per push: " + r.out);
+    assert.match(remoteNode("wf123", "n3").parameters.jsCode, /0\.19/, "the escape target is bundled into the draft");
+    // a genuinely missing target still fails loudly — advisory or not
+    writeFileSync(tsFile, 'import { X } from "../../../../does-not-exist-anywhere/x";\nreturn [X];\n');
+    r = await cli("push", "--no-typecheck");
+    assert.equal(r.code, 1, "an unresolvable import must still fail the push");
+    assert.match(r.out, /Could not resolve/);
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
     writeFileSync(tsFile, originalTs);
   }
   const r = await cli("push");

@@ -64,12 +64,14 @@ export function validateNodeFile(dir: string, file: string, label: string = file
   }
   if (file.endsWith(".ts")) {
     // bundling rules (plans/14), offline lexical subset: same checker the
-    // compiler runs, so check and push can't disagree
+    // compiler runs, so check and push can't disagree. Blocking vs advisory
+    // is the checker's call (Plan 79 task 7): builtins and un-opted-in
+    // packages block, sync-dir escapes and absolute paths warn.
     const { specifiers, body } = scanNodeImports(readFileSync(filePath, "utf8"));
     if (specifiers.length > 0) {
-      for (const p of checkNodeImports(filePath, specifiers, findBundleContext(dir))) {
-        errors.push(`${label}: ${p}`);
-      }
+      const verdict = checkNodeImports(filePath, specifiers, findBundleContext(dir));
+      for (const p of verdict.blocking) errors.push(`${label}: ${p}`);
+      for (const p of verdict.advisory) warnings.push(`${label}: ${p}`);
     }
     if (/^import[ \t]/m.test(body)) {
       warnings.push(`${label}: ${file} has an import below the first statement — only imports at the top of the file are bundled; the push compile will fail on it`);

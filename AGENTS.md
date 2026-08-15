@@ -532,8 +532,9 @@ mock server.
   - `.decanter-auth.json` (sync-dir root) — MCP OAuth credentials minted by
     init; refresh tokens are single-use (rotated + persisted on every use).
   - `.js` node files are lossless (byte-identical round-trip). `.ts` files
-    are one-way: push compiles via esbuild (`bundle: true` — shared `shared/*`
-    helpers and opted-in npm deps are inlined into each importing node) and
+    are one-way: push compiles via esbuild (`bundle: true` — helper files
+    from anywhere in the sync dir (`shared/` is the scaffolded default) and
+    opted-in npm deps are inlined into each importing node) and
     appends a `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker
     presence is what identifies a TS-managed node on pull. Because a bundler
     really does resolve those specifiers, the node-file tsconfig uses
