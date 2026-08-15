@@ -524,7 +524,7 @@ the **instance-scoped globals** signposting (`$vars`/`$secrets`/
 deliberate TS error.
 **Sequencing:** the `node run` fidelity beats are **already known-broken** —
 [Plan 63](../done/63-field-feedback-bugfixes.md) Task 5 and
-[Plan 66](../draft/66-multi-output-pins.md) have `all(1)`/`$items(name, 1)`
+[Plan 66](../open/66-multi-output-pins.md) have `all(1)`/`$items(name, 1)`
 returning output 0's items. Land those first or drop the beat; do not spend a
 round confirming a written-down bug.
 

@@ -13,7 +13,7 @@ import { getWorkflowDetails, type McpClient, updateWorkflow } from "./mcp.mts";
 import { createPrompt } from "./prompt.mts";
 import { buildNodeCode, pushWorkflow } from "./push.mts";
 import { readState, writeState } from "./state.mts";
-import { diffItems, firstRunItems, isLoopDriver, isPureNode, type NodeDiff, type Provenance, type RunData, type RunItem, readCapture, scenarioIsSynthetic, scenarioProvenance, type SimSource } from "./simulate.mts";
+import { diffItems, firstRunItems, isLoopDriver, isPureNode, type NodeDiff, populatedOutputs, type Provenance, type RunData, type RunItem, readCapture, scenarioIsSynthetic, scenarioProvenance, type SimSource } from "./simulate.mts";
 import type { DecanterConfig, Log, Workflow } from "./types.mts";
 import { isJsCodeNode, publicationState, sha256, splitMarker } from "./util.mts";
 import { type DanglingRef, danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
@@ -29,6 +29,21 @@ interface DraftSnapshot {
   versionId?: string;
   /** node name → byte-exact jsCode at snapshot time. */
   jsCode: Record<string, string>;
+}
+
+/**
+ * Item-level coverage of one instance run (Plan 66): of the nodes that were NOT
+ * pinned — the ones the run actually executed — how many emitted at least one
+ * item, and which emitted none. A pinned node is excluded because its items are
+ * the input we handed n8n, not evidence the workflow produced anything.
+ */
+export interface NodeCoverage {
+  /** Enabled, unpinned nodes — the denominator. */
+  total: number;
+  /** How many of them emitted ≥1 item on their first run. */
+  emitted: number;
+  /** Names of the rest — emitted nothing, or never ran at all. */
+  empty: string[];
 }
 
 /** What `test` reports (also emitted verbatim with --json). */
@@ -53,6 +68,14 @@ export interface TestReport {
   /** Per-pure-node diffs of the instance run vs the capture (only `capture`-provenance nodes are asserted). */
   diffs: NodeDiff[];
   divergent: string[];
+  /**
+   * What the run actually MOVED, over the nodes that ran for real (Plan 66):
+   * every enabled, unpinned node, split by whether it emitted an item. n8n
+   * reports `success` for a run in which each of them emitted nothing — a
+   * report that says only "success" is then describing a workflow that did no
+   * work. Absent when the run never produced an execution to read.
+   */
+  coverage?: NodeCoverage;
   /** What was tested: the local code (pushed to the draft first) or the draft as-is. */
   tested: "local (pushed to the draft)" | "draft as-is";
   /** True when local code differs from the draft that was tested (non-TTY note). */
@@ -97,6 +120,39 @@ export function buildTestPins(wf: Workflow, runData: RunData, ref: string, sourc
     );
   }
   return { pinData, pinned: Object.keys(pinData) };
+}
+
+/**
+ * Item-level coverage of an instance run (Plan 66). Counts only nodes the run
+ * actually **executed** — enabled and unpinned — because a pinned node's items
+ * are the input we supplied, so counting them would let a run where nothing
+ * downstream fired still look busy. Emission is judged across **every** output
+ * (`populatedOutputs`), not `main[0]`: a node that routed everything down its
+ * second branch did emit, and reporting otherwise would repeat the very
+ * truncation this plan is about. Exported for tests.
+ */
+export function coverageOf(wf: Workflow, pinned: Set<string>, ranData: RunData): NodeCoverage {
+  const empty: string[] = [];
+  let total = 0;
+  let emitted = 0;
+  for (const node of wf.nodes) {
+    if (node.disabled === true || pinned.has(node.name)) continue;
+    total++;
+    if (populatedOutputs(ranData[node.name]).length > 0) emitted++;
+    else empty.push(node.name); // emitted nothing, or never ran at all
+  }
+  return { total, emitted, empty };
+}
+
+/**
+ * True when the run executed nodes and **none** of them emitted an item — the
+ * case n8n still calls `success` and the report used to repeat verbatim. A
+ * workflow whose every unpinned node is empty moved no data at all, so nothing
+ * about it was demonstrated. `total === 0` (everything was pinned) is not this:
+ * there was nothing to emit.
+ */
+function provedNothing(coverage: NodeCoverage | undefined): boolean {
+  return coverage !== undefined && coverage.total > 0 && coverage.emitted === 0;
 }
 
 /** True when any tracked node's local build differs from the remote draft body. */
@@ -313,6 +369,7 @@ export async function runTest(
   });
 
   const diffs: NodeDiff[] = [];
+  let coverage: NodeCoverage | undefined;
   if (result.executionId !== null && result.status === "success") {
     const execution = await mcp.callTool<{ execution: unknown; data?: { resultData?: { runData?: RunData } }; error?: string }>("get_execution", {
       workflowId: id,
@@ -320,6 +377,7 @@ export async function runTest(
       includeData: true,
     });
     const ranData = execution.data?.resultData?.runData ?? {};
+    coverage = coverageOf(remote, new Set(pinned), ranData);
     for (const node of remote.nodes) {
       if (node.disabled === true || !isPureNode(node)) continue;
       if ((provenance.get(node.name) ?? "capture") !== "capture") continue; // only assert capture-provenance nodes
@@ -356,13 +414,30 @@ export async function runTest(
     provenance: Object.fromEntries(provenance),
     diffs,
     divergent,
+    coverage,
     tested: pushed ? "local (pushed to the draft)" : "draft as-is",
     localDiffersFromTested: differs && !pushed,
     restored,
     firstIterationOnly: hasLoop,
-    // synthetic pins prove executability only — divergence is informational, not a fail
-    ok: result.status === "success" && (syntheticPins || divergent.length === 0),
+    // synthetic pins prove executability only — divergence is informational, not
+    // a fail. But "executable" has to mean something: a run in which not one
+    // unpinned node emitted an item demonstrated nothing at all, so it is NOT ok
+    // (Plan 66). Partial emptiness only warns — a filter that legitimately drops
+    // every item is a passing workflow, not a broken one.
+    ok: result.status === "success" && (syntheticPins || divergent.length === 0) && !provedNothing(coverage),
   };
+}
+
+/**
+ * The coverage line (Plan 66): what the run moved, not just that it finished.
+ * Silent when everything was pinned — there was nothing left to execute, so
+ * "0/0 emitted" would read as a problem where there is none.
+ */
+function printCoverage(coverage: NodeCoverage | undefined, log: Log): void {
+  if (coverage === undefined || coverage.total === 0) return;
+  const line = `coverage: ${coverage.emitted}/${coverage.total} unpinned node(s) emitted items`;
+  if (coverage.empty.length === 0) log.ok(line);
+  else log.warn(`${line} — ${coverage.empty.length} emitted none: ${coverage.empty.join(", ")}`);
 }
 
 /** Human-readable report — mirrors the local-engine replay's output style. */
@@ -379,7 +454,13 @@ export function printTestReport(r: TestReport, log: Log): void {
         log.info(`    actual   ${JSON.stringify(d.actual)}`);
       }
     }
-    if (r.syntheticPins) log.ok(`instance run succeeded — synthetic pins (authored/scaffolded), so this proves executability, not output correctness (no per-node diff asserted)`);
+    printCoverage(r.coverage, log);
+    if (provedNothing(r.coverage)) {
+      log.error(
+        `the run executed ${r.coverage?.total} unpinned node(s) and NOT ONE emitted an item — n8n reports that as "success", but no data moved, so nothing about this workflow was demonstrated. ` +
+          `The usual cause is a pin that feeds a branch nothing reads: replays only ever replay each pinned node's FIRST output (main[0]), so a node fed by an IF's false branch or an error output gets nothing.`,
+      );
+    } else if (r.syntheticPins) log.ok(`instance run succeeded — synthetic pins (authored/scaffolded), so this proves executability, not output correctness (no per-node diff asserted)`);
     else if (r.ok) log.ok(`instance test matches the capture (${r.diffs.length} node${r.diffs.length === 1 ? "" : "s"} checked)`);
     else log.error(`instance test diverged: ${r.divergent.join(", ")}`);
   }

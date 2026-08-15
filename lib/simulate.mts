@@ -20,7 +20,7 @@ import type { PinDataScaffold } from "./mcp.mts";
 import { buildNodeCode } from "./push.mts";
 import { readState } from "./state.mts";
 import type { Execution, Log, NodeParameters, Workflow, WorkflowNode } from "./types.mts";
-import { canonicalJson, forEachConnectionTarget, isJsCodeNode, kebabCase, placeholderFile } from "./util.mts";
+import { canonicalJson, findBranchReads, forEachConnectionTarget, isJsCodeNode, kebabCase, placeholderFile } from "./util.mts";
 
 /** Name of the synthetic Manual Trigger the transform prepends as the entry point. */
 export const SIM_START_NODE = "__sim_start__";
@@ -159,6 +159,24 @@ export function firstRunItems(runs: NodeRun[] | undefined, outputIndex = 0): Run
   // fed its target the other branch's items (Plan 63 task 4).
   const out = main[outputIndex];
   return Array.isArray(out) ? out : [];
+}
+
+/**
+ * Output indices of a node's FIRST run that carry at least one item — `[]` when
+ * it emitted nothing or never ran (Plan 66). Every replay path reads **one**
+ * output at a time (`firstRunItems`), so this is how a caller asks the two
+ * questions that span outputs: "did this node emit anything at all" (coverage)
+ * and "does it use more than one output" (what the replay is about to drop).
+ */
+export function populatedOutputs(runs: NodeRun[] | undefined): number[] {
+  if (!runs || runs.length === 0) return [];
+  const main = runs[0]?.data?.main;
+  if (!Array.isArray(main)) return [];
+  const indices: number[] = [];
+  main.forEach((items, i) => {
+    if (Array.isArray(items) && items.length > 0) indices.push(i);
+  });
+  return indices;
 }
 
 /** Where a replay source lives: a slug-named committed scenario, or a raw temp capture. */
@@ -835,16 +853,7 @@ export function listScenarioSlugs(dir: string): string[] {
  * nodes the tool had never listed. Reported, not enforced: the looser gate is
  * still legitimately green for a `preflight --simulate` replay.
  */
-function reportTestReadiness(dir: string, exec: Execution, slug: string, log: Log): void {
-  const wfFile = path.join(dir, "workflow.json");
-  if (!existsSync(wfFile)) return; // nothing to compare against — stay quiet
-  let wf: Workflow;
-  try {
-    wf = JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
-  } catch {
-    return; // a broken snapshot is the layout check's business, not this one
-  }
-  const runData = ((exec as { data?: { resultData?: { runData?: RunData } } }).data?.resultData?.runData ?? {}) as RunData;
+function reportTestReadiness(wf: Workflow, runData: RunData, slug: string, log: Log): void {
   const missing = testPinGaps(wf, runData);
   if (missing.length === 0) {
     log.info(`scenario "${slug}": also complete for \`test\` (every pinnable node has data)`);
@@ -854,6 +863,63 @@ function reportTestReadiness(dir: string, exec: Execution, slug: string, log: Lo
     `scenario "${slug}": complete for \`preflight --simulate\`, but \`test\` needs ${missing.length} more node${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}. ` +
       `\`test\` pins EVERY non-pure node because it runs on the live instance with real credentials. Add them with: n8n-decanter scenario create <workflow> "${slug}" --extend`,
   );
+}
+
+/** The workflow snapshot next to a scenario, or `null` when it's absent/broken. */
+function readSnapshot(dir: string): Workflow | null {
+  const wfFile = path.join(dir, "workflow.json");
+  if (!existsSync(wfFile)) return null; // nothing to compare against — stay quiet
+  try {
+    return JSON.parse(readFileSync(wfFile, "utf8")) as Workflow;
+  } catch {
+    return null; // a broken snapshot is the layout check's business, not this one
+  }
+}
+
+/**
+ * Say out loud what the replay is about to **throw away** (Plan 66).
+ *
+ * A scenario may carry items on several outputs — `validateScenarioRunData`
+ * checks every one of them and happily reports `✓ valid` — but both replay
+ * paths read `main[0]` per node and drop the rest. So the author who correctly
+ * filled an IF's false branch gets a green check, then a run where the nodes
+ * behind that branch receive nothing and emit nothing, which n8n calls success.
+ * Two warnings close that gap, both offline, both reported rather than enforced:
+ * the multi-output pins themselves, and any node source that reads a non-first
+ * output of a pinned node (`$('X').all(1)`) — the second is what would have
+ * named the cause in the field report this plan comes from.
+ */
+function reportReplayTruncation(dir: string, wf: Workflow, runData: RunData, slug: string, log: Log): void {
+  const pinnedWithItems = new Set(Object.keys(runData).filter((n) => populatedOutputs(runData[n]).length > 0));
+  for (const [node, runs] of Object.entries(runData)) {
+    const outs = populatedOutputs(runs);
+    if (outs.length < 2) continue;
+    log.warn(
+      `scenario "${slug}": "${node}" has items on outputs ${outs.join(", ")}, but every replay reads main[0] only — ` +
+        `the items on output${outs.length > 2 ? "s" : ""} ${outs.slice(1).join(", ")} are dropped by \`test\` AND \`preflight --simulate\`. ` +
+        `Whatever those outputs feed will receive nothing.`,
+    );
+  }
+  for (const node of wf.nodes) {
+    if (!isJsCodeNode(node)) continue;
+    const file = placeholderFile(node);
+    if (file === null) continue;
+    const abs = path.join(dir, file);
+    if (!existsSync(abs)) continue; // a missing file is the layout check's business
+    let source: string;
+    try {
+      source = readFileSync(abs, "utf8");
+    } catch {
+      continue;
+    }
+    for (const read of findBranchReads(source)) {
+      if (!pinnedWithItems.has(read.name)) continue;
+      log.warn(
+        `scenario "${slug}": ${file} calls ${read.ref} — "${read.name}" is replayed from this scenario's pin, and a pin carries ONE items array (output 0), ` +
+          `so that call sees nothing and this node emits nothing. Pin output ${read.output} as its own node, or run it live with \`n8n-decanter test\`.`,
+      );
+    }
+  }
 }
 
 export function checkScenarios(dir: string, slug: string | undefined, log: Log): number {
@@ -870,7 +936,12 @@ export function checkScenarios(dir: string, slug: string | undefined, log: Log):
       const exec = JSON.parse(readFileSync(file, "utf8")) as Execution;
       validateScenarioRunData(exec, s);
       log.ok(`scenario "${s}": valid`);
-      reportTestReadiness(dir, exec, s, log);
+      const wf = readSnapshot(dir);
+      if (wf !== null) {
+        const runData = ((exec as { data?: { resultData?: { runData?: RunData } } }).data?.resultData?.runData ?? {}) as RunData;
+        reportTestReadiness(wf, runData, s, log);
+        reportReplayTruncation(dir, wf, runData, s, log);
+      }
     } catch (err) {
       log.error((err as Error).message);
       invalid++;

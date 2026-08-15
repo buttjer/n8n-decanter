@@ -189,7 +189,7 @@ The shape to match, per node:
 ```jsonc
 "runData": {
   "Enrich Customer": [            // one entry per run (a normal node runs once)
-    { "data": { "main": [         // outputs — index 0 is the node's main output
+    { "data": { "main": [         // outputs — ONLY index 0 is ever replayed
       [                           // the items array for that output
         { "json": { "id": 42, "name": "Ada" } }   // each item is { "json": … }
       ]
@@ -197,6 +197,31 @@ The shape to match, per node:
   ]
 }
 ```
+
+## What the replay drops
+
+**Both replay paths read `main[0]` and nothing else.** `test` hands n8n a
+`pinData` map, whose format is one flat items array per node — there is no
+output dimension to hand it — and `preflight --simulate` replaces the node with
+a single-output stand-in. So a second output group in your scenario is accepted
+by the validator, saved, and then silently ignored at replay time: whatever it
+feeds — an IF's false branch, an error output — receives nothing and emits
+nothing, and the run still finishes "successfully".
+
+`scenario check` says so rather than letting you find out from an empty run. It
+warns when
+
+- a node in the scenario has items on **more than one output**, naming the
+  indices that will be dropped, and
+- a **node source reads a pinned node's non-first output** —
+  `$('Enrich Customer').all(1)` or `$items('Enrich Customer', 1)` — which is
+  the call that quietly returns nothing.
+
+Both are warnings, not errors: the scenario is still valid for the outputs that
+do replay. The way out is to pin that branch as its own node, or to run the
+workflow live with [`test`](/docs/cli/test/) instead of replaying it. The
+[`test` coverage line](/docs/cli/test/#coverage-what-the-run-moved) is the
+same problem caught one step later.
 
 ## The full loop
 

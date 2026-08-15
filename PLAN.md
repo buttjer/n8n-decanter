@@ -791,6 +791,19 @@ into it):
   exit-1-on-divergence semantics unchanged. `--json` reports
   (`preflight --simulate` / `test`) carry `syntheticPins: boolean` and
   `provenance: Record<node, "capture" | "authored" | "scaffolded">`.
+- **"Executable" has to mean something — item coverage bounds the synthetic
+  verdict** (Plan 66). Every pin path replays `main[0]` alone, so a pin feeding
+  a branch nothing reads leaves the downstream nodes with no input; n8n
+  finishes that run as `success` and the synthetic-pin report used to repeat it
+  verbatim. `test` now counts, over the **unpinned** nodes (the ones the run
+  really executed), how many emitted an item on **any** output —
+  `TestReport.coverage = { total, emitted, empty }`, also in `--json` — and
+  prints it. Partial emptiness warns; **`emitted === 0` with `total > 0` makes
+  the report not-ok** (exit 1), because a run that moved no data demonstrated
+  nothing. `scenario check` reports the same truncation one step earlier and
+  offline: a scenario node with items on more than one output, and any node
+  source reading a pinned node's non-first output (`$('X').all(1)` /
+  `$items('X', 1)` — `findBranchReads` in `lib/util.mts`).
 - **Migration.** A pre-Plan-37 `mocks/` dir auto-migrates to `scenarios/`
   the first time any verb (`preflight`/`test`/`scenario`) touches it (plain
   `renameSync`, git-recorded); refuses when both dirs exist. A leftover

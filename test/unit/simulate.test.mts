@@ -788,6 +788,49 @@ describe("scenario check (checkScenarios) + listScenarioSlugs", () => {
     assert.deepEqual(listScenarioSlugs(scaffold({ "workflow.json": "{}" })), []);
   });
 
+  // --- Plan 66: say what the replay will THROW AWAY ---------------------------
+  const multiOutput = (items: unknown[][]) => [{ data: { main: items } }];
+
+  it("warns when a pin carries items on more than one output — both replays read main[0]", () => {
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(baseWorkflow()),
+      [`${SCENARIOS_DIR}/branchy.json`]: JSON.stringify({
+        id: "branchy", _decanterScenario: { fill: [{ node: "Webhook" }] },
+        data: { resultData: { runData: { Webhook: multiOutput([[item({ taken: true })], [item({ other: true })]]) } } },
+      }),
+    });
+    assert.equal(checkScenarios(dir, "branchy", log), 0, "structurally valid — this is a warning, not an error");
+    assert.ok(warnings.some((w) => /"Webhook" has items on outputs 0, 1.*main\[0\] only/s.test(w)), `got: ${warnings.join(" | ")}`);
+    assert.ok(warnings.some((w) => /dropped by `test` AND `preflight --simulate`/.test(w)), "both replay paths must be named");
+  });
+
+  it("warns when a node source reads a pinned node's second output — the reported failure's cause", () => {
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(baseWorkflow()),
+      "code/compute.js": "const rows = $('Webhook').all(1);\nreturn rows;\n",
+      [`${SCENARIOS_DIR}/reads.json`]: JSON.stringify({
+        id: "reads", _decanterScenario: { fill: [{ node: "Webhook" }] },
+        data: { resultData: { runData: { Webhook: run([item({ n: 1 })]) } } },
+      }),
+    });
+    assert.equal(checkScenarios(dir, "reads", log), 0);
+    assert.ok(warnings.some((w) => /code\/compute\.js calls \$\('Webhook'\)\.all\(1\)/.test(w)), `got: ${warnings.join(" | ")}`);
+    assert.ok(warnings.some((w) => /sees nothing and this node emits nothing/.test(w)), "the consequence must be spelled out");
+  });
+
+  it("stays quiet on a single-output scenario whose code reads output 0", () => {
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(baseWorkflow()),
+      "code/compute.js": "return $('Webhook').all();\n",
+      [`${SCENARIOS_DIR}/plain.json`]: JSON.stringify({
+        id: "plain", _decanterScenario: { fill: [{ node: "Webhook" }] },
+        data: { resultData: { runData: { Webhook: run([item({ n: 1 })]) } } },
+      }),
+    });
+    assert.equal(checkScenarios(dir, "plain", log), 0);
+    assert.equal(warnings.filter((w) => /main\[0\] only|calls \$\(/.test(w)).length, 0, `expected no truncation warning, got: ${warnings.join(" | ")}`);
+  });
+
   it("checkScenarios: 0 invalid for a good scenario, >0 for a bad one, by slug or all", () => {
     const dir = withScenarios({ good, bad });
     assert.equal(checkScenarios(dir, "good", log), 0);
