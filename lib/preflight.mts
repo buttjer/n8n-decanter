@@ -580,8 +580,17 @@ async function runSimulateStage(ctx: PreflightContext, src: ResolvedSource): Pro
   const viewerLines = report.url !== undefined && report.login !== undefined
     ? [`open the run in n8n: ${report.url}`, `local login: ${report.login.email} / ${report.login.password} — throwaway instance, replaced on the next run`]
     : viewer ? ["the browsable viewer did not start"] : [];
+  // Plan 66: the per-output stand-ins are a real change to what ran — the error
+  // branch replayed instead of sitting there with no input — and the stage log
+  // that announces them is SILENT unless --viewer. Without this line the split
+  // is invisible on every normal run, so a reader cannot tell a branch replayed
+  // from a branch that was quietly skipped.
+  const splitLines = report.splitOutputs.length > 0
+    ? [`replayed ${report.splitOutputs.length} extra output(s) through a stand-in: ${report.splitOutputs.join(", ")} — \`test\` pins main[0] only, so those branches run here and not there`]
+    : [];
+  const extraLines = [...splitLines, ...viewerLines];
   const withViewer = (f: Omit<CheckFinding, "id" | "tier" | "durationMs">): Omit<CheckFinding, "id" | "tier" | "durationMs"> =>
-    viewerLines.length > 0 ? { ...f, details: [...(f.details ?? []), ...viewerLines] } : f;
+    extraLines.length > 0 ? { ...f, details: [...(f.details ?? []), ...extraLines] } : f;
 
   // Tier-2 multi-batch loop (only reachable under --viewer, which opts into it):
   // there is no faithful diff for N>1, so nothing was graded. Reporting this as

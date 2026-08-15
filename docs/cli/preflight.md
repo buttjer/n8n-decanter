@@ -236,10 +236,16 @@ stripped and no outbound-capable node survives the transform, so the run is dry
 extra output — an error output, a second branch — gets its own stand-in node,
 wired to the same input as the original and feeding exactly that output's
 targets, so the error branch really runs instead of sitting there with no
-input. The run log names them (`… extra output(s) replayed through a stand-in:
-Fetch output 1`), and `--json` carries them as `splitOutputs`. This is the one
-place the offline replay is **more** faithful than [`test`](/docs/cli/test/),
-whose `pinData` format has no output dimension at all.
+input. The check's details name them — in the terminal and in `--json`:
+
+```txt
+✓ simulate  2 node(s) ran on a local engine, all matched the capture (5.9s)
+    replayed 1 extra output(s) through a stand-in: Fetch output 1 — `test` pins main[0] only, so those branches run here and not there
+```
+
+This is the one place the offline replay is **more** faithful than
+[`test`](/docs/cli/test/), whose `pinData` format has no output dimension at
+all.
 
 It needs a **Docker** daemon (no daemon → the check skips with that reason) and
 a pin source. It is the one thing an instance run can't give you: verification
