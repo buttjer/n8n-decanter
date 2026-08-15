@@ -27,8 +27,8 @@ item.
 
 | Global | Status | How `run` handles it |
 | --- | --- | --- |
-| `$input`, `$json`, `$binary` | ✅ Covered | from the fixture `input` (defaults to one empty item) |
-| `$('Node')`, `$node`, `$items()` | ✅ Covered | views over the fixture `nodes` map — but see the branch-index note below |
+| `$input`, `$json`, `$binary` | ✅ Covered | from the fixture `input` (defaults to one empty item); an array of arrays pins one per input index |
+| `$('Node')`, `$node`, `$items()` | ✅ Covered | views over the fixture `nodes` map, per-output entries included — see the branch-index note below |
 | `$jmespath` / `$jmesPath` | ✅ Covered | real JMESPath — `jmespath@0.16.0`, the version n8n pins |
 | `DateTime` / `Duration` / `Interval` | ✅ Covered | Luxon, exactly as in n8n |
 | `$now` / `$today` | ✅ Covered | Luxon `DateTime` — now / start-of-day |
@@ -43,13 +43,20 @@ item.
 | `$evaluateExpression` | ⛔ Unsupported | needs n8n's expression engine → signposts `test` |
 | `$if` / `$min` / `$max` / `$ifEmpty` | ⛔ Not a Code-node global | n8n **expression-language** helpers (`{{ }}` only) — they throw in real n8n's Code node too, so they're not provided |
 
-**Branch indexes are refused, not guessed.** `$('Node').all(1)`,
-`$items('Node', 1)` and `$input.all(1)` ask for a node's *second* output — an
-`IF`'s false branch, a `Switch`'s other case. A fixture pins **one** items array
-per node, so there is no honest answer, and `run` says so instead of handing back
-output 0's items (which is what it used to do — wrong data that looks right).
-Pin that branch's items as their own fixture node, or run it for real with
-[`test`](/docs/cli/test/).
+**Branch indexes are answered when pinned, refused when not — never guessed.**
+`$('Node').all(1)`, `$items('Node', 1)` and `$input.all(1)` ask for a node's
+*second* output — an `IF`'s false branch, an error output. Pin it by giving that
+node **one items array per output**:
+
+```json
+"nodes": { "Decide": [[{ "json": { "side": "true" } }], [{ "json": { "side": "false" } }]] }
+```
+
+`all(1)`, `first(1)` and `last(1)` then read output 1, and an **empty** array is
+a real answer (that branch took no items). Ask for an output the fixture does
+not supply and `run` says so — naming the call and how many outputs it has —
+rather than handing back output 0's items, which is wrong data that looks right.
+Same escape hatch as always: run it for real with [`test`](/docs/cli/test/).
 
 **When emulation isn't enough, escalate to `test`.** A node that needs a real
 `$vars`/`$secrets` value, true paired-item linking, real execution ids, or
@@ -78,8 +85,13 @@ The optional fixture JSON supplies the context; every field is optional:
 ```
 
 - `input` feeds `$input`/`$json`; without a fixture the input defaults to a
-  single empty item.
+  single empty item. An array **of arrays** is one items array per *input*
+  index, so `$input.all(1)` reads a Merge node's second input.
 - `nodes` backs `$('Node Name')`, `$node['Node Name']`, and `$items('Node Name')`.
+  An array **of arrays** is one items array per **output** (see branch indexes
+  above); a plain items array is a single output, as before. That means a single
+  output whose items are themselves arrays needs the explicit item form
+  (`[{ "json": [1, 2] }]`).
 - `params` backs `$input.params` (defaults to `{}`).
 - `env` backs `$env`. Like n8n's own scoped `$env`, it is **empty by default** —
   set it explicitly with this field, or pass **`--allow-env`** to inherit the

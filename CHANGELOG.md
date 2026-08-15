@@ -33,6 +33,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`node run` fixtures can pin a node's other outputs, so `$('Node').all(1)`
+  finally answers.** Give a node one items array **per output** and the branch
+  is readable offline:
+
+  ```json
+  "nodes": { "Decide": [[{ "json": { "side": "true" } }], [{ "json": { "side": "false" } }]] }
+  ```
+
+  `all(1)` / `first(1)` / `last(1)` and `$items('Decide', 1)` read output 1, and
+  an **empty** array is a real answer — that branch took no items. `input` takes
+  the same shape, indexed by the node's *input* (a Merge node's second input).
+  A plain items array still means a single output, so existing fixtures are
+  unchanged; asking for an output the fixture doesn't supply still refuses,
+  now saying how many it has. Until now every such call was refused outright,
+  because a fixture could only express one array per node.
+
 - **`preflight --simulate` now replays a pinned node's other outputs too.** The
   stand-in decanter substitutes for a network node is a Code node, which has one
   output — so an error output (or any second branch) captured in your execution

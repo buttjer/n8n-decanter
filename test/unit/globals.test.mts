@@ -72,10 +72,52 @@ describe("n8n globals surface (Plan 43 parity)", () => {
     assert.equal(items("Fetch", 0).length, 1);
     assert.equal(input.all(0).length, 1);
 
-    // anything else refuses, names the call, and points at the two ways out
-    assert.throws(() => node.all(1), /\$\("Fetch"\)\.all\(1\).*branch other than the first.*n8n-decanter test/s);
-    assert.throws(() => items("Fetch", 1), /\$items\("Fetch", 1\).*branch other than the first/s);
-    assert.throws(() => input.all(2), /\$input\.all\(2\).*branch other than the first/s);
+    // an output the fixture does NOT pin still refuses, names the call, says how
+    // many outputs it has, and points at the two ways out
+    assert.throws(() => node.all(1), /\$\("Fetch"\)\.all\(1\) asks for output 1.*supplies 1 output\(s\).*PER OUTPUT.*n8n-decanter test/s);
+    assert.throws(() => items("Fetch", 1), /\$\("Fetch"\)\.all\(1\) asks for output 1/s);
+    assert.throws(() => input.all(2), /\$input\.all\(2\) asks for output 2/s);
+  });
+
+  // Plan 66 task 4: the refusal above is right only while the fixture cannot
+  // express the branch. A per-output entry can, so it is answered — the honest
+  // fix for a node that reads an IF's false branch or an error output.
+  it("a per-output fixture entry makes the branch readable", async () => {
+    const g = await buildGlobals({
+      input: [[{ json: { from: "input 0" } }], [{ json: { from: "input 1" } }]],
+      nodes: { Decide: [[{ json: { side: "true" } }], [{ json: { side: "false" } }, { json: { side: "false again" } }]] },
+    });
+    const node = (g.$ as (n: string) => { all: (b?: number) => Array<{ json: { side: string } }>; first: (b?: number) => { json: { side: string } }; last: (b?: number) => { json: { side: string } } })("Decide");
+    const items = g.$items as (n?: string, o?: number) => Array<{ json: { side: string } }>;
+    const input = g.$input as { all: (b?: number) => Array<{ json: { from: string } }> };
+
+    assert.deepEqual(node.all(0).map((i) => i.json.side), ["true"]);
+    assert.deepEqual(node.all(1).map((i) => i.json.side), ["false", "false again"]);
+    assert.deepEqual(items("Decide", 1).map((i) => i.json.side), ["false", "false again"]);
+    // first/last take the branch too — n8n declares the parameter on all three
+    assert.equal(node.first(1).json.side, "false");
+    assert.equal(node.last(1).json.side, "false again");
+    // $input's index is the node's INPUT (a Merge node's second input)
+    assert.equal(input.all(1)[0].json.from, "input 1");
+    // an output beyond what the fixture pins is still refused, not invented
+    assert.throws(() => node.all(2), /asks for output 2.*supplies 2 output\(s\)/s);
+  });
+
+  it("an empty output is a pinned output, not a missing one", async () => {
+    const g = await buildGlobals({ nodes: { Decide: [[{ json: { side: "true" } }], []] } });
+    const node = (g.$ as (n: string) => { all: (b?: number) => unknown[] })("Decide");
+    assert.deepEqual(node.all(1), [], "the false branch took no items — that IS the answer");
+  });
+
+  it("a single-output fixture keeps its old meaning, arrays-as-items included", async () => {
+    // The nested form is recognised only when EVERY element is an array, so an
+    // items array of objects is unchanged...
+    const plain = await buildGlobals({ nodes: { Fetch: [{ json: { id: 7 } }] } });
+    assert.deepEqual((plain.$ as (n: string) => { all: () => Array<{ json: { id: number } }> })("Fetch").all().map((i) => i.json.id), [7]);
+    // ...and a node whose single output carries ARRAY-valued json is written in
+    // the explicit item form, which is not an array of arrays.
+    const arrays = await buildGlobals({ nodes: { Fetch: [{ json: [1, 2] }] } });
+    assert.deepEqual((arrays.$ as (n: string) => { all: () => Array<{ json: number[] }> })("Fetch").all()[0].json, [1, 2]);
   });
 
   it("emulated proxies serialize cleanly — returning $node/$vars must not crash run's output", async () => {

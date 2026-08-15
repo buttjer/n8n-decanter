@@ -1214,6 +1214,15 @@ one of three, and a parity test keeps *declared* (the `.d.ts`) and *emulated*
   message (never a bare `ReferenceError`): `$vars`/`$secrets` when unpinned,
   `$evaluateExpression` (needs the expression engine).
 
+**Branch (output) indexes are pinnable, not signposted** (Plan 66 task 4). A
+fixture entry — `nodes.<name>` or `input` — is read as **outputs** when every
+element is an array: `[[…output 0…], […output 1…]]`, so `all(1)`/`first(1)`/
+`last(1)`/`$items(name, 1)` answer from the pinned branch and an **empty** array
+is a real answer. A plain items array stays one output (so the ambiguous case —
+a single output of array-valued items — is written `[{ "json": [1, 2] }]`).
+Plan 63 task 5's refusal survives for an output the fixture does not supply,
+since returning output 0's items there is *wrong* data that looks right.
+
 Expression-language extensions (`$if`/`$min`/`$max`/`$ifEmpty`) are deliberately
 **not** declared — they resolve inside `{{ }}` expressions, not the Code node's
 JS, so they throw in real n8n too. `scripts/globals-drift-audit.mts` reads n8n's

@@ -1,8 +1,8 @@
 # Plan 66 — Pins only ever replay `main[0]`, and a 0-item run still reports success
 
-**Status:** In progress — **tasks 1–3 done** (the two amplifiers: the `test`
-coverage line + verdict and `scenario check`'s truncation warnings; plus the
-multi-output sim stand-in); task 4 (`node run` branch fixtures) open
+**Status:** Done — all four tasks landed (PRs #255 `test` coverage +
+`scenario check` warnings, #256 the sim stand-ins, #257 reporting the splits,
+#258 `node run` per-output fixtures)
 **Priority:** P1 for task 1 (the coverage line: small, offline, catches the
 reported failure on its own); P2 for tasks 2–4.
 **Source:** claim 3 of the 2026-07-30 field report (every pinned run died at
@@ -113,3 +113,20 @@ things moved:
 4. **`node run` fixtures accept `RunItem[][]`** so `all(branchIndex)` /
    `$items(name, n)` answer from the pinned branch instead of hitting
    `branchSignpost`. The refusal stays for a branch the fixture doesn't pin.
+
+## Outcome (2026-08-15)
+
+All four tasks landed. Two things worth keeping:
+
+- **The split between the two replay paths is n8n's, not a choice.** `test`
+  hands over `pinData` — one flat items array per node, no output dimension —
+  so it truncates and always will; `preflight --simulate` pins by node
+  replacement, which is decanter's own topology, so it replays every output.
+  Every message and doc page now says *which* path is being described, and
+  `scenario check` reports the difference offline.
+- **Verified against a real engine**, not just structurally: an error-output
+  fixture whose error branch feeds a Code node with expected output in the
+  capture fails on the pre-task-3 code (`expected [{"failed":"boom"}] · actual
+  []`) and passes on it — the field report's failure, reproduced and fixed. That
+  run also exposed that the stand-in splits were invisible in the report
+  (preflight runs the stage with a silent logger), fixed in #257.

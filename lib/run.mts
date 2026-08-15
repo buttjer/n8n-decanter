@@ -14,7 +14,14 @@ interface Item {
   binary?: any;
 }
 
-/** Fixture file shape; every field is optional. */
+/**
+ * Fixture file shape; every field is optional.
+ *
+ * `input` and each `nodes` entry take **either** a plain items array (one
+ * output — the common case) **or** an array of items arrays, one per output
+ * (Plan 66): `[[…output 0…], [], […output 2…]]`. The nested form is what makes
+ * `$('Node').all(1)` / `$items('Node', 1)` / `$input.all(1)` answerable offline.
+ */
 interface Fixture {
   input?: unknown[];
   nodes?: Record<string, unknown[]>;
@@ -97,34 +104,59 @@ function asItem(value: unknown): Item {
 }
 
 /**
- * A fixture pins ONE items array per node, so there is no honest answer for a
- * branch other than the first (Plan 63 task 5).
+ * A branch the fixture does not pin has no honest answer (Plan 63 task 5).
  *
- * `all(branchIndex)` and `$items(name, outputIndex)` used to accept the argument
- * and **ignore** it, handing back output 0's items — so a Code node reading an
+ * `all(branchIndex)` and `$items(name, outputIndex)` once accepted the argument
+ * and **ignored** it, handing back output 0's items — so a Code node reading an
  * IF's false branch got the true branch's data and looked like it worked. That
- * is *wrong* data, not missing data, which is strictly worse than the empty-pin
- * problem in Plan 66: nothing fails, and the node is graded against a shape it
- * will never see live. `n8n-globals.d.ts` declares the parameter, and
- * `docs/cli/node-run.md` listed these calls as fully covered, so both surfaces
- * promised something the emulation never did.
+ * is *wrong* data, not missing data: nothing fails, and the node is graded
+ * against a shape it will never see live.
+ *
+ * Plan 66 turns the refusal into an answer wherever the fixture supplies one —
+ * a per-output fixture entry (`[[…], […]]`) makes the branch readable — so this
+ * now fires only when the asked-for output genuinely isn't pinned, and says how
+ * many are.
  */
-function branchSignpost(call: string): never {
+function branchSignpost(call: string, requested: number, pinnedOutputs: number): never {
   throw new Error(
-    `${call} asks for a branch other than the first, which \`run\` cannot answer — a fixture pins one items array per node, ` +
-      `so there is no second output to read. Pin that branch's items as their own fixture node, or run it for real with \`n8n-decanter test\`.`,
+    `${call} asks for output ${requested}, which this fixture does not pin — it supplies ${pinnedOutputs} output(s). ` +
+      `Pin that branch by giving the node one items array PER OUTPUT: "nodes": { "Name": [[…output 0…], […output 1…]] } (an empty array is a valid output). ` +
+      `Or run it for real with \`n8n-decanter test\`.`,
   );
 }
 
-function makeNodeRef(items: unknown[], label = "$('Node')") {
-  const list = items.map(asItem);
+/**
+ * Read a fixture value as **outputs**: `[[…output 0…], […output 1…]]`.
+ *
+ * A plain items array is one output, the shape every fixture used before
+ * Plan 66. The nested form is recognised when *every* element is an array — so
+ * to pin a single output whose items are themselves arrays, write the explicit
+ * item form (`[{ "json": [1, 2] }]`), which is not an array of arrays.
+ */
+function asOutputs(value: unknown[] | undefined): Item[][] {
+  if (value === undefined) return [[]];
+  if (value.length > 0 && value.every((v) => Array.isArray(v))) return (value as unknown[][]).map((out) => out.map(asItem));
+  return [value.map(asItem)];
+}
+
+function makeNodeRef(outputs: Item[][], label = "$('Node')") {
+  const list = outputs[0] ?? [];
+  // A branch the fixture DOES pin is answered; one it doesn't still refuses,
+  // because handing back output 0's items there is wrong data that looks right
+  // (Plan 63 task 5 — the refusal this builds on).
+  const branch = (branchIndex: number | undefined, method: string): Item[] => {
+    const i = branchIndex ?? 0;
+    const out = outputs[i];
+    if (out === undefined) branchSignpost(`${label}.${method}(${i})`, i, outputs.length);
+    return out;
+  };
   return {
-    all: (branchIndex?: number) => {
-      if (branchIndex !== undefined && branchIndex !== 0) branchSignpost(`${label}.all(${branchIndex})`);
-      return list;
+    all: (branchIndex?: number) => branch(branchIndex, "all"),
+    first: (branchIndex?: number) => branch(branchIndex, "first")[0],
+    last: (branchIndex?: number) => {
+      const out = branch(branchIndex, "last");
+      return out[out.length - 1];
     },
-    first: () => list[0],
-    last: () => list[list.length - 1],
     // Approximation: offline `run` has no paired-item graph, so `.item` /
     // `.itemMatching` read the fixture by position rather than resolving the
     // true linked item. Documented as "partial" in docs/cli/node-run.md.
@@ -179,20 +211,19 @@ function signpostValue(name: string, why: string, fixtureField: string): Record<
 export async function buildGlobals(fixture: Fixture, context: { node?: WorkflowNode | null; staticData?: unknown; allowEnv?: boolean } = {}) {
   const node = context.node ?? null;
   const staticData = staticDataSlices(context.staticData, node?.name, fixture);
-  const input = (fixture.input ?? [{ json: {} }]).map(asItem);
+  // `$input`'s branch index is the node's INPUT index (a Merge node's second
+  // input), and it reads from the fixture the same way a node's outputs do.
+  const inputs = asOutputs(fixture.input ?? [{ json: {} }]);
+  const input = inputs[0];
   const nodes: Record<string, ReturnType<typeof makeNodeRef>> = {};
   for (const [name, items] of Object.entries(fixture.nodes ?? {})) {
-    nodes[name] = makeNodeRef(items, `$(${JSON.stringify(name)})`);
+    nodes[name] = makeNodeRef(asOutputs(items), `$(${JSON.stringify(name)})`);
   }
+  const $inputRef = makeNodeRef(inputs, "$input");
   const $input = {
-    // same rule as `$('Node').all()` — the fixture pins one input array, so a
-    // second branch has no honest answer (Plan 63 task 5)
-    all: (branchIndex?: number) => {
-      if (branchIndex !== undefined && branchIndex !== 0) branchSignpost(`$input.all(${branchIndex})`);
-      return input;
-    },
-    first: () => input[0],
-    last: () => input[input.length - 1],
+    all: $inputRef.all,
+    first: $inputRef.first,
+    last: $inputRef.last,
     item: input[0],
     params: fixture.params ?? {},
   };
@@ -208,10 +239,8 @@ export async function buildGlobals(fixture: Fixture, context: { node?: WorkflowN
   const $node = new Proxy({} as Record<string, ReturnType<typeof makeNodeRef>>, {
     get: (_t, prop) => (isProbeKey(prop) ? undefined : nodeRef(prop as string)),
   });
-  const $items = (name?: string, outputIndex?: number, _runIndex?: number) => {
-    if (outputIndex !== undefined && outputIndex !== 0) branchSignpost(`$items(${JSON.stringify(name ?? "")}, ${outputIndex})`);
-    return name === undefined ? input : nodeRef(name).all();
-  };
+  const $items = (name?: string, outputIndex?: number, _runIndex?: number) =>
+    name === undefined ? $input.all(outputIndex) : nodeRef(name).all(outputIndex);
 
   // Luxon backs DateTime/Duration/Interval; jmespath backs `$jmespath` (n8n
   // pins 0.16.0, data-first `search(data, expr)`). Both are hard deps, so a
