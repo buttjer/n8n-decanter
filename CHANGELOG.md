@@ -42,8 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output's targets, so the branch really runs. Deliberately not wired to the
   synthetic trigger: a stand-in fires only when the original would, so a replay
   whose real nodes take a different path can't have the old branch's items
-  injected into it anyway. The run log names the splits and `--json` carries
-  them as `splitOutputs`. **`test` still replays `main[0]` only** — n8n's
+  injected into it anyway. The `simulate` check names the splits in its details
+  (terminal and `--json`). **`test` still replays `main[0]` only** — n8n's
   `pinData` is one flat items array per node, with no output dimension — and
   `scenario check` now spells out which of the two you are looking at.
 
