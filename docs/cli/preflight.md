@@ -232,6 +232,15 @@ stripped and no outbound-capable node survives the transform, so the run is dry
 — it writes nothing external. Then each real node's replayed output is
 **diffed against the capture**: divergence is the check's `fail`.
 
+**A pinned node that emitted on several outputs replays all of them.** Each
+extra output — an error output, a second branch — gets its own stand-in node,
+wired to the same input as the original and feeding exactly that output's
+targets, so the error branch really runs instead of sitting there with no
+input. The run log names them (`… extra output(s) replayed through a stand-in:
+Fetch output 1`), and `--json` carries them as `splitOutputs`. This is the one
+place the offline replay is **more** faithful than [`test`](/docs/cli/test/),
+whose `pinData` format has no output dimension at all.
+
 It needs a **Docker** daemon (no daemon → the check skips with that reason) and
 a pin source. It is the one thing an instance run can't give you: verification
 of **uncommitted local code** ([`test`](/docs/cli/test/) can only run what's on

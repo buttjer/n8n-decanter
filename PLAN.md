@@ -791,19 +791,32 @@ into it):
   exit-1-on-divergence semantics unchanged. `--json` reports
   (`preflight --simulate` / `test`) carry `syntheticPins: boolean` and
   `provenance: Record<node, "capture" | "authored" | "scaffolded">`.
+- **Multi-output pins: the sim replays them, `test` structurally cannot**
+  (Plan 66). The split is n8n's, not a decision: `test` hands over a `pinData`
+  map — one flat `INodeExecutionData[]` per node, **no output dimension** — so
+  the instance run replays `main[0]` and nothing else. `preflight --simulate`
+  pins by **node replacement**, and that topology is decanter's own, so each
+  populated output beyond the first now gets its own Code stand-in
+  (`__sim_out__<i>__<node>`) that **inherits the original's incoming edges** and
+  takes over that output's targets (`splitPinnedOutputs`). Input-inheriting, not
+  entry-wired, on purpose: an entry-wired stand-in fires from the synthetic
+  trigger and would inject a branch's items into a replay whose real nodes took
+  another path. `Simulation.splitOutputs` / `SimulationReport.splitOutputs`
+  report the splits.
 - **"Executable" has to mean something — item coverage bounds the synthetic
-  verdict** (Plan 66). Every pin path replays `main[0]` alone, so a pin feeding
-  a branch nothing reads leaves the downstream nodes with no input; n8n
+  verdict** (Plan 66). A pin feeding a branch nothing reads leaves the
+  downstream nodes with no input; n8n
   finishes that run as `success` and the synthetic-pin report used to repeat it
   verbatim. `test` now counts, over the **unpinned** nodes (the ones the run
   really executed), how many emitted an item on **any** output —
   `TestReport.coverage = { total, emitted, empty }`, also in `--json` — and
   prints it. Partial emptiness warns; **`emitted === 0` with `total > 0` makes
   the report not-ok** (exit 1), because a run that moved no data demonstrated
-  nothing. `scenario check` reports the same truncation one step earlier and
-  offline: a scenario node with items on more than one output, and any node
-  source reading a pinned node's non-first output (`$('X').all(1)` /
-  `$items('X', 1)` — `findBranchReads` in `lib/util.mts`).
+  nothing. `scenario check` reports the instance-side truncation one step
+  earlier and offline: a scenario node with items on more than one output
+  (naming which path replays it), and any node source reading a pinned node's
+  non-first output (`$('X').all(1)` / `$items('X', 1)` — `findBranchReads` in
+  `lib/util.mts`).
 - **Migration.** A pre-Plan-37 `mocks/` dir auto-migrates to `scenarios/`
   the first time any verb (`preflight`/`test`/`scenario`) touches it (plain
   `renameSync`, git-recorded); refuses when both dirs exist. A leftover

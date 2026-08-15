@@ -198,27 +198,35 @@ The shape to match, per node:
 }
 ```
 
-## What the replay drops
+## Several outputs: the sim replays them, `test` cannot
 
-**Both replay paths read `main[0]` and nothing else.** `test` hands n8n a
-`pinData` map, whose format is one flat items array per node — there is no
-output dimension to hand it — and `preflight --simulate` replaces the node with
-a single-output stand-in. So a second output group in your scenario is accepted
-by the validator, saved, and then silently ignored at replay time: whatever it
-feeds — an IF's false branch, an error output — receives nothing and emits
-nothing, and the run still finishes "successfully".
+A node can emit on more than one output — an error output, an IF's two
+branches — and your scenario may carry items on each of them. The two replay
+paths differ there, and `scenario check` tells you which one you are looking at:
+
+- **[`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage) replays
+  every populated output.** Decanter owns that workflow copy, so each extra
+  output gets its own stand-in node fed by the same input as the original — the
+  error branch really runs.
+- **[`test`](/docs/cli/test/) replays `main[0]` only.** It hands n8n a `pinData`
+  map, and that format is one flat items array per node: there is no output
+  dimension to hand it. So on the instance, whatever the further outputs feed
+  receives nothing and emits nothing — and the run still finishes
+  "successfully".
 
 `scenario check` says so rather than letting you find out from an empty run. It
 warns when
 
 - a node in the scenario has items on **more than one output**, naming the
-  indices that will be dropped, and
+  indices `test` will drop, and
 - a **node source reads a pinned node's non-first output** —
-  `$('Enrich Customer').all(1)` or `$items('Enrich Customer', 1)` — which is
-  the call that quietly returns nothing.
+  `$('Enrich Customer').all(1)` or `$items('Enrich Customer', 1)` — the call
+  that quietly returns nothing on the instance. The warning also says whether
+  the scenario covers that output, i.e. whether `preflight --simulate` can
+  answer it.
 
-Both are warnings, not errors: the scenario is still valid for the outputs that
-do replay. The way out is to pin that branch as its own node, or to run the
+Both are warnings, not errors. The way out is `preflight --simulate` for a
+branch the scenario covers, pinning that output as its own node, or running the
 workflow live with [`test`](/docs/cli/test/) instead of replaying it. The
 [`test` coverage line](/docs/cli/test/#coverage-what-the-run-moved) is the
 same problem caught one step later.

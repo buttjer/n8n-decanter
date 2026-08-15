@@ -80,10 +80,14 @@ everything), so that line is a warning, never a failure.
 even with synthetic pins. n8n reports such a run as `success`, and it is:
 nothing errored. But no data moved, so nothing about the workflow was
 demonstrated, and a green check there is the gate lying to you. The usual
-cause is named in the message: a pin replays a node's **first output only**, so
-anything fed by an IF's false branch or an error output receives nothing.
-[`scenario check`](/docs/cli/scenario/#what-the-replay-drops) warns about that
-offline, before you spend a run.
+cause is named in the message: n8n's `pinData` is **one flat items array per
+node**, so `test` can only replay a node's first output, and anything fed by an
+IF's false branch or an error output receives nothing.
+[`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage) does not
+have that limit — decanter builds that workflow copy itself and gives every
+populated output its own stand-in — and
+[`scenario check`](/docs/cli/scenario/#several-outputs-the-sim-replays-them-test-cannot)
+warns about the difference offline, before you spend a run.
 
 ## Where `test` sits: after the push
 

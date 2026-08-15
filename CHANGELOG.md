@@ -33,6 +33,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`preflight --simulate` now replays a pinned node's other outputs too.** The
+  stand-in decanter substitutes for a network node is a Code node, which has one
+  output — so an error output (or any second branch) captured in your execution
+  was replayed nowhere, and everything behind it sat with no input, emitted
+  nothing, and let the run pass. Each populated output now gets **its own
+  stand-in**, wired to the same input as the original and feeding exactly that
+  output's targets, so the branch really runs. Deliberately not wired to the
+  synthetic trigger: a stand-in fires only when the original would, so a replay
+  whose real nodes take a different path can't have the old branch's items
+  injected into it anyway. The run log names the splits and `--json` carries
+  them as `splitOutputs`. **`test` still replays `main[0]` only** — n8n's
+  `pinData` is one flat items array per node, with no output dimension — and
+  `scenario check` now spells out which of the two you are looking at.
+
 - **`test` now reports what the run actually moved, not just that it
   finished** — a coverage line over the nodes that executed (enabled and
   unpinned; a pinned node's items are the input you supplied):
