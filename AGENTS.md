@@ -539,7 +539,12 @@ mock server.
     presence is what identifies a TS-managed node on pull. Because a bundler
     really does resolve those specifiers, the node-file tsconfig uses
     `moduleResolution: "bundler"`; `node16`/`nodenext` would reject the
-    extensionless relative imports the template documents (TS2835).
+    extensionless relative imports the template documents (TS2835). It also
+    sets `allowImportingTsExtensions` (legal because `noEmit`): esbuild
+    resolves an explicit `../shared/money.ts` too, so without it the
+    typecheck would reject (TS5097) what `push` bundles happily. Docs still
+    teach the extensionless form — the flag is tolerance, not a
+    recommendation.
 - Push runs two independent gates, in order:
   1. Compliance guard (`lib/validate.mts`, shared with preflight's `layout`
      check and watch): layout violations are hard errors that `--force` does

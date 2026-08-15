@@ -63,8 +63,12 @@ return [{ json: { total: total(lines) } }];
 ```
 
 (Node files live in `workflows/<folder>/code/`, so a top-level helper root is
-three levels up.) All three of these shapes work, together in one node if you
-like:
+three levels up.) Write the specifier **extensionless**, as above — an
+explicit `../../../shared/money.ts` is accepted too (the scaffolded
+`tsconfig.json` sets `allowImportingTsExtensions`, and the bundler resolves
+either), but the extensionless form keeps working if that helper ever becomes
+a plain `.js` file. All three of these shapes work, together in one node if
+you like:
 
 - the scaffolded `shared/` — the default, covered by the scaffolded editor
   tooling (the agent allowlist ships `Edit(shared/**)`; widen it if you use

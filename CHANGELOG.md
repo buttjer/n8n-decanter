@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An explicit `.ts` extension in a node file's import no longer fails the
+  typecheck.** The scaffolded `tsconfig.json` now sets
+  `allowImportingTsExtensions`, so `import { total } from
+  "../../../shared/money.ts"` type-checks — until now it was rejected
+  (TS5097) even though `push` bundles it without complaint, which made the
+  gate and the bundler disagree over a pure spelling choice. Extensionless
+  stays the recommended form (it survives a helper later becoming `.js`);
+  both spellings resolve everywhere. Existing sync dirs are offered the
+  updated `tsconfig.json` on the next `init` — a `tsconfig.json` you edited
+  yourself is reported as drift and left alone, so add the option by hand
+  there.
 - **Two of the four import rules for `.ts` nodes now warn instead of
   blocking a push**: a relative import resolving outside the sync dir, and an
   absolute-path import. Both only endanger the author's own portability — the
