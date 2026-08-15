@@ -13,6 +13,7 @@
     "skipLibCheck": true,
     "moduleDetection": "force",
     "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
     "plugins": [{ "name": "decanter-ts-plugin" }]
   },
   "include": ["n8n-globals.d.ts", "**/*.ts", "**/*.js"],

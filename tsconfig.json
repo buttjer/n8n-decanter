@@ -12,7 +12,12 @@
     "useUnknownInCatchVariables": false,
     "skipLibCheck": true,
     "moduleDetection": "force",
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    // Tolerated, not recommended: `bundler` resolution wants extensionless
+    // relative imports (what the docs teach), but esbuild resolves an explicit
+    // `../shared/money.ts` just as happily — so without this the typecheck
+    // would reject (TS5097) code `push` bundles fine. Legal because `noEmit`.
+    "allowImportingTsExtensions": true
   },
   // Project-wide on purpose (Plan 79): helper code may live in ANY folder
   // inside the sync dir — `shared/` is only what `init` scaffolds — so the

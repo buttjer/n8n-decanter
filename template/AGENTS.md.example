@@ -375,7 +375,10 @@ return [{ json: { total: total(lines) } }];
 ```
 
 (Node files live in `workflows/<folder>/code/`, so a top-level helper root is
-three levels up.) Two same-named helper files never collide — resolution is
+three levels up.) Write the specifier **extensionless** — an explicit
+`../../../shared/money.ts` is accepted (editor, typecheck and bundler all
+resolve it), but the extensionless form keeps working if that helper ever
+becomes a `.js` file. Two same-named helper files never collide — resolution is
 by path — but importing both under the **same binding name** does: aliased
 (`import { total as orderTotal } …`) they bundle side by side; unaliased, the
 second import silently wins and only the typecheck (TS2300) catches it.

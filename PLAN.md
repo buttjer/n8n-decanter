@@ -1148,6 +1148,13 @@ Unchanged by Plan 32 (the file layer is decanter's layer):
 
 - `tsconfig.json`: `allowJs` + `checkJs`, includes `workflows/`, excludes
   `**/*.remote.js` (harmless legacy exclusion); `moduleDetection: "force"`.
+  Helper imports resolve through `moduleResolution: "bundler"` (the docs teach
+  the extensionless form) **plus `allowImportingTsExtensions`** — legal because
+  `noEmit`, and needed because esbuild resolves an explicit
+  `../../../shared/money.ts` too: without it the typecheck rejects (TS5097)
+  what `push` bundles happily, i.e. the gate and the bundler disagree over a
+  spelling. Tolerance, not a recommendation — extensionless survives a helper
+  later becoming `.js`.
 - `scripts/typecheck.mts` wraps node files in an in-memory `async function`
   (node files recognized by a `.decanter.json` sibling — directly or in the
   parent of their `code/` dir) and maps diagnostic lines back; files on disk
