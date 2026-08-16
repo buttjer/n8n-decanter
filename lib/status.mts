@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { compileTs } from "./compile.mts";
-import { readState } from "./state.mts";
+import { readState, reconcileFileMapFromSnapshot } from "./state.mts";
 import type { Log, Workflow } from "./types.mts";
 import { isJsCodeNode, sha256, splitMarker, workflowStructureHash } from "./util.mts";
 
@@ -85,6 +85,12 @@ export interface SyncFacts {
  */
 export async function computeSyncFacts(remote: Workflow, dir: string): Promise<SyncFacts> {
   const state = readState(dir)!;
+  // Adopt a re-pointed `//@file:` placeholder before judging anything — the
+  // same reconcile push and pull run first, on the same in-memory copy (this
+  // module never writes state). Without it the read side judged a sanctioned
+  // `.js`→`.ts` conversion against the deleted `.js` and reported "local file
+  // … missing" — data loss, for a conversion `push` completes happily.
+  reconcileFileMapFromSnapshot(dir, state);
   const nodes: NodeSync[] = [];
   const deleted: DeletedNode[] = [];
 
@@ -121,7 +127,14 @@ export async function computeSyncFacts(remote: Workflow, dir: string): Promise<S
     let s: NodeSyncState;
     if (local === null) s = "local-missing";
     else if (local === remoteHash) s = "in-sync";
-    else if (remoteHash === last) s = "push-pending";
+    // An ABSENT baseline is not evidence that the remote moved — it is the
+    // absence of evidence, and the same relaxation push's `codeDrift` makes
+    // ("a first sync for that node has nothing to protect"). Without this the
+    // two disagreed: `diff` printed CONFLICT and `preflight` failed its drift
+    // gate on state `push` accepts without `--force` — and `--force` is what
+    // the scaffolded agent permissions deny, so the report read as a dead end
+    // that the CLI itself did not actually have.
+    else if (last === undefined || remoteHash === last) s = "push-pending";
     else if (local === last) s = "changed-remotely";
     else s = "conflict";
     nodes.push({ id: node.id, name: node.name, file: nodeState.file, state: s, remoteBody, localBody: body, warnings: warnings.length > 0 ? warnings : undefined });

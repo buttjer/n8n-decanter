@@ -109,6 +109,24 @@ is **wrong** about how Code-node code is stored and edited here. The deviations:
 > rotated token: mint a fresh one in n8n → Settings → MCP). If you genuinely need
 > to know whether a credential is present, ask the user — do not infer it.
 
+## n8n-side prerequisites you cannot see from here
+
+Two switches live in n8n, not in this repo, and nothing in the working tree
+reveals their state. Both are one-time, both are the user's to flip — surface
+them instead of debugging around a failure they explain:
+
+- **MCP access for the instance** — n8n → Settings → MCP. Off means a `403`
+  from every command.
+- **"Available in MCP" — a switch on *each workflow*, one by one.** A workflow
+  is invisible to sync until it is on: `pull`, `push`, `diff`, `preflight` and
+  `watch` all fail for it with *"Workflow is not available in MCP"*, and a
+  freshly created workflow starts off. Flip it from the workflow card's ⋯ menu
+  in the n8n workflows list, or the workflow settings. `n8n-decanter list
+  --remote` marks which workflows still need it — run that before concluding
+  anything is broken.
+
+Neither is a bug to work around, and neither is something a retry fixes.
+
 ## n8n MCP tools & official n8n skills — the boundary
 
 This repo pairs with n8n's own agent surface: the built-in **n8n MCP server**

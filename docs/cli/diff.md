@@ -76,6 +76,19 @@ Everything else gets a state line, then the diff:
 The last three have only **one** side to show, so they print the state line
 without a hunk. Everything else prints the unified diff underneath.
 
+Two things the state line deliberately does **not** do:
+
+- **A node with no recorded sync hash is never a `CONFLICT`.** "Both sides
+  moved" needs a last-sync baseline to be measured against; without one,
+  nothing is *known* to have moved on the instance. Such a node reads as
+  `push pending`, which is also what [`push`](/docs/cli/push/) does with it —
+  it pushes, no `--force` involved.
+- **The `//@file:` placeholder wins over `.decanter.json`.** Re-pointing a
+  placeholder is how a `.js`→`.ts` conversion is registered, so `diff` reads
+  the file the snapshot names, exactly like `push` and `pull` do. A converted
+  node shows its `.ts` under `push pending` — not the deleted `.js` as
+  *missing*.
+
 ## `.ts` nodes are compiled before comparing
 
 For a `.ts` node the local side of the diff is the **compiled** JavaScript —

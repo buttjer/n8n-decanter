@@ -12,7 +12,7 @@ import { CODE_NODE_TYPE } from "./util.mts";
 
 export const MCP_PATH = "/mcp-server/http";
 export const AUTH_FILE = ".decanter-auth.json";
-const PROTOCOL_VERSION = "2025-03-26";
+export const PROTOCOL_VERSION = "2025-03-26";
 
 /**
  * n8n's own guidance for a workflow that hasn't been opted into MCP —
