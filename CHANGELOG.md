@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-16
+
 ### Added
 
 - **The live mirror now tells the agent when it overwrote your work.** It runs a
