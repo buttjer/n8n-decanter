@@ -31,8 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actually gate the agent went unmentioned. Printed once, when the file is first
   written; a re-init in a set-up directory stays quiet.
 
-### Added
-
 - **`node run` fixtures can pin a node's other outputs, so `$('Node').all(1)`
   finally answers.** Give a node one items array **per output** and the branch
   is readable offline:
