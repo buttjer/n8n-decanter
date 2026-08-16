@@ -140,7 +140,7 @@ arguments, and [`:183`](../../lib/run.mts) names `$items`' second parameter
 `all()`, `all(1)` and `$items("Fetch", 1)` all return the same output-0 items.
 
 **This returns wrong data, not empty data** — strictly worse than the pin
-truncation in [Plan 66](../open/66-multi-output-pins.md). And
+truncation in [Plan 66](../done/66-multi-output-pins.md). And
 [`docs/cli/node-run.md:31`](../../docs/cli/node-run.md) lists `$('Node')` /
 `$node` / `$items()` as ✅ Covered, i.e. it claims full fidelity for a call that
 is silently wrong.
@@ -148,7 +148,7 @@ is silently wrong.
 Fix (this plan): make `all(n)` / `$items(name, n)` with `n > 0` **throw a
 signpost error** — the pattern `lib/run.mts` already uses for `$vars` /
 `$evaluateExpression` — and demote the docs row to 🟡 Partial. Teaching the
-fixture format a per-output shape is [Plan 66](../open/66-multi-output-pins.md)'s
+fixture format a per-output shape is [Plan 66](../done/66-multi-output-pins.md)'s
 job, not this one's.
 
 **Done (2026-08-05).** Signpost added, and it covers **`$input.all(n)`** too —
@@ -257,6 +257,6 @@ including one asserting the old wording is **gone**.
   `docs/cli/scenario.md` size note (task 7), `docs/cli/pull.md`'s "recover via
   git" becomes unconditionally true once task 1 lands.
 - Task 5's signpost error and Task 4's index plumbing are the two places
-  [Plan 66](../open/66-multi-output-pins.md) will build on — do them here, but
+  [Plan 66](../done/66-multi-output-pins.md) will build on — do them here, but
   don't pull 66's scope in.
 - No `PLAN.md` change: none of these alter the data model or a documented flow.
