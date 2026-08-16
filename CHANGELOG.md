@@ -135,6 +135,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`diff` and `preflight` no longer report a `CONFLICT` for a node with no
+  recorded sync hash.** "Changed both locally and remotely" is measured against
+  the last-sync baseline in `.decanter.json`; with no baseline nothing is
+  *known* to have moved on the instance, and `push` has always treated that as
+  pushable. The two disagreed, so the report described a dead end the CLI did
+  not have — worse, its documented exit (`push --force`) is denied to agents by
+  the permission rules `init` scaffolds. Such a node now reads as
+  `push pending`, which is what `push` does with it. `pull` no longer warns
+  `CONFLICT` for the same case on `.ts` nodes.
+- **A `.js` → `.ts` conversion no longer reads as data loss.** Re-pointing a
+  node's `//@file:` placeholder is the sanctioned way to convert, and `push`
+  and `pull` both adopt it before doing anything — but `diff` and `preflight`
+  looked the file up in `.decanter.json` alone and announced `local file
+  code/<node>.js missing` for the file you had just replaced. They now read the
+  placeholder too, so a converted node reports `local changes in
+  code/<node>.ts — push pending`, identically for every converted node.
+- **`preflight` no longer prints `✓ parity local code matches the draft`
+  directly above `✗ drift CONFLICT`.** Both checks read the same facts, so
+  `parity` may claim a match only when every node is in sync; divergence that
+  `drift` owns is reported as an `info` line pointing at it.
+- **`mcp connect` survives an unreachable n8n instead of dying at the
+  handshake.** `initialize` was forwarded like any other message, so a
+  connection failure answered the *handshake* with an error: the agent's MCP
+  client got no `serverInfo` and tore the session down before a single tool
+  call could report what was wrong. The guard now completes the handshake
+  itself when n8n does not answer, and the failure surfaces on the tool call
+  that needed the instance. Once n8n is reachable, the handshake is replayed
+  upstream so the session it uses is a real one. The startup line now reads
+  `guard: ready — forwarding all n8n MCP tools to <host>` instead of
+  `connected to <host>`, which claimed a connection nothing had made yet.
+- **The scaffolded `AGENTS.md` now names the n8n-side prerequisites.** MCP
+  access is a switch per *instance* **and** one per *workflow* ("Available in
+  MCP"), and until a workflow's is on, `pull`/`push`/`diff`/`preflight`/`watch`
+  all fail for it. The CLI's error says so; the file an agent reads *before*
+  running anything did not.
 - **`preflight`'s `types` check now reports type errors in shared helper
   files** instead of passing green while `push` fails on them. The scoped
   typecheck dropped every diagnostic outside the graded workflow's own dir —

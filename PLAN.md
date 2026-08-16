@@ -484,8 +484,9 @@ For each configured workflow:
    - **Marker present** → TS-managed: compare `hash(remote body)` vs
      `hash(compile(local .ts))` — in sync → nothing; local == lastPushedHash
      → **instance-side edit**: warn (inspect via `diff`), `.ts`
-     untouched; remote == lastPushedHash → local modified, info; both moved →
-     **CONFLICT** warning. No `.remote.js` files are written (Plan 32).
+     untouched; remote == lastPushedHash **or no baseline recorded** → local
+     modified, info; both moved → **CONFLICT** warning. No `.remote.js` files
+     are written (Plan 32).
    - **No marker, local `.ts` exists** → never clobber TS source: keep the
      `.ts`, warn ("not pushed from TS yet?"), re-baseline.
    - **No marker** → plain JS: overwrite `code/<node>.js` with the remote
@@ -687,6 +688,20 @@ transports:
   (-32700); same 401-refresh-once and bounded 429/Retry-After policy as the
   MCP client. No secret exists — stdio pipes are private to the two
   processes.
+- **`initialize` is the one message the guard will answer itself.** It is
+  forwarded like everything else — that is how the upstream `mcp-session-id`
+  is captured — but a *failed* forward is answered locally with the guard's own
+  `serverInfo`/`capabilities` instead of a JSON-RPC error. Rationale: an error
+  at the handshake is fatal to the whole MCP session, so an unreachable
+  instance took the guard down with it and the agent never got to make the call
+  whose failure would have explained why (reported against 0.10.0, from a host
+  missing on a sandbox allowlist). The guard is itself the server the agent
+  spawned and it is running fine; the instance's absence belongs on the first
+  forwarded tool call. A handshake answered this way is **replayed upstream**
+  before the next forward (followed by `notifications/initialized`), so a
+  recovered instance never sees an uninitialized session. The startup log line
+  says `guard: ready — … to <host>`, never "connected": nothing has been
+  contacted when it prints.
 - **`mcp serve` is the HTTP variant** for harnesses that only take an MCP
   URL. Decanter is the sole credential holder: the proxy authenticates
   agents with a per-session random secret (printed once; also written with
@@ -1071,6 +1086,24 @@ The promoted half of the retired `status` verb: `preflight` is `git status`
 them is what let three overlapping "check my thing" verbs collapse into two with
 no capability lost.
 
+- **The reporting ladder answers to `push`, not the other way round.**
+  `computeSyncFacts` judges each node as in-sync → push-pending →
+  changed-remotely → conflict, and two rules keep it from inventing drift the
+  CLI does not actually have (both were real 0.10.0 bug reports):
+  - **No baseline is not a remote edit.** An absent `lastPushedHash` makes
+    "both sides moved" unmeasurable, so the node reads `push-pending` — the
+    same relaxation push's `codeDrift` has always made. Before this, `diff`
+    printed CONFLICT and `preflight` failed its drift gate on state `push`
+    accepts without `--force`, and the scaffolded agent permissions **deny**
+    `--force`: the report described a dead end the CLI did not have.
+  - **The `//@file:` placeholder is the file map here too.** The fact core runs
+    the same `reconcileFileMapFromSnapshot` push and pull run (in memory — it
+    never writes state), so a sanctioned `.js`→`.ts` conversion reads as
+    `push-pending` on the `.ts` instead of "local file … missing" on the
+    deleted `.js`.
+  Preflight's `parity` check follows from the same facts: it may report a match
+  **only** when every node is in sync, so it can never print "local code
+  matches the draft" one line above drift's `CONFLICT`.
 - `lib/diff.mts` — `diffWorkflow` over `computeSyncFacts` (the same fact core
   preflight's sync tier scores, so the two can never disagree) plus the
   existing `unifiedDiff`. `.ts` nodes are compiled first, bundling `shared/*`,

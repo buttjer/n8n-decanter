@@ -117,11 +117,15 @@ even under `--offline`; the rest of the sync tier is skipped with
   `details` and `push` as the remediation — not a caveat, just the next step in
   the flow. A tracked file that has vanished from disk warns differently
   (*a local file is missing* — pull, or push to make the draft match local).
+  When the only divergence is one `drift` owns, parity reports it as `info`
+  and points down the list rather than claiming a match it doesn't have.
 - **`drift` — did someone edit on the instance?** Remote code that moved off
   the last sync while your file didn't is a `warn` (*pull before publishing*).
   Both sides moved is a **`CONFLICT` fail**, with
   [`diff`](/docs/cli/diff/) as the remediation so you can see the lines before
-  choosing. Nodes deleted remotely count here too.
+  choosing. Nodes deleted remotely count here too. A node with **no** recorded
+  sync hash is not drift — there is no baseline to have moved off, and
+  [`push`](/docs/cli/push/) treats it the same way.
 - **`snapshot` — is `workflow.json` current?** Structure is mirrored, not
   guarded: when the remote structure changed, this warns *structure snapshot
   out of date — pull to refresh `workflow.json`* (and, if the file can't be

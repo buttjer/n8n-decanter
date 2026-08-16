@@ -144,7 +144,7 @@ await step("pass-through: harmless calls forward with the REAL token; SSE + sess
 // happens to be wired.
 await step("http guard logs: same startup line and same NAME-ONLY audit trail as the stdio guard", async () => {
   assert.ok(
-    logs.some((l) => /^info guard: connected to .* blocking jsCode writes in update_workflow$/.test(l)),
+    logs.some((l) => /^info guard: ready — forwarding all n8n MCP tools to .* blocking jsCode writes in update_workflow$/.test(l)),
     "the http transport announces itself too: " + logs.join(" | "),
   );
   const before = logs.length;
@@ -404,7 +404,7 @@ await step("stdio: a notice survives a message that cannot carry it, and lands o
 // and the silence read as innocence). Startup line + per-call audit trail fix that.
 await step("stdio guard logs: a startup line, then one NAME-ONLY line per forwarded tool call", async () => {
   assert.ok(
-    logs.some((l) => /^info guard: connected to .* blocking jsCode writes in update_workflow$/.test(l)),
+    logs.some((l) => /^info guard: ready — forwarding all n8n MCP tools to .* blocking jsCode writes in update_workflow$/.test(l)),
     "a guard that never started must be distinguishable from one that blocked nothing: " + logs.join(" | "),
   );
   const before = logs.length;

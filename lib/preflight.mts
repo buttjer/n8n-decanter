@@ -372,9 +372,22 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
 
         await run("parity", "sync", async () => {
           const off = facts!.nodes.filter((n) => n.state === "push-pending" || n.state === "local-missing");
-          if (off.length === 0) {
+          // Nodes whose divergence the DRIFT check owns. They still mean local
+          // code does not match the draft, so parity may not print a match —
+          // "✓ parity local code matches the draft" one line above
+          // "✗ drift CONFLICT" told the reader both at once.
+          const diverged = facts!.nodes.filter((n) => n.state === "conflict" || n.state === "changed-remotely");
+          if (off.length === 0 && diverged.length === 0) {
             subject.parity = "match";
             return { status: "pass", message: "local code matches the draft" };
+          }
+          if (off.length === 0) {
+            subject.parity = "unknown";
+            return {
+              status: "info",
+              message: `${diverged.length} node(s) differ from the draft — the remote moved too, see the drift check below`,
+              details: diverged.map((n) => `${n.name}: ${n.file ?? "?"}`),
+            };
           }
           subject.parity = "local-ahead";
           const missing = off.some((n) => n.state === "local-missing");

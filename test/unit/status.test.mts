@@ -63,7 +63,12 @@ describe("computeSyncFacts — the parity/drift ladder", () => {
   // reading as data loss for a conversion that push completes happily.
   it("honors a re-pointed //@file: placeholder (.js → .ts conversion)", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-status-"));
-    const remoteBody = "const t = { cs: { x: 1 } };\nreturn [{ json: { t } }];\n";
+    // The reported shape: the remote still holds the PRE-conversion `.js`
+    // source, with its non-ASCII literal unescaped. esbuild's ASCII charset
+    // escapes it (`\xED`), so the compiled `.ts` differs from the draft — a
+    // remote body decanter itself pushed from a `.ts` could never look like
+    // this, which is what identifies it as un-compiled source.
+    const remoteBody = 'const t = { cs: { "compatible with": "kompatibilní s" } };\nreturn [{ json: { t } }];\n';
     const dir = seed(
       tmp,
       { workflowId: "wf1", name: "Order Sync", nodes: { c: { file: "code/compute.js", lastPushedHash: sha256(remoteBody), name: "Compute" } } },

@@ -128,7 +128,10 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
           // in sync — nothing to do
         } else if (localHash === nodeState.lastPushedHash) {
           log.warn(`${wf.name} / ${node.name}: edited in the n8n UI since last push — remote edits are not merged into ${file} (inspect with \`n8n-decanter diff\`, port manually); the next push overwrites them`);
-        } else if (remoteHash === nodeState.lastPushedHash) {
+          // Same relaxation as push's `codeDrift` and the read-side ladder in
+          // lib/status.mts: with no baseline, nothing is KNOWN to have moved
+          // remotely, so calling it a conflict invents a remote edit.
+        } else if (nodeState.lastPushedHash === undefined || remoteHash === nodeState.lastPushedHash) {
           log.info(`${node.name}: local ${file} modified, not yet pushed`);
         } else {
           log.warn(`${wf.name} / ${node.name}: CONFLICT — both ${file} and the remote code changed since last sync; inspect with \`n8n-decanter diff\` and reconcile before pushing`);

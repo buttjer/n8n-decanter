@@ -364,7 +364,7 @@ export async function startGuardProxy(
   const url = `http://127.0.0.1:${actualPort}${MCP_PATH}`;
   // Same "I am alive" line as the stdio guard — an empty log must never be
   // ambiguous between "ran, blocked nothing" and "never started".
-  log.info(`guard: connected to ${host} — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow`);
+  log.info(`guard: ready — forwarding all n8n MCP tools to ${host}, blocking jsCode writes in update_workflow`);
 
   const stateFile = path.join(configDir, PROXY_STATE_FILE);
   try {

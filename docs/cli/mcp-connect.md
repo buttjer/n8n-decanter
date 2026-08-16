@@ -86,21 +86,32 @@ JSON-RPC error naming the host instead of hanging. Logs go to stderr; stdout
 carries only protocol messages. The process ends when the agent closes the
 session.
 
+**The handshake is the one exception, and it has to be.** `initialize` is
+forwarded like everything else, but if n8n does not answer it, the guard
+completes the handshake **itself** — an error there is fatal to the whole MCP
+session, and the agent would be left with a dead server instead of a working
+one pointed at a down instance. The tool call that actually needs n8n reports
+the failure, which is where it belongs. Once the instance is reachable again,
+the guard replays the handshake upstream before the next forward, so the
+recovered session is a real one.
+
 ## What the guard logs
 
 On stderr, so it never touches the protocol stream:
 
 ```
-guard: connected to https://n8n.example.com — forwarding all n8n MCP tools, blocking jsCode writes in update_workflow
+guard: ready — forwarding all n8n MCP tools to https://n8n.example.com, blocking jsCode writes in update_workflow
 guard: forwarded search_workflows
 guard: forwarded get_workflow_details
 blocked a jsCode write (update_workflow) — pointed the agent at the file + push flow
 ```
 
-- **The startup line means the guard is alive.** Without it, an empty log is
-  ambiguous — "ran and blocked nothing" and "never started" look identical, and
-  they are opposites. If you see no startup line, the guard did not spawn; check
-  the command in your `.mcp.json`.
+- **The startup line means the guard is alive — not that n8n answered.** It is
+  printed before any traffic, on purpose: without it, an empty log is ambiguous
+  ("ran and blocked nothing" and "never started" look identical, and they are
+  opposites). It says *ready*, never *connected*, because nothing has been
+  contacted yet. If you see no startup line, the guard did not spawn; check the
+  command in your `.mcp.json`.
 - **One line per forwarded tool call** — every n8n MCP call an agent makes goes
   through the guard, so this is the one place that answers *what did the agent
   do to my instance?*

@@ -50,6 +50,23 @@ does not bypass. Run `n8n-decanter preflight --offline` and fix what its
 `layout` check lists — the one-line message names the first violation, the
 indented details under it name them all.
 
+## `diff` reports a `CONFLICT` nobody caused
+
+Every `CONFLICT` is measured against the **last-sync hash** in
+`.decanter.json`. If that hash is stale or absent for a node — a hand-edited
+state file, a `.decanter.json` restored from an older commit, a sync from
+another checkout — the comparison has no valid baseline and the verdict says
+more about the state file than about your instance.
+
+Two things it is **not**: a node with *no* recorded hash is never reported as a
+conflict (it reads as `push pending`, and [push](/docs/cli/push/) accepts it),
+and a changed compiler is not a remote edit — a new esbuild that escapes a
+string differently only moves the **local** side, which is `push pending` too.
+
+The way out never needs `--force`: run [pull](/docs/cli/pull/) — it never
+touches `.ts` sources and re-records the baseline — then push. Use
+[diff](/docs/cli/diff/) first if you want to see the lines.
+
 ## Pull warns "edited in the n8n UI" / "CONFLICT" on a `.ts` node
 
 Someone edited a TS-managed node on the instance. Pull never merges into (or
