@@ -283,6 +283,19 @@ describe("runPreflight (stubbed)", () => {
     assert.equal(report.verdict, "caution");
   });
 
+  // The two sync checks read the same facts, so they must not contradict each
+  // other on one screen: a conflicting node does NOT match the draft, and
+  // "✓ parity local code matches the draft" printed one line above
+  // "✗ drift CONFLICT" is the report telling the user both at once.
+  it("parity never claims a match while drift reports a CONFLICT", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
+    const dir = seed(tmp, "return [{json:{local:1}}];\n"); // local, draft and last-sync all differ
+    const { mcp } = stub(wf({ nodes: wf().nodes.map((n) => (n.id === "c" ? { ...n, parameters: { jsCode: "return [{json:{remote:1}}];\n" } } : n)) }), {});
+    const byId = new Map((await runPreflight(baseCtx(dir, tmp, mcp))).checks.map((c) => [c.id, c]));
+    assert.equal(byId.get("drift")?.status, "fail", "precondition: this is a real conflict");
+    assert.notEqual(byId.get("parity")?.status, "pass", `parity said "${byId.get("parity")?.message}" for a node in conflict`);
+  });
+
   it("history warns when recent production runs failed", async () => {
     tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-preflight-"));
     const dir = seed(tmp);
