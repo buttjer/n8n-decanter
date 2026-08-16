@@ -111,6 +111,23 @@ function packFor(unit: string[], packs: Record<string, string[]>): string {
 }
 
 /**
+ * Pre-hooks that stage something ABOVE the sync dir. The fenced agent container
+ * mounts the sync dir and nothing else (`docker-compose.yml`:
+ * `${FIELD_WORKDIR}:/work`), so in container mode what these plant is simply not
+ * there — the same "the condition cannot exist here" shape as `requiresNoCli`,
+ * and it has to be caught the same way: by name, before anything is spent.
+ *
+ * Learned the expensive way (2026-08-16 sweep): S15 ran fenced, its agent said
+ * "No `../company-lib` directory exists anywhere on this filesystem", never
+ * pulled, and `verify` reported FAIL. A harness gap that reads as a product
+ * defect is worse than a skipped scenario, because it is believed.
+ *
+ * Declared here, not next to PRE_HOOKS, because the `--isolate` filter below
+ * runs at module top level long before that map is initialized.
+ */
+const OUTSIDE_SYNC_DIR_HOOKS = new Set(["plant-outside-helper"]);
+
+/**
  * `--isolate S7 S10 …`: one FRESH instance + scratch project per scenario (or
  * per `requires` chain), torn down before the next — the maintainer's standing
  * requirement that runs never share state, enforced rather than documented.
@@ -135,7 +152,7 @@ if (argv.includes("--isolate")) {
     // in-network host — so the blind agent sees the host-side 127.0.0.1:<port>
     // from the manifest, which does not resolve inside the fence. The stage
     // already warns about it, but only AFTER the unit has been booted and spent.
-    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true || s.requiresSeedEnvOff === true; });
+    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true || s.requiresSeedEnvOff === true || (typeof s.preHook === "string" && OUTSIDE_SYNC_DIR_HOOKS.has(s.preHook)); });
     if (hostOnly.length > 0) {
       console.log(`--container: ${hostOnly.join(", ")} are host-only and are NOT part of this sweep — run them separately:\n    node test/field-test/run.mts --isolate ${hostOnly.join(" ")}\n`);
       ids = ids.filter((id) => !hostOnly.includes(id));
@@ -462,6 +479,12 @@ function assertPrerequisites(ids: string[]): void {
     // cannot exist there. Host mode only.
     if (sc.requiresNoCli === true && containerMode) {
       problems.push(`${id} cannot run in --container mode: the image installs the CLI globally, so it stays on PATH and the no-CLI condition cannot be staged. Run it host-mode (unsandboxed).`);
+    }
+    // Same shape, other direction: the hook stages ABOVE the sync dir, and the
+    // fence mounts only the sync dir. Refuse rather than let the agent report
+    // the planted file as nonexistent — which is what it is, in there.
+    if (typeof sc.preHook === "string" && OUTSIDE_SYNC_DIR_HOOKS.has(sc.preHook) && containerMode) {
+      problems.push(`${id} cannot run in --container mode: its pre-hook "${sc.preHook}" stages a path outside the sync dir, and the fenced container mounts the sync dir only — the condition would be invisible to the agent. Run it host-mode (unsandboxed).`);
     }
     // Same argument as requiresNoCli: a cold-start scenario against a stage that
     // pre-seeded `.env` measures nothing at all — `init` would just reuse the
