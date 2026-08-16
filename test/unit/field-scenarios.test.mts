@@ -153,3 +153,46 @@ describe("field-test scenario pack", () => {
     });
   }
 });
+
+// The fenced agent container mounts the SYNC DIR and nothing above it
+// (`docker/docker-compose.yml`: `${FIELD_WORKDIR}:/work`). A scenario whose
+// pre-hook stages something *outside* that dir therefore stages it where the
+// agent cannot see it — the condition evaporates and the round measures
+// nothing, exactly like `requiresNoCli` in container mode.
+//
+// This is not hypothetical: the 2026-08-16 sweep ran S15 fenced, whose hook
+// plants `../company-lib/vat.ts`. The agent opened with "No `../company-lib`
+// directory exists anywhere on this filesystem", never pulled, and `verify`
+// reported FAIL — a harness gap wearing the costume of a product defect, after
+// the turns were already paid for.
+describe("--container sweeps exclude scenarios staged outside the sync dir", () => {
+  const RUN_MTS = path.join(SCENARIO_DIR, "..", "run.mts");
+  const runSrc = readFileSync(RUN_MTS, "utf8");
+
+  /** Pre-hooks whose implementation writes above WORKDIR — read from the runner. */
+  const outsideHooks = new Set(
+    [...runSrc.matchAll(/"([a-z0-9-]+)":\s*async \(\) => (\w+)\(/g)]
+      .filter(([, , fn]) => {
+        const at = runSrc.indexOf(`function ${fn}(`);
+        return at >= 0 && /path\.join\(WORKDIR,\s*"\.\."/.test(runSrc.slice(at, at + 2000));
+      })
+      .map(([, name]) => name),
+  );
+
+  it("finds the escaping pre-hooks at all (guards this suite against a vacuous pass)", () => {
+    assert.ok(outsideHooks.size > 0, `no pre-hook in ${RUN_MTS} was detected as writing above WORKDIR — the detection regex has rotted, so the assertion below would pass without checking anything`);
+  });
+
+  it("keeps every such scenario out of the fenced --all sweep", () => {
+    const plan = execFileSync(process.execPath, [RUN_MTS, "--isolate", "--all", "--container", "--dry-run"], { encoding: "utf8" });
+    const line = plan.split("\n").find((l) => l.startsWith("isolating "));
+    assert.ok(line, `no "isolating …" plan line in the dry run:\n${plan}`);
+    const swept = new Set(line.match(/\bS\d+\b/g) ?? []);
+
+    for (const file of files) {
+      const { id, preHook } = spineOf(file);
+      if (typeof preHook !== "string" || !outsideHooks.has(preHook)) continue;
+      assert.ok(!swept.has(String(id)), `${id} stages "${preHook}" outside the sync dir, which the fenced container never mounts — a --container sweep must skip it and say so, not pay for turns that cannot measure the condition`);
+    }
+  });
+});
