@@ -373,12 +373,13 @@ since `credential.https://github.com.helper` points at `gh`.
   push once then `gh pr merge`.) Clean up sections left by older `-u` pushes
   unsandboxed: `git config --remove-section branch.<name>`.
 - **Node's `fetch()` ignores the proxy** → a bare `fetch failed` even for
-  allowlisted hosts, while `curl` on the same URL returns 200. Set
-  **`NODE_USE_ENV_PROXY=1`** (Node >= 24) — verified to make
-  `npm run audit:globals` complete sandboxed. Put it in the harness's `env`
-  config rather than as a command prefix (an inline `VAR=… cmd` breaks
-  allowlist matching — see "Invoke commands so a human can approve *and* read
-  them").
+  allowlisted hosts, while `curl` on the same URL returns 200. The fix is
+  **`NODE_USE_ENV_PROXY=1`** (Node >= 24), and this repo now **ships it**:
+  `.claude/settings.json` sets it under `env`, so `npm run audit:globals`
+  completes sandboxed with no per-command prefix. It belongs in the harness's
+  `env` config precisely because an inline `VAR=… cmd` breaks allowlist
+  matching (see "Invoke commands so a human can approve *and* read them").
+  Other harnesses need the same variable in their own env config.
 - **`gh` fails intermittently** with `tls: failed to verify certificate: x509:
   OSStatus -26276` — on **GETs as well as POSTs**, on a host that worked
   seconds earlier. `SSL_CERT_FILE` does not fix it; `gh` spawned from node
