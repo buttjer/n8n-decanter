@@ -7,7 +7,7 @@ capable?") — the full-plugin idea was worked through and rejected except for
 reach. Picks up the plugin findings in
 [55-init-skills-offer.md](../done/55-init-skills-offer.md) (hint protocol, the
 dropped Plan 56) and the skills-pack note in
-[30-agent-llm-working-ergonomics.md](../open/30-agent-llm-working-ergonomics.md).
+[30-agent-llm-working-ergonomics.md](../done/30-agent-llm-working-ergonomics.md).
 **Snapshot:** 2026-08-04T14:08Z @ 1955c62
 **Theme:** decanter is invisible in the places agent users shop for tooling —
 get listed in two of them, and ship nothing else through that channel.

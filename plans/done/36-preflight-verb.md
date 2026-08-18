@@ -284,7 +284,7 @@ Concretely:
   backend lands, `simulate`'s availability probe (today: Docker) widens
   automatically — preflight inherits it through the registry's availability
   logic; no coupling now.
-- **Relation to [Plan 30](../open/30-agent-llm-working-ergonomics.md):** the
+- **Relation to [Plan 30](30-agent-llm-working-ergonomics.md):** the
   agent research-ladder docs should name `preflight --json` as the one gate
   once shipped — coordination note, not a dependency.
 - **Relation to [Plan 37](../done/37-scenario-pin-sets.md):** Plan 37 renames

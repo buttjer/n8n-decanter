@@ -30,6 +30,14 @@ This document is the contract for creating and editing these files.
 - **Never hand-edit `.decanter.json`, and never write a `// @ts-n8n sha256:`
   marker.** These are machine-owned; touching them corrupts sync state and the
   CLI blocks it at `push`.
+- **Orient before you edit: run `preflight` at the *start* of a task, not only
+  before the push.** It is read-only. It tells you whether someone edited that
+  code on the instance (`drift`), whether both sides moved (`CONFLICT`), and
+  whether a push from an earlier session is still pending (`parity`). **On
+  drift, `pull` and carry on** — a pull is part of the work. **On `CONFLICT`,
+  stop and ask**: `diff` shows the lines before either side is overwritten.
+  Nothing is lost if you skip this (`push` refuses to overwrite remote edits) —
+  but the work may have to be redone on top of what you didn't know was there.
 - **`push` writes the DRAFT and is part of finishing the work — code that only
   exists in this folder is not done. `publish` (or `push --publish`) changes
   what is actually running and needs the user's say-so.** The loop:

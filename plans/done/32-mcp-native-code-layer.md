@@ -153,7 +153,7 @@ Decided with the user (this session):
 
 ## Relation to Plan 30 (agent/LLM ergonomics — in planning, unmerged)
 
-[Plan 30](../open/30-agent-llm-working-ergonomics.md) predates this pivot; the split, agreed
+[Plan 30](30-agent-llm-working-ergonomics.md) predates this pivot; the split, agreed
 2026-07-22:
 
 - **Unaffected — ship independently, don't hold for this plan's go/no-go:** Theme A

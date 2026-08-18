@@ -14,13 +14,12 @@
       "url": "https://docs.n8n.io/~gitbook/mcp"
     }
   },
-  "//_enforcement": "opencode permissions are path/pattern based — they can protect whole files but can't inspect content. So the two file-level invariants (never touch .decanter.json or *.remote.js) are enforced here; the content-level ones (jsCode placeholder integrity, the sha256 marker) are enforced by the n8n-decanter CLI at push, which is the wall for every agent.",
+  "//_enforcement": "opencode permissions are path/pattern based — they can protect whole files but can't inspect content. So the file-level invariant (never touch .decanter.json) is enforced here; the content-level ones (jsCode placeholder integrity, the sha256 marker) are enforced by the n8n-decanter CLI at push, which is the wall for every agent.",
 
   "permission": {
     "edit": {
       "*": "allow",
-      "**/.decanter.json": "deny",
-      "**/*.remote.js": "deny"
+      "**/.decanter.json": "deny"
     },
     "bash": {
       "*": "allow",

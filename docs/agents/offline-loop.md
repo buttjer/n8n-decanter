@@ -24,9 +24,19 @@ credential-free and still never contacts n8n, but it boots a throwaway local
 engine to really *run* the workflow — Docker, and minutes rather than
 milliseconds. An occasional deeper pass, not the per-edit one.
 
+**The first check of a task is the one exception — run it online.** A bare
+[`preflight`](/docs/cli/preflight/) before your first edit reports whether
+someone changed that code on the instance meanwhile (`drift` → `pull` and carry
+on; `CONFLICT` → show the user [`diff`](/docs/cli/diff/) first). `--offline`
+cannot answer that — it drops the instance tier by definition — so the
+credential-free loop below is what you run *per edit*, not what you open with.
+
 A typical agent iteration:
 
 ```sh
+# orient first: read-only, and the only check that sees the instance's side
+n8n-decanter preflight order-sync
+
 # after editing code/parse-order.ts and workflow.json
 n8n-decanter node run workflows/order-sync/code/parse-order.ts fixture.json
 n8n-decanter preflight --offline
