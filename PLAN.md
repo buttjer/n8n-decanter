@@ -195,6 +195,21 @@ n8n-decanter/
   2.30.7), MCP access enabled instance-wide, and the per-workflow
   `availableInMCP` opt-in. Continuously verified against real 2.x instances
   by the plans/15 smoke suite (version matrix via `SMOKE_N8N_TAG`, plans/22).
+- **Plan 81 (2026-08-18): the unstated assumption "the sync dir is where the
+  agent was started" is explicitly dropped.** Everything init scaffolds had
+  treated the two as the same directory — true for a standalone sync dir, false
+  for the nested layout `docs/concepts/sync-layout.md` explicitly promises. Two
+  independent halves failed there: agents load their wiring **only from the dir
+  they were started in** (`.mcp.json` merged from that dir's ancestors,
+  `.claude/settings.json` from that dir alone — verified against Claude Code
+  2.1.234), and decanter's config search only ever walked **up** from cwd, so
+  hoisting the MCP entry to the repo root spawned the guard where nothing could
+  be found. The fix leaves both mechanisms intact and supplies the input each
+  was missing: `--dir`/`N8N_DECANTER_DIR` move the search's starting point (see
+  Config), the scaffolded hooks locate themselves from `import.meta.dirname`
+  instead of cwd, and `init` prints the working shapes when it detects a project
+  root above its target (see Init flow). Deliberately not done: bending the
+  agents' own discovery rules, and writing into a parent repo.
 
 ## Synced content layout
 
@@ -365,6 +380,40 @@ verbs; `N8N_API_KEY` is **optional** and guarded per-verb (`requireApiKey`
 names the verb in its error) — only `executions`, `data-tables`, and `backup`
 need it (Plan 33 + 51). `loadConfig`'s old `requireCredentials` became
 `requireHost`.
+
+**Where the search STARTS (Plan 81): `--dir <path>` > `N8N_DECANTER_DIR` >
+`process.cwd()`.** `resolveSearchStart` (`lib/config.mts`) resolves it once in
+`main()` and every verb loads from there — the guard included, so there is no
+guard-only path to keep in sync. The upward walk itself is untouched; only its
+origin moves, which is what makes a nested sync dir reachable from the repo root
+an agent starts in. Both forms resolve **relative to cwd**, so a committed root
+`.mcp.json` can carry a repo-relative `"flows"` and survive a clone on another
+machine (an absolute path would not); an empty value counts as unset, since an
+agent config interpolating a missing variable ships `""`; a path that is not a
+directory fails immediately rather than walking to `/` and reporting the wrong
+problem. **The env var is the load-bearing half, not the flag** — every agent's
+MCP server entry has an `env` block, while a `cwd` key is not guaranteed across
+agents and versions. `init` **refuses** `--dir`: it takes its target as a
+positional argument, and a flag value peeled off the argv would silently
+scaffold the working directory instead.
+
+**Why not a root-dir key in the sync dir's `.env`? Structurally circular** — the
+standing answer to a question that keeps recurring. `loadEnv(dir)` runs only
+*after* the upward search has located the sync dir, so a `.env` inside it cannot
+say where it is, and in the broken case is never read at all. Any hint must
+arrive from **outside** the sync dir: argv or the process environment. (A
+second, upward-searched root `.env` would be a whole new lookup surface bought
+for one bug.) Since `loadEnv` never overrides an already-set variable, the sync
+dir's own `.env` cannot fight the `N8N_DECANTER_DIR` that found it either.
+
+**The not-found error has two branches** (Plan 81), because the advice inverts
+between them. A bounded breadth-first scan *below* the starting point (depth 3,
+≤300 dirs, skipping `node_modules` and every dot-dir) is the evidence: a hit
+means the setup is fine and the search merely began too high → name the dir with
+`--dir`/`N8N_DECANTER_DIR`. No hit keeps the Plan 75 cold-start advice (a
+half-setup `.env`, run `init`). Sending the nested case to `init` would scaffold
+a second sync dir on top of a working one. The scan exists only to improve a
+message — unreadable dirs are skipped, never authoritative.
 
 ## Workflow refs & CLI output (plans/11)
 
@@ -679,7 +728,11 @@ transports:
   local project dependency — a bare `n8n-decanter` only resolves on the agent's
   `PATH` (a global install) and would otherwise **silently fail to start**,
   dropping the agent onto whatever other n8n route it has, unguarded;
-  `--no-install` never downloads, so a missing install fails loudly. One JSON-RPC message per line; stdout is
+  `--no-install` never downloads, so a missing install fails loudly. Both that
+  resolution and the guard's config lookup are relative to **the dir the agent
+  started in**, which is the sync dir only when it is also the project root —
+  the entry hoisted to a repo root above it needs `N8N_DECANTER_DIR` plus a
+  root-resolvable command (Plan 81; see Config and Init flow). One JSON-RPC message per line; stdout is
   protocol-only (stderr logging; the dispatcher builds a stderr `Log` and a
   stderr-logging `McpClient`); strictly ordered processing (session-id
   capture race-free); SSE responses decoded back to per-line JSON; n8n's
@@ -1162,6 +1215,35 @@ Bootstraps a sync directory. Plan 32 made it OAuth-first:
    but is silently dropped for non-Anthropic marketplaces, so it isn't used.
    Actually *installing* — declaratively, via `.claude/settings.json`
    (`extraKnownMarketplaces` + `enabledPlugins`) — is Plan 56.
+
+**The nested-sync-dir note (Plan 81).** The three agent files init scaffolds
+(`.claude/settings.json`, `.mcp.json`, `opencode.json`) are exactly the ones an
+agent loads *only from the dir it was started in*, so init says so when the sync
+dir is not that dir. `projectRootAbove` (`lib/init.mts`) walks **strict**
+ancestors for a `.git` (checked with `existsSync` — a *file* in worktrees and
+submodules) or, failing that, a `package.json`; `.git` wins over an intermediate
+manifest, since in a monorepo the repo root is the dir people open. Strict
+ancestors are what keep the test cheap: the sync dir's own scaffolded
+`package.json`, and a `git init` run inside it (the shape the docs teach), never
+register. The note rides the **same gate as the restart reminder** — the run
+that first scaffolds those files — so a standalone dir, the shape everything
+assumed until now, stays completely silent, and a re-init never repeats it.
+Option A leads (`cd <syncdir> && claude`): zero further config, and the only
+shape in which the scaffolded permission globs stay anchored where they were
+written; its one cost is that the surrounding project's own
+`.claude/settings.json` then does not load (its `.mcp.json` still does, via the
+ancestor walk). Option B is the paste-ready root wiring and needs **both**
+halves or it still fails: the `N8N_DECANTER_DIR` pin *and* a root-resolvable
+command, because `npx --no-install` resolves from the launch dir's
+`node_modules/.bin` — the sync dir itself under a local install. Every printed
+path and glob carries the sync-dir prefix, above all `Read(<rel>/.env)` /
+`Edit(<rel>/.env)`: a relative pattern anchors at the settings file declaring
+it, so a verbatim hoist would guard the *root's* `.env` and silently stop
+protecting the credentials file. `${CLAUDE_PROJECT_DIR}` is named only as a
+thing not to reach for — it expands to the parent, so it reads as if it pointed
+at the sync dir and never does. **init prints, never writes into a parent**: the
+parent's config usually carries other servers and is not guaranteed to be the
+agent's root (same boundary as Plan 80 — setup stays the user's).
 
 **One shared prompt session** serves every question — a second
 `createPrompt()` would lose piped answers the first one buffered (the same

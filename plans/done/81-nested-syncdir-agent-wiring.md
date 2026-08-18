@@ -1,8 +1,9 @@
 # Plan 81 — a nested sync dir's scaffolded agent wiring never loads
 
-**Status:** Not started — direction settled with the maintainer 2026-08-18;
-tasks 8 + 9 investigated and closed 2026-08-18 (see "Settled findings"), the
-remaining tasks reworked accordingly.
+**Status:** Done — shipped 2026-08-18 in three PRs: #273 (these plan
+corrections, after tasks 8 + 9 were investigated — see "Settled findings"), #275
+(tasks 8/8a/8b, the self-locating hooks) and the `--dir`/`N8N_DECANTER_DIR` PR
+that carries tasks 1-7 plus every doc surface.
 **Priority:** P2 — except **tasks 8 + 8a, which are P1**: the hook defects are
 live bugs today (one of them, the `projects[]` key, misfires in every sync dir
 nested in a git repo), the fix is small, offline and clearly right, and it must

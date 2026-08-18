@@ -108,6 +108,77 @@ the failure, which is where it belongs. Once the instance is reachable again,
 the guard replays the handshake upstream before the next forward, so the
 recovered session is a real one.
 
+## When your sync dir is not your project root
+
+`init` writes `.mcp.json` **into the sync dir**, which quietly assumes the sync
+dir is where you start the agent. In a monorepo it often isn't — and the file is
+loaded only if the agent's own discovery can see it. Claude Code finds
+`.mcp.json` by walking **up** from its launch directory (every ancestor, merged,
+nearest wins) and never scans downward: a sync dir at `<repo>/flows` is fully
+wired for an agent started in `flows/`, and completely invisible to one started
+at `<repo>/`. `.claude/settings.json` is stricter still — the full per-file
+matrix is in
+[Working with coding agents](/docs/agents/overview/#where-the-agent-wiring-loads-from).
+
+**Option A — start the agent in the sync dir.** The recommendation, because it
+needs no configuration at all:
+
+```sh
+cd flows && claude
+```
+
+Everything `init` scaffolded then applies exactly as written, including the
+permission rules that keep the agent out of `.env`. The one cost: the parent
+repo's own root `.claude/settings.json` no longer loads (its `.mcp.json` still
+does, via the upward walk).
+
+**Option B — wire the repo root.** Spawning the guard from above the sync dir
+breaks **two** independent things, and a working entry has to fix both:
+
+- decanter searches for `decanter.config.json` **upward** from the working
+  directory, so from the repo root it never sees `flows/decanter.config.json`.
+  `N8N_DECANTER_DIR` moves where that search starts — see
+  [configuration](/docs/concepts/configuration/#pointing-at-a-nested-sync-dir).
+- `npx --no-install` resolves the binary from the working directory's
+  `node_modules/.bin`. Under a **local** install that directory is in the sync
+  dir, so from the root the command itself is not found.
+
+A `<repo-root>/.mcp.json` entry for a sync dir at `flows/`, decanter installed
+as a project dependency of it:
+
+```json
+{
+  "mcpServers": {
+    "n8n-instance": {
+      "command": "flows/node_modules/.bin/n8n-decanter",
+      "args": ["mcp", "connect"],
+      "env": { "N8N_DECANTER_DIR": "flows" }
+    }
+  }
+}
+```
+
+With a **global** install the command is just `"n8n-decanter"` (the scaffolded
+`npx --no-install` form works too — it falls back to `PATH`), so the `env` block
+is the only new part. opencode's `opencode.json` wants the same two halves: its
+`command` array plus an `environment` block carrying `N8N_DECANTER_DIR`.
+[`init`](/docs/cli/init/#when-the-sync-dir-is-nested-in-a-bigger-repo) prints
+both files, filled in with your actual paths, when it scaffolds into a nested
+directory.
+
+**Keep both paths repo-relative.** `N8N_DECANTER_DIR` resolves against the
+working directory, so `"flows"` survives a clone on someone else's machine while
+an absolute path breaks for every teammate — and a root `.mcp.json` is normally
+committed.
+
+None of this changes where credentials come from: the guard reads `.env` /
+`.decanter-auth.json` **from the sync dir it now finds**, and obtaining them
+stays exclusively [init](/docs/cli/init/)'s job. What Option B does *not* carry
+along is the rest of the scaffolded wiring — permission rules and hooks live in
+the sync dir's `.claude/settings.json`, and hoisting that file's relative globs
+verbatim silently stops protecting `<syncdir>/.env`. That half is covered in
+[Working with coding agents](/docs/agents/overview/#where-the-agent-wiring-loads-from).
+
 ## What the guard logs
 
 On stderr, so it never touches the protocol stream:

@@ -136,6 +136,42 @@ guard (structure and lifecycle acts pass; Code-node `jsCode` writes are
 blocked toward the file + push flow) — and **`n8n-docs`**, n8n's official
 read-only docs MCP.
 
+## When the sync dir is nested in a bigger repo
+
+Everything in that scaffold assumes the agent is started **in the sync dir** —
+which is exactly what stops being true when the sync dir is a subfolder of a
+bigger project. So when a directory *above* the sync dir looks like a project
+root (it holds a `.git` or a `package.json`), `init` prints — right after the
+restart reminder, on the same trigger: the run that first scaffolds those agent
+files — the two shapes that actually work:
+
+- **Option A, the recommendation: start the agent in the sync dir**
+  (`cd flows && claude`). Nothing needs configuring; the only thing you give up
+  is the parent repo's own root `.claude/settings.json` (its `.mcp.json` still
+  loads, since that one is found by walking up).
+- **Option B: wire the repo root**, for setups where Option A isn't possible. A
+  paste-ready `<repo-root>/.mcp.json` entry (plus its opencode equivalent)
+  carrying `N8N_DECANTER_DIR` **and** a command that resolves from the root, and
+  a `<repo-root>/.claude/settings.json` hooks block with each script path
+  prefixed by the sync dir. Permission rules you hoist need that same prefix —
+  above all `Read(<syncdir>/.env)` / `Edit(<syncdir>/.env)`, which stop
+  protecting the credentials file if they are copied verbatim.
+
+Only *strict* ancestors count, so the sync dir's own scaffolded `package.json`
+— and a `git init` run inside it, the shape these docs teach — never make it
+look nested.
+
+`init` **prints** the note; it never writes into a parent directory. That
+parent's `.mcp.json` usually carries other servers, and it is not guaranteed to
+be the directory you start the agent in — neither is a merge decanter can make
+on your behalf. A standalone sync dir sees none of this: with no project above
+it, the note stays silent.
+
+Why any of it is necessary — which file loads from where — is the matrix in
+[Working with coding agents](/docs/agents/overview/#where-the-agent-wiring-loads-from);
+the root MCP entry is spelled out in
+[mcp connect](/docs/cli/mcp-connect/#when-your-sync-dir-is-not-your-project-root).
+
 ## Re-running init
 
 `init` is safe to re-run — for example to pick up template improvements after
@@ -185,3 +221,10 @@ line, and it asks rather than blocks.
 - `--force` — the escape hatch: overwrites **every** template file with its
   template version, including ones you edited (each such file is flagged
   `(had local changes)`), then re-records the baseline. `.env` is never touched.
+
+The global `--dir` / `N8N_DECANTER_DIR`
+([configuration](/docs/concepts/configuration/#pointing-at-a-nested-sync-dir))
+is the one flag `init` does **not** take: it points the config search at an
+*existing* sync dir, while `init` creates one and takes its target as the
+positional `[dir]`. `init --dir flows` is refused rather than silently
+scaffolding the working directory.

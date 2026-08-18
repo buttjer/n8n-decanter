@@ -142,6 +142,29 @@ already in `.env` and needs no browser or TTY:
 n8n-decanter init . --host <host-url> --token <mcp-token>
 ```
 
+This is the message you get when nothing below you is a sync dir. When one
+*is*, the error says so instead — see the next section.
+
+## "decanter.config.json not found" but the sync dir is one level down
+
+Same message, opposite cause: the sync dir is fine, the command just ran
+*above* it. The search only walks up, so from the repo root it never sees
+`flows/decanter.config.json`. The error names the sync dir it found below you
+and the two ways to point at it:
+
+```sh
+n8n-decanter pull --dir flows
+N8N_DECANTER_DIR=flows n8n-decanter pull
+```
+
+**Don't run `init` here** — it would scaffold a second sync dir on top of a
+working one. A coding agent lands in this case whenever it is started at the
+repo root: what does and doesn't load from there is the matrix in
+[Working with coding agents](/docs/agents/overview/#where-the-agent-wiring-loads-from),
+and the root MCP entry (which needs a root-resolvable command as well as the
+override) is in
+[mcp connect](/docs/cli/mcp-connect/#when-your-sync-dir-is-not-your-project-root).
+
 ## "MCP session expired … re-run: n8n-decanter init"
 
 The stored OAuth refresh token was invalidated (they rotate on every use — a

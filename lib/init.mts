@@ -234,6 +234,155 @@ function migrateRenamedTemplateFiles(srcDir: string, destDir: string, manifest: 
 }
 
 /**
+ * Nearest STRICT ancestor of `dir` that looks like the **agent's** project root
+ * — one holding `.git` (a *file* in worktrees and submodules, so `existsSync`,
+ * never `statSync().isDirectory()`) or a `package.json`. Null when there is
+ * none, which is the standalone sync dir every earlier version assumed.
+ *
+ * Only strict ancestors count, and that is what makes the test cheap: the sync
+ * dir's own scaffolded `package.json` — and a `git init` run inside it, the
+ * shape the docs teach — are never mistaken for a parent project.
+ *
+ * `.git` beats an intermediate `package.json` on the way up: in a monorepo the
+ * repo root is the dir people actually open, while a sub-package manifest is
+ * just a stop along the walk.
+ *
+ * Consulting git here answers "where would the agent be started?", a different
+ * question from "where is the sync dir?" — so it is **not** a reversal of
+ * `docs/concepts/sync-layout.md`'s "decanter never uses git to find the sync
+ * dir" (which remains true: that is still the upward `decanter.config.json`
+ * search, git-blind).
+ */
+export function projectRootAbove(dir: string): string | null {
+  let current = path.resolve(dir);
+  let pkgRoot: string | null = null;
+  for (;;) {
+    const parent = path.dirname(current);
+    if (parent === current) return pkgRoot; // fs root: only a package.json ever matched
+    if (existsSync(path.join(parent, ".git"))) return parent;
+    if (pkgRoot === null && existsSync(path.join(parent, "package.json"))) pkgRoot = parent;
+    current = parent;
+  }
+}
+
+/**
+ * The nested-sync-dir note (Plan 81), printed verbatim rather than pointed at:
+ * the wiring `init` just wrote is loaded **only from the dir the agent starts
+ * in** — `.mcp.json` is merged from every ancestor of that dir (so a nested one
+ * is invisible from above) and `.claude/settings.json` is read from that dir
+ * alone, no walk in either direction. Verified against Claude Code 2.1.234.
+ *
+ * Option A leads because it is the only shape with zero further config *and*
+ * the only one in which the scaffolded permission globs stay anchored where
+ * they were written. Option B is deliberately the long half: a root-hoisted MCP
+ * entry needs BOTH the `N8N_DECANTER_DIR` pin (decanter's config search only
+ * ever walks *up* from its cwd) and a command that resolves from the root —
+ * which `npx --no-install n8n-decanter` does not: it looks in the *launch*
+ * dir's `node_modules/.bin`, which under a local install is the sync dir
+ * itself. And a hoisted permission list is worse than none: relative globs
+ * re-anchor at the root, so a verbatim `Read(.env)`/`Edit(.env)` stops covering
+ * the credentials file — hence every glob below carries the sync-dir prefix.
+ */
+export function nestedWiringNote(syncDir: string, projectRoot: string): string {
+  const rel = path.relative(projectRoot, syncDir).split(path.sep).join("/");
+  // Local install → the binary is not on the root's PATH; point at it
+  // repo-relative (child_process resolves a command containing a separator
+  // against the spawn cwd = the agent's root), because an ABSOLUTE path in a
+  // committed root config is wrong on every other machine.
+  const hasLocalBin = existsSync(path.join(syncDir, "node_modules", ".bin", "n8n-decanter"));
+  const command = hasLocalBin ? `${rel}/node_modules/.bin/n8n-decanter` : "n8n-decanter";
+  const commandNote = hasLocalBin
+    ? `     The command is that path because decanter is installed inside the sync
+     dir, not globally. Keep it repo-relative — an absolute path in a committed
+     root config breaks for everyone else who clones.`
+    : `     The bare command name assumes a global install (npm i -g n8n-decanter).
+     If you instead run npm install inside the sync dir, nothing is on the
+     root's PATH — use ${rel}/node_modules/.bin/n8n-decanter (repo-relative;
+     an absolute path in a committed root config breaks for everyone else).`;
+  return `
+  This sync dir is nested inside ${projectRoot}. Agents load the wiring just
+  scaffolded here only when they are STARTED here: .mcp.json is merged from
+  every ancestor of the launch dir (so a nested one is invisible from above),
+  and .claude/settings.json is read from the launch dir alone.
+
+  ${style.bold("A. Recommended — start the agent in this dir:")}
+
+       cd "${syncDir}" && claude        # or opencode, codex, …
+
+     Everything just scaffolded then applies unchanged, with no further config.
+     Its one cost: that project's own .claude/settings.json does not load then
+     (its .mcp.json still does, via the ancestor walk).
+
+  ${style.bold(`B. Or wire up ${projectRoot} by hand — both halves, or it still fails:`)}
+
+     ${projectRoot}/.mcp.json — merge into the servers already there (the
+     "n8n-docs" entry needs no dir, copy it over unchanged):
+
+     {
+       "mcpServers": {
+         "n8n-instance": {
+           "command": "${command}",
+           "args": ["mcp", "connect"],
+           "env": { "N8N_DECANTER_DIR": "${rel}" }
+         }
+       }
+     }
+
+     N8N_DECANTER_DIR is what makes decanter find this dir at all — its config
+     search only walks UP from where it was started. It resolves against the
+     agent's working dir, so keep it repo-relative.
+
+${commandNote}
+
+     ${projectRoot}/opencode.json — the same two halves:
+
+     {
+       "mcp": {
+         "n8n-instance": {
+           "type": "local",
+           "command": ["${command}", "mcp", "connect"],
+           "environment": { "N8N_DECANTER_DIR": "${rel}" }
+         }
+       }
+     }
+
+     ${projectRoot}/.claude/settings.json — hooks and permissions, every path
+     and every relative glob prefixed with ${rel}:
+
+     {
+       "hooks": {
+         "PostToolUse": [
+           { "matcher": "Edit|Write|MultiEdit",
+             "hooks": [{ "type": "command", "command": "node ${rel}/.claude/hooks/verify.mjs" }] },
+           { "matcher": "mcp__n8n-instance__update_workflow",
+             "hooks": [{ "type": "command", "command": "node ${rel}/.claude/hooks/rename-refs.mjs" }] }
+         ],
+         "SessionStart": [
+           { "hooks": [{ "type": "command", "command": "node ${rel}/.claude/hooks/mcp-route-check.mjs" }] }
+         ]
+       },
+       "permissions": {
+         "deny": ["Read(${rel}/.env)", "Edit(${rel}/.env)", "Edit(**/.decanter.json)"]
+       }
+     }
+
+     Those two .env rules are the sharp end: a relative glob anchors at the
+     settings file that declares it, so copying Read(.env)/Edit(.env) up
+     verbatim would guard the ROOT's .env and silently stop protecting
+     ${rel}/.env — the credentials file. The allow list moves the same way:
+     Edit(workflows/**) becomes Edit(${rel}/workflows/**), Edit(shared/**)
+     becomes Edit(${rel}/shared/**). Everything else in
+     ${rel}/.claude/settings.json names no path and moves across verbatim —
+     copy it over too, the "push --force" Bash denies above all; the block
+     above is short because only the PATHS need rewriting, not because the
+     rest is optional.
+
+     Do not reach for \${CLAUDE_PROJECT_DIR}: it expands to the agent's project
+     root — the parent — so it reads as if it pointed here and never does.
+`;
+}
+
+/**
  * Modification-aware template refresh (dpkg conffile-style). First init copies
  * everything and records a baseline manifest. Re-init copies files new to the
  * template, offers to refresh files the user hasn't touched (pristine), and
@@ -351,6 +500,13 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
   const agentFiles = [path.join(".claude", "settings.json"), ".mcp.json", "opencode.json"];
   if (agentFiles.some((f) => added.includes(f))) {
     log.info(style.dim("  restart your agent (or /reload) before working here — the MCP servers, permission rules and hooks just scaffolded load at agent STARTUP, so this session is still unconfigured"));
+    // Plan 81: those same three files are the ones a nested sync dir never gets
+    // to use — an agent started at the surrounding project root loads none of
+    // them. So the note rides the same gate: it is the second half of "here is
+    // what it takes to make what I just wrote live", and a standalone dir (the
+    // shape this all assumed until now) stays completely silent.
+    const projectRoot = projectRootAbove(destDir);
+    if (projectRoot !== null) log.info(nestedWiringNote(destDir, projectRoot));
   }
 }
 
