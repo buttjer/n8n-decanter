@@ -31,6 +31,13 @@ needs to behave:
   beats an `allow`, so your local file can add to the policy but cannot unblock
   what the project denies.
 
+**Restart the agent after `init`.** MCP servers, permission rules and hooks are
+read at **agent startup**, and `init` is normally run from inside the very
+session it configures — so that session has no `n8n-instance` tools and no deny
+rules until it restarts (or `/reload`s). There is no hot-reload; `init` prints
+the reminder when it first scaffolds those files, and the scaffolded `AGENTS.md`
+tells the agent to ask for a restart rather than route around the missing guard.
+
 ## The hard invariants
 
 Violating these corrupts sync state, which is why they're machine-enforced:

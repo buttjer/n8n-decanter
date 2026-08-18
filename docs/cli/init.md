@@ -40,6 +40,17 @@ and each workflow you sync needs its "Available in MCP" flag — see
 
 ## Non-interactive setup (`--host` / `--token` / `--api-key`)
 
+> **Run `init` — don't hand-write `.env`.** No browser (a headless box, a CI
+> job, a coding agent)? That is *not* a reason to skip `init` and drop
+> `N8N_HOST`/`N8N_MCP_TOKEN` into a file yourself: `init --host … --token …`
+> takes exactly those two values as flags and needs no prompt, no TTY and no
+> browser. A hand-written `.env` leaves the rest of the setup silently missing
+> — no `decanter.config.json`, no starter template, no `.gitignore` (so `.env`
+> is one `git add` away from being committed), no `AGENTS.md`/`.mcp.json` agent
+> wiring, no `.decanter-template.json` baseline — and most verbs then fail with
+> "decanter.config.json not found". Mint the token in n8n
+> (Settings → MCP → API key), then hand it to `init`.
+
 Passing **any** of `--host`, `--token`, or `--api-key` runs `init`
 non-interactively — values come from the flags plus any existing `.env`, and
 **no prompt is ever issued** (so it drives cleanly from a script or a coding
@@ -158,13 +169,16 @@ working copy and the current template on each re-run:
 Commit `.decanter-template.json` — it's the shared baseline, so a teammate who
 clones and re-inits sees the same drift picture. `.env` is never tracked in it.
 
-**The permission rules only bind the NEXT session.** `.claude/settings.json`
-carries the deny rules that keep an agent off `.decanter.json`, `.env` and
-`push --force` — and agents read their permission config at startup, not on
-change. Since `init` is normally run *from inside* the session it is meant to
-constrain, those rules are inert until you restart that agent (or `/reload`).
-`init` says so when it first writes the file. Until then the scaffolded
-`AGENTS.md` is the only thing holding the line, and it asks rather than blocks.
+**Restart your agent after `init`.** Nothing `init` scaffolds for an agent
+hot-loads: MCP servers (`.mcp.json` / `opencode.json` — including the guarded
+`n8n-instance` server), permission rules (`.claude/settings.json`), and session
+hooks are all read at **agent startup**. Since `init` is normally run *from
+inside* the session it configures, that session keeps running unconfigured — it
+cannot see the `n8n-instance` MCP tools, and the deny rules that keep it off
+`.decanter.json`, `.env` and `push --force` are inert. Restart the agent (or
+`/reload`) before working in the sync dir; `init` says so when it first writes
+those files. Until then the scaffolded `AGENTS.md` is the only thing holding the
+line, and it asks rather than blocks.
 
 ## Flags
 

@@ -73,6 +73,10 @@ n8n-decanter init [dir]   # OAuth in your browser (or a pasted MCP token)
 n8n-decanter pull         # pick a workflow from the list → it pulls
 ```
 
+**Restart your coding agent after `init`** — the MCP servers, permission rules
+and hooks it scaffolds are read at agent startup, so the session that ran `init`
+is still unconfigured.
+
 On a terminal, `pull` with no argument lists your n8n workflows — pick one and
 it lands in `workflows/<slug>/`. Know the id already? `n8n-decanter pull
 <id-or-name>` pulls it directly (scriptable, no TTY needed).
@@ -80,7 +84,9 @@ it lands in `workflows/<slug>/`. Know the id already? `n8n-decanter pull
 set a bare `pull`/`push`/`diff` acts on.)
 
 **Credentials:** OAuth by default (via `init`); `N8N_MCP_TOKEN` for
-headless/CI; `N8N_API_KEY` is optional, needed only for `executions`,
+headless/CI — pass it to `init --host <url> --token <mcp-token>` rather than
+hand-writing `.env`, which leaves the config, template, `.gitignore` and agent
+configs unscaffolded; `N8N_API_KEY` is optional, needed only for `executions`,
 `data-tables`, and `backup`. Details: [Installation](docs/getting-started/installation.md),
 [init](docs/cli/init.md), [Configuration](docs/concepts/configuration.md).
 

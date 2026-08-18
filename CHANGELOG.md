@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **"decanter.config.json not found" now points at `init` — with its flags.**
+  The classic half-setup is a hand-written `.env`: an agent that cannot run the
+  browser OAuth flow asks its human to paste `N8N_MCP_TOKEN` into a file and
+  stops there, leaving no config, template, `.gitignore` or agent wiring behind.
+  The error now says the dir is not a sync dir yet, that `.env` alone is not
+  enough, and prints the prompt-free command that fixes it
+  (`n8n-decanter init . --host <host-url> --token <mcp-token>`). The docs
+  (init, configuration, troubleshooting, README) say the same thing: headless is
+  not a reason to skip `init` — it takes the same token as a flag.
+
+- **`init`'s restart reminder now covers everything it wires, not just
+  permission rules.** MCP servers (`.mcp.json` / `opencode.json` — including the
+  guarded `n8n-instance` server), permission rules and hooks are all read at
+  agent **startup**, and `init` normally runs inside the session it configures.
+  The reminder now fires when any of those files is newly scaffolded and says
+  what it means: this session is still unconfigured, restart the agent (or
+  `/reload`). README, init and the agents docs say the same, and the scaffolded
+  `AGENTS.md` tells the agent to **ask for a restart** when the `n8n-instance`
+  tools are missing instead of connecting to the instance directly.
+
 ## [0.10.1] - 2026-08-16
 
 ### Added
