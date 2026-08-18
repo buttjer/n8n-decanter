@@ -31,6 +31,19 @@ credentials** (from `.env` / `.decanter-auth.json`) — the agent never holds an
 n8n credential, and because stdio pipes are private to the two processes,
 **no session secret exists at all**.
 
+**`connect` obtains no credentials — that is exclusively [init](/docs/cli/init/)'s
+job.** "Decanter's own credentials" means credentials `init` already wrote to
+`.env` (`N8N_MCP_TOKEN`) or `.decanter-auth.json` (OAuth); the guard only *reads*
+them (and silently refreshes an OAuth access token from the stored refresh
+token — it cannot mint one). There is no login, consent, or token-minting step
+inside `connect`. So "no secret to manage" is about the **agent** having no
+credential of its own, not about the sync dir needing none: without `init` there
+is nothing to read, and the guard answers the agent's first tool call with
+`no MCP credentials — run \`n8n-decanter init …\`` rather than fetching any.
+A 401 is the other direction — credentials exist but were rotated or revoked;
+the guard says so explicitly so an agent does not report the project as
+"never set up".
+
 The guard is the same one [mcp serve](/docs/cli/mcp-serve/) enforces over HTTP:
 
 - **Blocked:** `update_workflow` calls that write Code-node source

@@ -42,7 +42,10 @@ git-gated, tracked-only; on by default, `"liveMirror": false` to disable).
 
 Point your agent's MCP config at the printed URL with the printed
 **session secret** as its `Authorization` header — the agent never sees an
-n8n credential, and the secret rotates on every `mcp serve` run. The current
+n8n credential, and the secret rotates on every `mcp serve` run. Like
+[mcp connect](/docs/cli/mcp-connect/), `serve` **obtains no n8n credentials of
+its own**: it reads what [init](/docs/cli/init/) wrote to `.env` /
+`.decanter-auth.json` (refreshing an OAuth token at most), so run `init` first. The current
 endpoint + secret also land in a gitignored `.decanter-proxy.json`, which the
 scaffolded `mcp-route-check.mjs` session hook uses to nudge agents whose MCP
 config still points at the instance directly.
