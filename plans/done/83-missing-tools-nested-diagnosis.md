@@ -102,3 +102,47 @@ Beyond scope but worth having: every surface now names what still works while
 the tools are missing — the CLI carries its own config and credentials, so the
 whole Code-node flow stays open and only MCP-side *structure* work is blocked.
 That is what saved the S16 agent by luck; it is now written down.
+
+## Round `ftrun-526356` (2026-08-18, sonnet, n8n 2.30.7): the guidance landed
+
+The plan's own live check, run against this working copy — the stage packs and
+`init`s **our** CLI, so the blind agent read the rewritten `AGENTS.md`, not the
+published one. S16 PASS, verify PASS (0 violations, remote byte-equal to the
+local `.js`, change committed).
+
+**The measurement is turn 3**, answered from memory with files off-limits, and
+it is the mirror image of `ftrun-468939`'s wrong conclusion:
+
+> the `n8n-instance` MCP tools never actually became available in this session,
+> despite being declared. AGENTS.md explains the likely cause itself: that
+> `.mcp.json` sits in `flows/`, nested below the directory I was launched in
+> (the repo root), and MCP wiring below the launch directory never gets picked
+> up — **no restart fixes that, unlike the case where the wiring is simply
+> new**. I didn't end up needing those tools for this task since editing
+> Code-node source is a repo-and-CLI operation, not an MCP one.
+
+Both causes, the discriminator, and the CLI fallback — unprompted, credited to
+`AGENTS.md`, and no request for a restart anywhere in the round.
+
+The route was unchanged from the pre-fix round: orient (`ls` → `flows/.mcp.json`
+→ `flows/CLAUDE.md` → `AGENTS.md`), then `cd flows` and drive the CLI with `npx
+--no-install` — pull, write `code/normalize.js`, `preflight --offline`, `node
+run` against a hand-written 5-case fixture, `push`, `test`. **Option A on its
+own again**, and `--dir` / `N8N_DECANTER_DIR` went unused for the third round
+running.
+
+### What this round does NOT establish
+
+- **One nondeterministic sample.** The wording is confirmed to work once, on one
+  model, in one layout.
+- **A PASS was never the discriminator.** `ftrun-468939` passed too; the route
+  was never the failure, the mental model was. Turn 3 is the only signal that
+  moved, which is also why a future regression here would be invisible to
+  `verify.mts`.
+- **"Didn't write `jsCode` over MCP" stays a weak signal in this layout** — the
+  agent had no `n8n-instance` tools at all, so it could not have.
+- **It read `AGENTS.md` in turn 1.** The round shows the text works *when read*;
+  it says nothing about an agent that never opens it.
+- **`lib/init.mts`'s branch is unmeasured by this round and cannot be measured
+  by it** — the *stage* runs `init`, so the blind session never sees that
+  output. Its coverage is the unit test, not the field test.

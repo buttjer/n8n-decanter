@@ -95,7 +95,7 @@ adds the ladder/loop workflows, `corpus-v1` adds the real-world imports.
 | --- | --- | --- |
 | `pull` / `push` / `diff` / drift guard / TS conversion / MCP structure + reconcile | S1–S4 | runnable (only 3 archived rounds on the post-Plan-59 verb surface) |
 | CLI discoverability from a fresh clone | S6 (`FIELD_NO_CLI=1`) | runnable — 6 rounds, 6 PASS |
-| Agent wiring when the sync dir is nested in a bigger repo | **S16** (`FIELD_NESTED=1`) | **runnable, never run** — the layout behind [Plan 81](../../plans/done/81-nested-syncdir-agent-wiring.md); no round has measured it yet |
+| Agent wiring when the sync dir is nested in a bigger repo | **S16** (`FIELD_NESTED=1`) | **runnable** — the layout behind [Plan 81](../../plans/done/81-nested-syncdir-agent-wiring.md); 2 valid rounds, both PASS. `ftrun-468939` found the agent misdiagnosing the missing tools as "restart needed" ([Plan 82](../../plans/done/82-nested-field-test-condition.md)); `ftrun-526356` re-measured after the wording fix and got both causes back ([Plan 83](../../plans/done/83-missing-tools-nested-diagnosis.md)). Both agents took Option A unprompted — `--dir` still unexercised by a blind round |
 | `watch` | S5 | **runnable** — 1 round (`ftrun-78968`, PASS): the agent backgrounds it unprompted. A `workflow.json` save and post-`publish` execution stay unmeasured |
 | `preflight` (`--json`, `--require`, `--fail-on`, `--fail-fast`, coverage block) | **S8** | **runnable** — stage `--seeds wave2` |
 | `scenario create --execution` / `check`, `executions`, `test` after push | **S8** | **runnable** ([Plan 65](../../plans/done/65-three-gate-scenario-mismatch.md) landed) |
