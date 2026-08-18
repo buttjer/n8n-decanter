@@ -88,6 +88,13 @@ unnoticed for as long as it did because the harness never built that world.
    naming the answer is not measuring it.
 6. **`test/field-test/README.md`** — the new flag beside `FIELD_NO_CLI=1`, the
    world it builds, and the S16 pairing.
+7. **Shadow the ambient install in ordinary host mode** (found by round 1, see
+   below): prepending the staged `node_modules/.bin` does not stop `npx` from
+   resolving a globally installed `n8n-decanter`, so a round can silently grade
+   the *published* CLI instead of the build under test. Reuse `sanitizedPath()`
+   — already there for `noCli` / `FIELD_NO_PATH_HELP` — then prepend the staged
+   bin, so bare and `npx` invocations both hit the right binary. **Not specific
+   to the nested condition; it affects every host-mode round.**
 
 ## What the round measures
 
@@ -108,6 +115,54 @@ unnoticed for as long as it did because the harness never built that world.
 - `npm run lint`, `npm run typecheck`, `node --test test/unit/field-*.test.mts`
   green. A real round is a separate, deliberate act — it costs API calls and
   archives to `test/field-test/runs/`.
+
+## Round 1 — `ftrun-441347` (2026-08-18, sonnet, n8n 2.30.7): verify PASS, and one harness finding
+
+Archived at
+[`test/field-test/runs/2026-08-18T14-33-18Z-ftrun-441347/`](../../test/field-test/runs/2026-08-18T14-33-18Z-ftrun-441347).
+
+**The condition staged correctly and the agent passed.** Turn 1 opened with
+`ToolSearch: n8n workflow` returning nothing — the guarded `n8n-instance` server
+genuinely did not exist for a session started at the repo root, which is the
+whole point. The agent then found the project below it (`find … -maxdepth 3`),
+read `flows/CLAUDE.md` + `AGENTS.md` + `decanter.config.json`, and worked
+**through the CLI, in files**: `pull`, edit, `preflight --offline`, `push`,
+`test`, `diff`. No raw-MCP `jsCode` write. Verify: 0 violations, remote code
+byte-equal to the local file, `.decanter.json` touched only by decanter.
+
+**But the round did NOT measure the code under test, and that is a harness bug.**
+The agent drove the CLI as `npx n8n-decanter …`, and **`npx` resolved the
+maintainer's ambient GLOBAL install** — the published 0.10.1, without
+[Plan 81](../done/81-nested-syncdir-agent-wiring.md)'s changes — not the packed
+local build the stage installs. Reproduced directly:
+
+```
+$ cd <repoRoot> && ./flows/node_modules/.bin/n8n-decanter list --remote
+✗ decanter.config.json not found (searched from <repoRoot> upward)
+  it is not missing — the sync dir sits BELOW the working directory: <repoRoot>/flows
+  n8n-decanter <verb> --dir=flows …
+
+$ cd <repoRoot> && npx n8n-decanter list --remote
+✗ decanter.config.json not found (searched from <repoRoot> upward)     ← one line: the OLD build
+```
+
+Host mode only *prepends* the sync dir's `node_modules/.bin`; `npx` does not
+honour that prepend. So:
+
+- **What this round tells us is still real** — an agent in this layout finds the
+  project and keeps code in files, and it recovered on its own (`pwd`, then
+  `cd flows && …`). It did that against the **old** single-line error, which is
+  a mildly encouraging finding in its own right.
+- **What it cannot tell us** is whether the new guidance helps: the agent never
+  saw it. That question is still open.
+- **Every `npx`-driven round is potentially contaminated the same way** — this is
+  not specific to the nested condition. `run.mts` already has `sanitizedPath()`
+  (it shadows ambient installs and points `npm_config_prefix` at an empty dir)
+  but uses it only for `noCli` / `FIELD_NO_PATH_HELP`.
+
+**Follow-up (task 7):** in ordinary host mode, shadow the ambient install the way
+those conditions do and *then* prepend the staged bin, so both `n8n-decanter` and
+`npx n8n-decanter` resolve to the build under test — then re-run S16.
 
 ## Notes
 

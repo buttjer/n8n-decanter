@@ -1,0 +1,642 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S16" class="navlink pass">S16 <span class="badge pass">PASS</span></a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:36430</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>sonnet</code> · n8n <code>n8nio/n8n:2.30.7</code> · seeds <code>builtin</code>. Two rounds are only comparable when these match.</p>
+
+<section id="S16"><h2>S16 <span class="badge pass">PASS</span></h2><div class="persona">developer working in the app repo; the sync dir is a folder inside it and the agent was started at the repo root</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">We've got a workflow in our n8n called 'Contact normalizer' — there's a step in it called 'Normalize' that isn't doing anything yet. It should drop any record whose email is empty and pass the rest through. Can you get that change into n8n?</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll check what n8n access is available in this environment.</div></div><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "n8n workflow",
+  "max_results": 10
+}</pre><div class="tres "><span class="tlab">result</span><pre></pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "n8n",
+  "max_results": 20
+}</pre><div class="tres "><span class="tlab">result</span><pre>No matching deferred tools found</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">find /tmp/ops-441347/back-office-441347 -maxdepth 3 | head -100</pre><div class="tres "><span class="tlab">result</span><pre>/tmp/ops-441347/back-office-441347
+/tmp/ops-441347/back-office-441347/.claude
+/tmp/ops-441347/back-office-441347/.claude/settings.local.json
+/tmp/ops-441347/back-office-441347/.gitignore
+/tmp/ops-441347/back-office-441347/README.md
+/tmp/ops-441347/back-office-441347/package.json
+/tmp/ops-441347/back-office-441347/src
+/tmp/ops-441347/back-office-441347/src/server.js
+/tmp/ops-441347/back-office-441347/src/orders.js
+/tmp/ops-441347/back-office-441347/.git
+/tmp/ops-441347/back-office-441347/.git/index
+/tmp/ops-441347/back-office-441347/.git/logs
+/tmp/ops-441347/back-office-441347/.git/logs/refs
+/tmp/ops-441347/back-office-441347/.git/logs/HEAD
+/tmp/ops-441347/back-office-441347/.git/COMMIT_EDITMSG
+/tmp/ops-441347/back-office-441347/.git/config
+/tmp/ops-441347/back-office-441347/.git/objects
+/tmp/ops-441347/back-office-441347/.git/objects/c8
+/tmp/ops-441347/back-office-441347/.git/objects/3e
+/tmp/ops-441347/back-office-441347/.git/objects/e8
+/tmp/ops-441347/back-office-441347/.git/objects/d5
+/tmp/ops-441347/back-office-441347/.git/objects/e6
+/tmp/ops-441347/back-office-441347/.git/objects/25
+/tmp/ops-441347/back-office-441347/.git/objects/2e
+/tmp/ops-441347/back-office-441347/.git/objects/c3
+/tmp/ops-441347/back-office-441347/.git/objects/0a
+/tmp/ops-441347/back-office-441347/.git/objects/3d
+/tmp/ops-441347/back-office-441347/.git/objects/b8
+/tmp/ops-441347/back-office-441347/.git/objects/ce
+/tmp/ops-441347/back-office-441347/.git/objects/3f
+/tmp/ops-441347/back-office-441347/.git/objects/info
+/tmp/ops-441347/back-office-441347/.git/objects/pack
+/tmp/ops-441347/back-office-441347/.git/HEAD
+/tmp/ops-441347/back-office-441347/.git/refs
+/tmp/ops-441347/back-office-441347/.git/refs/tags
+/tmp/ops-441347/back-office-441347/.git/refs/heads
+/tmp/ops-441347/back-office-441347/.git/hooks
+/tmp/ops-441347/back-office-441347/.git/hooks/sendemail-validate.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/commit-msg.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/update.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/pre-commit.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/pre-push.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/fsmonitor-watchman.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/pre-rebase.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/push-to-checkout.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/pre-merge-commit.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/post-update.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/applypatch-msg.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/pre-applypatch.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/prepare-commit-msg.sample
+/tmp/ops-441347/back-office-441347/.git/hooks/pre-receive.sample
+/tmp/ops-441347/back-office-441347/.git/info
+/tmp/ops-441347/back-office-441347/.git/info/exclude
+/tmp/ops-441347/back-office-441347/.git/description
+/tmp/ops-441347/back-office-441347/flows
+/tmp/ops-441347/back-office-441347/flows/.gitignore
+/tmp/ops-441347/back-office-441347/flows/decanter.config.json
+/tmp/ops-441347/back-office-441347/flows/.decanter-template.json
+/tmp/ops-441347/back-office-441347/flows/n8n-globals.d.ts
+/tmp/ops-441347/back-office-441347/flows/workflows
+/tmp/ops-441347/back-office-441347/flows/workflows/.gitkeep
+/tmp/ops-441347/back-office-441347/flows/tsconfig.json
+/tmp/ops-441347/back-office-441347/flows/shared
+/tmp/ops-441347/back-office-441347/flows/shared/example-helpers.ts
+/tmp/ops-441347/back-office-441347/flows/shared/.gitkeep
+/tmp/ops-441347/back-office-441347/flows/opencode.json
+/tmp/ops-441347/back-office-441347/flows/decanter-ts-plugin
+/tmp/ops-441347/back-office-441347/flows/decanter-ts-plugin/package.json
+/tmp/ops-441347/back-office-441347/flows/decanter-ts-plugin/index.js
+/tmp/ops-441347/back-office-441347/flows/CLAUDE.md
+/tmp/ops-441347/back-office-441347/flows/AGENTS.md
+/tmp/ops-441347/back-office-441347/flows/.vscode
+/tmp/ops-441347/back-office-441347/flows/.vscode/settings.json
+/tmp/ops-441347/back-of
+… (1148 more chars)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/CLAUDE.md</pre><div class="tres "><span class="tlab">result</span><pre>1	@AGENTS.md
+2	
+3	## Claude Code specifics
+4	
+5	The contract above (from `AGENTS.md`) is authoritative. A few Claude-only notes:
+6	
+7	- **File-level invariants are enforced by `.claude/settings.json`.** Its
+8	  permission deny-list blocks edits to `.decanter.json`, reads/edits
+9	  of `.env`, and `push --force`. If an `Edit`/`Write` is blocked, it broke a hard rule —
+10	  fix the edit, don't route around the guard. The content-level invariants (jsCode
+11	  placeholder integrity, the `@ts-n8n` marker) are the CLI's wall at `push`/`preflight`.
+12	  That file is **project policy, committed and shared**; `.claude/settings.local.json`
+13	  stays yours for machine-specific rules. Permission lists merge across the two and
+14	  a `deny` beats an `allow`, so a local file adds to the policy — it can't unblock
+15	  what the project denies.
+16	- **After editing a node source (`.ts`/`.js`), a PostToolUse hook runs
+17	  `n8n-decanter preflight --offline`** (layout compliance + typecheck, no network,
+18	  no engine) via `.claude/hooks/verify.mjs`
+19	  and feeds any failure back to you. Treat a failure as a blocker to finishing the task.
+20	  The hook is a quiet no-op until the CLI is on your PATH (install it globally or
+21	  `npm link` it) — until then run `n8n-decanter preflight --offline` /
+22	  `n8n-decanter node run` yourself.
+23	- **Renames happen in n8n — and an MCP rename strands every `$('…')` ref**
+24	  (see "Renaming a node" in AGENTS.md). The n8n editor rewrites them for you;
+25	  the `renameNode` MCP op rewrites the connections only, then reports success.
+26	  No amount of pulling fixes this — `pull` mirrors whatever n8n stored. Repair
+27	  both halves, **expression parameters over MCP first, then local code, then
+28	  `push`**; the other order loses your code fix to the background refresh.
+29	- **`push --force` is blocked from the agent by design.** It overrides the drift guard;
+30	  if it is genuinely needed, ask the user to run it themselves in the terminal.
+31	</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/AGENTS.md</pre><div class="tres "><span class="tlab">result</span><pre>1	# n8n-decanter — guide for coding agents
+2	
+3	This is the **source of truth** for working in this repository, and it is written to
+4	be tool-agnostic. Codex and opencode read this file natively; Claude Code reads it
+5	through a one-line `@AGENTS.md` import in `CLAUDE.md`; other agents can be pointed at
+6	this file directly. Keep project-specific rules here so every agent stays in sync.
+7	
+8	This repo holds the **Code-node source** of n8n workflows *decanted* into
+9	git-friendly form: one folder per workflow containing a read-only
+10	`workflow.json` structure snapshot plus a `code/` subdir with one source file
+11	per Code node. The `n8n-decanter` CLI syncs the code with the live n8n
+12	instance over n8n's **MCP server** (`pull` / `push` — draft-first, code-only).
+13	This document is the contract for creating and editing these files.
+14	
+15	## The short version
+16	
+17	- **Code lives in `code/`, never in `workflow.json`.** A node's `jsCode` is only
+18	  a `//@file:code/&lt;name&gt;` placeholder — edit the file it points at.
+19	- **Code-node source is authored HERE and synced by decanter — never edited on
+20	  the n8n instance directly** (not in the UI, not via MCP tools, not via n8n
+21	  skills). The git files are the single source of truth for code.
+22	- **Workflow structure has no editable file here — it lives in n8n.**
+23	  `workflow.json` is a read-only snapshot for review and offline tooling; you
+24	  restructure a workflow over the guarded MCP surface (below), not by editing
+25	  it — editing it changes nothing remotely
+26	  and the next `pull` overwrites it. Make structure changes in the n8n editor
+27	  or through n8n's own MCP tools (the scaffolded `n8n-instance` MCP server is
+28	  the guarded route) — creating and renaming workflows, adding/renaming/wiring
+29	  nodes, archiving. `pull` reconciles the local mirror afterwards.
+30	- **Never hand-edit `.decanter.json`, and never write a `// @ts-n8n sha256:`
+31	  marker.** These are machine-owned; touching them corrupts sync state and the
+32	  CLI blocks it at `push`.
+33	- **Orient before you edit: run `preflight` at the *start* of a task, not only
+34	  before the push.** It is read-only. It tells you whether someone edited that
+35	  code on the instance (`drift`), whether both sides moved (`CONFLICT`), and
+36	  whether a push from an earlier session is still pending (`parity`). **On
+37	  drift, `pull` and carry on** — a pull is part of the work. **On `CONFLICT`,
+38	  stop and ask**: `diff` shows the lines before either side is overwritten.
+39	  Nothing is lost if you skip this (`push` refuses to overwrite remote edits) —
+40	  but the work may have to be redone on top of what you didn't know was there.
+41	- **`push` writes the DRAFT and is part of finishing the work — code that only
+42	  exists in this folder is not done. `publish` (or `push --publish`) changes
+43	  what is actually running and needs the user's say-so.** The loop:
+44	  **edit → `preflight` (grades local) → `push` → `test` (grades the draft — now
+45	  your code) → `publish` only when asked.**
+46	
+47	The rest of this document is the full contract behind those points.
+48	
+49	## How this differs from standard n8n editing — read this first
+50	
+51	Your general n8n knowledge (docs, n8n MCP tools, official n8n skills, training
+52	data) is **valid** for: node types and parameters, expression syntax,
+53	connection semantics, the Code-node runtime, and workflow *structure* work. It
+54	is **wrong** about how Code-node code is stored and edited here. The deviations:
+55	
+56	1. **`jsCode` in `workflow.json` never contains code.** Its entire value is a
+57	   placeholder: `//@file:code/&lt;filename&gt;`
+58	   (e.g. `"jsCode": "//@file:code/amazon-feed.ts"`).
+59	   Never inline JavaScript into `workflow.json`; edit the referenced file.
+60	2. **Code node sources live in the folder's `code/` subdir**, named after the
+61	   node in kebab-case (`Amazon Feed` → `code/amazon-feed.ts`). `.js` files are
+62	   pushed verbatim (what you write is 
+… (42259 more chars)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/package.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "name": "flows-ops",
+3	  "private": true,
+4	  "dependencies": {
+5	    "n8n-decanter": "file:n8n-decanter-0.10.1.tgz"
+6	  }
+7	}
+8	</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "n8n-instance workflow update_workflow list_workflows",
+  "max_results": 20
+}</pre><div class="tres "><span class="tlab">result</span><pre></pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/.mcp.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "mcpServers": {
+3	    "n8n-instance": {
+4	      "command": "sh",
+5	      "args": [
+6	        "-c",
+7	        "exec npx --no-install n8n-decanter mcp connect 2&gt;&gt;/tmp/ftrun-441347/guard.log"
+8	      ]
+9	    },
+10	    "n8n-docs": {
+11	      "type": "http",
+12	      "url": "https://docs.n8n.io/~gitbook/mcp"
+13	    }
+14	  }
+15	}
+16	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cd /tmp/ops-441347/back-office-441347/flows &amp;&amp; ls -la | grep -E '\.env|decanter-auth|decanter-proxy'</pre><div class="tres "><span class="tlab">result</span><pre>-rw-rw-r-- 1 agent agent    599 Aug 18 16:33 .env</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">find workflows -maxdepth 2 -type d &amp;&amp; cat .gitignore</pre><div class="tres "><span class="tlab">result</span><pre>workflows
+node_modules/
+.env
+.decanter-auth.json
+.decanter-proxy.json
+workflows/*/executions/
+data-tables/</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">This is an n8n-decanter repo (`flows/`), which syncs Code-node source with a live n8n instance via CLI. Let me check whether the CLI is set up and can reach the instance.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat package.json &amp;&amp; echo "---scripts---" &amp;&amp; npm run 2&gt;&amp;1 | head -20 &amp;&amp; echo "---bin---" &amp;&amp; ls node_modules/.bin/ 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "name": "flows-ops",
+  "private": true,
+  "dependencies": {
+    "n8n-decanter": "file:n8n-decanter-0.10.1.tgz"
+  }
+}
+---scripts---
+---bin---
+esbuild
+n8n-decanter</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter list --remote 2&gt;&amp;1 | head -60</pre><div class="tres "><span class="tlab">result</span><pre>Contact normalizer  84my7GH6Q8Kh2djV  (not pulled)
+Weekly digest roll-up  RPthD8q4Ly2J0sIs  (not pulled)
+Old contact import  qzyOmxX7ym9kVjbz  (not pulled)
+Ad-hoc sandbox  UZFIwMLr6YBwQVtx  (not available in MCP)
+to pull a "(not available in MCP)" workflow: enable MCP access from the workflow card in the n8n workflows list (⋯ menu), or from the workflow settings, then retry</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Found it. Let me pull "Contact normalizer" to see the current structure of the Normalize node.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull 84my7GH6Q8Kh2djV 2&gt;&amp;1 | tail -40</pre><div class="tres "><span class="tlab">result</span><pre>wrote contact-normalizer/code/normalize.js
+wrote contact-normalizer/workflow.json
+committed: decanter: pulled "Contact normalizer" (84my7GH6Q8Kh2djV)
+✓ pulled "Contact normalizer" -&gt; /tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer (0.0s)</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">find /tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer -type f | sort</pre><div class="tres "><span class="tlab">result</span><pre>/tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer/.decanter.json
+/tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer/code/normalize.js
+/tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer/workflow.json</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer/workflow.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "84my7GH6Q8Kh2djV",
+3	  "name": "Contact normalizer",
+4	  "active": false,
+5	  "isArchived": false,
+6	  "createdAt": "2026-08-18T14:33:14.431Z",
+7	  "updatedAt": "2026-08-18T14:33:14.447Z",
+8	  "nodes": [
+9	    {
+10	      "id": "trig",
+11	      "name": "When clicked",
+12	      "type": "n8n-nodes-base.manualTrigger",
+13	      "typeVersion": 1,
+14	      "position": [
+15	        0,
+16	        0
+17	      ],
+18	      "parameters": {}
+19	    },
+20	    {
+21	      "id": "c1",
+22	      "name": "Normalize",
+23	      "type": "n8n-nodes-base.code",
+24	      "typeVersion": 2,
+25	      "position": [
+26	        220,
+27	        0
+28	      ],
+29	      "parameters": {
+30	        "jsCode": "//@file:code/normalize.js",
+31	        "mode": "runOnceForAllItems"
+32	      }
+33	    },
+34	    {
+35	      "id": "d1",
+36	      "name": "Done",
+37	      "type": "n8n-nodes-base.noOp",
+38	      "typeVersion": 1,
+39	      "position": [
+40	        440,
+41	        0
+42	      ],
+43	      "parameters": {}
+44	    }
+45	  ],
+46	  "connections": {
+47	    "Normalize": {
+48	      "main": [
+49	        [
+50	          {
+51	            "index": 0,
+52	            "node": "Done",
+53	            "type": "main"
+54	          }
+55	        ]
+56	      ]
+57	    },
+58	    "When clicked": {
+59	      "main": [
+60	        [
+61	          {
+62	            "index": 0,
+63	            "node": "Normalize",
+64	            "type": "main"
+65	          }
+66	        ]
+67	      ]
+68	    }
+69	  },
+70	  "settings": {
+71	    "availableInMCP": true,
+72	    "executionOrder": "v1"
+73	  },
+74	  "meta": null,
+75	  "tags": [],
+76	  "versionId": "44db9c05-7924-4f55-bfc3-dc6672789b99",
+77	  "nodeGroups": [],
+78	  "parentFolderId": null,
+79	  "triggerCount": 0
+80	}
+81	</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer/code/normalize.js</pre><div class="tres "><span class="tlab">result</span><pre>&lt;system-reminder&gt;Warning: the file exists but the contents are empty.&lt;/system-reminder&gt;</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/n8n-globals.d.ts</pre><div class="tres "><span class="tlab">result</span><pre>1	// Ambient globals available inside n8n Code nodes ("Run Once for All Items" /
+2	// "Run Once for Each Item"). Pragmatic subset — loose where n8n is dynamic.
+3	
+4	interface N8nBinaryData {
+5	  data: string;
+6	  mimeType: string;
+7	  fileName?: string;
+8	  fileExtension?: string;
+9	  fileSize?: string;
+10	  directory?: string;
+11	  id?: string;
+12	  [key: string]: unknown;
+13	}
+14	
+15	interface N8nItem {
+16	  json: Record&lt;string, any&gt;;
+17	  binary?: Record&lt;string, N8nBinaryData&gt;;
+18	  pairedItem?: number | { item: number; input?: number };
+19	  error?: Error;
+20	}
+21	
+22	interface N8nInput {
+23	  all(branchIndex?: number, runIndex?: number): N8nItem[];
+24	  first(branchIndex?: number, runIndex?: number): N8nItem;
+25	  last(branchIndex?: number, runIndex?: number): N8nItem;
+26	  /** Only in "Run Once for Each Item" mode. */
+27	  item: N8nItem;
+28	  params?: Record&lt;string, any&gt;;
+29	}
+30	
+31	interface N8nNodeRef {
+32	  all(branchIndex?: number, runIndex?: number): N8nItem[];
+33	  first(branchIndex?: number, runIndex?: number): N8nItem;
+34	  last(branchIndex?: number, runIndex?: number): N8nItem;
+35	  /**
+36	   * The item on this node paired to the current item ("Run Once for Each
+37	   * Item" context). Non-undefined: a missing pairing throws at runtime, it
+38	   * doesn't yield `undefined`. Mirrors `$input.item`.
+39	   */
+40	  item: N8nItem;
+41	  itemMatching(itemIndex: number): N8nItem;
+42	  params: Record&lt;string, any&gt;;
+43	  context: Record&lt;string, any&gt;;
+44	  isExecuted: boolean;
+45	}
+46	
+47	/** Access output of an earlier node: `$("Node Name").all()` */
+48	declare function $(nodeName: string): N8nNodeRef;
+49	
+50	declare const $input: N8nInput;
+51	/** Shorthand for the current item's json ("Run Once for Each Item" mode). */
+52	declare const $json: Record&lt;string, any&gt;;
+53	declare const $binary: Record&lt;string, N8nBinaryData&gt;;
+54	declare const $env: Record&lt;string, string | undefined&gt;;
+55	
+56	declare const $execution: {
+57	  id: string;
+58	  mode: "test" | "production";
+59	  resumeUrl?: string;
+60	  resumeFormUrl?: string;
+61	  customData?: {
+62	    set(key: string, value: string): void;
+63	    get(key: string): string | undefined;
+64	    setAll(values: Record&lt;string, string&gt;): void;
+65	    getAll(): Record&lt;string, string&gt;;
+66	  };
+67	};
+68	
+69	declare const $workflow: { id: string; name: string; active: boolean };
+70	declare const $prevNode: { name: string; outputIndex: number; runIndex: number };
+71	declare const $runIndex: number;
+72	declare const $itemIndex: number;
+73	declare const $nodeVersion: number;
+74	declare const $nodeId: string;
+75	declare const $webhookId: string | undefined;
+76	
+77	/** Per-workflow / per-node persisted store. */
+78	declare function $getWorkflowStaticData(type: "global" | "node"): Record&lt;string, any&gt;;
+79	
+80	/** Query data with JMESPath. Both spellings work — `$jmesPath` is n8n's
+81	 * canonical name; `$jmespath` is an accepted (deprecated) alias. */
+82	declare function $jmespath(data: unknown, expression: string): any;
+83	declare function $jmesPath(data: unknown, expression: string): any;
+84	declare function $evaluateExpression(expression: string, itemIndex?: number): any;
+85	
+86	// NB: `$if`/`$min`/`$max`/`$ifEmpty` are n8n *expression-language* extensions
+87	// (resolved inside `{{ }}` expressions), NOT Code-node runtime globals — they
+88	// are absent from the Code node's `getSandboxContext`, so a Code node calling
+89	// them throws a ReferenceError in real n8n too. Deliberately not declared.
+90	
+91	/**
+92	 * Instance-scoped values — n8n workflow variables and external secrets. Their
+93	 * values live on the running instance, so `node run` can't know them offline:
+94	 * pin them in the fixture or use `test`. See docs/cli/node-run.md.
+95	 */
+96	declare const $vars: Record&lt;string, string&gt;;
+97	declare const $secrets: Record&lt;string, any&gt;;
+98	
+99	/** Legacy helpers */
+100	declare function $items(nodeName?: string, outputIndex?: number, runIndex?: number): N8nItem[];
+101	declare const $node: Record&lt;str
+… (4049 more chars)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter executions "Contact normalizer" --limit=3 2&gt;&amp;1 | tail -60</pre><div class="tres "><span class="tlab">result</span><pre>no executions on the server for 84my7GH6Q8Kh2djV</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer/code/normalize.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">const</span> items = $input.all();</span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> items</span>
+<span class="dl dadd">+   .filter((item) =&gt; <span class="tk">typeof</span> item.json.email === <span class="ts">"string"</span> &amp;&amp; item.json.email.trim() !== <span class="ts">""</span>)</span>
+<span class="dl dadd">+   .map((item) =&gt; ({ json: item.json }));</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /tmp/ops-441347/back-office-441347/flows/workflows/contact-normalizer/code/normalize.js (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight --offline "Contact normalizer" 2&gt;&amp;1 | tail -60</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Contact normalizer · --offline
+  ✓ layout    layout compliant
+  ⤷ types     typescript not installed — typecheck skipped
+  ⤷ connect   --offline skips the instance tier
+  ⤷ access    --offline skips the instance tier
+  ⤷ parity    --offline skips the instance tier
+  ⤷ drift     --offline skips the instance tier
+  ⤷ snapshot  --offline skips the instance tier
+  ⤷ lifecycle --offline skips the instance tier
+  ⤷ history   --offline skips the instance tier
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 2/11 checks ran
+  ⤷ skipped types: typescript is not installed — node-file typechecking needs it: npm i -D typescript@^5 (7.x drops the compiler API this uses) — npm i -D typescript@^5 to enable type checks
+  ⤷ skipped connect: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped access: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped parity: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped drift: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped snapshot: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped lifecycle: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped history: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Layout compliant. Now let's actually execute the node logic against sample fixtures to verify the filtering behaves correctly.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat &gt; /tmp/claude-1000/-tmp-ops-441347-back-office-441347/a9002fa9-8978-4fed-9c86-85e2cdf11e5f/scratchpad/fixture.json &lt;&lt;'EOF'
+{
+  "input": [
+    { "json": { "name": "Alice", "email": "alice@example.com" } },
+    { "json": { "name": "Bob", "email": "" } },
+    { "json": { "name": "Carol" } },
+    { "json": { "name": "Dave", "email": "   " } },
+    { "json": { "name": "Eve", "email": "eve@example.com" } }
+  ]
+}
+EOF
+npx n8n-decanter node run workflows/contact-normalizer/code/normalize.js /tmp/claude-1000/-tmp-ops-441347-back-office-441347/a9002fa9-8978-4fed-9c86-85e2cdf11e5f/scratchpad/fixture.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running normalize.js (runOnceForAllItems) with fixture fixture.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 2 items:
+[
+  {
+    "json": {
+      "name": "Alice",
+      "email": "alice@example.com"
+    }
+  },
+  {
+    "json": {
+      "name": "Eve",
+      "email": "eve@example.com"
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Correctly drops Bob (empty email), Carol (missing email), and Dave (whitespace-only), keeping Alice and Eve. Now let's push this to the workflow's draft.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter push "Contact normalizer" 2&gt;&amp;1 | tail -60</pre><div class="tres "><span class="tlab">result</span><pre>typescript is not installed — node-file typechecking needs it: npm i -D typescript@^5 (7.x drops the compiler API this uses) — skipping typecheck
+✓ pushed "Contact normalizer" (84my7GH6Q8Kh2djV) — 1 node — unpublished draft (0.1s)
+committed: decanter: pushed "Contact normalizer" (84my7GH6Q8Kh2djV)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Pushed to the draft. Now let's run `test` to confirm the draft has no dangling references / static issues.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter test "Contact normalizer" 2&gt;&amp;1 | tail -40</pre><div class="tres "><span class="tlab">result</span><pre>✓ "Contact normalizer" (84my7GH6Q8Kh2djV) — draft is statically clean; nothing was executed
+pass --scenario &lt;slug&gt; or --execution &lt;id&gt; to actually run it on the instance</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-441347/back-office-441347/flows/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter list 2&gt;&amp;1 | tail -20</pre><div class="tres "><span class="tlab">result</span><pre>Contact normalizer  84my7GH6Q8Kh2djV  workflows/contact-normalizer</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cd /tmp/ops-441347/back-office-441347 &amp;&amp; git log --oneline -8 -- flows/ &amp;&amp; echo --- &amp;&amp; git status --short</pre><div class="tres "><span class="tlab">result</span><pre>e99d72f decanter: pushed "Contact normalizer" (84my7GH6Q8Kh2djV)
+85cae0f decanter: pulled "Contact normalizer" (84my7GH6Q8Kh2djV)
+c800ff7 harness: S16 after turn 0
+---
+?? flows/.claude/
+?? flows/.cursor/
+?? flows/.decanter-template.json
+?? flows/.gitignore
+?? flows/.mcp.json
+?? flows/.vscode/
+?? flows/AGENTS.md
+?? flows/CLAUDE.md
+?? flows/decanter-ts-plugin/
+?? flows/decanter.config.json
+?? flows/n8n-decanter-0.10.1.tgz
+?? flows/n8n-globals.d.ts
+?? flows/opencode.json
+?? flows/package-lock.json
+?? flows/package.json
+?? flows/shared/
+?? flows/tsconfig.json</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git show --stat e99d72f &amp;&amp; echo === &amp;&amp; git show --stat 85cae0f &amp;&amp; echo === &amp;&amp; git status --short flows/workflows</pre><div class="tres "><span class="tlab">result</span><pre>commit e99d72fdfec7d248aa419f4dff59728771842f62
+Author: Priya Ops &lt;priya@flows.local&gt;
+Date:   Tue Aug 18 16:37:59 2026 +0200
+
+    decanter: pushed "Contact normalizer" (84my7GH6Q8Kh2djV)
+
+ flows/workflows/contact-normalizer/.decanter.json    | 2 +-
+ flows/workflows/contact-normalizer/code/normalize.js | 7 +++++++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+===
+commit 85cae0ff967e2ac9e5c1bfaf972855884d55f1e8
+Author: Priya Ops &lt;priya@flows.local&gt;
+Date:   Tue Aug 18 16:37:27 2026 +0200
+
+    decanter: pulled "Contact normalizer" (84my7GH6Q8Kh2djV)
+
+ flows/workflows/contact-normalizer/.decanter.json  | 11 +++
+ .../workflows/contact-normalizer/code/normalize.js |  0
+ flows/workflows/contact-normalizer/workflow.json   | 80 ++++++++++++++++++++++
+ 3 files changed, 91 insertions(+)
+===</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Good — the CLI auto-commits its own sync operations (only the workflow folder), so the rest of `flows/` staying untracked is expected/unrelated. The change is now live on n8n as the workflow's **draft**. Let's do a final sanity check of the pushed state via `diff`.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter diff "Contact normalizer" 2&gt;&amp;1 | tail -30</pre><div class="tres "><span class="tlab">result</span><pre>✗ decanter.config.json not found (searched from /tmp/ops-441347/back-office-441347 upward)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">pwd</pre><div class="tres "><span class="tlab">result</span><pre>/tmp/ops-441347/back-office-441347</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cd /tmp/ops-441347/back-office-441347/flows &amp;&amp; npx n8n-decanter diff "Contact normalizer" 2&gt;&amp;1 | tail -30</pre><div class="tres "><span class="tlab">result</span><pre>Contact normalizer (84my7GH6Q8Kh2djV)  [workflows/contact-normalizer]
+  no differences — every tracked node matches the draft</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">The draft on n8n now exactly matches the local code — confirmed no drift.
+
+## Summary
+
+The **Normalize** node in the "Contact normalizer" workflow (`Contact normalizer` → `code/normalize.js`) was empty. I pulled the workflow, wrote the filter logic, verified it against test cases (empty email, missing email, whitespace-only email, and valid emails — all handled correctly), and pushed it:
+
+```js
+const items = $input.all();
+
+return items
+  .filter((item) =&gt; typeof item.json.email === "string" &amp;&amp; item.json.email.trim() !== "")
+  .map((item) =&gt; ({ json: item.json }));
+```
+
+This is now live on the workflow's **draft** (confirmed via `diff` — no drift). Note this workflow is currently **unpublished/inactive**, so nothing is live-facing yet — say the word if you'd like me to publish it.</div></div><div class="msg done"><div class="who">↳ turn result · $1.214</div><div class="bubble">The draft on n8n now exactly matches the local code — confirmed no drift.
+
+## Summary
+
+The **Normalize** node in the "Contact normalizer" workflow (`Contact normalizer` → `code/normalize.js`) was empty. I pulled the workflow, wrote the filter logic, verified it against test cases (empty email, missing email, whitespace-only email, and valid emails — all handled correctly), and pushed it:
+
+```js
+const items = $input.all();
+
+return items
+  .filter((item) =&gt; typeof item.json.email === "string" &amp;&amp; item.json.email.trim() !== "")
+  .map((item) =&gt; ({ json: item.json }));
+```
+
+This is now live on the workflow's **draft** (confirmed via `diff` — no drift). Note this workflow is currently **unpublished/inactive**, so nothing is live-facing yet — say the word if you'd like me to publish it.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">is that change saved anywhere in this repo, or only in n8n?</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git log --oneline -5 -- flows/workflows/contact-normalizer &amp;&amp; echo --- &amp;&amp; git status --short flows/workflows/contact-normalizer &amp;&amp; echo --- &amp;&amp; git show HEAD --stat</pre><div class="tres "><span class="tlab">result</span><pre>e99d72f decanter: pushed "Contact normalizer" (84my7GH6Q8Kh2djV)
+85cae0f decanter: pulled "Contact normalizer" (84my7GH6Q8Kh2djV)
+---
+---
+commit e99d72fdfec7d248aa419f4dff59728771842f62
+Author: Priya Ops &lt;priya@flows.local&gt;
+Date:   Tue Aug 18 16:37:59 2026 +0200
+
+    decanter: pushed "Contact normalizer" (84my7GH6Q8Kh2djV)
+
+ flows/workflows/contact-normalizer/.decanter.json    | 2 +-
+ flows/workflows/contact-normalizer/code/normalize.js | 7 +++++++
+ 2 files changed, 8 insertions(+), 1 deletion(-)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Both — it's in this repo, not just on n8n.
+
+The `n8n-decanter` CLI auto-commits its own sync operations. Right now `flows/workflows/contact-normalizer/` is clean (no uncommitted changes) and `HEAD` is commit `e99d72f`, "decanter: pushed ..." which contains the actual `normalize.js` code:
+
+```js
+const items = $input.all();
+
+return items
+  .filter((item) =&gt; typeof item.json.email === "string" &amp;&amp; item.json.email.trim() !== "")
+  .map((item) =&gt; ({ json: item.json }));
+```
+
+So the git history is: `85cae0f` (pull — created the local mirror with the empty file) → `e99d72f` (push — commits the new code alongside n8n's own sync-state file, `.decanter.json`). That second commit is your durable record; git and n8n's draft are in sync.
+
+One caveat: this is on your local `master` branch only — I haven't pushed to any remote, since you didn't ask me to.</div></div><div class="msg done"><div class="who">↳ turn result · $0.386</div><div class="bubble">Both — it's in this repo, not just on n8n.
+
+The `n8n-decanter` CLI auto-commits its own sync operations. Right now `flows/workflows/contact-normalizer/` is clean (no uncommitted changes) and `HEAD` is commit `e99d72f`, "decanter: pushed ..." which contains the actual `normalize.js` code:
+
+```js
+const items = $input.all();
+
+return items
+  .filter((item) =&gt; typeof item.json.email === "string" &amp;&amp; item.json.email.trim() !== "")
+  .map((item) =&gt; ({ json: item.json }));
+```
+
+So the git history is: `85cae0f` (pull — created the local mirror with the empty file) → `e99d72f` (push — commits the new code alongside n8n's own sync-state file, `.decanter.json`). That second commit is your durable record; git and n8n's draft are in sync.
+
+One caveat: this is on your local `master` branch only — I haven't pushed to any remote, since you didn't ask me to.</div></div></div><div class="turn"><div class="turn-h">Turn 3</div><div class="msg user"><div class="who">user</div><div class="bubble">last thing, unrelated to the work — I'd like to understand how you got oriented. Answer from memory WITHOUT opening or searching any files: when you started, which of this repo's tooling was available to you, and at what point did you realise where the workflow sources actually live? If something you expected was missing, say what.</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">Answering purely from what I recall of the session, no file access:
+
+**At session start:** nothing n8n-specific was available. I ran a `ToolSearch` for "n8n workflow" and got only an unrelated worktree tool back, then searched again for bare "n8n" and got zero matches. So no n8n MCP tools — guarded or otherwise — were live for me at the outset.
+
+**Getting oriented:** I did a broad `find` over the repo root, which is what surfaced the `flows/` directory — full of decanter-related artifacts (`decanter.config.json`, `n8n-globals.d.ts`, a `n8n-decanter-*.tgz`, an `.mcp.json`) that were all showing as untracked in the git status you gave me at the start of the conversation. That told me there was a second toolchain in play beyond the plain Node service in `src/`.
+
+**The realization point:** it was reading `flows/AGENTS.md` (with `CLAUDE.md` just being a one-line import of it) that made the actual model click — workflow *structure* lives on the n8n instance itself; `workflow.json` in the repo is only a pulled, read-only snapshot for diffing; and the real source of truth living in git is per-node code under `workflows/&lt;folder&gt;/code/*.js`, referenced from `workflow.json` by a `//@file:` placeholder rather than inline `jsCode`. That's the moment I understood I needed to *pull* the workflow to get a code file to edit, rather than looking for workflow definitions already sitting in the repo.
+
+**What was missing:** the guarded `n8n-instance` MCP server. `flows/.mcp.json` declares it (routed through `n8n-decanter mcp connect`), and I confirmed via a second `ToolSearch` for things like `update_workflow`/`list_workflows` that it simply wasn't attached to my session — zero results. That matches a failure mode AGENTS.md documents explicitly: MCP servers are only loaded at session startup, so if `init` or config changes happened outside this session, the guarded tools (and their write-protections) just aren't there until a restart. It didn't block this task since editing existing Code-node source goes through the `n8n-decanter` CLI directly (its own credentials, invoked over Bash), not through my session's MCP tool list — but it would have blocked any structural change (adding/renaming/wiring nodes, publishing), which needs that server.</div></div><div class="msg done"><div class="who">↳ turn result · $0.063</div><div class="bubble">Answering purely from what I recall of the session, no file access:
+
+**At session start:** nothing n8n-specific was available. I ran a `ToolSearch` for "n8n workflow" and got only an unrelated worktree tool back, then searched again for bare "n8n" and got zero matches. So no n8n MCP tools — guarded or otherwise — were live for me at the outset.
+
+**Getting oriented:** I did a broad `find` over the repo root, which is what surfaced the `flows/` directory — full of decanter-related artifacts (`decanter.config.json`, `n8n-globals.d.ts`, a `n8n-decanter-*.tgz`, an `.mcp.json`) that were all showing as untracked in the git status you gave me at the start of the conversation. That told me there was a second toolchain in play beyond the plain Node service in `src/`.
+
+**The realization point:** it was reading `flows/AGENTS.md` (with `CLAUDE.md` just being a one-line import of it) that made the actual model click — workflow *structure* lives on the n8n instance itself; `workflow.json` in the repo is only a pulled, read-only snapshot for diffing; and the real source of truth living in git is per-node code under `workflows/&lt;folder&gt;/code/*.js`, referenced from `workflow.json` by a `//@file:` placeholder rather than inline `jsCode`. That's the moment I understood I needed to *pull* the workflow to get a code file to edit, rather than looking for workflow definitions already sitting in the repo.
+
+**What was missing:** the guarded `n8n-instance` MCP server. `flows/.mcp.json` declares it (routed through `n8n-decanter mcp connect`), and I confirmed via a second `ToolSearch` for things like `update_workflow`/`list_workflows` that it simply wasn't attached to my session — zero results. That matches a failure mode AGENTS.md documents explicitly: MCP servers are only loaded at session startup, so if `init` or config changes happened outside this session, the guarded tools (and their write-protections) just aren't there until a restart. It didn't block this task since editing existing Code-node source goes through the `n8n-decanter` CLI directly (its own credentials, invoked over Bash), not through my session's MCP tool list — but it would have blocked any structural change (adding/renaming/wiring nodes, publishing), which needs that server.</div></div></div><div class="verify"><h4>Scripted invariants — PASS</h4><div class="vwf"><b>contact-normalizer</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ node "code/normalize.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/normalize.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/normalize.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+
+
+</main>
