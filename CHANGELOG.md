@@ -50,6 +50,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AGENTS.md` tells the agent to **ask for a restart** when the `n8n-instance`
   tools are missing instead of connecting to the instance directly.
 
+### Fixed
+
+- **The scaffolded hooks now work when your sync dir is not where the agent was
+  started.** All three found the sync dir by assuming it was the current
+  directory, which only holds for an agent launched inside it. With the sync dir
+  nested in a bigger repo — a layout the docs explicitly allow — the agent runs
+  at the repo root and every one of them misbehaved: the rename-reference guard
+  became a **silent no-op**, so `$('Old Name')` references left behind by a
+  `renameNode` went unreported until a later `push` refused them; the verify hook
+  spawned the CLI without a directory, so it **blocked every node-file edit** with
+  a "not a sync dir" error; and the MCP routing check scanned the wrong tree.
+  Each hook now locates the sync dir from its own installed path, so it behaves
+  the same wherever the agent starts.
+- **The routing check no longer misses direct-route servers in your user
+  config.** Its lookup for this project's entry in `~/.claude.json` matched the
+  current directory, but that file is keyed by the repository root — so in any
+  sync dir inside a git repo the check silently found nothing. It now matches the
+  project entry for the sync dir or any parent of it.
+- **The verify hook finds a locally installed CLI.** It only ever looked for
+  `n8n-decanter` on `PATH`, so with a local (non-global) install it stayed quiet
+  and no verification ran at all. It now prefers the sync dir's
+  `node_modules/.bin` and falls back to `PATH`.
+
+### Added
+
+- **The routing check also looks at parent directories, up to your repository
+  root.** Agents merge `.mcp.json` from every directory above the one they start
+  in, so a server pointing straight at your n8n instance can sit in the repo
+  root's config and still route this session. The scan stops at the repository
+  boundary, so it never reaches into unrelated parent directories, and an
+  offender found above the sync dir is named by its relative path
+  (`../.mcp.json`) so you can tell which file it means.
+
 ## [0.10.1] - 2026-08-16
 
 ### Added

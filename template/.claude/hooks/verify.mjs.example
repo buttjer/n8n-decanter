@@ -2,11 +2,18 @@
 // PostToolUse verify hook. After an Edit/Write to a Code-node source file, run
 // `n8n-decanter preflight --offline` (layout compliance + typecheck, no network,
 // no engine) and, on failure, feed the output back to the agent (exit 2 =
-// blocking). No-op when the edit isn't a node file, or when the CLI isn't on
-// PATH yet (fresh scaffold).
+// blocking). No-op when the edit isn't a node file, or when the CLI isn't
+// installed yet (fresh scaffold).
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+
+// This script lives at <syncDir>/.claude/hooks/, so two levels up IS the sync
+// dir — the one anchor that holds however the agent was started. process.cwd()
+// is the agent's project root, which equals the sync dir only when the agent
+// was launched inside it; for a sync dir nested in a bigger repo it is the
+// parent. ${CLAUDE_PROJECT_DIR} is that same root, so it can never point here.
+const syncDir = path.resolve(import.meta.dirname, "..", "..");
 
 let payload = {};
 try {
@@ -44,7 +51,18 @@ try {
 const args = typeof workflowId === "string" && workflowId
   ? ["preflight", "--offline", workflowId]
   : ["preflight", "--offline"];
-const res = spawnSync("n8n-decanter", args, { encoding: "utf8" });
+// Resolve the CLI the way the sync dir itself would: a local install puts the
+// bin in node_modules/.bin, which is on no PATH we inherit (npm only prepends
+// it for its own scripts), while a global install answers to the bare name.
+// Windows stays on the bare name — npm's shims there are `.cmd` wrappers that
+// spawnSync cannot run without a shell.
+const localBin = path.join(syncDir, "node_modules", ".bin", "n8n-decanter");
+const cli = process.platform !== "win32" && existsSync(localBin) ? localBin : "n8n-decanter";
+// cwd = the sync dir, because preflight locates decanter.config.json by
+// searching UPWARD from cwd: spawned from a parent repo's root it would find
+// nothing, exit non-zero, and this hook would report that as a BLOCKING error
+// after every single node-file edit.
+const res = spawnSync(cli, args, { cwd: syncDir, encoding: "utf8" });
 if (res.error?.code === "ENOENT") process.exit(0); // CLI not installed yet — stay quiet
 
 // DELIBERATELY no `--fail-on=warn`. preflight exits 0 on a `caution` verdict, so
