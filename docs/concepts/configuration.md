@@ -4,9 +4,10 @@ description: decanter.config.json keys and credential resolution.
 order: 5
 ---
 
-`decanter.config.json` is searched upward from the current directory;
-credentials come from `.env` / `.decanter-auth.json` next to it or from the
-environment.
+`decanter.config.json` is searched upward from the current directory (or from
+wherever `--dir` / `N8N_DECANTER_DIR` starts that search — see
+[Pointing at a nested sync dir](#pointing-at-a-nested-sync-dir)); credentials
+come from `.env` / `.decanter-auth.json` next to it or from the environment.
 
 ```json
 {
@@ -35,6 +36,50 @@ environment.
 | `liveMirror` | `true` | Run a full [`pull`](/docs/cli/pull/) in the background after an agent restructures a workflow through the [guard](/docs/cli/mcp-connect/) (a forwarded `update_workflow`) — `workflow.json`, the `code/` files and `.decanter.json`, including file moves on a rename. It is a pull, not a snapshot-only refresh, so it can overwrite unpushed local edits; it safety-commits first, and stops if that commit fails. `false` disables the auto-refresh (CI / deterministic setups). |
 | `backupLimit` | `20` | Cap on the retained [`backups/`](/docs/cli/backup/) working set per workflow. Each `backup create` rolling-prunes the oldest beyond this; `0` keeps all (git holds the full history regardless). |
 | `bundleDependencies` | `[]` | npm packages `.ts` nodes may import; [bundled on push](/docs/concepts/typescript-nodes/). Pure-JS only. |
+
+## Pointing at a nested sync dir
+
+The search only goes **up**, which is the wrong direction whenever the sync dir
+sits *below* where the command runs — a monorepo whose flows live in `flows/`,
+or a coding agent whose MCP entry was hoisted to the repo root. Two overrides
+move where that search **starts**; the walk itself is unchanged and still climbs
+from there:
+
+```sh
+n8n-decanter pull --dir flows              # per invocation
+N8N_DECANTER_DIR=flows n8n-decanter pull   # or from the environment
+```
+
+- **Precedence: `--dir` > `N8N_DECANTER_DIR` > the working directory.** Every
+  verb honours both. [`init`](/docs/cli/init/) is the one exception — it
+  *creates* a sync dir rather than finding one, so it takes its target as a
+  positional argument (`n8n-decanter init flows`) and rejects `--dir` rather
+  than quietly scaffolding the working directory instead.
+- **Relative values resolve against the working directory.** That is what keeps
+  a committed root `.mcp.json` portable: `"N8N_DECANTER_DIR": "flows"` is right
+  on every clone, while an absolute path is right on exactly one machine.
+  Absolute values are accepted for one-off use.
+- **A value that isn't a directory is an error**, naming which of the two set
+  it — there is no silent fallback to the working directory. An empty string
+  counts as unset, since agent configs that interpolate a missing variable ship
+  `""`.
+- **The environment variable is the load-bearing half for agents:** every agent
+  MCP config has an `env` / `environment` block, while a working-directory field
+  is not guaranteed across agents and versions. See
+  [mcp connect](/docs/cli/mcp-connect/#when-your-sync-dir-is-not-your-project-root)
+  for the full root-wiring entry — the override alone is not enough there, the
+  command has to resolve from the root too.
+
+Neither override changes credential resolution: `.env` and
+`.decanter-auth.json` are still read next to the `decanter.config.json` the
+search lands on, and a variable already set in the environment always wins over
+the `.env` file.
+
+When a verb does run above its sync dir without an override, the
+`decanter.config.json not found` error says so — it names the directory it found
+below you and both override forms, instead of sending you to `init` (which would
+scaffold a second sync dir on top of a working one). The `init` advice is still
+what a genuinely un-inited directory gets.
 
 ## Credentials
 

@@ -138,6 +138,17 @@ renaming, and archiving workflows — and adding or renaming nodes — are
 **n8n's acts**: do them in the editor or let your agent do it over n8n's MCP
 tools (through the guard above); the next `pull` reconciles the local mirror.
 
+**Sync dir nested in a bigger repo?** A global `--dir <path>` (or
+`N8N_DECANTER_DIR`) starts the upward `decanter.config.json` search there
+instead of in the working directory — every verb honours it except `init`,
+which takes the directory to scaffold as its argument. A coding agent launched
+at the repo root needs it too — agents look for `.mcp.json` and
+`.claude/settings.json` from where they were *started*, never in a directory
+below it, so either start the agent in the sync dir or wire the root
+explicitly:
+[Working with coding agents](docs/agents/overview.md#where-the-agent-wiring-loads-from),
+[mcp connect](docs/cli/mcp-connect.md#when-your-sync-dir-is-not-your-project-root).
+
 ## How it compares
 
 n8n-decanter is **Code-node-first**: it optimizes writing, typing, verifying and

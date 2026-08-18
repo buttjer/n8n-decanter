@@ -1,5 +1,8 @@
 // Plan 58 Task 3 — prove the SCAFFOLDED guard command actually STARTS a guard,
-// under both install shapes, on a PATH that gets no help from us.
+// under both install shapes, on a PATH that gets no help from us. Plan 81 adds
+// the third dimension the first two hold constant: the directory the agent is
+// LAUNCHED in, which is the sync dir only when the sync dir is also the project
+// root.
 //
 // Why this suite exists: Plan 58 Task 1's bug (a bare `n8n-decanter` in the
 // scaffolded .mcp.json resolves only under a GLOBAL install, and silently fails
@@ -73,6 +76,33 @@ for (const tool of ["node", "npx"]) {
 }
 const CLEAN_PATH = `${cleanBin}${path.delimiter}${SYS}`;
 
+// ---------- a NESTED sync dir: `repo/flows` inside a bigger project ----------
+// Plan 81. The shape that breaks is an agent launched at the REPO ROOT: the
+// config search only walks UP, so a guard spawned there can never see `flows/`.
+// The two steps at the bottom spawn the same scaffolded argv from `repoRoot`
+// (what a `.mcp.json` hoisted to the root does) and differ in exactly one
+// thing — the `N8N_DECANTER_DIR` entry of the `env` block.
+//
+// **The install sits at the repo root on purpose.** Root-launched `npx
+// --no-install` resolves against the ROOT's node_modules, so a sync-dir-local
+// install would fail here on the *other* half of the root-hoist problem (bin
+// resolution — the LOCAL/GLOBAL steps already own that one) and mask the half
+// under test. Held fixed, a failure can only mean the config lookup.
+const repoRoot = path.join(TMP, "repo");
+const nestedSyncDir = path.join(repoRoot, "flows");
+mkdirSync(path.join(nestedSyncDir, "workflows"), { recursive: true });
+writeFileSync(path.join(repoRoot, "package.json"), JSON.stringify({ name: "host-repo", version: "0.0.0", private: true }, null, 2));
+writeFileSync(path.join(nestedSyncDir, ".env"), `N8N_HOST=http://127.0.0.1:${PORT}\nN8N_MCP_TOKEN=test-mcp-token\n`);
+writeFileSync(path.join(nestedSyncDir, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: [] }, null, 2));
+// Same sentinel trick as the LOCAL step: npx re-adds its own node bin dir to
+// PATH, so a machine-global install could otherwise satisfy these steps — and a
+// released global predating `--dir` would fail them for the wrong reason.
+const repoShimRan = path.join(TMP, "repo-shim-ran");
+const repoShim = path.join(repoRoot, "node_modules", ".bin", "n8n-decanter");
+mkdirSync(path.dirname(repoShim), { recursive: true });
+writeFileSync(repoShim, `#!/bin/sh\n: > ${JSON.stringify(repoShimRan)}\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"\n`);
+chmodSync(repoShim, 0o755);
+
 /** Is a global `n8n-decanter` reachable on this machine's ambient PATH? */
 const globalInstalled = (process.env.PATH ?? "")
   .split(path.delimiter)
@@ -82,11 +112,15 @@ const globalInstalled = (process.env.PATH ?? "")
  * Spawn the scaffolded argv verbatim, speak one `initialize`, resolve the first
  * stdout line. Rejects on exit-without-output — which is exactly the shape of
  * the Task 1 bug (a guard that never started).
+ *
+ * `cwd` is the agent's LAUNCH directory, and it is a real variable rather than
+ * a constant: an MCP entry hoisted to a repo root spawns the guard there, not
+ * in the sync dir (Plan 81). The install-shape steps keep the default.
  */
-async function initializeVia(env: NodeJS.ProcessEnv): Promise<Record<string, unknown>> {
+async function initializeVia(env: NodeJS.ProcessEnv, cwd: string = syncDir): Promise<Record<string, unknown>> {
   const server0 = scaffolded.mcpServers["n8n-instance"];
   assert.ok(server0?.command, "the scaffolded .mcp.json carries an n8n-instance command");
-  const child = spawn(server0.command, server0.args ?? [], { cwd: syncDir, env });
+  const child = spawn(server0.command, server0.args ?? [], { cwd, env });
   try {
     return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`no JSON-RPC reply within 20s; stderr:\n${err.slice(0, 600)}`)), 20_000);
@@ -169,6 +203,38 @@ try {
     // `--no-install` must refuse to fetch from npm; the value is that a missing
     // install is an ERROR, not a guard that quietly never starts.
     await assert.rejects(() => initializeVia({ PATH: CLEAN_PATH, HOME: TMP }), /did not start a guard|spawn failed/);
+  });
+
+  await step("NESTED sync dir: N8N_DECANTER_DIR starts the guard from the repo root", async () => {
+    rmSync(repoShimRan, { force: true });
+    // Repo-RELATIVE on purpose: that is the value a *committed* root .mcp.json
+    // can carry, and it only survives a clone on someone else's machine if it
+    // resolves against the spawn cwd. An answered `initialize` proves the whole
+    // chain — resolved the command, found `flows/` downward-of-cwd, read its
+    // .env and creds, reached upstream.
+    const msg = await initializeVia({ PATH: CLEAN_PATH, HOME: TMP, N8N_DECANTER_DIR: "flows" }, repoRoot);
+    assert.equal(msg.id, 1, `the guard answered initialize from the repo root: ${JSON.stringify(msg).slice(0, 200)}`);
+    assert.ok(existsSync(repoShimRan), "the fixture's own CLI answered (not a machine-global install npx re-added to PATH)");
+  });
+
+  await step("NESTED sync dir: without the override the command fails LOUDLY", async () => {
+    rmSync(repoShimRan, { force: true });
+    await assert.rejects(
+      () => initializeVia({ PATH: CLEAN_PATH, HOME: TMP }, repoRoot),
+      (err: Error) => {
+        // An agent gets no stderr channel from a spawned MCP server it can act
+        // on, so the only tolerable failure is a fast, noisy death: a guard that
+        // half-starts and then waits forever is the worst version of this bug.
+        assert.match(err.message, /did not start a guard/, `the guard must EXIT, not hang: ${err.message.slice(0, 300)}`);
+        // And it must name THIS situation. The pre-Plan-81 message sent the user
+        // to `init`, which here would scaffold a second sync dir on top of a
+        // perfectly good one sitting a single level down.
+        assert.match(err.message, /sits BELOW the working directory/, `the error should name the nested case: ${err.message.slice(0, 600)}`);
+        assert.match(err.message, /N8N_DECANTER_DIR/, `the error should name the fix the previous step proved: ${err.message.slice(0, 600)}`);
+        assert.ok(existsSync(repoShimRan), "the CLI itself refused (a failure to resolve the command would prove nothing about the config lookup)");
+        return true;
+      },
+    );
   });
 } finally {
   server.close();

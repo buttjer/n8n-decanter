@@ -21,6 +21,20 @@ down ([auto-commit](#auto-commits) warns and skips,
 [watch](/docs/cli/watch/) refuses its startup pull, and the guard's live
 mirror skips its snapshot refreshes) but syncing itself works.
 
+**The caveat is about agents, not about syncing.** "Anywhere below the repo
+root" holds for every verb: they search upward, and `--dir` /
+`N8N_DECANTER_DIR` move where that search starts when you address the sync dir
+from *above* it ([configuration](/docs/concepts/configuration/#pointing-at-a-nested-sync-dir)).
+What placement does decide is the agent wiring [init](/docs/cli/init/)
+scaffolds next to your config: an agent loads `.mcp.json` and
+`.claude/settings.json` by **where the agent was started**, not by where the
+sync dir is — see
+[Working with coding agents](/docs/agents/overview/#where-the-agent-wiring-loads-from).
+(`init` does look for a `.git` or a parent `package.json` to notice it
+scaffolded into a nested project. That is not a reversal of the rule above: it
+identifies the *agent's* project root, a different question from locating the
+sync dir, which is still decided by `decanter.config.json` alone.)
+
 The decanter-owned core of a scaffolded sync dir (`init` also copies agent
 configs, `package.json`, and editor tooling — elided here):
 

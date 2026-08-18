@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { DecanterConfig } from "./types.mts";
 
@@ -49,11 +49,114 @@ export function loadEnv(dir: string): void {
 }
 
 /**
+ * Where `loadConfig`'s upward search STARTS: `--dir` > `N8N_DECANTER_DIR` > cwd.
+ * The search itself is untouched (Plan 81) — this only moves its origin, so a
+ * sync dir nested in a bigger repo stays reachable from a process started at the
+ * repo root. That is the shape agent wiring falls into: an MCP entry hoisted to
+ * the repo root spawns `mcp connect` with cwd = the root, and an upward-only
+ * search can never walk *down* into `flows/`.
+ *
+ * **The env var is the load-bearing half, not the flag** — every agent's MCP
+ * server entry has an `env` block, while a `cwd` key is not guaranteed across
+ * agents and versions.
+ *
+ * **Both forms resolve against cwd on purpose:** a committed root `.mcp.json`
+ * carrying `N8N_DECANTER_DIR=flows` survives a clone on a teammate's machine,
+ * where an absolute `/home/me/repo/flows` would not. (`loadEnv` never overrides
+ * an already-set variable, so the sync dir's own `.env` can't fight the value
+ * that pointed decanter at it — and couldn't anyway: it is read only *after*
+ * the dir has been found.)
+ *
+ * A path that is not a directory fails here, loudly. Left alone it would walk
+ * to the filesystem root and surface as "not found (searched from … upward)" —
+ * a message about the wrong problem.
+ */
+export function resolveSearchStart(
+  dirFlag?: string,
+  cwd: string = process.cwd(),
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const envDir = env.N8N_DECANTER_DIR;
+  // Empty counts as unset: an agent config that interpolates a missing value
+  // ships `"N8N_DECANTER_DIR": ""`, and inheriting cwd beats failing on it.
+  const override = dirFlag !== undefined && dirFlag !== ""
+    ? { value: dirFlag, source: "--dir" }
+    : envDir !== undefined && envDir !== ""
+      ? { value: envDir, source: "N8N_DECANTER_DIR" }
+      : undefined;
+  if (override === undefined) return path.resolve(cwd);
+  const resolved = path.resolve(cwd, override.value);
+  const stat = statSync(resolved, { throwIfNoEntry: false });
+  if (stat === undefined || !stat.isDirectory()) {
+    throw new Error(
+      `${override.source} ${override.value} is not a directory (resolved to ${resolved})\n` +
+      "  it names the sync dir — the folder holding decanter.config.json — and relative paths\n" +
+      "  resolve against the working directory, so a repo-relative value stays portable",
+    );
+  }
+  return resolved;
+}
+
+/**
+ * Bounded hunt for a sync dir *below* `start` — the evidence that separates
+ * "not a sync dir yet" from "the search started too high" (Plan 81). Breadth-
+ * first so the shallow hit wins, skipping `node_modules` and every dot-dir
+ * (`.git` included — nobody's sync dir lives there, and they are where the file
+ * count explodes). Symlinked dirs report `isDirectory()` false from a `Dirent`,
+ * so a link cycle is never entered.
+ *
+ * **Three caps, and the WALL-CLOCK one is the load-bearing cap.** Counting
+ * directories is not enough: measured here, a single `existsSync` inside an
+ * rclone/NFS-style mount costs ~500 ms, so a scan of a home directory holding
+ * one ran **16 seconds** — on the failure path of every verb, the guard's
+ * `mcp connect` startup included. This whole scan only sharpens an error
+ * message, so it is never worth waiting for: past the deadline it gives up and
+ * the caller falls back to the cold-start advice.
+ *
+ * One `readdirSync` per visited dir, and the hit is read out of those entries —
+ * the earlier shape (readdir the parent, then stat `<child>/decanter.config.json`
+ * for every child) paid two round trips per directory to learn the same thing.
+ */
+function findConfigBelow(start: string, maxDepth = 3, maxDirs = 400, maxMs = 250): string | undefined {
+  const deadline = Date.now() + maxMs;
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: start, depth: 0 }];
+  let visited = 0;
+  while (queue.length > 0) {
+    if (visited >= maxDirs || Date.now() > deadline) return undefined;
+    const { dir, depth } = queue.shift()!;
+    visited++;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      // unreadable directory (permissions, a race) — skip it; this scan is
+      // never authoritative
+      continue;
+    }
+    // `start` itself cannot hold one — loadConfig checked it before walking up.
+    // `!isDirectory()` rather than `isFile()`: a `Dirent` reports a SYMLINK as
+    // neither, and loadConfig's own `existsSync` would happily follow one.
+    if (dir !== start && entries.some((e) => e.name === "decanter.config.json" && !e.isDirectory())) return dir;
+    if (depth >= maxDepth) continue;
+    for (const entry of entries) {
+      // Cap the QUEUE too, or one directory with 100k children buys itself
+      // 100k queue entries before the visit counter ever gets a say.
+      if (queue.length >= maxDirs) break;
+      if (!entry.isDirectory() || entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      queue.push({ dir: path.join(dir, entry.name), depth: depth + 1 });
+    }
+  }
+  return undefined;
+}
+
+/**
  * Load decanter.config.json from cwd (or nearest ancestor) and resolve paths.
  * `requireHost` gates only N8N_HOST (online verbs need it): the API key is
  * optional since Plan 32 (MCP is the sync backend; `requireApiKey` guards the
  * REST-API-only verbs at use time) and MCP credentials are resolved separately
  * (lib/mcp.mts `resolveMcpAuth` — env token or .decanter-auth.json).
+ * `cwd` is where the search *starts*; the CLI passes `resolveSearchStart(…)` so
+ * `--dir`/`N8N_DECANTER_DIR` can move that origin without touching the walk.
  */
 export function loadConfig(cwd: string = process.cwd(), { requireHost = true } = {}): DecanterConfig {
   let dir = path.resolve(cwd);
@@ -100,6 +203,25 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
     }
     const parent = path.dirname(dir);
     if (parent === dir) {
+      // Two different situations end up here, and the advice inverts between
+      // them — so say which one the user is in. A sync dir sitting *below* the
+      // starting point means the setup is fine and the search merely began too
+      // high (an agent launched at the repo root; Plan 81). Sending that user to
+      // `init` would scaffold a second sync dir on top of a working one.
+      const nested = findConfigBelow(path.resolve(cwd));
+      if (nested !== undefined) {
+        const rel = path.relative(path.resolve(cwd), nested) || ".";
+        throw new Error(
+          "decanter.config.json not found (searched from " + cwd + " upward)\n" +
+          "  it is not missing — the sync dir sits BELOW the working directory: " + nested + "\n" +
+          "  the search only walks up, so name the sync dir explicitly:\n" +
+          // The `=` form, not `--dir <rel>`: the space form declines to eat a
+          // value that is also a verb, so a sync dir called `test/` or `list/`
+          // would come back as "--dir needs a value" from a copy-paste.
+          "  n8n-decanter <verb> --dir=" + rel + "\n" +
+          "  or set N8N_DECANTER_DIR=" + rel + " (agents: the `env` block of the decanter MCP server entry)",
+        );
+      }
       // A hand-written `.env` is the classic half-setup: an agent that cannot
       // run the browser OAuth flow asks its human to paste `N8N_MCP_TOKEN`
       // into a file and stops there, leaving no config, template, .gitignore

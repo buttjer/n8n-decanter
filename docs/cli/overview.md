@@ -12,6 +12,7 @@ argument (no special rule). Flags may still sit anywhere.
 n8n-decanter                        # interactive picker (terminal, inited project)
 n8n-decanter --version              # print the installed version and exit (-v; errors if combined with a verb)
 n8n-decanter help                   # the command surface (also --help, or a bare run when piped)
+n8n-decanter <verb> --dir <path>    # global: start the config search in <path> (or N8N_DECANTER_DIR)
 
 # Setup
 n8n-decanter init [dir] [--force]   # bootstrap (add --host/--token/--api-key to skip prompts)
@@ -148,9 +149,19 @@ errors with *unknown verb*. Flags may still appear in any position.
 | `pull`, `push`, `watch`, `publish`, `unpublish` | Read/write the live instance (pushes land on the **draft**) |
 | `mcp connect` / `mcp serve` | Long-running MCP guard (stdio / localhost HTTP) — forwards an agent's MCP traffic to the instance with decanter's credentials, blocking Code-node (`jsCode`) writes; a forwarded structure edit also triggers a background `workflow.json` refresh (`liveMirror`, on by default) |
 
+**`--dir <path>` is global — every verb that reads an existing sync dir honours
+it**, and so does `N8N_DECANTER_DIR` (`--dir` wins; relative values resolve
+against the working directory). It moves only where the upward config search
+*starts*, for a sync dir addressed from above — a monorepo subfolder, or a
+coding agent launched at the repo root. [`init`](/docs/cli/init/) is the
+exception, since it *creates* one: it takes its target as a positional
+argument and rejects `--dir`. See
+[configuration](/docs/concepts/configuration/#pointing-at-a-nested-sync-dir).
+
 Credentials come from `.env` next to `decanter.config.json` (searched upward
-from the current directory) or the environment. `N8N_HOST` plus **MCP
-credentials** (OAuth minted by [`init`](/docs/cli/init/) into
+from the current directory, or from `--dir` / `N8N_DECANTER_DIR`) or the
+environment. `N8N_HOST` plus **MCP credentials** (OAuth minted by
+[`init`](/docs/cli/init/) into
 `.decanter-auth.json`, or an `N8N_MCP_TOKEN`) power the sync and lifecycle
 verbs; the **public API key** (`N8N_API_KEY`, optional) powers only
 `executions`, `data-tables`, and `backup` — the surfaces n8n's MCP server

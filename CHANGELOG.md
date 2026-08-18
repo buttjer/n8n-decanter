@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `n8n-decanter` on `PATH`, so with a local (non-global) install it stayed quiet
   and no verification ran at all. It now prefers the sync dir's
   `node_modules/.bin` and falls back to `PATH`.
+- **"decanter.config.json not found" no longer sends you to `init` when the sync
+  dir is simply somewhere else.** Run from *above* a perfectly good sync dir —
+  what happens whenever an agent starts at the repo root — the error read as if
+  nothing had ever been set up, and advised scaffolding a second sync dir on top
+  of the working one. It now looks below the directory it searched from, names
+  the sync dir it finds there, and prints the `--dir` / `N8N_DECANTER_DIR` form
+  that reaches it. When there really is no sync dir, the `init` advice is
+  unchanged.
 
 ### Added
 
@@ -82,6 +90,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   boundary, so it never reaches into unrelated parent directories, and an
   offender found above the sync dir is named by its relative path
   (`../.mcp.json`) so you can tell which file it means.
+
+- **`--dir <path>` (or `N8N_DECANTER_DIR`) points any verb at a sync dir that is
+  not the current directory.** The layout the docs allow but nothing supported:
+  the sync dir nested inside a bigger repo, with the agent started at the repo
+  root. The MCP entry `init` writes into the sync dir is invisible from up
+  there, and hoisting it to the repo root spawned the guard where no
+  `decanter.config.json` could be found — so the guard did not work at all. The
+  search still only walks *up*; this says where it starts. In an agent's server
+  entry the environment variable is the form to reach for
+  (`"env": { "N8N_DECANTER_DIR": "flows" }`), and relative values resolve
+  against the working directory, so a repo-relative one keeps working for
+  everyone who clones. `init` does not take `--dir` — it still takes the
+  directory to scaffold as an argument.
+
+- **`init` now tells you how to wire an agent when your sync dir is nested in a
+  bigger project.** Agents look for `.mcp.json`, `opencode.json` and
+  `.claude/settings.json` from the directory they were *started* in and never in
+  one below it, so everything `init` scaffolds is inert for an agent started at
+  the repo root above the sync dir. When init sees a project around it (a `.git` or
+  `package.json` in a parent) it prints both shapes that work: starting the
+  agent inside the sync dir — recommended, nothing further to configure — or the
+  paste-ready MCP, opencode and hooks/permissions blocks for the project root,
+  with every path and glob already prefixed. That prefixing is the point: copied
+  up verbatim, `Read(.env)` / `Edit(.env)` guard the *root's* `.env` and quietly
+  stop protecting your credentials. `init` prints this; it never writes into a
+  parent directory. Only on the run that first scaffolds the agent files, and
+  never for a standalone sync dir.
 
 ## [0.10.1] - 2026-08-16
 

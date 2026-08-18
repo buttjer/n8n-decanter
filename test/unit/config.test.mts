@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, beforeEach, describe, it } from "node:test";
-import { HOST_UNSET, loadConfig, loadEnv, parseEnvFile, requireApiKey } from "../../lib/config.mts";
+import { HOST_UNSET, loadConfig, loadEnv, parseEnvFile, requireApiKey, resolveSearchStart } from "../../lib/config.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-config-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -18,11 +18,22 @@ function configDir(cfg: object | string, env?: string): string {
   return dir;
 }
 
+/** A sync dir nested under a plain project root — the Plan 81 shape. */
+function nestedSyncDir(sub = "flows"): { root: string; sync: string } {
+  const root = path.join(TMP, `nest-${seq++}`);
+  const sync = path.join(root, sub);
+  mkdirSync(sync, { recursive: true });
+  writeFileSync(path.join(sync, "decanter.config.json"), JSON.stringify({ root: "./workflows" }));
+  writeFileSync(path.join(sync, ".env"), "N8N_HOST=http://nested\n");
+  return { root, sync };
+}
+
 // loadEnv writes into process.env; keep the credential vars clean per test.
 beforeEach(() => {
   delete process.env.N8N_HOST;
   delete process.env.N8N_API_KEY;
   delete process.env.N8N_MCP_TOKEN;
+  delete process.env.N8N_DECANTER_DIR;
 });
 
 describe("parseEnvFile", () => {
@@ -145,6 +156,45 @@ describe("loadConfig", () => {
       // the usual reason to land here, so the message names the prompt-free
       // init that scaffolds everything else.
       assert.match(err.message, /init \. --host <host-url> --token <mcp-token>/);
+      // …and NOT the nested advice: there is nothing below to point at, so
+      // `--dir` would be a wild goose chase (Plan 81).
+      assert.doesNotMatch(err.message, /--dir/);
+      return true;
+    });
+  });
+
+  // Plan 81: the same "not found" walks out of two different situations, and
+  // the advice inverts between them. A sync dir BELOW cwd means the setup is
+  // fine and the search merely started too high (an agent launched at the repo
+  // root) — sending that user to `init` would scaffold a second sync dir on top
+  // of the working one.
+  it("the not-found error advises --dir (not init) when a sync dir sits below cwd", () => {
+    const { root, sync } = nestedSyncDir();
+    assert.throws(() => loadConfig(root), (err: Error) => {
+      assert.match(err.message, /decanter\.config\.json not found \(searched from .* upward\)/);
+      assert.ok(err.message.includes(sync), "names the sync dir it actually found");
+      // `--dir=flows`, not `--dir flows`: the space form refuses to consume a
+      // value that is also a verb, so a sync dir named `test/` would make the
+      // copy-paste answer with "--dir needs a value".
+      assert.match(err.message, /--dir=flows/);
+      assert.match(err.message, /N8N_DECANTER_DIR=flows/);
+      assert.doesNotMatch(err.message, /n8n-decanter init/, "the sync dir is initialised — init is the wrong advice");
+      return true;
+    });
+  });
+
+  it("the descendant scan skips node_modules and stops short of deep trees", () => {
+    const root = path.join(TMP, `nest-${seq++}`);
+    // A vendored copy of someone else's sync dir is not this project's, and a
+    // depth-4 hit is past the bounded scan — both must fall back to cold-start
+    // advice rather than pointing at the wrong (or a very slow) answer.
+    for (const buried of [path.join(root, "node_modules", "pkg"), path.join(root, "a", "b", "c", "d")]) {
+      mkdirSync(buried, { recursive: true });
+      writeFileSync(path.join(buried, "decanter.config.json"), "{}");
+    }
+    assert.throws(() => loadConfig(root), (err: Error) => {
+      assert.match(err.message, /init \. --host <host-url> --token <mcp-token>/);
+      assert.doesNotMatch(err.message, /--dir/);
       return true;
     });
   });
@@ -191,5 +241,61 @@ describe("loadConfig", () => {
     assert.throws(() => requireApiKey(cfg, "data-tables"), /N8N_API_KEY/);
     const withKey = { ...cfg, apiKey: "k" };
     assert.equal(requireApiKey(withKey, "executions"), withKey, "passes the config through when the key exists");
+  });
+});
+
+// Plan 81: `--dir` > N8N_DECANTER_DIR > cwd, moving only where the upward
+// search BEGINS. The env var is the load-bearing half — every agent's MCP
+// server entry has an `env` block, a `cwd` key is not guaranteed.
+describe("resolveSearchStart", () => {
+  it("falls back to cwd, absolutised", () => {
+    const { root } = nestedSyncDir();
+    assert.equal(resolveSearchStart(undefined, root, {}), root);
+    assert.equal(resolveSearchStart("", root, { N8N_DECANTER_DIR: "" }), root, "empty values count as unset");
+  });
+
+  it("resolves a relative N8N_DECANTER_DIR against cwd, so a committed repo-relative value travels", () => {
+    const { root, sync } = nestedSyncDir();
+    assert.equal(resolveSearchStart(undefined, root, { N8N_DECANTER_DIR: "flows" }), sync);
+    assert.equal(resolveSearchStart(undefined, root, { N8N_DECANTER_DIR: "./flows" }), sync);
+    assert.equal(resolveSearchStart(undefined, root, { N8N_DECANTER_DIR: sync }), sync, "an absolute value is used as-is");
+  });
+
+  it("reads N8N_DECANTER_DIR off process.env by default", () => {
+    const { root, sync } = nestedSyncDir();
+    process.env.N8N_DECANTER_DIR = "flows";
+    try {
+      assert.equal(resolveSearchStart(undefined, root), sync);
+    } finally {
+      delete process.env.N8N_DECANTER_DIR;
+    }
+  });
+
+  it("--dir beats N8N_DECANTER_DIR", () => {
+    const { root, sync } = nestedSyncDir("chosen");
+    mkdirSync(path.join(root, "ignored"), { recursive: true });
+    assert.equal(resolveSearchStart("chosen", root, { N8N_DECANTER_DIR: "ignored" }), sync);
+  });
+
+  it("rejects a path that is not a directory, naming the source that set it", () => {
+    const { root } = nestedSyncDir();
+    writeFileSync(path.join(root, "a-file"), "");
+    // Left alone these walk to the filesystem root and surface as
+    // "not found (searched from … upward)" — a message about the wrong problem.
+    assert.throws(() => resolveSearchStart("nope", root, {}), /^Error: --dir nope is not a directory/);
+    assert.throws(() => resolveSearchStart("a-file", root, {}), /^Error: --dir a-file is not a directory/);
+    assert.throws(() => resolveSearchStart(undefined, root, { N8N_DECANTER_DIR: "nope" }), /^Error: N8N_DECANTER_DIR nope is not a directory/);
+  });
+
+  it("moves only the START of the search — loadConfig still walks up from there", () => {
+    const { root, sync } = nestedSyncDir();
+    const deeper = path.join(sync, "workflows", "some-flow", "code");
+    mkdirSync(deeper, { recursive: true });
+    const fromRoot = loadConfig(resolveSearchStart(undefined, root, { N8N_DECANTER_DIR: "flows" }));
+    assert.equal(fromRoot.configDir, sync);
+    assert.equal(fromRoot.host, "http://nested", "the sync dir's own .env is read once the dir is found");
+    // A dir below the sync dir keeps working: the override sets the origin, the
+    // upward walk still does the finding.
+    assert.equal(loadConfig(resolveSearchStart("workflows/some-flow/code", sync, {})).configDir, sync);
   });
 });

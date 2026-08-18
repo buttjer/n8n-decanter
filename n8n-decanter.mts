@@ -2,7 +2,7 @@
 import path from "node:path";
 import { N8nApi } from "./lib/api.mts";
 import { backupCreate, backupList, backupRestore } from "./lib/backup.mts";
-import { loadConfig, requireApiKey } from "./lib/config.mts";
+import { loadConfig, requireApiKey, resolveSearchStart } from "./lib/config.mts";
 import { cleanDataTables, fetchDataTables } from "./lib/datatables.mts";
 import { DEFAULT_N8N_VERSION, dockerAvailable } from "./lib/engine.mts";
 import { assertNoLegacyFixtures, cleanExecutions, EXECUTIONS_DIR, fetchExecutionById, fetchExecutions, latestCaptureId, migrateScenariosDir } from "./lib/executions.mts";
@@ -100,6 +100,9 @@ A ${b("<workflow>")} is its id, name, unique name-prefix, or folder name (case-i
 ambiguity is an error). A ref verb with no ${b("<workflow>")} on a terminal opens the picker.
 An ${b("<execution-id>")} is an n8n execution id (numeric).
 
+Global: ${b("--dir")} <path> (or ${b("N8N_DECANTER_DIR")}) starts the config search somewhere
+else — for a sync dir nested in a bigger repo, addressed from the repo root.
+
 Config: decanter.config.json (searched upward from cwd). Credentials: N8N_HOST +
 MCP (OAuth via ${b("init")}, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional)
 powers executions, data-tables, and backup.`;
@@ -184,12 +187,12 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|host|token|mcp-token|api-key)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(dir|status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|host|token|mcp-token|api-key)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
       }
-      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : m[1] === "host" ? "http://localhost:5678" : m[1] === "token" || m[1] === "mcp-token" ? "<mcp-token>" : m[1] === "api-key" ? "<api-key>" : "123";
+      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : m[1] === "dir" ? "./flows" : m[1] === "host" ? "http://localhost:5678" : m[1] === "token" || m[1] === "mcp-token" ? "<mcp-token>" : m[1] === "api-key" ? "<api-key>" : "123";
       let value = m[2];
       if (value === undefined) {
         // Space-separated form (`--limit 5`): consume the next token — but not
@@ -275,13 +278,35 @@ async function main() {
     rest = positional.slice(2);
   }
 
+  // `init` scaffolds a NEW sync dir and takes its target as an argument, while
+  // `--dir` points the config search at an EXISTING one. Accepting it silently
+  // would be the worst of both: the path is already peeled off as a flag value,
+  // so `init --dir flows` would scaffold the *working directory* instead.
+  if (command === "init" && valueFlags.has("dir")) {
+    throw new Error(`init takes its target directory as an argument: n8n-decanter init ${valueFlags.get("dir")} — --dir/N8N_DECANTER_DIR point an EXISTING sync dir's config search`);
+  }
+  // Plan 81: the sync dir is not always where the process started. Memoized so
+  // every load site below (picker, __complete, dispatch) searches from the same
+  // place, and lazy so it is only ever resolved by the verbs that consult a
+  // config: a stale `N8N_DECANTER_DIR` left in a shell or a settings `env` block
+  // must not take down `help`, `completion`, `node run` or `init`, none of which
+  // read one. Where it IS consulted, a bad path still fails before any work.
+  let syncDirMemo: string | undefined;
+  const syncDir = (): string => (syncDirMemo ??= resolveSearchStart(valueFlags.get("dir")));
+
   // Bare invocation on a TTY in an inited project → interactive picker
   // (Plan 19). Piped runs and config-less directories fall through to
   // usage() unchanged — scripts and LLM harnesses never see the picker.
+  // `--dir`/`N8N_DECANTER_DIR` reach it too: value flags never land in `args`,
+  // so `n8n-decanter --dir flows` is still the bare, zero-argument invocation.
   if (command === undefined && args.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
+    // Resolved OUTSIDE the try: the catch below is for "no config in reach",
+    // and swallowing an unusable `--dir` there would drop the user at usage()
+    // with no hint that their flag was the problem.
+    const start = syncDir();
     let pickerConfig: ReturnType<typeof loadConfig> | undefined;
     try {
-      pickerConfig = loadConfig(process.cwd(), { requireHost: false });
+      pickerConfig = loadConfig(start, { requireHost: false });
     } catch {
       // no decanter.config.json in reach — bare invocation stays usage()
     }
@@ -339,18 +364,19 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--host=", "--token=", "--mcp-token=", "--api-key=", "--help", "--version");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--dir=", "--host=", "--token=", "--mcp-token=", "--api-key=", "--help", "--version");
     try {
-      const config = loadConfig(process.cwd(), { requireHost: false });
+      const config = loadConfig(syncDir(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
     } catch {
-      // no decanter.config.json in reach — verbs and flags still complete
+      // no decanter.config.json in reach (or an override pointing nowhere) —
+      // verbs and flags still complete; completion never fails the shell
     }
     console.log([...new Set(words)].join("\n"));
     return;
   }
 
-  await dispatch(command, rest, { force, publishFlag, noTypecheck, scaffoldFlag, extendFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags });
+  await dispatch(command, rest, { force, publishFlag, noTypecheck, scaffoldFlag, extendFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags }, syncDir());
 }
 
 interface Flags {
@@ -436,8 +462,10 @@ async function pickerLoop(config: DecanterConfig): Promise<void> {
     // A forceable failure (the push drift guard) gets a y/N force-retry offer
     // instead of only printing the hint — Plan 29. The retry re-dispatches the
     // SAME row, so a flag-carrying row keeps its flags.
+    // The picker already located the sync dir, so its dispatches re-search from
+    // there rather than from cwd — which, under `--dir`, sits above it.
     const ok = await runVerbWithForceRetry(
-      (force) => dispatch(action.command, [picked.id], force ? { ...action.flags, force: true } : action.flags),
+      (force) => dispatch(action.command, [picked.id], force ? { ...action.flags, force: true } : action.flags, config.configDir),
       log,
     );
     process.exitCode = ok ? 0 : 1;
@@ -481,8 +509,13 @@ async function pickOneWorkflow(config: DecanterConfig, verb: string, log: Log): 
   return picked.id;
 }
 
-/** Config-needing verbs: load config, resolve refs, run the verb switch. */
-async function dispatch(command: string, rest: string[], flags: Flags): Promise<void> {
+/**
+ * Config-needing verbs: load config, resolve refs, run the verb switch.
+ * `syncDir` is where the upward config search starts — cwd unless `--dir` or
+ * `N8N_DECANTER_DIR` moved it (Plan 81); every verb honours it, the guard
+ * (`mcp connect`) included, so there is no special case to keep in sync.
+ */
+async function dispatch(command: string, rest: string[], flags: Flags, syncDir: string): Promise<void> {
   const { force, publishFlag, noTypecheck, scaffoldFlag, extendFlag, remoteFlag, jsonFlag, allFlag, simulateFlag, offlineFlag, viewerFlag, failFastFlag, noFetchFlag, valueFlags } = flags;
   // Since Plan 32 the sync verbs (and the node namespace, which forwards
   // structure acts to n8n) go over MCP; only the executions/data-tables fetches
@@ -501,7 +534,7 @@ async function dispatch(command: string, rest: string[], flags: Flags): Promise<
     || (command === "list" && !remoteFlag)
     || (command === "executions" && rest.includes("clean"))
     || (command === "data-tables" && rest.includes("clean"));
-  const config = loadConfig(process.cwd(), { requireHost: !offline });
+  const config = loadConfig(syncDir, { requireHost: !offline });
   /** REST client for the API-only verbs — guarded so the error names the verb. */
   const api = (verb: string): N8nApi => new N8nApi(requireApiKey(config, verb));
   /** MCP client (the sync backend) — created lazily so offline verbs never need credentials. */

@@ -40,6 +40,62 @@ rules until it restarts (or `/reload`s). There is no hot-reload; `init` prints
 the reminder when it first scaffolds those files, and the scaffolded `AGENTS.md`
 tells the agent to ask for a restart rather than route around the missing guard.
 
+## Where the agent wiring loads from
+
+`init` scaffolds `.mcp.json`, `.claude/settings.json` and the hook scripts
+**into the sync dir**. When the sync dir is where you start the agent, that is
+the end of the story. When it is a subfolder of a bigger repo, what actually
+loads depends on **where the agent was started** — and the files disagree about
+it (matrix verified against Claude Code 2.1.x):
+
+| Agent started at | `<syncdir>/.mcp.json` | `<syncdir>/.claude/settings.json` | repo root's `.claude/settings.json` |
+| --- | --- | --- | --- |
+| **the repo root** | not loaded | not loaded | loaded |
+| **the sync dir** | **loaded** (merged with the repo root's) | **loaded** | not loaded |
+
+- **`.mcp.json` walks up.** Every ancestor of the launch directory is read and
+  merged, nearest wins — so a nested one is *additive* for an agent started
+  inside the sync dir, and unreachable from above. Nothing ever scans downward.
+- **`.claude/settings.json` is launch-directory only** — no walk in either
+  direction. A nested one contributes **nothing** to a root-launched session:
+  not permissions, not hooks, not `env`. Nothing reports this; you get a hook
+  that never runs and deny rules that were never in force.
+- **`.claude/settings.local.json` is the one exception** — it is read from the
+  *repository root*, so the root's local file is the one thing that still
+  reaches a session started in a subdirectory, while the `settings.json` beside
+  it does not. That makes it a trap when you test the nested case: a setup
+  verified through `settings.local.json` looks fine while the committed
+  `settings.json` next to it is inert. `init` writes no local file, so it is
+  not a fix path either.
+- **`--add-dir` does not rescue it.** It grants file *access* to another
+  directory; it does not turn that directory into a settings source.
+- **`${CLAUDE_PROJECT_DIR}` is not a shortcut either** — it expands to the
+  agent's project root, i.e. the *parent*, so in a root-level file it reads as
+  if it pointed at the sync dir and never does. Write the sync-dir prefix out.
+- **Hooks have no discovery of their own** — they ride the `hooks` key of those
+  same settings files. Their *scripts* do locate the sync dir themselves (from
+  their own installed path), so a hook that runs behaves identically whether the
+  agent started in the sync dir or above it. What still has to be right is the
+  command path in whichever settings file declares it: the scaffolded
+  `node .claude/hooks/verify.mjs` needs a `flows/` prefix in a root-level file.
+- **Permission patterns anchor at the settings file's own project root**, which
+  makes a verbatim hoist worse than a no-op: `Edit(workflows/**)` then matches
+  nothing, and — the sharp end — `Read(.env)` / `Edit(.env)` stop protecting
+  `<syncdir>/.env`, the credentials file. Prefix every relative **path** pattern
+  with the sync dir if you move the block up — the `Bash(…)` rules and an
+  already-`**/`-anchored one like `Edit(**/.decanter.json)` carry over as they
+  are.
+
+**Two shapes work, and the first is the recommendation:** start the agent **in
+the sync dir** (zero configuration — you only give up the parent repo's root
+`settings.json`), or wire the repo root deliberately. Root wiring means an MCP
+entry carrying both `N8N_DECANTER_DIR` and a command that resolves from the root
+— spelled out in
+[mcp connect](/docs/cli/mcp-connect/#when-your-sync-dir-is-not-your-project-root)
+— plus the prefixing above for any hooks and permissions you hoist.
+[`init`](/docs/cli/init/#when-the-sync-dir-is-nested-in-a-bigger-repo) prints
+both options when it scaffolds into a nested directory.
+
 ## The hard invariants
 
 Violating these corrupts sync state, which is why they're machine-enforced:
