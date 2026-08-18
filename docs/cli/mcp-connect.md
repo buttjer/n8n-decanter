@@ -39,7 +39,7 @@ token — it cannot mint one). There is no login, consent, or token-minting step
 inside `connect`. So "no secret to manage" is about the **agent** having no
 credential of its own, not about the sync dir needing none: without `init` there
 is nothing to read, and the guard answers the agent's first tool call with
-`no MCP credentials — run \`n8n-decanter init …\`` rather than fetching any.
+``no MCP credentials — run `n8n-decanter init …` `` rather than fetching any.
 A 401 is the other direction — credentials exist but were rotated or revoked;
 the guard says so explicitly so an agent does not report the project as
 "never set up".
