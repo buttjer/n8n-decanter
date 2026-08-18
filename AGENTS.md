@@ -391,14 +391,19 @@ since `credential.https://github.com.helper` points at `gh`.
   list it — re-running would have created a duplicate. Re-check after a delay
   and query the **specific object** (`gh release view <tag> --json …`), not a
   list, before retrying any mutation.
-- **`gh pr edit` fails here** with `GraphQL: Projects (classic) is being
-  deprecated … (repository.pullRequest.projectCards)` — and unlike the TLS flake
-  above, retrying never helps and the edit really does **not** apply (confirm
-  with `gh pr view`). Retitle or rewrite a body with `gh api
-  repos/<owner>/<repo>/pulls/<n> --method PATCH -f title="…" -F body=@<file>`
-  instead: it matches the allowlisted `gh api repos/<owner>/<repo>/*` prefix,
-  and `-F @<file>` avoids a heredoc. `gh pr create`/`merge`/`view`/`checks` are
-  unaffected.
+- **`gh` older than 2.73.0 cannot edit a PR** — it fails with `GraphQL: Projects
+  (classic) is being deprecated … (repository.pullRequest.projectCards)`. Not the
+  TLS flake above and **not environmental**: `gh pr edit` asks for the sunset
+  `projectCards` field unconditionally, GitHub now errors on it instead of
+  returning null, and the read dies before any mutation is attempted — so
+  retrying never helps and the edit truly never applies. gh 2.73.0 added a
+  feature detector that drops the field (`ProjectsV1Unsupported` in
+  `pkg/cmd/pr/shared/finder.go`), so **upgrading is the real fix**; this box's
+  Ubuntu package is 2.46.0. Until then: `gh api repos/<owner>/<repo>/pulls/<n>
+  --method PATCH -f title="…" -F body=@<file>` — matches the allowlisted
+  `gh api repos/<owner>/<repo>/*` prefix, and `-F @<file>` avoids a heredoc.
+  Any command requesting that field is affected, reads included
+  (`gh pr view --json projectCards`); `create`/`merge`/`checks` are not.
 - Commit, status, diff, log, branch creation, worktree add, and push/gh
   (credentialed) — all fine sandboxed.
 
