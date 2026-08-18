@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Docs: `mcp connect` / `mcp serve` no longer read as if the guard obtained
+  credentials itself.** "decanter's own credentials", "the agent never holds an
+  n8n credential" and "no secret to manage" led readers (and agents) to believe
+  the guard handles the n8n login. It does not: it only *reads* what `init`
+  wrote to `.env` / `.decanter-auth.json`, and can at most refresh an OAuth
+  token. The mcp-connect / mcp-serve pages and the template `AGENTS.md` now say
+  so outright — obtaining credentials is exclusively `init`'s job, and a
+  "no MCP credentials" answer means run `init`, not retry.
+
 - **"decanter.config.json not found" now points at `init` — with its flags.**
   The classic half-setup is a hand-written `.env`: an agent that cannot run the
   browser OAuth flow asks its human to paste `N8N_MCP_TOKEN` into a file and

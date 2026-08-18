@@ -138,7 +138,10 @@ description says**, and the boundary is:
   directly.** The scaffolded MCP config (`.mcp.json` / `opencode.json`)
   already carries the guarded route: an `n8n-instance` server that spawns
   `n8n-decanter mcp connect` — a stdio MCP server holding decanter's
-  credentials (you never see them; no secret to manage). It forwards every
+  credentials (you never see them; no secret to manage). Those credentials come
+  from `init`, which is the only verb that obtains them — `mcp connect` merely
+  reads `.env` / `.decanter-auth.json`, so if it reports "no MCP credentials",
+  the fix is `n8n-decanter init`, not a retry. It forwards every
   read and structure operation untouched and blocks **two** things:
   `update_workflow` calls that write Code-node source (`jsCode`), and
   `publish_workflow` when the draft would go live carrying a dangling `$('…')`
