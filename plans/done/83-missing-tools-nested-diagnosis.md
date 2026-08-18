@@ -1,6 +1,6 @@
 # Plan 83 — "restart your agent" is the wrong answer when the sync dir is nested
 
-**Status:** Draft
+**Status:** Done
 **Priority:** P2
 **Source:** Field-test round `ftrun-468939` (S16, the first valid round under the
 nested condition — [Plan 82](../done/82-nested-field-test-condition.md)); the
@@ -70,3 +70,35 @@ every occurrence either names the nested possibility or is provably about the
 flat case. The cheap live check is the S16 round itself: an agent that hits
 missing tools in the nested layout should be able to reach a working route from
 what it reads, without a restart that cannot help.
+
+## What shipped
+
+The two-cause split — *wiring is new* (restart) vs. *wiring is below you* (start
+the agent here, or wire the root) — with the discriminator stated as a path
+comparison the reader can perform: **is that `.mcp.json` below the directory you
+started the agent in?**
+
+- `template/AGENTS.md.example` — the quoted cue, rewritten as two numbered
+  causes plus the discriminator. `template/CLAUDE.md.example` never repeated the
+  claim, so it needed no change.
+- `docs/agents/overview.md` — a two-row cause/fix table beside the load-scope
+  matrix, naming why a restart is a *dead end* in the nested case (startup
+  re-runs the discovery that already missed the file).
+- `docs/cli/init.md` — the restart paragraph gained the second cause, and the
+  nested section's "right after the restart reminder" was corrected to **in
+  place of** it, matching what `init` now prints.
+- `docs/faq/troubleshooting.md` — a new entry, "My agent has no `n8n-instance`
+  tools, and restarting didn't help".
+- `README.md` — the one-line restart note now flags the nested exception. Not in
+  the plan's scope list, but the verification grep surfaced it, and the docs
+  rule requires the README to carry sibling guidance.
+- `lib/init.mts` — the reminder became a **branch** on `projectRootAbove`, which
+  was already computed: a nested scaffold prints the started-in explanation and
+  the A/B options *instead of* the bare restart line, so init never issues advice
+  that cannot work in the layout it just detected. Covered by a unit test that
+  asserts the dead-end phrasing does not fire when nested.
+
+Beyond scope but worth having: every surface now names what still works while
+the tools are missing — the CLI carries its own config and credentials, so the
+whole Code-node flow stays open and only MCP-side *structure* work is blocked.
+That is what saved the S16 agent by luck; it is now written down.

@@ -3,7 +3,7 @@
 **Status:** Done — harness complete (tasks 1-9), and the condition has been
 measured: round 3 (`ftrun-468939`) is a valid S16 round, archived and committed.
 The product finding it surfaced is carried forward as
-[Plan 83](../draft/83-missing-tools-nested-diagnosis.md).
+[Plan 83](./83-missing-tools-nested-diagnosis.md).
 **Priority:** P2
 **Source:** Falls out of [Plan 81](../done/81-nested-syncdir-agent-wiring.md):
 the tool side of the nested layout is fixed and shipped (#273/#275/#276), but
