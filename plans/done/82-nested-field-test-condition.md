@@ -1,14 +1,15 @@
 # Plan 82 — a field-test condition for the nested sync dir
 
-**Status:** In progress — **the harness (tasks 1-6) is complete and verified
-against a real staged round**; the plan stays open until a round has actually
-been run and archived, which is what it exists for.
+**Status:** Done — harness complete (tasks 1-9), and the condition has been
+measured: round 3 (`ftrun-468939`) is a valid S16 round, archived and committed.
+The product finding it surfaced is carried forward as
+[Plan 83](../draft/83-missing-tools-nested-diagnosis.md).
 **Priority:** P2
 **Source:** Falls out of [Plan 81](../done/81-nested-syncdir-agent-wiring.md):
 the tool side of the nested layout is fixed and shipped (#273/#275/#276), but
 **no round has ever measured what a blind agent does in that world** — the
 harness cannot stage it.
-**Snapshot:** 2026-08-18T14:40Z @ f9bbe66
+**Snapshot:** 2026-08-18T15:30Z @ 977d84e
 **Model:** Sonnet — the design calls are made here; what remains is careful
 breadth across the harness.
 
@@ -93,8 +94,22 @@ unnoticed for as long as it did because the harness never built that world.
    resolving a globally installed `n8n-decanter`, so a round can silently grade
    the *published* CLI instead of the build under test. Reuse `sanitizedPath()`
    — already there for `noCli` / `FIELD_NO_PATH_HELP` — then prepend the staged
-   bin, so bare and `npx` invocations both hit the right binary. **Not specific
-   to the nested condition; it affects every host-mode round.**
+   bin, so bare and `npx` invocations both hit the right binary.
+   **Two corrections from doing it:** shadowing alone does NOT suffice — `npx`
+   then fetches the published build from the registry, and it prefers its own
+   `_npx` cache besides (verified: the cache held a published copy with no
+   nested branch). What works is a harness-owned npm **prefix** whose global
+   install IS the staged build — symlinks, no packing, no network — so npm's
+   lookup ends before cache or registry. And it is **narrower than first
+   written**: a flat round is fine, since the agent stands in the sync dir and
+   `npx` finds the local package. Only the launch-dir-without-the-package case —
+   this condition — was contaminated.
+8. **Never let a second round overwrite the first's archive.** The path derives
+   from stage timestamp + run id, so two rounds against one stage collide, and
+   the newer one silently replaces committed, irreproducible evidence.
+9. **Refuse a live re-run against a stage that already ran the scenario.** The
+   second agent arrives at finished work and the round reports a PASS it did not
+   earn. `FIELD_REUSE_STAGE=1` stays as the deliberate override.
 
 ## What the round measures
 
@@ -164,9 +179,61 @@ honour that prepend. So:
 those conditions do and *then* prepend the staged bin, so both `n8n-decanter` and
 `npx n8n-decanter` resolve to the build under test — then re-run S16.
 
+## Round 2 — `ftrun-441347-r2`: **INVALID (stage reuse)**, kept as evidence
+
+Re-run of S16 against the **same stage**, to re-measure it against the fixed CLI.
+It is not a measurement: round 1 had already done the work, so the agent arrived
+to a written file, a pushed workflow and a git history that already contained
+the change. It made **zero writes and no push** (`git log` unchanged), read the
+tidy world, and the harness reported a clean `verify PASS` for round 1's work.
+Archived as `…-r2-INVALID-stage-reuse` so the name carries the warning; it is
+evidence about the trap, not about the product.
+
+Two harness gaps, both now closed (tasks 8 + 9):
+
+- **The archive path collided.** It derives from the stage timestamp + run id, so
+  round 2 silently **overwrote round 1's committed `raw.tgz` + `report.html`** —
+  the exact evidence a round exists to leave behind. A second live round now
+  takes `-r2`, `-r3`, …; a `--archive` re-render keeps the original identity on
+  purpose (same round, re-rendered).
+- **Nothing refused the re-run.** `groupScenarios` already keeps *different*
+  scenarios off one stage, for precisely this reason; the same scenario twice was
+  the hole. A live round against a stage that already ran the scenario is now
+  refused before anything is spent, with `FIELD_REUSE_STAGE=1` as the deliberate
+  override.
+
+## Round 3 — `ftrun-468939` (2026-08-18, sonnet, n8n 2.30.7): the valid measurement
+
+Fresh stage, fixed PATH, so the agent genuinely ran **this** working copy. Verify
+PASS: file written, `preflight --offline`, `node run` against a fixture, `push`,
+`test` — 0 violations, remote byte-equal to the local `.js`, change committed.
+
+**The headline: the new `--dir` guidance was never needed.** Not once in either
+valid round did the agent hit the "sits BELOW" error — it oriented first
+(`ls`, `.mcp.json`, `CLAUDE.md` → `AGENTS.md`), then `cd`'d into the sync dir and
+worked from there. **Agents take Option A on their own**, which is exactly what
+the `init` note now recommends. The override is the safety net for a *configured*
+root entry, not the path an agent stumbles onto.
+
+**The finding worth acting on: the agent misdiagnosed the cause.** It noticed the
+`n8n-instance` tools were missing and explained it — from our own `AGENTS.md` —
+as "`init` must have run in an earlier session; MCP servers are wired at session
+startup". Plausible, taught by us, and **wrong here**: in a nested layout no
+restart will ever produce those tools, because the wiring is below the launch
+dir. The agent shrugged it off ("it turned out not to matter") and used the CLI
+instead, so the round still passed — but a less lucky agent follows that advice
+into a loop. **Follow-up: the missing-tools guidance must name the nested
+possibility beside the restart one** (drafted as Plan 83).
+
+Second, smaller observation from the same answer: it expected `pull` to need the
+workflow pre-registered in `decanter.config.json`'s `workflows` array and was
+surprised that name resolution against the live instance worked anyway. Not a
+defect — a docs nuance.
+
 ## Notes
 
 - No CHANGELOG entry: the field-test harness is dev-only tooling, not a
   user-facing surface.
-- The first round run under this condition should be committed (raw + report)
-  like every other round — an agentic round is expensive and irreproducible.
+- Rounds committed (raw + report): `ftrun-441347` (round 1, graded published
+  code — see its caveat), `…-441347-r2-INVALID-stage-reuse` (kept only as
+  evidence of the trap), and `ftrun-468939` (round 3, the valid measurement).

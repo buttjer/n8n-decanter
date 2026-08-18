@@ -377,7 +377,7 @@ function loadScenario(id: string): Scenario {
  * without asking.
  */
 /**
- * A PATH for a noCli round: everything still resolves EXCEPT `n8n-decanter`.
+ * A PATH with no AMBIENT `n8n-decanter`: everything else still resolves.
  *
  * Naively dropping each PATH entry that carries the binary is wrong — a global
  * install lives in the same bin dir as `node`/`npm`/`npx` (nvm, brew), so
@@ -389,10 +389,19 @@ function loadScenario(id: string): Scenario {
  * (`npm link` from this repo). Inherited, it would sit on the session's PATH
  * and silently defeat the entire condition — the round would "measure" an agent
  * that could run the CLI all along.
+ *
+ * **Every host-mode round needs this, not just the noCli one** (S16 round 1,
+ * ftrun-441347). Ordinary rounds used to only PREPEND the staged
+ * `node_modules/.bin`, which `npx` does not honour: the agent typed
+ * `npx n8n-decanter …`, npx resolved the machine-global install, and the round
+ * graded the PUBLISHED CLI instead of the packed build under test — invisibly,
+ * because both answer to the same version number. The stage packs our build
+ * precisely so a round measures this working copy; the PATH has to agree.
  */
-function sanitizedPath(inputPath: string): { PATH: string; npmPrefix: string } {
+function sanitizedPath(inputPath: string, label = "noCli"): { PATH: string; npmPrefix: string } {
   const shadowRoot = path.join(HARNESS, "nocli-path");
   const out: string[] = [];
+  const narrated = new Set<string>();
   let shadowed = 0;
   for (const [i, dir] of inputPath.split(path.delimiter).entries()) {
     if (dir === "" || !existsSync(path.join(dir, "n8n-decanter"))) {
@@ -412,9 +421,15 @@ function sanitizedPath(inputPath: string): { PATH: string; npmPrefix: string } {
     }
     out.push(shadow);
     shadowed++;
-    console.log(`  [noCli] shadowed ${dir} (every command except n8n-decanter still resolves)`);
+    // A dir can appear in PATH several times (this machine lists its node bin
+    // five times); each copy needs its own shadow, but narrating each one turns
+    // one fact into five lines.
+    if (!narrated.has(dir)) {
+      narrated.add(dir);
+      console.log(`  [${label}] shadowed ${dir} (every command except n8n-decanter still resolves)`);
+    }
   }
-  if (shadowed === 0) console.log("  [noCli] no n8n-decanter found on PATH — nothing to shadow");
+  if (shadowed === 0) console.log(`  [${label}] no ambient n8n-decanter on PATH — nothing to shadow`);
 
   // Shadowing PATH is not enough on its own: `npx` re-resolves its OWN node bin
   // dir (through the symlink) and finds machine-global installs there anyway —
@@ -426,6 +441,99 @@ function sanitizedPath(inputPath: string): { PATH: string; npmPrefix: string } {
   mkdirSync(path.join(npmPrefix, "bin"), { recursive: true });
   mkdirSync(path.join(npmPrefix, "lib", "node_modules"), { recursive: true });
   return { PATH: `${out.join(path.delimiter)}${path.delimiter}${path.join(npmPrefix, "bin")}`, npmPrefix };
+}
+
+/**
+ * The CLI environment a host-mode blind session runs with — one definition, so
+ * the pre-flight probe cannot drift from what the turns actually get.
+ */
+let hostCliEnvCache: { PATH: string; extraEnv: Record<string, string> } | undefined;
+function hostCliEnv(): { PATH: string; extraEnv: Record<string, string> } {
+  // Memoized: it builds shadow dirs and a prefix on disk and narrates what it
+  // shadowed, and it is asked for once per turn plus once by the pre-flight
+  // probe. Recomputing would repeat the work and, worse, repeat the log lines
+  // until the policy they describe reads like a per-turn event.
+  if (hostCliEnvCache !== undefined) return hostCliEnvCache;
+  const localBin = path.join(WORKDIR, "node_modules", ".bin");
+  const inherited = process.env.PATH ?? "";
+  const extraEnv: Record<string, string> = {};
+  if (manifest.noCli === true || process.env.FIELD_NO_PATH_HELP === "1") {
+    const sane = sanitizedPath(inherited);
+    extraEnv.npm_config_prefix = sane.npmPrefix;
+    hostCliEnvCache = { PATH: sane.PATH, extraEnv };
+    return hostCliEnvCache;
+  }
+  // Make BOTH ways of reaching the CLI land on the staged build. Prepending
+  // `node_modules/.bin` only fixes the bare name: `npx` does not consult PATH,
+  // so from a dir that does not carry the package it fell through to the
+  // machine's global install (see stagedGlobalPrefix). Shadowing removes that
+  // ambient copy; the staged prefix then answers npm's own lookup before its
+  // cache or the registry can.
+  const sane = sanitizedPath(inherited, "staged-cli");
+  const stagedPrefix = stagedGlobalPrefix();
+  extraEnv.npm_config_prefix = stagedPrefix ?? sane.npmPrefix;
+  const PATH = [stagedPrefix ? path.join(stagedPrefix, "bin") : "", localBin, sane.PATH].filter(Boolean).join(path.delimiter);
+  hostCliEnvCache = { PATH, extraEnv };
+  return hostCliEnvCache;
+}
+
+/**
+ * A harness-owned npm PREFIX whose "global install" is this round's staged CLI.
+ *
+ * Shadowing the ambient install is necessary but NOT sufficient: `npx` does not
+ * consult PATH the way a shell does. From a directory that does not itself
+ * carry the package — the launch dir of a FIELD_NESTED round, say — `npx
+ * n8n-decanter …` walks its own resolution instead, and lands on the machine's
+ * global install, then on its `_npx` cache, and finally on the REGISTRY. All
+ * three are the published CLI, which answers `--version` with the same number
+ * as the packed build the stage installed, so nothing in a transcript gives the
+ * substitution away. S16 round 1 (ftrun-441347) was graded that way: every
+ * `npx n8n-decanter` call in it ran published code, and the round therefore said
+ * nothing about the working copy it was supposed to measure.
+ *
+ * Pointing npm at a prefix that already contains the staged build ends the hunt
+ * before the cache or the registry are ever reached — verified against the same
+ * stage: with it, `npx n8n-decanter` from the repo root runs the staged build.
+ * The prefix is symlinks, not a second install: no packing, no network.
+ */
+function stagedGlobalPrefix(): string | null {
+  const pkg = path.join(WORKDIR, "node_modules", "n8n-decanter");
+  const bin = path.join(WORKDIR, "node_modules", ".bin", "n8n-decanter");
+  if (!existsSync(pkg) || !existsSync(bin)) return null; // nothing staged (noCli, or a stage that skipped the install)
+  const prefix = path.join(HARNESS, "staged-npm-prefix");
+  rmSync(prefix, { recursive: true, force: true });
+  mkdirSync(path.join(prefix, "bin"), { recursive: true });
+  mkdirSync(path.join(prefix, "lib", "node_modules"), { recursive: true });
+  try {
+    symlinkSync(pkg, path.join(prefix, "lib", "node_modules", "n8n-decanter"));
+    symlinkSync(bin, path.join(prefix, "bin", "n8n-decanter"));
+  } catch { return null; }
+  return prefix;
+}
+
+/**
+ * Prove the round will grade the STAGED build — before a single token is spent.
+ *
+ * The failure this catches is silent by construction (same version number, same
+ * command name, different code), so it cannot be left to inspection. The check
+ * is a comparison, not a version match: run `help` through the staged bin
+ * directly and through `npx` from the launch dir, and require identical output.
+ * Two different builds of a CLI whose help text is part of its user surface
+ * cannot agree by accident; two invocations of the same file cannot disagree.
+ */
+function stagedCliMismatch(env: NodeJS.ProcessEnv): string | null {
+  const bin = path.join(WORKDIR, "node_modules", ".bin", "n8n-decanter");
+  if (!existsSync(bin)) return null;
+  const run = (cmd: string, args: string[]): string | null => {
+    try {
+      return execFileSync(cmd, args, { cwd: LAUNCHDIR, env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    } catch { return null; }
+  };
+  const staged = run(bin, ["help"]);
+  const viaNpx = run("npx", ["n8n-decanter", "help"]);
+  if (staged === null || viaNpx === null) return null; // cannot tell — do not block the round on a probe failure
+  if (staged.trim() === viaNpx.trim()) return null;
+  return `\`npx n8n-decanter\` in ${LAUNCHDIR} does not resolve to the staged build — the round would grade a DIFFERENT CLI (published/global/_npx-cached) while reporting on this working copy. Check the ambient install and the npm prefix.`;
 }
 
 /**
@@ -543,6 +651,31 @@ function assertPrerequisites(ids: string[]): void {
       }
     }
   });
+  // A stage is single-use. `groupScenarios` already keeps two scenarios from
+  // sharing one, for the reason spelled out there — one scenario shapes the
+  // world the next is graded in — but nothing stopped the same scenario from
+  // being re-run against a stage it had already finished. That is worse, not
+  // milder: the second agent arrives to find the task DONE (file written,
+  // pushed, committed), reads the tidy world, touches nothing, and the round
+  // reports a clean verify PASS having measured an agent that had nothing to
+  // do. Exactly that happened re-running S16 to re-measure it against fixed
+  // code. Re-stage instead; FIELD_REUSE_STAGE=1 is the deliberate override.
+  if (!dryRun && process.env.FIELD_REUSE_STAGE !== "1") {
+    const used = ids.filter((id) => existsSync(path.join(HARNESS, `verify-${id}.json`)) || existsSync(path.join(HARNESS, "transcripts", id)));
+    if (used.length > 0) {
+      problems.push(`this stage has already run ${used.join(", ")} — its instance and workDir carry that round's work, so a re-run would grade an agent arriving at finished work. Stage a fresh one (node test/field-test/stage.mts), or set FIELD_REUSE_STAGE=1 if you truly mean to continue on top of it.`);
+    }
+  }
+  // Stage-shape checks answer "is the WORLD right?"; this one answers "is the
+  // CODE right?" — whether the CLI the agent will reach is actually the build
+  // this working copy staged. It is last because it costs a subprocess, and it
+  // is here at all because getting it wrong is invisible: S16 round 1 reported
+  // a clean PASS on published code.
+  if (!containerMode && manifest.noCli !== true && process.env.FIELD_NO_PATH_HELP !== "1") {
+    const { PATH, extraEnv } = hostCliEnv();
+    const mismatch = stagedCliMismatch({ ...process.env, PATH, ...extraEnv });
+    if (mismatch !== null) problems.push(mismatch);
+  }
   if (problems.length === 0) return;
   const suggested = [...new Set(ids.flatMap((id) => [...(loadScenario(id).requires ?? []), id]))];
   // plain message + exit 2, like the other preconditions — a stack trace here
@@ -1126,16 +1259,7 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
       // removes the project's install too, while this one keeps it and only
       // makes the agent reach it the way a real local-install user must
       // (`npx`, or `./node_modules/.bin/…`).
-      const localBin = path.join(WORKDIR, "node_modules", ".bin");
-      let PATH = process.env.PATH ?? "";
-      const extraEnv: Record<string, string> = {};
-      if (manifest.noCli === true || process.env.FIELD_NO_PATH_HELP === "1") {
-        const sane = sanitizedPath(PATH);
-        PATH = sane.PATH;
-        extraEnv.npm_config_prefix = sane.npmPrefix;
-      } else {
-        PATH = `${localBin}${path.delimiter}${PATH}`;
-      }
+      const { PATH, extraEnv } = hostCliEnv();
       proc = spawn("claude", args, { cwd: LAUNCHDIR, env: { ...process.env, PATH, ...extraEnv } });
     }
     let buf = "";
@@ -1311,7 +1435,16 @@ async function archiveRun(): Promise<void> {
   // the RUN's time, not the archive's — so a re-archive (--archive) of an old
   // round keeps its original identity instead of minting a second dated dir
   const stamp = (manifest.createdAt ?? new Date().toISOString()).replace(/:/g, "-").replace(/\.\d+Z$/, "Z");
-  const dest = process.env.FIELD_ARCHIVE_DIR ?? path.join(HERE, "runs", `${stamp}-${runId}`);
+  // A second LIVE round against the same stage would otherwise land on the same
+  // path and silently overwrite the first — and an agentic round is expensive
+  // and irreproducible, so the earlier evidence must never be the thing that
+  // gives way. (Re-archiving with `--archive` keeps the original identity on
+  // purpose: that is the same round, re-rendered.) Learned the hard way — S16
+  // round 2 replaced round 1's committed raw.tgz + report.html.
+  let dest = process.env.FIELD_ARCHIVE_DIR ?? path.join(HERE, "runs", `${stamp}-${runId}`);
+  if (process.env.FIELD_ARCHIVE_DIR === undefined && !argv.includes("--archive")) {
+    for (let n = 2; existsSync(dest); n++) dest = path.join(HERE, "runs", `${stamp}-${runId}-r${n}`);
+  }
   const staging = path.join(HARNESS, "__raw");
   // `ownerCookie` belongs here too (Plan 78 finding 5): it is an n8n owner SESSION
   // JWT, and the README promises the archive is scrubbed. It was neither in this
@@ -1455,7 +1588,7 @@ try {
         ? "host: NO-CLI stage — no prepend AND any ambient n8n-decanter stripped from PATH (Plan 57 discoverability condition)"
         : process.env.FIELD_NO_PATH_HELP === "1"
           ? "host: UNASSISTED PATH (FIELD_NO_PATH_HELP=1) — bare `n8n-decanter` will NOT resolve in Bash"
-          : `host: the SYNC DIR's node_modules/.bin prepended (${path.join(WORKDIR, "node_modules", ".bin")}) — simulates a global install for the agent's Bash`;
+          : `host: ambient n8n-decanter shadowed, then the SYNC DIR's node_modules/.bin prepended (${path.join(WORKDIR, "node_modules", ".bin")}) — simulates a global install, but of THIS round's build (bare name and npx both hit it)`;
     // Under FIELD_NESTED the agent's cwd is NOT the sync dir, so "node_modules/.bin
     // prepended" alone would read as if the bin sat where the agent stands. Name
     // both dirs, or the round gets graded against the wrong world.
