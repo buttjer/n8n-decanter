@@ -391,6 +391,25 @@ since `credential.https://github.com.helper` points at `gh`.
   list it — re-running would have created a duplicate. Re-check after a delay
   and query the **specific object** (`gh release view <tag> --json …`), not a
   list, before retrying any mutation.
+- **`gh pr edit` is broken here — use `gh api … --method PATCH` to retitle or
+  rewrite a PR body.** It fails with `GraphQL: Projects (classic) is being
+  deprecated … (repository.pullRequest.projectCards)`. This is **not** the
+  intermittent TLS flake above: retrying never helps, and — unlike a TLS
+  failure — the edit genuinely does **not** apply, so confirm with `gh pr view`
+  rather than assuming either way. The replacement matches the allowlisted
+  `gh api repos/<owner>/<repo>/*` prefix, so it needs no extra approval:
+
+  ```sh
+  gh api repos/<owner>/<repo>/pulls/<n> --method PATCH \
+    -f title="…" -F body=@<file> --jq '.title'
+  ```
+
+  `-F key=@<file>` reads the body from a file — write it with the **Write tool
+  into the scratchpad**, never a heredoc (heredocs never auto-approve; see
+  "Invoke commands so a human can approve *and* read them"). `gh pr create`,
+  `gh pr merge`, `gh pr view` and `gh pr checks` are unaffected. This matters
+  because **repurposing an open PR is a normal move** — a branch whose scope
+  changes mid-flight should carry one PR, not two.
 - Commit, status, diff, log, branch creation, worktree add, and push/gh
   (credentialed) — all fine sandboxed.
 
