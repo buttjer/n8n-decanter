@@ -616,6 +616,21 @@ describe("scenario messages tell the truth about the file in front of you", () =
     // a small scenario must NOT trip the commit warning
     assert.equal(warnings.some((w) => /TRACKED/.test(w)), false, `small scenario should not warn: ${warnings.join(" | ")}`);
   });
+
+  it("an oversized scenario names both remedies, and does not claim it is already committed", async () => {
+    // ~2 MB of runData: 8k items, each a payload big enough to clear the 1 MB
+    // threshold once indented. `scenario create` never commits (only pull/push
+    // sweep the folder), so the warning must offer an action, not a post-mortem.
+    const fat = Array.from({ length: 8000 }, (_, i) => item({ id: i, payload: "x".repeat(120) }, i));
+    const dir = scaffoldBase({ Webhook: run([item({ body: { n: 21 } })]), Compute: run(fat), Tag: run([item({ tagged: true })]), Fetch: run([item({ status: "ok" })]) });
+    await writeScenario(dir, { execId: "1", slug: "fat" }, log);
+    const warn = warnings.find((w) => /TRACKED/.test(w));
+    assert.ok(warn, `oversized scenario should warn: ${warnings.join(" | ")}`);
+    assert.match(warn, /nothing is committed yet/, "must state the window instead of implying it is already in history");
+    assert.match(warn, /data\.resultData\.runData/, "must name the hand-edit target");
+    assert.match(warn, /--scaffold/, "must name the no-capture path");
+    assert.doesNotMatch(warn, /--trim/, "there is no --trim flag; the warning must not invent one");
+  });
 });
 
 describe("latestCaptureId", () => {
