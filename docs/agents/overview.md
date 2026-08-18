@@ -24,6 +24,8 @@ needs to behave:
   name rather than running `preflight`, because it fires before the background
   snapshot refresh, while every reference still resolves. The same rules are
   enforced by the CLI at push time regardless of who made the edit.
+  Each hook finds the sync dir from its own installed location, so it behaves
+  the same whether the agent was started in the sync dir or above it.
   On Claude Code these live in **`.claude/settings.json`** — *project* scope,
   meant to be committed, so everyone who clones the repo gets the same
   permissions and hooks. `.claude/settings.local.json` stays yours for

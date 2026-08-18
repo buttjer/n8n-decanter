@@ -21,6 +21,17 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
+// WHERE THE SYNC DIR IS: this script's own location, never `process.cwd()`. The
+// hook is spawned with the AGENT's cwd, which is the sync dir only when the
+// agent was started there — with the sync dir nested in a bigger repo the agent
+// runs at the repo root, every cwd-relative read below misses, and the hook
+// exits 0 having found no workflow: a SILENT no-op in the one guard whose job is
+// catching dangling refs. `init` writes this file to `<syncdir>/.claude/hooks/`,
+// so two levels up IS the sync dir, hoisted settings block or not.
+// (`${CLAUDE_PROJECT_DIR}` cannot stand in — it expands to the agent's project
+// root, i.e. the parent, so it never points into a descendant.)
+const syncDir = path.resolve(import.meta.dirname, "..", "..");
+
 let payload = {};
 try {
   payload = JSON.parse(readFileSync(0, "utf8") || "{}");
@@ -36,12 +47,14 @@ if (renames.length === 0) process.exit(0);
 
 // Locate the workflow folder by id — the folder name is a sticky local slug and
 // never follows a remote rename, so it is not a reliable key.
+// `root` is itself written sync-dir-relative ("./workflows"), so it resolves
+// against the sync dir too — not against wherever the agent happens to be.
 const root = (() => {
   try {
-    const cfg = JSON.parse(readFileSync("decanter.config.json", "utf8"));
-    return typeof cfg.root === "string" ? cfg.root : "./workflows";
+    const cfg = JSON.parse(readFileSync(path.join(syncDir, "decanter.config.json"), "utf8"));
+    return path.resolve(syncDir, typeof cfg.root === "string" ? cfg.root : "./workflows");
   } catch {
-    return "./workflows";
+    return path.resolve(syncDir, "./workflows");
   }
 })();
 const dir = (() => {
@@ -88,11 +101,14 @@ for (const { oldName } of renames) {
   const re = refRe(oldName);
   const snapshot = path.join(dir, "workflow.json");
   if (existsSync(snapshot) && re.test(readFileSync(snapshot, "utf8"))) structure.push(oldName);
+  // Printed paths stay relative to the AGENT's cwd — the one thing cwd is the
+  // right anchor for here, since the agent is who opens them. Unchanged when it
+  // runs in the sync dir; prefixed with the sync dir when it runs a level up.
   for (const file of walk(path.join(dir, "code"))) {
     if (file.endsWith(".remote.js")) continue;
     const text = readFileSync(file, "utf8");
     text.split("\n").forEach((line, i) => {
-      if (re.test(line)) code.push(`${path.relative(".", file)}:${i + 1}  ${line.trim().slice(0, 100)}`);
+      if (re.test(line)) code.push(`${path.relative(process.cwd(), file)}:${i + 1}  ${line.trim().slice(0, 100)}`);
     });
   }
 }

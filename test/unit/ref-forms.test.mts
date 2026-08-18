@@ -21,8 +21,12 @@ const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-refforms-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
-const HOOK = path.join(TMP, "rename-refs.mjs");
-copyFileSync(path.join(PROJECT, "template/.claude/hooks/rename-refs.mjs.example"), HOOK);
+// The hook locates the sync dir from its OWN path (`import.meta.dirname`, two
+// levels up) rather than from cwd, so each fixture has to materialize it where
+// `init` does — `<syncdir>/.claude/hooks/` — not at a shared temp root. Copied
+// from `.mjs.example`, which is inert in this repo on purpose.
+const TEMPLATE_HOOK = path.join(PROJECT, "template/.claude/hooks/rename-refs.mjs.example");
+const hookIn = (dir: string) => path.join(dir, ".claude", "hooks", "rename-refs.mjs");
 
 /** Every snippet here references a node named exactly `Fetch`. */
 const REFERENCES = [
@@ -55,13 +59,15 @@ function hookSees(snippet: string): boolean {
   const dir = path.join(TMP, `p-${seq++}`);
   const wf = path.join(dir, "workflows", "w");
   mkdirSync(path.join(wf, "code"), { recursive: true });
+  mkdirSync(path.dirname(hookIn(dir)), { recursive: true });
+  copyFileSync(TEMPLATE_HOOK, hookIn(dir));
   writeFileSync(path.join(dir, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: ["wf1"] }));
   writeFileSync(path.join(wf, ".decanter.json"), JSON.stringify({ workflowId: "wf1", nodes: {} }));
   writeFileSync(path.join(wf, "workflow.json"), JSON.stringify({ nodes: [] }));
   writeFileSync(path.join(wf, "code", "main.js"), `${snippet}\n`);
   const payload = JSON.stringify({ tool_input: { workflowId: "wf1", operations: [{ type: "renameNode", oldName: "Fetch", newName: "Fetched" }] } });
   try {
-    execFileSync(process.execPath, [HOOK], { cwd: dir, input: payload, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+    execFileSync(process.execPath, [hookIn(dir)], { cwd: dir, input: payload, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
     return false; // exit 0 = found nothing
   } catch (err) {
     return (err as { status?: number }).status === 2;

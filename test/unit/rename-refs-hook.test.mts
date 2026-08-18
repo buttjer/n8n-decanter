@@ -21,9 +21,17 @@ const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-renamehook-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
-// `.mjs.example` is inert on purpose; materialize it the way `init` does.
-const HOOK = path.join(TMP, "rename-refs.mjs");
-copyFileSync(path.join(PROJECT, "template/.claude/hooks/rename-refs.mjs.example"), HOOK);
+// `.mjs.example` is inert on purpose; materialize it the way `init` does — at
+// `<syncdir>/.claude/hooks/`, which is also where the hook reads its own
+// position from to find the sync dir, so the placement is load-bearing here.
+const TEMPLATE_HOOK = path.join(PROJECT, "template/.claude/hooks/rename-refs.mjs.example");
+const hookIn = (dir: string) => path.join(dir, ".claude", "hooks", "rename-refs.mjs");
+
+// A decoy at the shared temp root, which the "agent started above the sync dir"
+// cases below use as cwd: it makes a cwd-relative read actively WRONG (a root
+// that does not exist) rather than merely fruitless, so those tests cannot pass
+// by accident.
+writeFileSync(path.join(TMP, "decanter.config.json"), JSON.stringify({ root: "./nowhere", workflows: ["wf1"] }));
 
 let seq = 0;
 interface Scaffold {
@@ -32,14 +40,18 @@ interface Scaffold {
   /** code/main.js body — the half we own. */
   code?: string;
   workflowId?: string;
+  /** `decanter.config.json`'s `root` — sync-dir-relative, so it must resolve from there. */
+  root?: string;
 }
 
 /** A sync dir in the PRE-PULL state: the snapshot still holds the old name. */
-function scaffold({ param = "={{ $json.x }}", code = "return [];\n", workflowId = "wf1" }: Scaffold = {}): string {
+function scaffold({ param = "={{ $json.x }}", code = "return [];\n", workflowId = "wf1", root = "./workflows" }: Scaffold = {}): string {
   const dir = path.join(TMP, `proj-${seq++}`);
-  const wf = path.join(dir, "workflows", "orders");
+  const wf = path.join(dir, root, "orders");
   mkdirSync(path.join(wf, "code"), { recursive: true });
-  writeFileSync(path.join(dir, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: [workflowId] }));
+  mkdirSync(path.dirname(hookIn(dir)), { recursive: true });
+  copyFileSync(TEMPLATE_HOOK, hookIn(dir));
+  writeFileSync(path.join(dir, "decanter.config.json"), JSON.stringify({ root, workflows: [workflowId] }));
   writeFileSync(path.join(wf, ".decanter.json"), JSON.stringify({ workflowId, nodes: { n2: { file: "code/main.js" } } }));
   writeFileSync(
     path.join(wf, "workflow.json"),
@@ -54,10 +66,14 @@ function scaffold({ param = "={{ $json.x }}", code = "return [];\n", workflowId 
   return dir;
 }
 
-/** Drive the hook the way the harness does: JSON payload on stdin. */
-function run(dir: string, payload: unknown): { code: number; out: string } {
+/**
+ * Drive the hook the way the harness does: JSON payload on stdin. `cwd` is the
+ * AGENT's launch dir — the sync dir by default, anywhere else when the sync dir
+ * is nested in a bigger repo.
+ */
+function run(dir: string, payload: unknown, cwd = dir): { code: number; out: string } {
   try {
-    const out = execFileSync(process.execPath, [HOOK], { cwd: dir, input: JSON.stringify(payload), encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+    const out = execFileSync(process.execPath, [hookIn(dir)], { cwd, input: JSON.stringify(payload), encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
     return { code: 0, out };
   } catch (err) {
     const e = err as { status?: number; stdout?: string; stderr?: string };
@@ -137,7 +153,7 @@ describe("rename-refs hook", () => {
     for (const payload of ["", "not json", "{}", '{"tool_input":null}', '{"tool_input":{"operations":"nope"}}']) {
       const res = (() => {
         try {
-          execFileSync(process.execPath, [HOOK], { cwd: dir, input: payload, encoding: "utf8" });
+          execFileSync(process.execPath, [hookIn(dir)], { cwd: dir, input: payload, encoding: "utf8" });
           return 0;
         } catch (err) {
           return (err as { status?: number }).status ?? 1;
@@ -145,5 +161,38 @@ describe("rename-refs hook", () => {
       })();
       assert.equal(res, 0, `payload ${JSON.stringify(payload)} should be a silent no-op`);
     }
+  });
+});
+
+// Plan 81 task 8. The hook is declared in `<syncdir>/.claude/settings.json` but
+// SPAWNED WITH THE AGENT'S CWD — the sync dir only when the agent was started
+// there. With the sync dir nested in a bigger repo the agent runs at the repo
+// root, where a cwd-reading hook finds no `decanter.config.json`, no workflow,
+// and exits 0: a silent no-op in the guard whose whole job is catching the refs
+// n8n's `renameNode` strands. Anchoring on `import.meta.dirname` fixes it,
+// because `init` always writes the script to `<syncdir>/.claude/hooks/`.
+describe("rename-refs hook — locates the sync dir from its own path, not cwd", () => {
+  it("is unchanged when the agent runs IN the sync dir", () => {
+    const dir = scaffold({ code: "return $('Fetch').all();\n" });
+    const { code, out } = run(dir, renameOp());
+    assert.equal(code, 2, out);
+    // Bare sync-dir-relative path, byte for byte what it printed before the fix.
+    assert.match(out, /^ {2}workflows\/orders\/code\/main\.js:1 {2}return \$\('Fetch'\)/m);
+  });
+
+  it("still reports when the agent runs ABOVE the sync dir", () => {
+    const dir = scaffold({ param: "={{ $('Fetch').first().json.x }}", code: "return $('Fetch').all();\n" });
+    const { code, out } = run(dir, renameOp(), TMP); // TMP is the parent of `dir`
+    assert.equal(code, 2, `must not degrade to a silent no-op from a parent cwd: ${out}`);
+    assert.match(out, /EXPRESSION PARAMETERS/);
+    // The path stays anchored on the agent's cwd, so it still opens from there.
+    assert.match(out, new RegExp(`CODE FILES[^]*${path.basename(dir)}/workflows/orders/code/main\\.js:1`));
+  });
+
+  it("resolves a non-default `root` against the sync dir, not the cwd", () => {
+    const dir = scaffold({ root: "./flows", code: "return $('Fetch').all();\n" });
+    const { code, out } = run(dir, renameOp(), TMP);
+    assert.equal(code, 2, out);
+    assert.match(out, new RegExp(`${path.basename(dir)}/flows/orders/code/main\\.js:1`));
   });
 });

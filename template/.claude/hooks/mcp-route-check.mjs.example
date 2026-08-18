@@ -1,17 +1,53 @@
 #!/usr/bin/env node
 // SessionStart config-drift detector (Plan 33): warn when an agent MCP config
-// in this sync dir — or in the user-level config of a known harness (Plan 58
-// task 2) — points at an n8n instance MCP endpoint DIRECTLY instead of the
-// decanter guard-proxy. Deliberately slim — it inspects config files, not
-// tool calls (the proxy itself enforces the jsCode boundary). Exit 0 always:
-// this is guidance, not a gate. Harness-agnostic: any agent hook system (or a
-// shell profile) can run `node .claude/hooks/mcp-route-check.mjs`.
+// in this sync dir (or an ancestor up to the repo root) — or in the user-level
+// config of a known harness (Plan 58 task 2) — points at an n8n instance MCP
+// endpoint DIRECTLY instead of the decanter guard-proxy. Deliberately slim — it
+// inspects config files, not tool calls (the proxy itself enforces the jsCode
+// boundary). Exit 0 always: this is guidance, not a gate. Harness-agnostic: any
+// agent hook system (or a shell profile) can run
+// `node .claude/hooks/mcp-route-check.mjs`.
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
+/**
+ * The sync dir, found from this script's own location: it is scaffolded at
+ * `<syncDir>/.claude/hooks/`, so two levels up IS the sync dir. Never `cwd` —
+ * a sync dir nested in a bigger repo gets its hooks spawned with cwd = wherever
+ * the agent was started, i.e. the repo root (Plan 81), and
+ * `${CLAUDE_PROJECT_DIR}` expands to that same root, never into a descendant.
+ */
+const SYNC_DIR = path.resolve(import.meta.dirname, "..", "..");
+
 /** Project-scoped agent MCP config files (harness variety, n8n-io/skills style). */
 const CONFIG_FILES = [".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json", "opencode.json"];
+
+/**
+ * Which directories to look for those files in: the sync dir, then every
+ * ancestor up to and including the first one holding a `.git` entry. Claude
+ * Code merges `.mcp.json` from every ancestor of the launch cwd, so a routing
+ * offender can legitimately live in the parent repo's root file; the git
+ * boundary lets the scan see it without wandering into an unrelated parent
+ * tree, and with no repo above the sync dir the walk stays put. Consulting git
+ * here answers "where is the AGENT's project root?" — not "where is the sync
+ * dir?", which is still never git's business. `.git` is a FILE in worktrees and
+ * submodules, hence a plain existence check; and the entry is found by looking,
+ * not by spawning git, which a SessionStart hook cannot afford.
+ */
+function scanDirs() {
+  const dirs = [];
+  let dir = SYNC_DIR;
+  let parent = path.dirname(dir);
+  while (!existsSync(path.join(dir, ".git"))) {
+    dirs.push(dir);
+    if (parent === dir) return [SYNC_DIR]; // walked to the filesystem root without a repo
+    dir = parent;
+    parent = path.dirname(dir);
+  }
+  dirs.push(dir); // the repo root itself is in scope — the bound is inclusive
+  return dirs;
+}
 
 /**
  * User-scoped counterparts — the "second door" no project file shows:
@@ -39,7 +75,7 @@ function userConfigFiles() {
 /** The running guard-proxy's endpoint, when `n8n-decanter mcp serve` is up. */
 function proxyUrl() {
   try {
-    return JSON.parse(readFileSync(".decanter-proxy.json", "utf8")).url ?? null;
+    return JSON.parse(readFileSync(path.join(SYNC_DIR, ".decanter-proxy.json"), "utf8")).url ?? null;
   } catch {
     return null;
   }
@@ -78,6 +114,20 @@ function readJson(file) {
   }
 }
 
+/**
+ * Is `dir` the sync dir itself, or one of its ancestors? Compares whole path
+ * segments, so `/a/foo` does not swallow the sibling `/a/foobar`. Only ABSOLUTE
+ * keys count: the bag's keys are absolute by construction, and `path.resolve`
+ * would silently anchor a relative (or empty) one at `process.cwd()` — smuggling
+ * back the cwd dependence this hook exists to shed (`""` would resolve to cwd
+ * and match whenever the agent happened to start in the sync dir).
+ */
+function isAncestorOrSelf(dir) {
+  if (!path.isAbsolute(dir)) return false;
+  const base = path.resolve(dir);
+  return SYNC_DIR === base || SYNC_DIR.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+}
+
 const proxy = proxyUrl();
 const offenders = [];
 
@@ -94,9 +144,22 @@ function scan(label, config) {
   }
 }
 
-for (const file of CONFIG_FILES) {
-  const config = readJson(file);
-  if (config) scan(file, config);
+// Files the user-scope pass below already reports under the `~/…` names the
+// user knows. The ancestor walk can reach the very same file — a sync dir under
+// a git-tracked $HOME puts `~/.cursor/mcp.json` on the walk — and naming it
+// twice (once as `../.cursor/mcp.json`) reads as two separate offenders.
+const userFiles = new Set(userConfigFiles().map(([, file]) => path.resolve(file)));
+
+for (const dir of scanDirs()) {
+  for (const name of CONFIG_FILES) {
+    const file = path.join(dir, name);
+    if (userFiles.has(path.resolve(file))) continue;
+    const config = readJson(file);
+    // a file in the sync dir keeps its bare name; an ancestor's is named
+    // relative to the sync dir (`../.mcp.json`) so the user can tell which
+    // of two same-named files the warning is about.
+    if (config) scan(dir === SYNC_DIR ? name : path.relative(SYNC_DIR, file), config);
+  }
 }
 for (const [label, file] of userConfigFiles()) {
   const config = readJson(file);
@@ -104,7 +167,18 @@ for (const [label, file] of userConfigFiles()) {
   scan(label, config);
   // Claude Code's user file also carries per-project servers, keyed by
   // absolute project path — only this project's entry can route this session.
-  const projectBag = config.projects?.[process.cwd()]?.mcpServers;
+  // That key is the project's canonical GIT ROOT (or, with no repo, the
+  // resolved directory), so for a nested sync dir it is an ancestor's path and
+  // never the sync dir's: accept any ancestor-or-self key and take the nearest.
+  // (Matching `process.cwd()` exactly, as this once did, silently missed every
+  // sync dir inside a git repo — Plan 81 task 8a.)
+  const projects = config.projects && typeof config.projects === "object" ? config.projects : {};
+  let nearest = null;
+  for (const key of Object.keys(projects)) {
+    if (!isAncestorOrSelf(key)) continue;
+    if (nearest === null || path.resolve(key).length > path.resolve(nearest).length) nearest = key;
+  }
+  const projectBag = nearest === null ? null : projects[nearest]?.mcpServers;
   if (projectBag && typeof projectBag === "object") {
     scan(`${label} (entry for this project)`, { mcpServers: projectBag });
   }
