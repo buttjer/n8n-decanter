@@ -3,11 +3,11 @@
 // CommonJS and ships as an inert .example in template/, so it is copied to a
 // temp dir as index.js and require()d from there.
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
@@ -22,6 +22,9 @@ const TEMPLATE_PLUGIN = fileURLToPath(
   new URL("../../template/decanter-ts-plugin/index.js.example", import.meta.url),
 );
 const tmp = mkdtempSync(path.join(tmpdir(), "decanter-ts-plugin-"));
+// The plugin is require()d out of here for the whole file, so it can only be
+// removed once every test has run — hence after(), not a per-test cleanup.
+after(() => rmSync(tmp, { recursive: true, force: true }));
 copyFileSync(TEMPLATE_PLUGIN, path.join(tmp, "index.js"));
 const init = createRequire(import.meta.url)(path.join(tmp, "index.js")) as PluginFactory;
 

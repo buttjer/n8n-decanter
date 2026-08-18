@@ -2,10 +2,10 @@
 // route-B transform (Plan 7 task 2, scenarios Plan 37). No engine, no mock
 // server: pure file-in/JSON-out.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { after, afterEach, describe, it } from "node:test";
 import {
   assertDryRunSafe,
   buildSimulation,
@@ -34,7 +34,13 @@ const warnings: string[] = [];
 const log: Log = { info() {}, ok() {}, warn: (m) => warnings.push(m), error() {} };
 afterEach(() => { warnings.length = 0; });
 
+// Every scaffold() dir is collected so the run cleans up after itself. Without
+// this the suite left one mkdtemp dir per call behind on every `npm test` —
+// 1882 of them (74 MB) had piled up in one dev /tmp before it was noticed.
 const tmpDirs: string[] = [];
+after(() => {
+  for (const dir of tmpDirs) rmSync(dir, { recursive: true, force: true });
+});
 function scaffold(files: Record<string, string>): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), "decanter-sim-"));
   tmpDirs.push(dir);
