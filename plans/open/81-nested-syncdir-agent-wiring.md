@@ -1,11 +1,10 @@
 # Plan 81 — a nested sync dir's scaffolded agent wiring never loads
 
-**Status:** Draft — direction settled with the maintainer 2026-08-18; ready to
-graduate to `open/` when picked up
+**Status:** Not started — direction settled with the maintainer 2026-08-18
 **Priority:** P2
 **Source:** User field feedback 2026-08-18 ("verschachtelte Sync-Dir: die
 scaffoldete MCP-Config greift vermutlich nicht"), same batch as
-[Plan 80](80-mcp-token-handback-wording.md) and #267.
+[Plan 80](../draft/80-mcp-token-handback-wording.md) and #267.
 **Snapshot:** 2026-08-18T11:44Z @ 5e6084f
 **Model:** Sonnet — the design calls are made; what's left is breadth across CLI,
 `init`, templates, tests and docs.
@@ -59,7 +58,7 @@ scaffolds next to them. That contradiction is the bug.
   verb honours it. No special path for `mcp connect`.
 - **`init` prints, never writes outside its target.** The parent's `.mcp.json`
   often already carries other servers, and the parent is not guaranteed to be
-  the agent root. (Same boundary as [Plan 80](80-mcp-token-handback-wording.md):
+  the agent root. (Same boundary as [Plan 80](../draft/80-mcp-token-handback-wording.md):
   setup stays the user's.)
 - **Rejected: a root-dir key in the sync dir's `.env`.** Structurally
   impossible: `loadEnv(dir)` runs **only after** the upward search has located
