@@ -139,7 +139,14 @@ describe("loadConfig", () => {
   it("errors when the config is missing anywhere up the tree", () => {
     const dir = path.join(TMP, "no-config", "deep");
     mkdirSync(dir, { recursive: true });
-    assert.throws(() => loadConfig(dir), /decanter\.config\.json not found \(searched from .* upward\)/);
+    assert.throws(() => loadConfig(dir), (err: Error) => {
+      assert.match(err.message, /decanter\.config\.json not found \(searched from .* upward\)/);
+      // The recovery command, not just the diagnosis: a hand-written .env is
+      // the usual reason to land here, so the message names the prompt-free
+      // init that scaffolds everything else.
+      assert.match(err.message, /init \. --host <host-url> --token <mcp-token>/);
+      return true;
+    });
   });
 
   it("errors on malformed config JSON, naming the file", () => {

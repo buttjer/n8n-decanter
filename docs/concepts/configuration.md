@@ -39,6 +39,14 @@ environment.
 ## Credentials
 
 The sync rides n8n's **MCP server**; the public API key is an optional extra.
+
+**Set them with [`init`](/docs/cli/init/), not by hand.** Writing `N8N_HOST` /
+`N8N_MCP_TOKEN` into `.env` yourself gets the credentials right and everything
+else wrong: no `decanter.config.json`, no template, no `.gitignore` covering
+`.env`, no agent configs. Headless is not an excuse — `n8n-decanter init .
+--host <host-url> --token <mcp-token>` takes the same values as flags, with no
+prompt and no browser.
+
 In order of resolution:
 
 1. **`N8N_HOST`** — always required for online verbs (`.env` or environment).

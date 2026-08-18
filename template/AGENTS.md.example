@@ -153,6 +153,16 @@ description says**, and the boundary is:
   Cursor's `~/.cursor/mcp.json`, the VS Code user profile, opencode's global
   config), since a globally configured second route is exactly the drift a
   project file never shows.
+
+  > **No `n8n-instance` tools in this session? Ask for a restart — don't route
+  > around it.** MCP servers, permission rules and hooks are read at agent
+  > **startup**, so when `init` ran inside your own session (the normal case)
+  > none of it is live for you: the guarded tools are absent, and the deny rules
+  > that protect `.env` / `.decanter.json` are not in force. There is no
+  > hot-reload for this — tell the user plainly: *restart the agent (or
+  > `/reload`) and re-open this session's task*. Do **not** substitute a direct
+  > connection to the instance, hand-write MCP config, or continue as if the
+  > guard were active.
 - **Knowledge skills** (`code-nodes`, `expressions`, `loops`,
   `error-handling`, `credentials-and-security`, `binary-and-data`,
   `data-tables`, `debugging`): lean on them freely — they document the

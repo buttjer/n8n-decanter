@@ -69,12 +69,13 @@ describe("init (non-interactive flags)", () => {
     await assert.rejects(init(dir, { token: "tok" }, nullLog), /host is required — pass --host <url>/);
   });
 
-  // Agents read permission config at STARTUP, and `init` is normally run from
-  // inside the session those rules are meant to constrain — so the deny rules it
-  // writes (`.decanter.json`, `.env`, `push --force`) are inert until a restart.
-  // Saying so once is the whole fix; saying it on every re-init is how a hint
-  // becomes noise nobody reads.
-  it("says the permission rules need a restart — once, when it first writes them", async () => {
+  // Agents read MCP servers, permission config and hooks at STARTUP, and `init`
+  // is normally run from inside the session it configures — so the guarded
+  // `n8n-instance` server and the deny rules it writes (`.decanter.json`,
+  // `.env`, `push --force`) are inert until a restart. Saying so once is the
+  // whole fix; saying it on every re-init is how a hint becomes noise nobody
+  // reads.
+  it("says the agent wiring needs a restart — once, when it first writes it", async () => {
     const dir = path.join(TMP, "settings-hint");
     const lines: string[] = [];
     const log: Log = { info: (m) => void lines.push(m), ok: () => {}, warn: () => {}, error: () => {} };
@@ -82,14 +83,14 @@ describe("init (non-interactive flags)", () => {
 
     await init(dir, opts, log);
     assert.ok(
-      lines.some((l) => /permission rules take effect on the NEXT session/.test(l)),
+      lines.some((l) => /restart your agent .* load at agent STARTUP/.test(l)),
       `first init must say it: ${lines.join("|")}`,
     );
 
     lines.length = 0;
     await init(dir, opts, log);
     assert.ok(
-      !lines.some((l) => /permission rules take effect/.test(l)),
+      !lines.some((l) => /restart your agent/.test(l)),
       `a re-init in a set-up dir must stay quiet: ${lines.join("|")}`,
     );
   });

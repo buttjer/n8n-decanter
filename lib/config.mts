@@ -99,7 +99,19 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
       };
     }
     const parent = path.dirname(dir);
-    if (parent === dir) throw new Error("decanter.config.json not found (searched from " + cwd + " upward)");
+    if (parent === dir) {
+      // A hand-written `.env` is the classic half-setup: an agent that cannot
+      // run the browser OAuth flow asks its human to paste `N8N_MCP_TOKEN`
+      // into a file and stops there, leaving no config, template, .gitignore
+      // or agent wiring. Name the non-interactive `init` (it takes the very
+      // same token as a flag) so the fix is one command, not a research task.
+      throw new Error(
+        "decanter.config.json not found (searched from " + cwd + " upward)\n" +
+        "  this is not a decanter sync dir yet — writing .env by hand is not enough; init also\n" +
+        "  scaffolds the config, template, .gitignore and agent configs:\n" +
+        "  n8n-decanter init . --host <host-url> --token <mcp-token>",
+      );
+    }
     dir = parent;
   }
 }

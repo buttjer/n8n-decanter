@@ -130,6 +130,18 @@ write scope is ever needed.
 
 Scopes live under n8n → **Settings → n8n API**, on the key itself.
 
+## "decanter.config.json not found" after setting `.env` by hand
+
+Credentials alone are not a sync dir. If you (or your agent) pasted
+`N8N_HOST`/`N8N_MCP_TOKEN` into a file instead of running
+[init](/docs/cli/init/), the config, starter template, `.gitignore` and agent
+configs were never scaffolded. Fix it in one command — it reuses the values
+already in `.env` and needs no browser or TTY:
+
+```sh
+n8n-decanter init . --host <host-url> --token <mcp-token>
+```
+
 ## "MCP session expired … re-run: n8n-decanter init"
 
 The stored OAuth refresh token was invalidated (they rotate on every use — a
