@@ -8,3 +8,9 @@
 website/public/gifgen/html2canvas-pro.min.js linguist-vendored
 website/public/gifgen/gif.js linguist-vendored
 website/public/gifgen/gif.worker.js linguist-vendored
+
+# Archived field-test rounds (test/field-test/runs/<iso>-<runId>/): report.html is
+# a self-contained, re-renderable view of the round's raw.tgz — ~10 MB across the
+# archive, which drowned out the actual TypeScript in GitHub's language stats.
+# Marked generated: out of the stats and collapsed in diffs, still committed.
+test/field-test/runs/**/report.html linguist-generated
