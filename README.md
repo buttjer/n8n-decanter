@@ -75,7 +75,10 @@ n8n-decanter pull         # pick a workflow from the list → it pulls
 
 **Restart your coding agent after `init`** — the MCP servers, permission rules
 and hooks it scaffolds are read at agent startup, so the session that ran `init`
-is still unconfigured.
+is still unconfigured. If the sync dir is nested in a bigger repo and you start
+the agent at the repo root, a restart is *not* enough — that wiring loads only
+from the dir the agent starts in
+([which file loads from where](docs/agents/overview.md#where-the-agent-wiring-loads-from)).
 
 On a terminal, `pull` with no argument lists your n8n workflows — pick one and
 it lands in `workflows/<slug>/`. Know the id already? `n8n-decanter pull

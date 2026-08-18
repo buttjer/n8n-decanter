@@ -1228,6 +1228,25 @@ ancestors are what keep the test cheap: the sync dir's own scaffolded
 register. The note rides the **same gate as the restart reminder** — the run
 that first scaffolds those files — so a standalone dir, the shape everything
 assumed until now, stays completely silent, and a re-init never repeats it.
+**Plan 83 turned that gate into a branch**: the two lines are alternatives, not
+a line plus an addendum. "Restart your agent" is true only where a restart can
+change the answer, and in a nested dir it cannot — startup discovery walks *up*
+from the launch dir, so a session started at the root re-misses this `.mcp.json`
+every time, however often it restarts. The detection already distinguishes the
+cases, so the nested run prints "loads from the dir the agent was STARTED in;
+started higher up, no restart ever loads them" plus A/B, and the bare restart
+line fires only in the flat case where it is the fix. The same two-cause split
+— *wiring is new* (restart) vs. *wiring is below you* (start here, or wire the
+root), discriminated by "is that `.mcp.json` below the dir you started in?" —
+is now taught everywhere the restart claim appears: the scaffolded `AGENTS.md`,
+`docs/agents/overview.md`, `docs/cli/init.md`, and a troubleshooting entry.
+It came out of field-test round `ftrun-468939`, where a blind agent hit the
+missing tools in the nested layout, quoted our own `AGENTS.md` back at us, and
+concluded "restart" — a dead end it was saved from only by not needing the
+tools. What still works in both cases is the CLI, which carries its own config
+and credentials and never depended on the agent wiring; that is the fallback
+the guidance now names, since the code layer stays fully open while only
+MCP-side *structure* work is blocked.
 Option A leads (`cd <syncdir> && claude`): zero further config, and the only
 shape in which the scaffolded permission globs stay anchored where they were
 written; its one cost is that the surrounding project's own

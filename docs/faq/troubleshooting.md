@@ -165,6 +165,36 @@ and the root MCP entry (which needs a root-resolvable command as well as the
 override) is in
 [mcp connect](/docs/cli/mcp-connect/#when-your-sync-dir-is-not-your-project-root).
 
+## My agent has no `n8n-instance` tools, and restarting didn't help
+
+Two different things produce that symptom, and only one of them is a restart:
+
+- **The wiring is new.** `init` normally runs *inside* the session it
+  configures, and nothing it scaffolds hot-loads — MCP servers, permission
+  rules and hooks are read once, at agent **startup**. That session stays
+  unconfigured until it restarts (or `/reload`s). This is the common case and
+  the restart is the real fix.
+- **The wiring is below the agent.** The sync dir is nested in a bigger repo
+  and the agent was started at the repo root. `.mcp.json` is discovered by
+  walking **up** from the launch directory — never downward — so
+  `flows/.mcp.json` is invisible from `<repo>/`. Startup already looked and
+  missed it; restarting looks in the same places again. **No number of restarts
+  will ever produce those tools.**
+
+**Which one am I in?** Compare the two paths: is the `.mcp.json` below the
+directory the agent was started in? If yes, it is the second case. Fix it by
+starting the agent in the sync dir (`cd flows && claude`, the recommendation) or
+by wiring the repo root — both spelled out in
+[init](/docs/cli/init/#when-the-sync-dir-is-nested-in-a-bigger-repo), with the
+per-file load matrix behind them in
+[Working with coding agents](/docs/agents/overview/#where-the-agent-wiring-loads-from).
+`init` prints whichever of the two applies when it first scaffolds the files.
+
+Meanwhile the CLI is unaffected either way — it finds its own config and
+credentials, so `pull` / `push` / `preflight` keep working (add `--dir flows`
+when you run them from above the sync dir). What the missing tools cost you is
+workflow **structure** work over MCP, not the Code-node flow.
+
 ## "MCP session expired … re-run: n8n-decanter init"
 
 The stored OAuth refresh token was invalidated (they rotate on every use — a

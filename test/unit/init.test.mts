@@ -216,6 +216,24 @@ describe("init (nested sync dir)", () => {
     assert.match(out, /"Read\(flows\/\.env\)", "Edit\(flows\/\.env\)"/);
   });
 
+  // Plan 83: the bare "restart your agent" line is TRUE only where a restart
+  // can help. Here the wiring sits below wherever the agent was started, and
+  // startup discovery only walks UP — so a restart re-misses this file every
+  // time. A blind field-test agent read the unconditional line, concluded
+  // "restart", and had no next idea; the nested run must name the real fix
+  // instead of advice that cannot work.
+  it("does not tell a nested dir to just restart — it names where the wiring loads from (Plan 83)", async () => {
+    const root = path.join(TMP, "nested-no-restart");
+    const dir = path.join(root, "flows");
+    mkdirSync(path.join(root, ".git"), { recursive: true });
+    const lines: string[] = [];
+    await init(dir, opts, capture(lines));
+    const out = lines.join("\n");
+    assert.ok(!/restart your agent/.test(out), `the dead-end advice must not fire when nested: ${out}`);
+    assert.match(out, /from the dir the agent was STARTED in/);
+    assert.match(out, /no restart ever loads them/);
+  });
+
   it("stays completely silent for a standalone sync dir", async () => {
     const dir = path.join(TMP, "standalone-init", "flows");
     mkdirSync(dir, { recursive: true });

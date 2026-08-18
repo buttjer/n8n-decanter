@@ -141,9 +141,11 @@ read-only docs MCP.
 Everything in that scaffold assumes the agent is started **in the sync dir** —
 which is exactly what stops being true when the sync dir is a subfolder of a
 bigger project. So when a directory *above* the sync dir looks like a project
-root (it holds a `.git` or a `package.json`), `init` prints — right after the
+root (it holds a `.git` or a `package.json`), `init` prints — **in place of** the
 restart reminder, on the same trigger: the run that first scaffolds those agent
-files — the two shapes that actually work:
+files — the two shapes that actually work. (In place of, because a restart is
+not the fix here: the wiring would sit below whatever dir the agent is started
+in, and startup discovery only ever walks *up*.)
 
 - **Option A, the recommendation: start the agent in the sync dir**
   (`cd flows && claude`). Nothing needs configuring; the only thing you give up
@@ -215,6 +217,16 @@ cannot see the `n8n-instance` MCP tools, and the deny rules that keep it off
 `/reload`) before working in the sync dir; `init` says so when it first writes
 those files. Until then the scaffolded `AGENTS.md` is the only thing holding the
 line, and it asks rather than blocks.
+
+**A restart is the fix only when the sync dir is where you start the agent.**
+Missing `n8n-instance` tools have a second cause with the opposite answer: the
+sync dir is [nested](#when-the-sync-dir-is-nested-in-a-bigger-repo) and the
+agent was started at the repo root, so the `.mcp.json` `init` wrote sits *below*
+the launch dir — where startup never looks. Restarting reruns the same discovery
+and finds nothing again. Tell the two apart by asking whether the `.mcp.json` is
+below the directory the agent was started in; if it is, the fix is Option A or B
+above, not a restart. `init` knows which case you are in when it scaffolds and
+says so, printing the nested options in place of the plain restart line.
 
 ## Flags
 

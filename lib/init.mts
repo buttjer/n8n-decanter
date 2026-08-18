@@ -492,21 +492,31 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
   // the session it is meant to configure: permission rules (no edits to
   // `.decanter.json`, no reads of `.env`, no `push --force`), the guarded
   // `n8n-instance` MCP server, and the session hooks are all read at agent
-  // startup, so everything just written is inert until that session restarts.
-  // The docs said "restart" only for the skills plugin, so the wiring that
-  // actually gates the agent went unmentioned: the tool knew something the user
-  // needed and never said it. Only when a file is new — re-running init in a
-  // set-up dir must not nag.
+  // startup, so everything just written is inert for it. The docs said
+  // "restart" only for the skills plugin, so the wiring that actually gates the
+  // agent went unmentioned: the tool knew something the user needed and never
+  // said it. Only when a file is new — re-running init in a set-up dir must not
+  // nag. What "make it live" MEANS then splits on the layout (see below).
   const agentFiles = [path.join(".claude", "settings.json"), ".mcp.json", "opencode.json"];
   if (agentFiles.some((f) => added.includes(f))) {
-    log.info(style.dim("  restart your agent (or /reload) before working here — the MCP servers, permission rules and hooks just scaffolded load at agent STARTUP, so this session is still unconfigured"));
     // Plan 81: those same three files are the ones a nested sync dir never gets
     // to use — an agent started at the surrounding project root loads none of
-    // them. So the note rides the same gate: it is the second half of "here is
-    // what it takes to make what I just wrote live", and a standalone dir (the
-    // shape this all assumed until now) stays completely silent.
+    // them. So the note rides the same gate — it answers "here is what it takes
+    // to make what I just wrote live" — and a standalone dir (the shape this all
+    // assumed until now) stays completely silent.
     const projectRoot = projectRootAbove(destDir);
-    if (projectRoot !== null) log.info(nestedWiringNote(destDir, projectRoot));
+    // Plan 83: which line is TRUE depends on that same detection, so branch on
+    // it rather than printing "restart" unconditionally and appending the
+    // nested note. In a nested dir a restart is not merely insufficient, it is
+    // a dead end — startup discovery walks UP from the launch dir, so a session
+    // started at the root re-misses this file every time. A blind agent read
+    // the old unconditional line, concluded "restart", and had no next idea.
+    if (projectRoot === null) {
+      log.info(style.dim("  restart your agent (or /reload) before working here — the MCP servers, permission rules and hooks just scaffolded load at agent STARTUP, so this session is still unconfigured"));
+    } else {
+      log.info(style.dim("  the MCP servers, permission rules and hooks just scaffolded load at agent STARTUP, from the dir the agent was STARTED in — so a restart makes them live only for an agent started in this dir. Started higher up, no restart ever loads them; use A or B below."));
+      log.info(nestedWiringNote(destDir, projectRoot));
+    }
   }
 }
 

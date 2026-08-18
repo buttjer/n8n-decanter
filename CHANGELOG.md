@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **"Missing `n8n-instance` tools? Restart" is no longer the only answer we
+  give — in a nested sync dir it was a dead end.** Agent wiring loads at
+  startup *from the dir the agent was started in*, so tools declared in
+  `.mcp.json` can be absent for two reasons: the wiring is new (a restart fixes
+  it), or the wiring sits **below** the launch dir, where no restart will ever
+  load it. Every surface that taught only the first now teaches both, with the
+  discriminator you can apply yourself — *is that `.mcp.json` below the
+  directory you started the agent in?* — and the two working routes (start the
+  agent in the sync dir, or wire the root with `N8N_DECANTER_DIR` plus a
+  root-resolvable command): the scaffolded `AGENTS.md`, `init`'s own output
+  (which now prints the nested guidance **instead of** the restart line when it
+  scaffolds into a nested dir), [Working with coding
+  agents](/docs/agents/overview/), [init](/docs/cli/init/) and a new
+  [troubleshooting](/docs/faq/troubleshooting/) entry. The CLI never needed
+  that wiring, so `pull`/`push`/`preflight` keep working either way — the docs
+  now say so too.
+
 - **The oversized-scenario warning now names a remedy you can actually take.**
   Above 1 MB `scenario create` said "Trim it before that" — but there is no
   trim flag, so the advice pointed nowhere. It now says what is true and what

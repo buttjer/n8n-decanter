@@ -40,6 +40,23 @@ rules until it restarts (or `/reload`s). There is no hot-reload; `init` prints
 the reminder when it first scaffolds those files, and the scaffolded `AGENTS.md`
 tells the agent to ask for a restart rather than route around the missing guard.
 
+**But a restart is only half the diagnosis.** "`.mcp.json` declares
+`n8n-instance` and the tools aren't there" has **two** causes, and they need
+opposite answers:
+
+| Cause | Symptom is | Fix |
+| --- | --- | --- |
+| **The wiring is new** — `init` ran inside this very session | temporary | restart / `/reload` |
+| **The wiring is below the launch dir** — nested sync dir, agent started at the repo root | permanent | start the agent in the sync dir, or wire the root ([below](#where-the-agent-wiring-loads-from)) |
+
+The discriminator is a path comparison: **is the `.mcp.json` in question below
+the directory the agent was started in?** If it is, no restart can ever load it
+— startup only reads the launch dir and its *ancestors* (next section), so
+restarting reruns exactly the discovery that already missed the file. Advising a
+restart there costs the user a session and teaches them nothing. The scaffolded
+`AGENTS.md` carries both branches, so an agent that reads it can tell them
+apart; `init` names the one you are actually in when it scaffolds.
+
 ## Where the agent wiring loads from
 
 `init` scaffolds `.mcp.json`, `.claude/settings.json` and the hook scripts
