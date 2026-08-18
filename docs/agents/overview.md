@@ -69,8 +69,18 @@ that boundary safe by construction.
 | Archiving (MCP `archive_workflow`) | **Outward-facing** — the workflow leaves the active list; a published one goes offline. Reversible only in the n8n UI. Never without an explicit instruction to archive *that* workflow. |
 | `push --force` | Never without explicit instruction — it overrides the per-node drift guard protecting code edited on the instance. |
 
-The default loop for an agent: edit → verify ([`preflight`](/docs/cli/preflight/),
-or `preflight --offline` to stay credential-free) → **push** → **`test`** (the
-draft now holds your code) → say what landed and what the test showed. Stop
-before `publish` unless the user asked for it. See
-[The offline feedback loop](/docs/agents/offline-loop/).
+The default loop for an agent: **orient** → edit → verify
+([`preflight`](/docs/cli/preflight/), or `preflight --offline` to stay
+credential-free) → **push** → **`test`** (the draft now holds your code) → say
+what landed and what the test showed. Stop before `publish` unless the user
+asked for it. See [The offline feedback loop](/docs/agents/offline-loop/).
+
+**Orienting is the same `preflight`, run before the first edit rather than
+after the last one** — it reads the instance and writes nothing. Its sync tier
+answers the question an agent otherwise discovers too late: did someone edit
+this code in the n8n UI while you were away (`drift` — then
+[`pull`](/docs/cli/pull/) and carry on), did both sides move (`CONFLICT` — stop
+and show the user [`diff`](/docs/cli/diff/) before either version is
+overwritten), is a push from an earlier session still pending (`parity`).
+Skipping it is not destructive — `push` refuses to overwrite remote edits — but
+the work may have to be redone.

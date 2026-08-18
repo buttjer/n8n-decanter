@@ -1,8 +1,11 @@
 # Plan 30 — Agent/LLM working ergonomics in a sync dir
 
-**Status:** Not started — **reduced 2026-08-18** from four themes / ten tasks to
-two small edits. Everything else landed elsewhere, was superseded, or did not
-survive a skeptical re-read (the table below says which, per item).
+**Status:** Done (2026-08-18) — **reduced** the same day from four themes / ten
+tasks to two small edits (everything else landed elsewhere, was superseded, or
+did not survive a skeptical re-read — the table below says which, per item), and
+both survivors shipped in the same PR: the orient passage in the template + both
+`docs/agents/` pages, and the `*.remote.js` deny claim removed from
+`CLAUDE.md.example` / `opencode.json.example`.
 **Priority:** P2 — a docs sentence and a scaffold inconsistency, one PR.
 *(Theme A's old **P1** claim does not survive the evidence: the drift it guards
 against is reported by `preflight`, refused by `push`, and `push --force` is
@@ -11,10 +14,10 @@ denied in the scaffold. What is left is cheap and right, not urgent.)*
 research, tooling beyond the MCP. The retired themes' outcomes are recorded in
 "What survived" so nothing is orphaned.
 **Snapshot:** 2026-08-18T11:56Z @ c3b05c1 *(full rework. The previous snapshot,
-2026-07-25T21:30Z @ 83e61e9, predates [Plan 59](../done/59-declutter-verify-verbs.md)
+2026-07-25T21:30Z @ 83e61e9, predates [Plan 59](59-declutter-verify-verbs.md)
 retiring the `status` verb the plan was written around,
-[Plan 60](../done/60-preflight-first-verb-surface.md) making `preflight` the
-single read-only gate, [Plan 51](../done/51-live-mirror-and-backups.md)/[68](../done/68-live-mirror-visibility.md)'s
+[Plan 60](60-preflight-first-verb-surface.md) making `preflight` the
+single read-only gate, [Plan 51](51-live-mirror-and-backups.md)/[68](68-live-mirror-visibility.md)'s
 live mirror, and the wave-2 field-test rounds. The superseded task text — the
 staged `init` flow, the F1–F5 grounding research, the dropped precedence-override
 snippet — stays readable in git at 83e61e9; only its outcome is carried forward.)*
@@ -37,11 +40,11 @@ deny rule that Plan 32 removed the need for.
 | **A1/A2** — "orient before you edit" in `template/AGENTS.md.example` + the two `docs/agents/` pages | **Survives, reduced → Task 1.** The *report* exists (`preflight`); only the **timing** is undocumented. The verb it named (`status`) is gone — Plan 59. |
 | **A3** — enforcement decision | Resolved as docs-only 2026-07-22; nothing to build. |
 | **A4** — "finish the loop" | **Landed** (#154, then subsumed by Plan 59/60 — the loop now reads `preflight → push → test → publish` in template, docs and README). |
-| **B / Task 4** — n8n instance version in `status` | **Dropped.** `status` is retired, and both consumers died: Task 8's staged `init` flow is superseded (Plan 32 — decanter authenticates the instance MCP itself), and the MCP version-floor messaging landed as [Plan 74](../done/74-mcp-disabled-403.md)'s 401/403/404 mapping instead. No caller is left to justify a new instance read. |
+| **B / Task 4** — n8n instance version in `status` | **Dropped.** `status` is retired, and both consumers died: Task 8's staged `init` flow is superseded (Plan 32 — decanter authenticates the instance MCP itself), and the MCP version-floor messaging landed as [Plan 74](74-mcp-disabled-403.md)'s 401/403/404 mapping instead. No caller is left to justify a new instance read. |
 | **Task 5** — version-aware docs recipe | **Dropped with B.** Its premise was a version to read; without it the recipe is "read docs.n8n.io and heed *Available from vX*" — which is what the default-scaffolded `n8n-docs` MCP already serves off the live docs. |
 | **Task 6** — "ground yourself in real data" section | **Covered.** `template/AGENTS.md.example` has *Real execution data*, *Scenarios* and *Data tables*; [docs/cli/preflight.md](../../docs/cli/preflight.md) has *Executions are the ground truth* and the `capture` check. A fourth restatement would be drift bait. |
 | **Task 7** — grounding ladder + precedence override | **Dropped.** The override landed as *"This AGENTS.md wins…"* (#107). Every ladder rung now has an owner (`n8n-globals.d.ts`; the guarded `n8n-instance` MCP + the template's boundary section; `executions`/`data-tables`; the `n8n-docs` MCP; `preflight`), so the ladder would only re-order text that already exists. |
-| **Task 8 + 8a/8c** — staged `init` MCP wiring, skills docs, docs-MCP scaffold | **Superseded / landed** (Plan 32; #107; skills offer = [Plan 55](../done/55-init-skills-offer.md)). |
+| **Task 8 + 8a/8c** — staged `init` MCP wiring, skills docs, docs-MCP scaffold | **Superseded / landed** (Plan 32; #107; skills offer = [Plan 55](55-init-skills-offer.md)). |
 | **8b** — trim generic Code-node prose to a pointer | **No object left.** "Writing Code node code" is now entirely decanter-specific (top-level `return` + the tsserver false positive, `n8n-globals.d.ts`, bundling rules, `$('Node')` rename refs). Nothing generic to trim. |
 | **D / Task 9** — canonical loop diagram, and the `mcp serve` → `mcp connect` fix | **Fix landed** ([docs/agents/overview.md](../../docs/agents/overview.md) names `mcp connect`, with `mcp serve` as the URL-only fallback). **Diagram dropped** — the loop is already stated in the template, both `docs/agents/` pages and the README; a fifth copy is one more thing to keep in sync. The orient clause folds into Task 1. |
 | **Task 10** — allowlist trim | **Mostly landed** — `template/.claude/settings.json.example` carries no retired verbs and no `.remote.js` deny. **Residue → Task 2.** |

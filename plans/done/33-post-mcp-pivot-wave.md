@@ -40,7 +40,7 @@ the MCP foundation.
   `plan32-execution-review-checklist` — superseded by this file).
 - **PR #97** — the Plan 32 execution under review (merged 2026-07-22 →
   [DONE-32](../done/32-mcp-native-code-layer.md)).
-- [Plan 30](../open/30-agent-llm-working-ergonomics.md) — precedence-override
+- [Plan 30](30-agent-llm-working-ergonomics.md) — precedence-override
   lineage (Task 4 rewrites it proxy-first) and "override, not fork".
 - [Plan 0](../draft/) — decanter-native code-node authoring skill (deferred,
   distinctive-features group); Python `pythonCode` loophole relates to

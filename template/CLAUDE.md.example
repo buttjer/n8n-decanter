@@ -5,7 +5,7 @@
 The contract above (from `AGENTS.md`) is authoritative. A few Claude-only notes:
 
 - **File-level invariants are enforced by `.claude/settings.json`.** Its
-  permission deny-list blocks edits to `.decanter.json` and `*.remote.js`, reads/edits
+  permission deny-list blocks edits to `.decanter.json`, reads/edits
   of `.env`, and `push --force`. If an `Edit`/`Write` is blocked, it broke a hard rule —
   fix the edit, don't route around the guard. The content-level invariants (jsCode
   placeholder integrity, the `@ts-n8n` marker) are the CLI's wall at `push`/`preflight`.

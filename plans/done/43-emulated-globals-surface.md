@@ -87,7 +87,7 @@ the escape hatch; `run` stays honest about its edges.
 - **Relates to** Plan 47 *(dropped)* — a `run` *fixture
   source*, an orthogonal axis (where input comes from, not how faithfully
   globals are emulated).
-- **Relates to** [Plan 30](../open/30-agent-llm-working-ergonomics.md) — treats
+- **Relates to** [Plan 30](30-agent-llm-working-ergonomics.md) — treats
   `n8n-globals.d.ts` as *the decanter authoring contract* agents read; keeping it
   single-source and current serves that.
 - **Sibling to** [Plan 52](../done/52-remove-watch-browser-reload-proxy.md) — both are

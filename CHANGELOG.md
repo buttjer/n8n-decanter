@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The agent contract now says to orient *before* the first edit, not only
+  before the push.** `preflight` was always the read-only report of the
+  instance's side (`drift`, `CONFLICT`, a pending `parity`), but every surface
+  framed it as the pre-push gate — so an agent edited first and learned about a
+  colleague's UI edit afterwards. The scaffolded `AGENTS.md` and both agent doc
+  pages now open the loop with it: on drift, `pull` and carry on; on a
+  `CONFLICT`, show `diff` and ask before either side is overwritten.
+- **The scaffold stopped advertising a deny rule it no longer has.** The
+  Claude Code `settings.json` denies `.decanter.json`, `.env` and
+  `push --force` — but the scaffolded `CLAUDE.md` and `opencode.json` still
+  claimed `*.remote.js` was blocked too. Those conflict artifacts were removed
+  in the MCP pivot; both files now describe the policy that actually ships.
 - **Docs: `mcp connect` / `mcp serve` no longer read as if the guard obtained
   credentials itself.** "decanter's own credentials", "the agent never holds an
   n8n credential" and "no secret to manage" led readers (and agents) to believe

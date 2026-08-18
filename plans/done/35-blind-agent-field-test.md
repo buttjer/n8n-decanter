@@ -91,7 +91,7 @@ three landed inside #179 and were, until this close-out, cited nowhere.
 | `init` writes `https://` for a local host | Fixed #142 |
 | `init` not agent-drivable | Fixed #144 (`--host`/`--token`/`--api-key`) |
 | `.js→.ts` leaves `.decanter.json` stale | Fixed #143 |
-| Converted-but-not-pushed; green `check` read as done | [Plan 30](../open/30-agent-llm-working-ergonomics.md) Theme A → #154, then subsumed by [Plan 59](59-declutter-verify-verbs.md)/[60](60-preflight-first-verb-surface.md) |
+| Converted-but-not-pushed; green `check` read as done | [Plan 30](30-agent-llm-working-ergonomics.md) Theme A → #154, then subsumed by [Plan 59](59-declutter-verify-verbs.md)/[60](60-preflight-first-verb-surface.md) |
 | Contract gated `push` behind an ask | Fixed #163 (+ #162's `preflight → push → test → publish`) |
 | Blinding leak via packed `package.json` | Fixed — `unblindTarball` in `stage.mts` |
 | Harness PATH crutch | Explicit + printed; `FIELD_NO_PATH_HELP=1` opts out ([Plan 58](58-guard-route-robustness.md) Tasks 3/4) |
@@ -241,7 +241,7 @@ guard).
   Sonnet as blind user agents, simple + medium workflows, typical inputs, MCP
   skills + code nodes, CLI from `init` to `push`, runs included, **no
   network/API nodes**.
-- [Plan 30](../open/30-agent-llm-working-ergonomics.md) — the ergonomics this
+- [Plan 30](30-agent-llm-working-ergonomics.md) — the ergonomics this
   test measures (orientation, offline loop, grounding ladder).
 - [Plan 33](33-post-mcp-pivot-wave.md) Task 4 (the HTTP `mcp serve` guard)
   **and the skills-first wave (#107)** — which made the stdio **`mcp connect`**
