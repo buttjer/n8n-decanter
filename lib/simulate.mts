@@ -875,8 +875,13 @@ export async function writeScenario(
   } else {
     log.ok(`scenario "${name}" written from ${seededFrom} -> ${rel} (${size}) — no gaps; replay with \`preflight --simulate --scenario ${name}\``);
   }
+  // Both remedies are named because "trim it" alone left the reader hunting for
+  // a flag that does not exist (the `--trim` idea was retired — the file is
+  // hand-editable by design, and `--scaffold` is the no-capture path). The
+  // window is real and worth stating: `scenario create` does NOT commit, so
+  // nothing is in history until the next pull/push sweeps the folder.
   if (bytes > 1024 * 1024) {
-    log.warn(`that scenario is ${size} and \`scenarios/\` is TRACKED — the next pull or push auto-commits the whole workflow folder, so it lands in git history permanently. Trim it before that, or keep the capture out of the scenario.`);
+    log.warn(`that scenario is ${size} and \`scenarios/\` is TRACKED — nothing is committed yet, but the next pull or push auto-commits the whole workflow folder and it lands in git history permanently. Before that: cut items out of "data.resultData.runData" by hand (the file is indented for exactly that), or re-create it with \`--scaffold\` instead of \`--execution\` — that carries no capture data at all, and you author the pins.`);
   }
   if (notExercised.length > 0) {
     log.info(`pinned ${notExercised.length} node${notExercised.length === 1 ? "" : "s"} to an EMPTY run — the capture never reached ${notExercised.length === 1 ? "it" : "them"}: ${notExercised.join(", ")}. That is what makes this scenario usable with \`test\` too; review the claim, and give one real output if a branch should have run.`);

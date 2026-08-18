@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The oversized-scenario warning now names a remedy you can actually take.**
+  Above 1 MB `scenario create` said "Trim it before that" — but there is no
+  trim flag, so the advice pointed nowhere. It now says what is true and what
+  to do: nothing is committed yet (`scenario create` never commits — only the
+  next `pull`/`push` sweeps the folder into history), so you can still cut
+  items out of `data.resultData.runData` by hand, or re-create the scenario
+  with `--scaffold` instead of `--execution` and author the pins yourself.
+  `docs/cli/scenario.md` spells out both, including which parts of a capture
+  are unsafe to delete.
+
 - **The agent contract now says to orient *before* the first edit, not only
   before the push.** `preflight` was always the read-only report of the
   instance's side (`drift`, `CONFLICT`, a pending `parity`), but every surface

@@ -203,13 +203,27 @@ magnitude bigger and land in the same history.
 Fix: compute `Buffer.byteLength` before the write, append `(N KB)` to the success
 line, and warn above a threshold (~1 MB) that the file is about to be committed.
 Also note in [`docs/cli/scenario.md`](../../docs/cli/scenario.md) that the
-folder-scoped auto-commit will pick it up. Trimming itself is
-[Plan 67](../draft/67-scenario-trim.md).
+folder-scoped auto-commit will pick it up. Trimming itself was Plan 67
+(**retired 2026-08-18 — number not reused**; see the note below).
 
 **Done (2026-08-05).** Size on the success line (KB under a megabyte, MB above),
 and a warning past 1 MB that names the mechanism — `scenarios/` is tracked, so
 the next pull/push auto-commits it permanently. `docs/cli/scenario.md` says the
 same.
+
+**Follow-up (2026-08-18) — Plan 67 retired, this warning finished instead.**
+Plan 67 would have added `scenario create --trim`. Dropped on three grounds:
+this warning already prevents the silent 33 MB case; `scenario create` does not
+commit, so the file is still uncommitted when the warning fires and the remedy
+window is real; and a trimmed capture is no longer a faithful run, so it could
+not keep the `capture` provenance that makes a scenario a diff baseline — the
+feature would have traded the file's purpose for its size, at the cost of four
+correctness traps in the replay path (loop-run counts, per-output branching,
+the provenance default, and Plan 65's `notExercised` ordering). What the plan
+did expose is that "Trim it before that" named no mechanism. The warning and
+`docs/cli/scenario.md` now name both real ones — hand-editing
+`data.resultData.runData`, or re-creating with `--scaffold` instead of
+`--execution`.
 
 ### 8. Two scenario messages point at the wrong place
 

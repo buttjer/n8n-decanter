@@ -84,7 +84,23 @@ n8n-decanter scenario create order-sync "happy-path" --extend
 item of every node — one from a busy production run can be tens of megabytes.
 `scenario create` prints the size, and warns above 1 MB, because `scenarios/` is
 **tracked**: the folder-wide auto-commit that `pull` and `push` perform sweeps it
-into git history on the next sync, permanently. Trim it before that.
+into git history on the next sync, permanently.
+
+**`scenario create` itself never commits**, so an oversized scenario is still
+only a file on disk when you are warned. Two ways to act on that, both
+immediate:
+
+- **Cut it down by hand.** Delete items from `data.resultData.runData` in your
+  editor. The file is written indented for exactly this — keep at least one item
+  per output a node actually emitted, and do not remove whole runs (a loop
+  capture's run counts are what mark it as a loop).
+- **Do not seed from the capture at all.** Delete the file and re-create it with
+  `--scaffold` instead of `--execution`. A scaffold carries no capture data —
+  you author the pins yourself, guided by the `fill` list.
+
+There is no `--trim` flag, deliberately: a trimmed capture is no longer a
+faithful record of a real run, so it could not serve as the diff baseline that
+makes a scenario worth tracking.
 
 - **`<slug>`** names the scenario (`happy-path`, `empty-cart`, `error-case`) and
   becomes the filename (kebab-cased). **Optional** — omit it and the scenario is
