@@ -95,6 +95,7 @@ adds the ladder/loop workflows, `corpus-v1` adds the real-world imports.
 | --- | --- | --- |
 | `pull` / `push` / `diff` / drift guard / TS conversion / MCP structure + reconcile | S1–S4 | runnable (only 3 archived rounds on the post-Plan-59 verb surface) |
 | CLI discoverability from a fresh clone | S6 (`FIELD_NO_CLI=1`) | runnable — 6 rounds, 6 PASS |
+| Agent wiring when the sync dir is nested in a bigger repo | **S16** (`FIELD_NESTED=1`) | **runnable, never run** — the layout behind [Plan 81](../../plans/done/81-nested-syncdir-agent-wiring.md); no round has measured it yet |
 | `watch` | S5 | **runnable** — 1 round (`ftrun-78968`, PASS): the agent backgrounds it unprompted. A `workflow.json` save and post-`publish` execution stay unmeasured |
 | `preflight` (`--json`, `--require`, `--fail-on`, `--fail-fast`, coverage block) | **S8** | **runnable** — stage `--seeds wave2` |
 | `scenario create --execution` / `check`, `executions`, `test` after push | **S8** | **runnable** ([Plan 65](../../plans/done/65-three-gate-scenario-mismatch.md) landed) |
@@ -345,6 +346,7 @@ node test/field-test/run.mts --isolate --all --container --model opus
 | `FIELD_NO_SEED_ENV=1` | stage the **cold start**: no `.env`, no `.decanter-auth.json` — the scaffold is there, the credentials are not (removed *after* the stage's own `init`, which would otherwise write them back). Required by S14. |
 | `FIELD_NO_PATH_HELP=1` | drop the `node_modules/.bin` prepend **and** shadow any ambient install, so `n8n-decanter` genuinely is not on PATH. |
 | `FIELD_NO_CLI=1` | fresh-clone condition: full committed evidence, `node_modules` removed. Required by S6, host-mode only. |
+| `FIELD_NESTED=1` | **nested-layout condition** (Plan 82): the sync dir becomes a folder of an ordinary app repo and the blind session launches at the **repo root** — the shape where the sync dir's `.mcp.json` and `.claude/settings.json` are silently not loaded (agents merge `.mcp.json` from ancestors of the launch dir only, and read `settings.json` from the launch dir alone). Manifest gains `nested` + `launchDir`; `workDir` still names the sync dir. Required by S16, host-mode only. |
 | `FIELD_SEED_PACK` | seed pack (`builtin` \| `wave2` \| `corpus-v1`); same as `stage.mts --seeds`. |
 | `FIELD_TURN_TIMEOUT_MS` | per-turn kill timeout (default 15 min). |
 | `FIELD_KEEP=1` | keep the container on `--down`. |

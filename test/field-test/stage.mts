@@ -29,6 +29,13 @@
 //                           leaves the instance alone.
 //   FIELD_MCP_TOKEN=<tok>   (FIELD_N8N_URL mode) the instance's MCP bearer token
 //   FIELD_API_KEY=<key>     (FIELD_N8N_URL mode) a public API key for that instance
+//   FIELD_NESTED=1          stage the SUBFOLDER layout (Plan 82): the sync dir
+//                           becomes a subfolder of an ordinary application repo,
+//                           and the blind session launches at the REPO ROOT —
+//                           the one shape where the scaffolded agent wiring is
+//                           NOT loaded (an agent merges .mcp.json from ancestors
+//                           of its launch dir, never from a dir below it, and
+//                           .claude/settings.json is launch-dir only).
 //   FIELD_KEEP=1            (--down) keep the container; only remove harness dirs
 import { execFile as execFileCb } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -57,6 +64,23 @@ const IMAGE = process.argv.includes("--n8n-tag")
 if (IMAGE === undefined || IMAGE.startsWith("--")) { console.error("--n8n-tag needs an image, e.g. --n8n-tag n8nio/n8n:2.33.3"); process.exit(2); }
 const PID = process.pid;
 const CONTAINER = `flows-ops-n8n-${PID}`;
+/**
+ * `FIELD_NESTED=1` — stage the SUBFOLDER layout (Plan 82).
+ *
+ * Every round to date staged one shape: the sync dir IS the agent's project
+ * root, which is the shape where the scaffolded wiring always works. The layout
+ * a user reported is the other one — the sync dir as a folder of a bigger repo,
+ * with the agent launched at the repo root — and there the wiring is silently
+ * dead: an agent merges `.mcp.json` from ANCESTORS of its launch dir (never from
+ * a directory below it) and reads `.claude/settings.json` from the launch dir
+ * only. A round without this condition cannot see that, because the world it
+ * builds is the one that never had the problem.
+ *
+ * Host-mode only for now, like `FIELD_NO_CLI`: container mode bind-mounts the
+ * work dir at `/work` and shadows `/work/node_modules`, both of which assume
+ * sync dir == launch dir.
+ */
+const NESTED = process.env.FIELD_NESTED === "1";
 // Neutral owner — never shown to the agent, but kept clean anyway.
 const OWNER = { email: "priya@flows.local", firstName: "Priya", lastName: "Ops", password: "Flows-0ps-Pass!" };
 
@@ -73,21 +97,29 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 if (process.argv.includes("--down")) {
   const mfPath = process.argv[process.argv.indexOf("--down") + 1];
   if (!mfPath) { console.error("--down needs a manifest path"); process.exit(2); }
-  const mf = JSON.parse(readFileSync(mfPath, "utf8")) as { container: string | null; harnessRoot: string; workDir: string };
+  const mf = JSON.parse(readFileSync(mfPath, "utf8")) as { container: string | null; harnessRoot: string; workDir: string; launchDir?: string };
   if (mf.container && process.env.FIELD_KEEP !== "1") {
     await docker("rm", "-f", mf.container).catch(() => {});
     console.log(`removed container ${mf.container}`);
   } else if (mf.container) {
     console.log(`FIELD_KEEP=1 — left container ${mf.container} running`);
   }
+  // The OUTERMOST dir this stage created for the agent. Flat rounds: the sync
+  // dir itself (launchDir === workDir). FIELD_NESTED rounds: the surrounding
+  // repo root, which CONTAINS the sync dir — so removing it takes the whole
+  // nested world. Older manifests carry no launchDir, hence the fallback.
+  const outerDir = mf.launchDir ?? mf.workDir;
   rmSync(mf.harnessRoot, { recursive: true, force: true });
-  rmSync(mf.workDir, { recursive: true, force: true });
+  rmSync(outerDir, { recursive: true, force: true });
+  rmSync(mf.workDir, { recursive: true, force: true }); // no-op when nested (already gone with the root)
   // The per-run parent (ops-<pid>) carries sibling fixtures like S15's
-  // company-lib — remove it too. Guarded by name so a pre-parent manifest
-  // (workDir directly under tmp) can never take the tmp root with it.
-  const workParent = path.dirname(mf.workDir);
+  // company-lib — remove it too. Guarded by name so neither a pre-parent
+  // manifest (workDir directly under tmp) nor a nested one can ever take the
+  // tmp root with it: the check is on the parent of the OUTERMOST agent dir,
+  // which this stage always creates inside `ops-<pid>`.
+  const workParent = path.dirname(outerDir);
   if (path.basename(workParent).startsWith("ops-")) rmSync(workParent, { recursive: true, force: true });
-  console.log(`removed ${mf.harnessRoot} and ${mf.workDir}`);
+  console.log(`removed ${mf.harnessRoot} and ${outerDir}`);
   process.exit(0);
 }
 
@@ -571,8 +603,112 @@ async function unblindTarball(tgz: string): Promise<string[]> {
   }
 }
 
+/**
+ * FIELD_NESTED=1 — write the ORDINARY APPLICATION REPO that will contain the
+ * sync dir, and return the paths its first commit should carry.
+ *
+ * What it must look like: a product repo that happens to keep its n8n workflow
+ * sources in one subfolder. Ordinary enough that nothing reads as a decanter
+ * fixture (a service under `src/`, a README, a `.gitignore`, real history), and
+ * — the load-bearing half — carrying **no decanter wiring at all**: no
+ * `.mcp.json`, no `.claude/settings.json`, no `decanter.config.json`, no `.env`.
+ * The whole measurement is that the wiring sits BELOW the launch dir; planting
+ * any of it here would answer the question the round exists to ask.
+ *
+ * Two omissions are deliberate, not oversights:
+ *  - **no `workspaces` key** — an npm workspace root changes where `npm install`
+ *    inside the sync dir puts `node_modules`, which would confound the CLI's
+ *    discoverability with a packaging quirk;
+ *  - **no `tsconfig.json`** — `scripts/typecheck.mts` and the sync-dir upward
+ *    search find that file BY NAME, so one here would silently become the node
+ *    files' config.
+ */
+function writeOuterAppRepo(repoRoot: string, syncDirName: string): string[] {
+  mkdirSync(path.join(repoRoot, "src"), { recursive: true });
+  writeFileSync(
+    path.join(repoRoot, "package.json"),
+    JSON.stringify({
+      name: "back-office",
+      version: "1.4.0",
+      private: true,
+      description: "Internal back-office service",
+      type: "module",
+      scripts: { start: "node src/server.js", test: "node --test" },
+    }, null, 2) + "\n",
+  );
+  writeFileSync(path.join(repoRoot, "README.md"), [
+    "# back-office",
+    "",
+    "Internal service for the ops team: order intake, the nightly reconciliation",
+    "job, and the small JSON API the dashboard reads.",
+    "",
+    "## Layout",
+    "",
+    "| path | what |",
+    "| --- | --- |",
+    "| `src/` | the service (`npm start`) |",
+    `| \`${syncDirName}/\` | n8n workflow sources — kept in this repo so flow changes review like code |`,
+    "",
+    "## Development",
+    "",
+    "```sh",
+    "npm start   # http://localhost:8080",
+    "npm test",
+    "```",
+    "",
+  ].join("\n"));
+  writeFileSync(path.join(repoRoot, "src", "orders.js"), [
+    "// Order helpers shared by the HTTP routes. Plain data in, plain data out.",
+    "export function summarise(orders) {",
+    "  const total = orders.reduce((sum, o) => sum + o.amount, 0);",
+    "  return { count: orders.length, total: Math.round(total * 100) / 100 };",
+    "}",
+    "",
+    "export function openOrders(orders) {",
+    '  return orders.filter((o) => o.status !== "shipped");',
+    "}",
+    "",
+  ].join("\n"));
+  writeFileSync(path.join(repoRoot, "src", "server.js"), [
+    'import { createServer } from "node:http";',
+    'import { openOrders, summarise } from "./orders.js";',
+    "",
+    "const PORT = Number(process.env.PORT ?? 8080);",
+    "const orders = [",
+    '  { id: "A-1001", amount: 42.5, status: "open" },',
+    '  { id: "A-1002", amount: 118, status: "shipped" },',
+    '  { id: "A-1003", amount: 7.25, status: "open" },',
+    "];",
+    "",
+    "const routes = {",
+    '  "/healthz": () => ({ ok: true }),',
+    '  "/orders/summary": () => summarise(orders),',
+    '  "/orders/open": () => openOrders(orders),',
+    "};",
+    "",
+    "createServer((req, res) => {",
+    '  const handler = routes[req.url ?? ""];',
+    "  if (!handler) {",
+    "    res.writeHead(404);",
+    "    res.end();",
+    "    return;",
+    "  }",
+    '  res.writeHead(200, { "content-type": "application/json" });',
+    "  res.end(JSON.stringify(handler()));",
+    '}).listen(PORT, () => console.log("back-office listening on port " + PORT));',
+    "",
+  ].join("\n"));
+  // `.claude/settings.local.json` is ignored here for the same reason a real
+  // repo ignores it — it is the LOCAL override layer — which conveniently also
+  // keeps the harness's sandbox-disable (merged into the launch dir after init,
+  // since that is the only layer a session started at the root loads) out of the
+  // committed evidence a FIELD_NO_CLI round hands the agent to read.
+  writeFileSync(path.join(repoRoot, ".gitignore"), "node_modules/\n.env\n*.log\n.claude/settings.local.json\n");
+  return ["package.json", "README.md", ".gitignore", "src"];
+}
+
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean }> {
+async function scaffold(): Promise<{ workDir: string; launchDir: string; nested: boolean; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean }> {
   const base = os.tmpdir();
   // The scratch project gets its OWN parent dir, never the system tmp root: a
   // real project's `..` holds a handful of entries, not thousands. Round
@@ -581,7 +717,16 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   // was persisted unread, and the round measured tmp noise instead of the
   // scenario. Sibling fixtures now land next to flows-ops in a two-entry dir.
   const parentDir = path.join(base, `ops-${PID}`);
-  const workDir = path.join(parentDir, `flows-ops-${PID}`);
+  // FIELD_NESTED=1 slides one level in: the agent's project root becomes an
+  // ordinary app repo and the sync dir is a folder inside it, named the plain
+  // way a team would name it. `workDir` keeps meaning THE SYNC DIR in both
+  // shapes — every other consumer (verify, report, teardown, the credential
+  // checks) addresses it, and archived rounds stay comparable — while
+  // `launchDir` is the new, separate answer to "where does the blind session
+  // start?".
+  const repoRoot = NESTED ? path.join(parentDir, `back-office-${PID}`) : null;
+  const workDir = repoRoot === null ? path.join(parentDir, `flows-ops-${PID}`) : path.join(repoRoot, "flows");
+  const launchDir = repoRoot ?? workDir;
   const harnessRoot = path.join(base, `ftrun-${PID}`);
   rmSync(parentDir, { recursive: true, force: true });
   rmSync(harnessRoot, { recursive: true, force: true });
@@ -598,11 +743,25 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
   // init could clobber the file; the stage runs init itself now, so the ordering
   // constraint is gone and the two layers stay cleanly separated.
 
-  // a git repo from the start (a real user "keeps flows in a git folder"); neutral author
-  await execFile("git", ["-C", workDir, "init", "-q"]);
-  await execFile("git", ["-C", workDir, "config", "user.email", OWNER.email]);
-  await execFile("git", ["-C", workDir, "config", "user.name", "Priya Ops"]);
-  await execFile("git", ["-C", workDir, "config", "commit.gpgsign", "false"]);
+  // a git repo from the start (a real user "keeps flows in a git folder"); neutral author.
+  // Nested rounds put the repo at the APP ROOT and leave the sync dir an ordinary
+  // folder inside it — ONE repo, which is the shape that was reported. The CLI's
+  // auto-commit still works (it runs git from the sync dir, which is inside the
+  // repo); a second, nested repo would be a rarer shape and would quietly change
+  // what pull/push commit against.
+  const gitDir = launchDir;
+  await execFile("git", ["-C", gitDir, "init", "-q"]);
+  await execFile("git", ["-C", gitDir, "config", "user.email", OWNER.email]);
+  await execFile("git", ["-C", gitDir, "config", "user.name", "Priya Ops"]);
+  await execFile("git", ["-C", gitDir, "config", "commit.gpgsign", "false"]);
+  if (repoRoot !== null) {
+    // Commit the app BEFORE anything decanter touches the tree, so the history
+    // reads like a repo that existed first and grew a flows/ folder later —
+    // which is how every real instance of this layout comes about.
+    const appFiles = writeOuterAppRepo(repoRoot, path.basename(workDir));
+    await execFile("git", ["-C", repoRoot, "add", ...appFiles]);
+    await execFile("git", ["-C", repoRoot, "commit", "-qm", "back-office service"]);
+  }
 
   // Pre-seed a CORRECT .env (the user already configured their creds — realistic
   // for a returning project) so every session/guard can actually REACH n8n. The
@@ -764,7 +923,11 @@ async function scaffold(): Promise<{ workDir: string; harnessRoot: string; skill
     console.log("FIELD_NO_CLI=1 — removed node_modules (fresh-clone state): the project's decanter evidence is committed, the CLI is NOT runnable");
   }
 
-  return { workDir, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv };
+  if (repoRoot !== null) {
+    console.log(`FIELD_NESTED=1 — the sync dir is a folder of an ordinary app repo: launch dir ${repoRoot}, sync dir ${workDir}`);
+    console.log("  the scaffolded .mcp.json and .claude/settings.json live in the sync dir ONLY — a session started at the launch dir loads neither");
+  }
+  return { workDir, launchDir, nested: repoRoot !== null, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -794,7 +957,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv } = await scaffold();
+  const { workDir, launchDir, nested, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -811,6 +974,14 @@ try {
     owner: { email: OWNER.email },
     harnessRoot,
     workDir,
+    // FIELD_NESTED=1 (Plan 82): the sync dir sits inside an ordinary app repo
+    // and the blind session starts at that repo's ROOT — the layout where the
+    // scaffolded wiring is silently not loaded, and the one every round before
+    // this could not stage. `workDir` still names the SYNC DIR in both shapes;
+    // `launchDir` is where the session starts (they are the same dir in a flat
+    // round, so every existing consumer keeps working untouched).
+    nested,
+    launchDir,
     root: "workflows",
     skills,
     decanterInstalled,
@@ -840,7 +1011,8 @@ try {
   console.log("\n=== stage ready ===");
   console.log(`host        ${HOST}`);
   console.log(`container   ${container ?? "(external — FIELD_N8N_URL)"}`);
-  console.log(`workDir     ${workDir}   (blind agent cwd)`);
+  console.log(`workDir     ${workDir}   (the sync dir${nested ? "" : " — also the blind agent cwd"})`);
+  if (nested) console.log(`launchDir   ${launchDir}   (blind agent cwd — the app repo root, one level ABOVE the sync dir)`);
   console.log(`harnessRoot ${harnessRoot}   (manifest, transcripts, guard.log — agent never enters)`);
   console.log(`skills      ${skills.found ? `${skills.count} vendored${skills.license ? ` (${skills.license})` : ""}` : "PACK ABSENT (clone failed)"} — ${skills.fidelity}`);
   console.log(`seed pack   ${SEED_PACK}`);

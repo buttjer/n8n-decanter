@@ -152,7 +152,7 @@ if (argv.includes("--isolate")) {
     // in-network host — so the blind agent sees the host-side 127.0.0.1:<port>
     // from the manifest, which does not resolve inside the fence. The stage
     // already warns about it, but only AFTER the unit has been booted and spent.
-    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true || s.requiresSeedEnvOff === true || (typeof s.preHook === "string" && OUTSIDE_SYNC_DIR_HOOKS.has(s.preHook)); });
+    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true || s.requiresNested === true || s.requiresSeedEnvOff === true || (typeof s.preHook === "string" && OUTSIDE_SYNC_DIR_HOOKS.has(s.preHook)); });
     if (hostOnly.length > 0) {
       console.log(`--container: ${hostOnly.join(", ")} are host-only and are NOT part of this sweep — run them separately:\n    node test/field-test/run.mts --isolate ${hostOnly.join(" ")}\n`);
       ids = ids.filter((id) => !hostOnly.includes(id));
@@ -185,6 +185,7 @@ if (argv.includes("--isolate")) {
       const notes = [
         scns.some((s) => s.unsandboxedOnly) ? "host-only" : "",
         scns.some((s) => s.requiresNoCli) ? "needs FIELD_NO_CLI=1" : "",
+        scns.some((s) => s.requiresNested) ? "needs FIELD_NESTED=1" : "",
         scns.some((s) => s.requiresSeedEnvOff) ? "needs FIELD_NO_SEED_ENV=1" : "",
         ...scns.flatMap((s) => (s.preHook ? [`preHook ${s.preHook}`] : [])),
       ].filter((n) => n !== "");
@@ -225,6 +226,7 @@ if (argv.includes("--isolate")) {
     const shape = unit.map((id) => loadScenario(id));
     const stageEnv: NodeJS.ProcessEnv = { ...process.env };
     if (shape.some((s) => s.requiresNoCli)) stageEnv.FIELD_NO_CLI = "1";
+    if (shape.some((s) => s.requiresNested)) stageEnv.FIELD_NESTED = "1";
     if (shape.some((s) => s.requiresSeedEnvOff)) stageEnv.FIELD_NO_SEED_ENV = "1";
     const shapeNote = [stageEnv.FIELD_NO_CLI ? "FIELD_NO_CLI=1" : "", stageEnv.FIELD_NO_SEED_ENV ? "FIELD_NO_SEED_ENV=1" : ""].filter((s) => s !== "").join(" ");
     console.log(`\n===== unit ${i + 1}/${units.length}: ${unit.join(" ")} — staging a fresh instance (seeds: ${pack}${shapeNote ? `, ${shapeNote}` : ""}) =====`);
@@ -260,9 +262,17 @@ const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
 
-interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedEnv?: boolean; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
+interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; launchDir?: string; nested?: boolean; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedEnv?: boolean; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const WORKDIR = manifest.workDir;
+// Where the blind session STARTS. Equal to the sync dir in every ordinary
+// round; one level above it under FIELD_NESTED=1 (Plan 82), which is the whole
+// point of that condition — an agent launched here loads neither the sync dir's
+// `.mcp.json` (agents merge that from ANCESTORS of the launch dir, never from a
+// dir below) nor its `.claude/settings.json` (launch-dir only). Older manifests
+// carry no launchDir, so fall back to the sync dir and behave exactly as before.
+const LAUNCHDIR = manifest.launchDir ?? manifest.workDir;
+const NESTED = manifest.nested === true;
 const HARNESS = manifest.harnessRoot;
 const GUARD_LOG = path.join(HARNESS, "guard.log");
 
@@ -289,7 +299,7 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresSeedEnvOff?: boolean; requiresSeedKinds?: string[]; readOnly?: boolean }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresNested?: boolean; requiresSeedEnvOff?: boolean; requiresSeedKinds?: string[]; readOnly?: boolean }
 
 /**
  * Which workflow the `remote-drift` preHook edits — kept in one place so the
@@ -486,6 +496,19 @@ function assertPrerequisites(ids: string[]): void {
     if (typeof sc.preHook === "string" && OUTSIDE_SYNC_DIR_HOOKS.has(sc.preHook) && containerMode) {
       problems.push(`${id} cannot run in --container mode: its pre-hook "${sc.preHook}" stages a path outside the sync dir, and the fenced container mounts the sync dir only — the condition would be invisible to the agent. Run it host-mode (unsandboxed).`);
     }
+    // Same shape again (Plan 82): S16 measures what an agent does when the
+    // wiring sits BELOW where it was started. Against a flat stage the sync dir
+    // IS the launch dir, the wiring loads, and the scenario measures the world
+    // that never had the problem — green, and worthless.
+    if (sc.requiresNested === true && manifest.nested !== true) {
+      problems.push(`${id} needs a stage created with FIELD_NESTED=1 (this manifest has nested=${JSON.stringify(manifest.nested)}); against a flat stage the sync dir is the launch dir and the condition does not exist`);
+    }
+    // Host-only for the same reason as requiresNoCli: the container mounts the
+    // sync dir at /work and starts there, so there is no dir above it to launch
+    // from — the nesting cannot be staged inside the fence.
+    if (sc.requiresNested === true && containerMode) {
+      problems.push(`${id} cannot run in --container mode: the fence mounts the sync dir and starts there, so no launch dir above it exists. Run it host-mode (unsandboxed).`);
+    }
     // Same argument as requiresNoCli: a cold-start scenario against a stage that
     // pre-seeded `.env` measures nothing at all — `init` would just reuse the
     // credentials and the whole condition evaporates (Plan 62 task 2).
@@ -497,8 +520,12 @@ function assertPrerequisites(ids: string[]): void {
     // a whole S14 round graded a fully configured project while the manifest said
     // the condition was staged. The flag can lie; the file cannot.
     if (sc.requiresSeedEnvOff === true) {
-      const leaked = [".env", ".decanter-auth.json"].filter((f) => existsSync(path.join(manifest.workDir, f)));
-      if (leaked.length) problems.push(`${id} needs a workDir with no credentials, but ${leaked.join(" + ")} exist(s) in ${manifest.workDir}; the cold start is not staged`);
+      // Check the sync dir AND, when they differ, the launch dir: a credential
+      // sitting where the agent actually stands is a worse leak, not a lesser one.
+      for (const dir of new Set([manifest.workDir, LAUNCHDIR])) {
+        const leaked = [".env", ".decanter-auth.json"].filter((f) => existsSync(path.join(dir, f)));
+        if (leaked.length) problems.push(`${id} needs no credentials in ${dir}, but ${leaked.join(" + ")} exist(s) there; the cold start is not staged`);
+      }
     }
     // A scenario may declare a pre-hook before the hook exists (Plan 61 writes
     // the scenario specs ahead of the staging machinery). Refuse rather than
@@ -671,7 +698,11 @@ function applyPostInit(): void {
   //    project contract whose DENY rules (push --force, .decanter.json, .env)
   //    are under test, and deny wins over allow regardless of layer. Created
   //    when absent, so this holds whichever filename the template ships.
-  const settingsPath = path.join(WORKDIR, ".claude", "settings.local.json");
+  // Under FIELD_NESTED the harness overrides must land at the LAUNCH dir:
+  // `.claude/settings.local.json` is read from the canonical git root (which is
+  // the app repo root there), and a copy left in the sync dir would simply not
+  // be loaded — the round would then hit a permission prompt and die mid-turn.
+  const settingsPath = path.join(LAUNCHDIR, ".claude", "settings.local.json");
   let s: { permissions?: { allow?: string[] } } = {};
   try {
     s = JSON.parse(readFileSync(settingsPath, "utf8")) as typeof s;
@@ -1105,7 +1136,7 @@ async function claudeTurn(msg: string, turnIndex: number, resumeId: string | und
       } else {
         PATH = `${localBin}${path.delimiter}${PATH}`;
       }
-      proc = spawn("claude", args, { cwd: WORKDIR, env: { ...process.env, PATH, ...extraEnv } });
+      proc = spawn("claude", args, { cwd: LAUNCHDIR, env: { ...process.env, PATH, ...extraEnv } });
     }
     let buf = "";
     let sessionId: string | undefined;
@@ -1303,8 +1334,12 @@ async function archiveRun(): Promise<void> {
       if (/^verify-.*\.json$/.test(f) || f === "guard.log") copyFileSync(path.join(HARNESS, f), path.join(staging, f));
     }
     // committed-history only — no working tree, no node_modules, no scaffold
-    if (existsSync(path.join(WORKDIR, ".git"))) {
-      execFileSync("git", ["clone", "--quiet", "--bare", WORKDIR, path.join(staging, "work.git")], { stdio: "ignore" });
+    // The repo is the sync dir in a flat round and the app repo root under
+    // FIELD_NESTED — clone whichever actually holds `.git`, or the archive
+    // silently ships no history at all.
+    const repoDir = existsSync(path.join(WORKDIR, ".git")) ? WORKDIR : LAUNCHDIR;
+    if (existsSync(path.join(repoDir, ".git"))) {
+      execFileSync("git", ["clone", "--quiet", "--bare", repoDir, path.join(staging, "work.git")], { stdio: "ignore" });
     }
     // the manifest travels WITHOUT credentials (this lands in git). `scenariosAsRun`
     // is false when re-archiving an older round: the scenarios/ copy is then
@@ -1420,8 +1455,12 @@ try {
         ? "host: NO-CLI stage — no prepend AND any ambient n8n-decanter stripped from PATH (Plan 57 discoverability condition)"
         : process.env.FIELD_NO_PATH_HELP === "1"
           ? "host: UNASSISTED PATH (FIELD_NO_PATH_HELP=1) — bare `n8n-decanter` will NOT resolve in Bash"
-          : "host: node_modules/.bin prepended — simulates a global install for the agent's Bash";
-    console.log(`orchestrating ${scenarioIds.join(", ")} against ${manifest.host}${containerMode ? " (fenced container)" : ""}\n  workDir ${WORKDIR}\n  guard.log ${GUARD_LOG}\n  PATH policy: ${pathPolicy}`);
+          : `host: the SYNC DIR's node_modules/.bin prepended (${path.join(WORKDIR, "node_modules", ".bin")}) — simulates a global install for the agent's Bash`;
+    // Under FIELD_NESTED the agent's cwd is NOT the sync dir, so "node_modules/.bin
+    // prepended" alone would read as if the bin sat where the agent stands. Name
+    // both dirs, or the round gets graded against the wrong world.
+    const launchLine = NESTED ? `\n  launchDir ${LAUNCHDIR}   (blind agent cwd — ABOVE the sync dir; its wiring does not load here)` : "";
+    console.log(`orchestrating ${scenarioIds.join(", ")} against ${manifest.host}${containerMode ? " (fenced container)" : ""}\n  workDir ${WORKDIR}${launchLine}\n  guard.log ${GUARD_LOG}\n  PATH policy: ${pathPolicy}`);
     const summary: Array<{ id: string; verifyExit: number | null; turns: number }> = [];
     for (const id of scenarioIds) {
       if (containerMode && !dryRun && Date.now() > deadline) { console.error(`[harness] run budget exhausted — stopping before ${id}`); exitCode = 2; break; }
