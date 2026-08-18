@@ -623,15 +623,15 @@ functions; the CLI process is the surface users touch.
 - **`fs.watch` dies under sandboxed shells** (`EMFILE, watch` from FSEvents)
   and takes the watch process down — run watch drives unsandboxed; it is an
   environment artifact, not a code failure.
-- **Second, distinct watch artifact — on WSL2 the e2e step `watch: debounce
-  coalesces…` fails `2 !== 3`, sandboxed *and* unsandboxed.** Don't read the
-  `EMFILE` note above as covering this: the process does not die, the queued
-  save is simply coalesced into the preceding push, so one push goes missing
-  from the count. Verified 2026-08-18 against a clean `main` (fails there too)
-  while CI's ubuntu runners stay green — so on WSL2 this one FAIL in an
-  otherwise-passing `npm test` is the expected local baseline, **not** evidence
-  your change broke watch. Confirm the same way: run the suite on unmodified
-  `main` before hunting a regression.
+- **Second, distinct watch artifact — the e2e step `watch: debounce coalesces…`
+  can fail `2 !== 3` on a machine where CI is green, sandboxed *and*
+  unsandboxed.** Don't read the `EMFILE` note above as covering it: nothing
+  dies, and unsandboxing is not the fix. The step asserts an exact push count
+  against a 200 ms debounce, so wherever filesystem events arrive slower or
+  batched, the queued save coalesces into the preceding push and one push goes
+  missing from the count. **That makes it a property of the machine, not of your
+  change** — confirm it by running the suite on unmodified `main`: if it fails
+  there too, that is your local baseline and CI is the authority.
 - The e2e suite's mock (`test/e2e.mts`) is in-process and not importable;
   building a fresh mock is faster than extracting it.
 - CLI output contains ANSI codes even when piped (known, Plan 11) — match
