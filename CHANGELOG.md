@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-08-18
+
 ### Changed
 
 - **"Missing `n8n-instance` tools? Restart" is no longer the only answer we
