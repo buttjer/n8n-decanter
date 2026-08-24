@@ -7,12 +7,12 @@ pattern: *"I'd want the source file path, version/commit, and maybe a short
 generated header in the node so someone debugging later can still tell where
 that body came from. The build step should improve maintainability without
 making the deployed node feel mysterious."* Shape settled in the same session
-(three prototype rounds against the real compiler). Extends
+(prototyped against the real compiler). Extends
 [Plan 14](../done/14-bundle-shared-code-into-ts-pushes.md); inherited by the
 `.js` tier in [Plan 24](24-shared-code-in-js-nodes.md).
 **Snapshot:** 2026-08-22T09:17Z @ c4e6ec6
 **Theme:** A compiled/bundled Code node in the n8n UI says nothing about where
-it came from. Give it a two-line leading header — source path, push time, CLI
+it came from. Give it a one-line leading header — source path, push time, CLI
 version, commit — carried **outside** the hashed body, so it can never cause
 drift, a push, or a stale state.
 **Model:** Opus for tasks 1–4 (hash/round-trip invariants + the mixed-version
@@ -21,7 +21,7 @@ compat story); Sonnet for the docs/test breadth in 7–9.
 
 Today a `.ts` node deploys as an esbuild bundle whose only self-description is a
 `// @ts-n8n sha256:…` line at the very bottom, under a few hundred lines of
-inlined helpers — where nobody looks. This adds a two-line header at line 1
+inlined helpers — where nobody looks. This adds a one-line header at line 1
 naming the source file and the build, and defines it as **pure decoration**: it
 is excluded from the hash, its absence is not a stale state, and the marker line
 stays byte-identical so older CLIs keep reading these nodes correctly.
@@ -50,8 +50,7 @@ Verified by compiling a real bundled node (`shared/` import + top-level return)
 through `lib/compile.mts`:
 
 ```js
-/* n8n-decanter · generated from workflows/orders/code/normalize-lines.ts · do not edit here
-   pushed 2026-08-20T09:14Z · cli 0.10.1 · commit ca3c201 */
+// n8n-decanter · generated from workflows/orders/code/normalize-lines.ts · do not edit here · v0.10.1 ca3c201 2026-08-20T09:14Z
 var __n8n_node = {};
 (() => {
   // shared/money.ts
@@ -69,12 +68,14 @@ return __n8n_node.default();
 // @ts-n8n sha256:39af5ea6423d02856740c29dab3a3a392bd39a693cd0b3ee3eb1ede37cd2581b
 ```
 
-- **Two lines, one block comment.** Not six, not a `//` run. A `//` run cannot be
-  parsed unambiguously: a no-import `.ts` node whose source starts with a comment
-  compiles to a body that *also* starts with `//`, and a leading-`//` scanner
-  would eat the user's own comment. The literal opener `/* n8n-decanter ` at
-  **offset 0**, closed at the first `*/\n`, is unambiguous (prototype-checked
-  against exactly that case).
+- **One line.** Not a block comment, not a `//` run — a single `//` line, 128
+  characters at the example's path length. It is parsed by the literal prefix
+  `// n8n-decanter ` at **offset 0**, terminated by the first newline, which is
+  unambiguous: a no-import `.ts` node whose source starts with a comment
+  compiles to a body that *also* starts with `//`, and both that case and a
+  leading `/* … */` are prototype-checked to be left intact. (A *run* of `//`
+  lines would genuinely be ambiguous and is the reason the header stays one
+  line rather than growing a second.)
 - **Marker line untouched, still last.** Byte-for-byte what ships today — see
   Backwards compatibility.
 - **Fields:** source path relative to the **sync dir** (not the workflow dir),
@@ -148,10 +149,11 @@ it on their next real push.
 
 ## Tasks
 
-1. **`lib/util.mts` — the header primitives.** `HEADER_OPEN = "/* n8n-decanter "`,
-   `HEADER_CLOSE = "*/\n"`; `splitHeader(code) → { header, rest }` anchored at
-   offset 0; `renderHeader(provenance) → string`; and the one function everything
-   else calls: **`syncBody(code) = splitMarker(splitHeader(code).rest).body`**.
+1. **`lib/util.mts` — the header primitives.** `HEADER_PREFIX = "// n8n-decanter "`;
+   `splitHeader(code) → { header, rest }` matching that prefix at offset 0 and
+   cutting at the first newline; `renderHeader(provenance) → string`; and the one
+   function everything else calls:
+   **`syncBody(code) = splitMarker(splitHeader(code).rest).body`**.
    `splitMarker` and `withMarker` are **not** modified — that is the point.
 2. **`lib/push.mts` — attach at the single write site.** `collectOps` builds the
    op payload as `renderHeader(prov) + jsCode` while continuing to compare
@@ -231,7 +233,7 @@ it on their next real push.
 10. **Smoke** (`test/smoke-n8n.mts`, opt-in): the header survives a real n8n
     round-trip byte-intact next to the existing marker-survival step at `:319`,
     and a header-carrying bundled node still **executes** in the task-runner
-    sandbox (a leading block comment in a function body is legal, but Plan 14's
+    sandbox (a leading line comment in a function body is legal, but Plan 14's
     history says assume nothing about that sandbox).
 
 ## Acceptance / verification
@@ -268,15 +270,21 @@ it on their next real push.
 
 ## Notes
 
-- **Accepted cost:** n8n runtime error line numbers shift by two more lines.
+- **Accepted cost:** n8n runtime error line numbers shift by one more line.
   Bundled nodes already shift (helpers land above the body — Plan 14), and a
-  fixed-size header is a constant offset.
+  one-line header is a constant offset.
 - **Rejected shape — leading marker + provenance block.** Moving the sha256 up
   next to the header was prototyped and dropped for two reasons: the hex
   dominates the top of the file visually, and folding an identity value into a
   human-readable block invites a viewer to destroy it with a stray edit. (It
   would have self-healed via the `missingMarker` write at `lib/push.mts:126`,
   but "self-heals" is a poor argument for a design that invites the break.)
+- **Rejected shape — a two-line `/* … */` block.** Drafted, then dropped on the
+  maintainer's call: one line is what the design agreed on, and the block form's
+  only stated advantage — unambiguous delimiters — turned out not to be an
+  advantage at all. The ambiguity a block comment avoids belongs to a *run* of
+  `//` lines, not to a single line matched on a literal prefix at offset 0.
+  Keeping it to one line is therefore free.
 - **Cross-links:** [Plan 14](../done/14-bundle-shared-code-into-ts-pushes.md)
   (the compiler and marker this decorates),
   [Plan 24](24-shared-code-in-js-nodes.md) (inherits the header for bundled
