@@ -187,6 +187,7 @@ if (argv.includes("--isolate")) {
         scns.some((s) => s.requiresNoCli) ? "needs FIELD_NO_CLI=1" : "",
         scns.some((s) => s.requiresNested) ? "needs FIELD_NESTED=1" : "",
         scns.some((s) => s.requiresSeedEnvOff) ? "needs FIELD_NO_SEED_ENV=1" : "",
+        scns.some((s) => s.requiresWorktree) ? "needs FIELD_WORKTREE=1" : "",
         ...scns.flatMap((s) => (s.preHook ? [`preHook ${s.preHook}`] : [])),
       ].filter((n) => n !== "");
       console.log(`  ${String(i + 1).padStart(2)}. ${unit.join("+").padEnd(8)} seeds ${packOf.get(unit.join("+"))!.padEnd(10)} ${turns} turn(s)${notes.length ? `  — ${notes.join(", ")}` : ""}`);
@@ -228,7 +229,8 @@ if (argv.includes("--isolate")) {
     if (shape.some((s) => s.requiresNoCli)) stageEnv.FIELD_NO_CLI = "1";
     if (shape.some((s) => s.requiresNested)) stageEnv.FIELD_NESTED = "1";
     if (shape.some((s) => s.requiresSeedEnvOff)) stageEnv.FIELD_NO_SEED_ENV = "1";
-    const shapeNote = [stageEnv.FIELD_NO_CLI ? "FIELD_NO_CLI=1" : "", stageEnv.FIELD_NO_SEED_ENV ? "FIELD_NO_SEED_ENV=1" : ""].filter((s) => s !== "").join(" ");
+    if (shape.some((s) => s.requiresWorktree)) stageEnv.FIELD_WORKTREE = "1";
+    const shapeNote = [stageEnv.FIELD_NO_CLI ? "FIELD_NO_CLI=1" : "", stageEnv.FIELD_NO_SEED_ENV ? "FIELD_NO_SEED_ENV=1" : "", stageEnv.FIELD_WORKTREE ? "FIELD_WORKTREE=1" : ""].filter((s) => s !== "").join(" ");
     console.log(`\n===== unit ${i + 1}/${units.length}: ${unit.join(" ")} — staging a fresh instance (seeds: ${pack}${shapeNote ? `, ${shapeNote}` : ""}) =====`);
     const stageArgs = ["--seeds", pack, ...(N8N_TAG_ARG ? ["--n8n-tag", N8N_TAG_ARG] : [])];
     const staged = await execFile(process.execPath, [path.join(HERE, "stage.mts"), ...stageArgs], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, env: stageEnv });
