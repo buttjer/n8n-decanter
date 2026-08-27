@@ -38,7 +38,7 @@
 //                           .claude/settings.json is launch-dir only).
 //   FIELD_KEEP=1            (--down) keep the container; only remove harness dirs
 import { execFile as execFileCb } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -713,7 +713,7 @@ function writeOuterAppRepo(repoRoot: string, syncDirName: string): string[] {
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; launchDir: string; nested: boolean; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean; worktree: boolean; mainCheckout: string | null }> {
+async function scaffold(): Promise<{ workDir: string; launchDir: string; nested: boolean; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean; worktree: boolean; linkedModules: boolean; mainCheckout: string | null }> {
   const base = os.tmpdir();
   // The scratch project gets its OWN parent dir, never the system tmp root: a
   // real project's `..` holds a handful of entries, not thousands. Round
@@ -950,6 +950,7 @@ async function scaffold(): Promise<{ workDir: string; launchDir: string; nested:
   // here would just make this round a worse copy of that one. Set
   // FIELD_NO_PATH_HELP=1 for the harder variant.
   let worktree = false;
+  let linkedModules = false;
   let mainCheckout: string | null = null;
   if (process.env.FIELD_WORKTREE === "1") {
     // A worktree needs a commit to branch from, and the persona's story is a
@@ -969,14 +970,38 @@ async function scaffold(): Promise<{ workDir: string; launchDir: string; nested:
     // The session's whole world moves; the main checkout keeps the credentials.
     // `gitDir` is the launch dir, so the sync dir keeps its position relative to
     // it — which is what makes this compose with FIELD_NESTED unchanged.
+    const mainSyncDir = workDir;
     workDir = path.join(linked, path.relative(gitDir, workDir));
     launchDir = linked;
     worktree = true;
+    // FIELD_WORKTREE_LINK_MODULES=1 — the guard-UP variant.
+    //
+    // Bare, a worktree has no node_modules, `npx --no-install` cannot resolve
+    // the scaffolded `mcp connect` command, and the session opens with the
+    // n8n-instance server FAILED and none of its tools (measured: ftrun-71032).
+    // That is the realistic local-install world and the default here — but it
+    // makes the "does the agent USE MCP from a worktree" half unaskable, since
+    // there is nothing to use.
+    //
+    // Symlinking node_modules from the main checkout is precisely the fix the
+    // docs recommend (Claude Code's `worktree.symlinkDirectories`), so this
+    // stages the world of someone who followed them.
+    if (process.env.FIELD_WORKTREE_LINK_MODULES === "1") {
+      const from = path.join(mainSyncDir, "node_modules");
+      const to = path.join(workDir, "node_modules");
+      if (existsSync(from)) {
+        symlinkSync(from, to, "dir");
+        linkedModules = true;
+        console.log(`  FIELD_WORKTREE_LINK_MODULES=1 — symlinked node_modules from the main checkout (the guard can start)`);
+      } else {
+        console.warn(`  FIELD_WORKTREE_LINK_MODULES=1 but ${from} does not exist — the guard will stay down`);
+      }
+    }
     console.log(`FIELD_WORKTREE=1 — the session works in a linked worktree: ${workDir}`);
     console.log(`  credentials and node_modules stayed in the main checkout (${mainCheckout}) — both are gitignored`);
   }
 
-  return { workDir, launchDir, nested: repoRoot !== null, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv, worktree, mainCheckout };
+  return { workDir, launchDir, nested: repoRoot !== null, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv, worktree, linkedModules, mainCheckout };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -1006,7 +1031,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, launchDir, nested, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv, worktree, mainCheckout } = await scaffold();
+  const { workDir, launchDir, nested, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv, worktree, linkedModules, mainCheckout } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -1048,6 +1073,7 @@ try {
     // `mainCheckout`. Recorded so S17 can refuse a stage that would make it
     // measure nothing, and so teardown knows there is a worktree to remove.
     worktree,
+    linkedModules,
     mainCheckout,
     // the stage pre-ran init, so scenarios start from a configured project
     inited,
