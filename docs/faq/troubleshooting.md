@@ -167,7 +167,7 @@ override) is in
 
 ## My agent has no `n8n-instance` tools, and restarting didn't help
 
-Two different things produce that symptom, and only one of them is a restart:
+Three different things produce that symptom, and only one of them is a restart:
 
 - **The wiring is new.** `init` normally runs *inside* the session it
   configures, and nothing it scaffolds hot-loads — MCP servers, permission
@@ -180,9 +180,17 @@ Two different things produce that symptom, and only one of them is a restart:
   `flows/.mcp.json` is invisible from `<repo>/`. Startup already looked and
   missed it; restarting looks in the same places again. **No number of restarts
   will ever produce those tools.**
+- **The agent is in a git worktree.** `.mcp.json` is tracked, so it is there —
+  but the guard it spawns is not runnable yet. `node_modules` is gitignored, so
+  `npx --no-install n8n-decanter` finds nothing under a local install, and the
+  server is unapproved at the new path. (Credentials are *not* part of this one
+  any more: decanter reads the main checkout's when a worktree has none.)
+  [Git worktrees](/docs/concepts/configuration/#git-worktrees) has both fixes.
 
-**Which one am I in?** Compare the two paths: is the `.mcp.json` below the
-directory the agent was started in? If yes, it is the second case. Fix it by
+**Which one am I in?** Is the working directory a linked worktree (`.git` is a
+file, not a directory)? Then it is the third case. Otherwise compare the two
+paths: is the `.mcp.json` below the directory the agent was started in? If yes,
+it is the second case. Fix it by
 starting the agent in the sync dir (`cd flows && claude`, the recommendation) or
 by wiring the repo root — both spelled out in
 [init](/docs/cli/init/#when-the-sync-dir-is-nested-in-a-bigger-repo), with the
@@ -201,6 +209,11 @@ The stored OAuth refresh token was invalidated (they rotate on every use — a
 crash at the wrong moment, or a concurrent run, can burn one). Re-running
 `init` re-consents and mints a fresh pair.
 
+A second **copy** of `.decanter-auth.json` produces this reliably rather than
+occasionally: two copies rotate independently and the loser's token is spent for
+good. Never copy the file between checkouts — see
+[Git worktrees](/docs/concepts/configuration/#git-worktrees).
+
 ## "ambiguous ref" / "no workflow matches"
 
 Workflow refs match by id, name, or unique name prefix — case-insensitively,
@@ -217,3 +230,7 @@ runs `diff` on the workflow named `push`.
 files out of git. The API key is optional — only `executions` and
 `data-tables` need it — see
 [Configuration](/docs/concepts/configuration/).
+
+Being gitignored, neither file exists in a fresh git worktree — decanter reads
+the main checkout's copies there, and a local file still wins if you make one:
+[Git worktrees](/docs/concepts/configuration/#git-worktrees).

@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { HOST_UNSET } from "./config.mts";
+import { credentialFile } from "./git.mts";
 import type { Log, Workflow } from "./types.mts";
 import { CODE_NODE_TYPE } from "./util.mts";
 
@@ -82,12 +83,26 @@ export type McpAuth =
   | { kind: "bearer"; token: string }
   | { kind: "oauth"; file: string; data: McpAuthFile };
 
+/**
+ * Strictly local — the path `init` mints into and every rotation rewrites.
+ * `readAuthFilePath` is the read-side counterpart, which may resolve elsewhere.
+ */
 export function authFilePath(configDir: string): string {
   return path.join(configDir, AUTH_FILE);
 }
 
+/**
+ * Where the auth file is READ from: this dir, or the main checkout's copy when
+ * this is a linked worktree without one (`credentialFile`). Rotation persists
+ * to whatever this returns, so the shared file keeps exactly one writer —
+ * see `credentialFile` for why a copy would be actively wrong here.
+ */
+export function readAuthFilePath(configDir: string): string {
+  return credentialFile(configDir, AUTH_FILE);
+}
+
 export function readAuthFile(configDir: string): McpAuthFile | null {
-  const file = authFilePath(configDir);
+  const file = readAuthFilePath(configDir);
   if (!existsSync(file)) return null;
   try {
     return JSON.parse(readFileSync(file, "utf8")) as McpAuthFile;
@@ -119,13 +134,17 @@ export function writeAuthFile(configDir: string, data: McpAuthFile): void {
 export function resolveMcpAuth(configDir: string, host: string, log?: Log): McpAuth | null {
   const token = process.env.N8N_MCP_TOKEN ?? "";
   if (token !== "") return { kind: "bearer", token };
+  const file = readAuthFilePath(configDir);
   const data = readAuthFile(configDir);
   if (!data) return null;
   if (data.host !== host) {
     log?.warn(`${AUTH_FILE} was minted for ${data.host}, not ${host} — ignoring it; re-run: n8n-decanter init`);
     return null;
   }
-  return { kind: "oauth", file: authFilePath(configDir), data };
+  // Worth one line: the rotating token now has a writer outside this worktree,
+  // so a reader wondering why credentials work here can see where they came from.
+  if (file !== authFilePath(configDir)) log?.info(`${AUTH_FILE}: using the main checkout's copy — ${file}`);
+  return { kind: "oauth", file, data };
 }
 
 // ---------- OAuth plumbing (shared by init's consent flow and token refresh) ----------
