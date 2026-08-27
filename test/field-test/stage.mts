@@ -38,7 +38,7 @@
 //                           .claude/settings.json is launch-dir only).
 //   FIELD_KEEP=1            (--down) keep the container; only remove harness dirs
 import { execFile as execFileCb } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,7 +97,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 if (process.argv.includes("--down")) {
   const mfPath = process.argv[process.argv.indexOf("--down") + 1];
   if (!mfPath) { console.error("--down needs a manifest path"); process.exit(2); }
-  const mf = JSON.parse(readFileSync(mfPath, "utf8")) as { container: string | null; harnessRoot: string; workDir: string; launchDir?: string };
+  const mf = JSON.parse(readFileSync(mfPath, "utf8")) as { container: string | null; harnessRoot: string; workDir: string; launchDir?: string; mainCheckout?: string | null };
   if (mf.container && process.env.FIELD_KEEP !== "1") {
     await docker("rm", "-f", mf.container).catch(() => {});
     console.log(`removed container ${mf.container}`);
@@ -117,9 +117,14 @@ if (process.argv.includes("--down")) {
   // manifest (workDir directly under tmp) nor a nested one can ever take the
   // tmp root with it: the check is on the parent of the OUTERMOST agent dir,
   // which this stage always creates inside `ops-<pid>`.
+  // A FIELD_WORKTREE round's main checkout is the worktree's SIBLING, not its
+  // ancestor, so `outerDir` does not take it — it only goes with the shared
+  // `ops-<pid>` parent below. Remove it by name too, so a manifest whose parent
+  // is not the usual one cannot leave a checkout (and its credentials) behind.
+  if (mf.mainCheckout) rmSync(mf.mainCheckout, { recursive: true, force: true });
   const workParent = path.dirname(outerDir);
   if (path.basename(workParent).startsWith("ops-")) rmSync(workParent, { recursive: true, force: true });
-  console.log(`removed ${mf.harnessRoot} and ${outerDir}`);
+  console.log(`removed ${mf.harnessRoot} and ${outerDir}${mf.mainCheckout ? ` (+ main checkout ${mf.mainCheckout})` : ""}`);
   process.exit(0);
 }
 
@@ -708,7 +713,7 @@ function writeOuterAppRepo(repoRoot: string, syncDirName: string): string[] {
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; launchDir: string; nested: boolean; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean }> {
+async function scaffold(): Promise<{ workDir: string; launchDir: string; nested: boolean; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean; worktree: boolean; linkedModules: boolean; mainCheckout: string | null }> {
   const base = os.tmpdir();
   // The scratch project gets its OWN parent dir, never the system tmp root: a
   // real project's `..` holds a handful of entries, not thousands. Round
@@ -725,8 +730,10 @@ async function scaffold(): Promise<{ workDir: string; launchDir: string; nested:
   // `launchDir` is the new, separate answer to "where does the blind session
   // start?".
   const repoRoot = NESTED ? path.join(parentDir, `back-office-${PID}`) : null;
-  const workDir = repoRoot === null ? path.join(parentDir, `flows-ops-${PID}`) : path.join(repoRoot, "flows");
-  const launchDir = repoRoot ?? workDir;
+  // `let`: FIELD_WORKTREE moves both onto a linked worktree at the very end,
+  // once the project they describe has been scaffolded and committed.
+  let workDir = repoRoot === null ? path.join(parentDir, `flows-ops-${PID}`) : path.join(repoRoot, "flows");
+  let launchDir = repoRoot ?? workDir;
   const harnessRoot = path.join(base, `ftrun-${PID}`);
   rmSync(parentDir, { recursive: true, force: true });
   rmSync(harnessRoot, { recursive: true, force: true });
@@ -927,7 +934,94 @@ async function scaffold(): Promise<{ workDir: string; launchDir: string; nested:
     console.log(`FIELD_NESTED=1 — the sync dir is a folder of an ordinary app repo: launch dir ${repoRoot}, sync dir ${workDir}`);
     console.log("  the scaffolded .mcp.json and .claude/settings.json live in the sync dir ONLY — a session started at the launch dir loads neither");
   }
-  return { workDir, launchDir, nested: repoRoot !== null, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv };
+
+  // FIELD_WORKTREE=1 — the LINKED-WORKTREE condition.
+  //
+  // The shape decanter's own AGENTS.md tells agents to work in, and the one
+  // where the gitignored files are simply not there: `.env` and
+  // `.decanter-auth.json` live in the main checkout and nowhere else, and
+  // `node_modules` with them. The session is then pointed at the worktree, so
+  // everything it does — pull, push, the guard — runs from a tree that carries
+  // the committed project and none of the credentials.
+  //
+  // The CLI stays reachable on purpose (the staged global prefix is on PATH
+  // either way, simulating the global install most users have), because "can an
+  // agent get an uninstalled CLI running" is S6's question and re-measuring it
+  // here would just make this round a worse copy of that one. Set
+  // FIELD_NO_PATH_HELP=1 for the harder variant.
+  let worktree = false;
+  let linkedModules = false;
+  let mainCheckout: string | null = null;
+  if (process.env.FIELD_WORKTREE === "1") {
+    // A worktree needs a commit to branch from, and the persona's story is a
+    // checked-in project anyway. FIELD_NO_CLI already committed; don't do it twice.
+    if (!noCli) {
+      try {
+        await execFile("git", ["-C", gitDir, "add", "-A"]);
+        await execFile("git", ["-C", gitDir, "commit", "-qm", "workflows synced from n8n"]);
+      } catch (err) {
+        console.warn(`could not commit before branching a worktree (${(err as Error).message.split("\n")[0]})`);
+      }
+    }
+    const linked = `${gitDir}-wt`;
+    const branch = await execFile("git", ["-C", gitDir, "symbolic-ref", "--short", "HEAD"]).then((r) => r.stdout.trim()).catch(() => "main");
+    await execFile("git", ["-C", gitDir, "worktree", "add", "-b", "digest-tweak", linked, branch]);
+    mainCheckout = gitDir;
+    // The session's whole world moves; the main checkout keeps the credentials.
+    // `gitDir` is the launch dir, so the sync dir keeps its position relative to
+    // it — which is what makes this compose with FIELD_NESTED unchanged.
+    const mainSyncDir = workDir;
+    workDir = path.join(linked, path.relative(gitDir, workDir));
+    launchDir = linked;
+    worktree = true;
+    // FIELD_WORKTREE_LINK_MODULES=1 — the guard-UP variant.
+    //
+    // Bare, a worktree has no node_modules, `npx --no-install` cannot resolve
+    // the scaffolded `mcp connect` command, and the session opens with the
+    // n8n-instance server FAILED and none of its tools (measured: ftrun-71032).
+    // That is the realistic local-install world and the default here — but it
+    // makes the "does the agent USE MCP from a worktree" half unaskable, since
+    // there is nothing to use.
+    //
+    // Symlinking node_modules from the main checkout is precisely the fix the
+    // docs recommend (Claude Code's `worktree.symlinkDirectories`), so this
+    // stages the world of someone who followed them.
+    if (process.env.FIELD_WORKTREE_LINK_MODULES === "1") {
+      const from = path.join(mainSyncDir, "node_modules");
+      const to = path.join(workDir, "node_modules");
+      if (existsSync(from)) {
+        symlinkSync(from, to, "dir");
+        // The scaffolded `.gitignore` says `node_modules/`, and a trailing
+        // slash means DIRECTORY ONLY — a symlink is not a directory to git, so
+        // the link shows up as untracked and reads as a harness tell. Measured:
+        // ftrun-110915's agent spent five commands on `git check-ignore`
+        // working out why.
+        //
+        // It goes in `info/exclude` of the COMMON git dir, not the worktree's
+        // own — verified both ways: git reads the per-worktree
+        // `$GIT_DIR/info/exclude` for a linked worktree not at all, and only the
+        // shared file takes effect. Excluding rather than editing `.gitignore`
+        // keeps the tracked tree clean, which is the other half of the tell.
+        try {
+          const pointer = readFileSync(path.join(linked, ".git"), "utf8").trim();
+          const wtGitDir = path.resolve(linked, pointer.slice("gitdir:".length).trim());
+          const commonDir = path.resolve(wtGitDir, readFileSync(path.join(wtGitDir, "commondir"), "utf8").trim());
+          mkdirSync(path.join(commonDir, "info"), { recursive: true });
+          writeFileSync(path.join(commonDir, "info", "exclude"), "node_modules\n");
+        } catch (err) {
+          console.warn(`  could not exclude the node_modules symlink from git status (${(err as Error).message.split("\n")[0]})`);
+        }
+        linkedModules = true;
+        console.log(`  FIELD_WORKTREE_LINK_MODULES=1 — symlinked node_modules from the main checkout (the guard can start)`);
+      } else {
+        console.warn(`  FIELD_WORKTREE_LINK_MODULES=1 but ${from} does not exist — the guard will stay down`);
+      }
+    }
+    console.log(`FIELD_WORKTREE=1 — the session works in a linked worktree: ${workDir}`);
+    console.log(`  credentials and node_modules stayed in the main checkout (${mainCheckout}) — both are gitignored`);
+  }
+
+  return { workDir, launchDir, nested: repoRoot !== null, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv, worktree, linkedModules, mainCheckout };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -957,7 +1051,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, launchDir, nested, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv } = await scaffold();
+  const { workDir, launchDir, nested, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv, worktree, linkedModules, mainCheckout } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -994,6 +1088,13 @@ try {
     // condition. Recorded so a scenario can refuse a stage that would make it
     // measure nothing (S14), and so a round's archive states which world it saw.
     seedEnv,
+    // FIELD_WORKTREE=1: the session works in a LINKED git worktree, so the
+    // gitignored files (.env, .decanter-auth.json, node_modules) exist only in
+    // `mainCheckout`. Recorded so S17 can refuse a stage that would make it
+    // measure nothing, and so teardown knows there is a worktree to remove.
+    worktree,
+    linkedModules,
+    mainCheckout,
     // the stage pre-ran init, so scenarios start from a configured project
     inited,
     // Container mode (run.mts --container) bakes one of these into the fenced

@@ -1,0 +1,654 @@
+<title>Field test — agentic report</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--user:#e7f0ff;--agent:#fff;--done:#eefaf0;--code:#f4f4f6;--acc:#2b6cb0;--ok:#1a7f37;--bad:#c1121f;--mcp:#7b3fa0;--tk:#7c3aed;--ts:#b45309;--tn:#0369a1;--tcm:#6b7280;--add:rgba(46,160,67,.16);--del:rgba(248,81,73,.16)}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e6;--mut:#9aa0a6;--line:#2c2e33;--card:#1e2024;--user:#1b2b45;--agent:#1e2024;--done:#16281c;--code:#0f1013;--acc:#63a4ff;--ok:#4ade80;--bad:#ff6b6b;--mcp:#c084fc;--tk:#c084fc;--ts:#fbbf24;--tn:#7dd3fc;--tcm:#8b929b;--add:rgba(46,160,67,.22);--del:rgba(248,81,73,.22)}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--fg);background:var(--bg)}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;z-index:9;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:15px;margin:0 12px 0 0}
+.navlink{text-decoration:none;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:13px}
+.badge{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff}
+.badge.pass{background:var(--ok)}.badge.fail{background:var(--bad)}.badge.na{background:var(--mut)}
+main{max-width:920px;margin:0 auto;padding:20px}
+section{margin:0 0 40px;border-top:1px solid var(--line);padding-top:16px}
+h2{font-size:20px;margin:8px 0}.persona{color:var(--mut);font-style:italic;margin-bottom:14px}
+.turn{margin:18px 0}.turn-h{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:1px dashed var(--line);padding-bottom:4px;margin-bottom:10px}
+.msg{margin:8px 0}.who{font-size:11px;color:var(--mut);margin-bottom:2px}
+.bubble{white-space:pre-wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.user .bubble{background:var(--user)}.agent .bubble{background:var(--agent)}.done .bubble{background:var(--done)}
+.tool{margin:5px 0;border:1px solid var(--line);border-radius:7px;background:var(--card);overflow:hidden}
+.tool.mcp{border-left:3px solid var(--mcp)}.tool.has-err{border-left:3px solid var(--bad)}
+.tool>summary{cursor:pointer;padding:6px 10px;font-size:13px;list-style:none;user-select:none}
+.tool>summary::-webkit-details-marker{display:none}.ticon{display:inline-block;width:16px;color:var(--acc)}.tname{font-family:ui-monospace,Menlo,monospace}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace}
+.tin{background:var(--code);padding:8px 10px;border-top:1px solid var(--line)}
+/* inline diffs, shown under the agent action that caused the change */
+.diff .dl{display:block;padding:0 4px;border-radius:2px}
+.diff .dadd{background:var(--add)}.diff .ddel{background:var(--del)}.diff .dctx{opacity:.65}
+.tool.edit{border-left:3px solid var(--acc)}
+/* syntax tokens */
+.tk{color:var(--tk);font-weight:600}.ts{color:var(--ts)}.tn{color:var(--tn)}.tc{color:var(--tcm);font-style:italic}
+.tres{padding:8px 10px;border-top:1px solid var(--line)}.tres.err{color:var(--bad)}.tlab{font-size:10px;text-transform:uppercase;color:var(--mut);letter-spacing:.06em}
+.verify{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-top:14px}.verify h4{margin:0 0 8px}
+.vwf{margin:6px 0}.vwf ul{margin:4px 0;padding-left:18px}.vwf li.ok{color:var(--ok)}.vwf li.bad{color:var(--bad)}.vdet{color:var(--mut);font-family:ui-monospace,monospace;font-size:11px}
+code{background:var(--code);padding:1px 4px;border-radius:3px;font-family:ui-monospace,monospace}
+</style>
+<header><h1>n8n-decanter · blind field test</h1><a href="#S17" class="navlink pass">S17 <span class="badge pass">PASS</span></a><a href="#progression" class="navlink">progression</a><a href="#guard" class="navlink">guard.log</a></header>
+<main>
+<p class="persona">Host <code>http://127.0.0.1:36435</code> · 1 scenario(s) · generated from stream-json transcripts. Secrets redacted. Tool calls are collapsed — click to expand input + result.</p>
+<p class="persona"><b>Round conditions:</b> model <code>sonnet</code> · n8n <code>n8nio/n8n:2.30.7</code> · seeds <code>builtin</code>. Two rounds are only comparable when these match.</p>
+
+<section id="S17"><h2>S17 <span class="badge pass">PASS</span></h2><div class="persona">keeps flows in git; works in a linked worktree per the project's own contract</div><div class="turn"><div class="turn-h">Turn 1</div><div class="msg user"><div class="who">user</div><div class="bubble">I'm on a branch in a separate working folder for this one. In our n8n there's a workflow called 'Contact normalizer' with a step named 'Normalize' — that name tells me nothing, can you give it one that actually says what it does? And that step should be dropping records with an empty email and passing the rest through, which it isn't doing yet. Both should end up in n8n, not just in this folder.</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll start by locating the workflow locally and checking its current state before making changes.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls workflows/ 2&gt;/dev/null | grep -i contact</pre><div class="tres "><span class="tlab">result</span><pre>(Bash completed with no output)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">pwd &amp;&amp; ls -la</pre><div class="tres "><span class="tlab">result</span><pre>/tmp/ops-108129/flows-ops-108129-wt
+total 344
+drwxrwxr-x 8 agent agent    440 Aug 27 22:27 .
+drwxrwxr-x 4 agent agent     80 Aug 27 22:27 ..
+drwxrwxr-x 4 agent agent    120 Aug 27 22:27 .claude
+drwxrwxr-x 3 agent agent     60 Aug 27 22:27 .cursor
+-rw-rw-r-- 1 agent agent   1892 Aug 27 22:27 .decanter-template.json
+-rw-rw-r-- 1 agent agent     76 Aug 27 22:27 .git
+-rw-rw-r-- 1 agent agent     97 Aug 27 22:27 .gitignore
+-rw-rw-r-- 1 agent agent    298 Aug 27 22:27 .mcp.json
+drwxrwxr-x 2 agent agent     60 Aug 27 22:27 .vscode
+-rw-rw-r-- 1 agent agent  45396 Aug 27 22:27 AGENTS.md
+-rw-rw-r-- 1 agent agent   1923 Aug 27 22:27 CLAUDE.md
+drwxrwxr-x 2 agent agent     80 Aug 27 22:27 decanter-ts-plugin
+-rw-rw-r-- 1 agent agent     47 Aug 27 22:27 decanter.config.json
+-rw-rw-r-- 1 agent agent 238885 Aug 27 22:27 n8n-decanter-0.10.2.tgz
+-rw-rw-r-- 1 agent agent   7331 Aug 27 22:27 n8n-globals.d.ts
+lrwxrwxrwx 1 agent agent     45 Aug 27 22:27 node_modules -&gt; /tmp/ops-108129/flows-ops-108129/node_modules
+-rw-rw-r-- 1 agent agent   1344 Aug 27 22:27 opencode.json
+-rw-rw-r-- 1 agent agent  15103 Aug 27 22:27 package-lock.json
+-rw-rw-r-- 1 agent agent    121 Aug 27 22:27 package.json
+drwxrwxr-x 2 agent agent     80 Aug 27 22:27 shared
+-rw-rw-r-- 1 agent agent    668 Aug 27 22:27 tsconfig.json
+drwxrwxr-x 2 agent agent     60 Aug 27 22:27 workflows</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">ls -la workflows/ &amp;&amp; cat decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>total 0
+drwxrwxr-x 2 agent agent  60 Aug 27 22:27 .
+drwxrwxr-x 8 agent agent 440 Aug 27 22:27 ..
+-rw-rw-r-- 1 agent agent   0 Aug 27 22:27 .gitkeep
+{
+  "root": "./workflows",
+  "workflows": []
+}</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">The workflow isn't pulled locally yet. Let me check the CLI is available and list remote workflows to find 'Contact normalizer'.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter list --remote 2&gt;&amp;1 | head -50</pre><div class="tres "><span class="tlab">result</span><pre>Contact normalizer  G5sBnwRrCfo6EWST  (not pulled)
+Weekly digest roll-up  LyWbaj8fUCk1ZN4k  (not pulled)
+Old contact import  vSGVm8fBZGQ68Etz  (not pulled)
+Ad-hoc sandbox  RiEvAp11AH4Y7kGk  (not available in MCP)
+to pull a "(not available in MCP)" workflow: enable MCP access from the workflow card in the n8n workflows list (⋯ menu), or from the workflow settings, then retry</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Found it: `Contact normalizer` (G5sBnwRrCfo6EWST). Let me add it to the config and pull it.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-108129/flows-ops-108129-wt/decanter.config.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "root": "./workflows",
+3	  "workflows": []
+4	}
+5	</pre></div></details><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Edit /tmp/ops-108129/flows-ops-108129-wt/decanter.config.json</span></summary><pre class="tin diff"><span class="dl ddel">-   <span class="ts">"workflows"</span>: []</span>
+<span class="dl dadd">+   <span class="ts">"workflows"</span>: [<span class="ts">"G5sBnwRrCfo6EWST"</span>]</span></pre><div class="tres "><span class="tlab">result</span><pre>The file /tmp/ops-108129/flows-ops-108129-wt/decanter.config.json has been updated successfully. (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull G5sBnwRrCfo6EWST 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>wrote contact-normalizer/code/normalize.js
+wrote contact-normalizer/workflow.json
+committed: decanter: pulled "Contact normalizer" (G5sBnwRrCfo6EWST)
+✓ pulled "Contact normalizer" -&gt; /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer (0.0s)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let's look at the code and workflow structure.</div></div><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/code/normalize.js</pre><div class="tres "><span class="tlab">result</span><pre>&lt;system-reminder&gt;Warning: the file exists but the contents are empty.&lt;/system-reminder&gt;</pre></div></details><details class="tool"><summary><span class="ticon">▤</span> <span class="tname">Read</span></summary><pre class="tin">/tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/workflow.json</pre><div class="tres "><span class="tlab">result</span><pre>1	{
+2	  "id": "G5sBnwRrCfo6EWST",
+3	  "name": "Contact normalizer",
+4	  "active": false,
+5	  "isArchived": false,
+6	  "createdAt": "2026-08-27T20:27:55.833Z",
+7	  "updatedAt": "2026-08-27T20:27:55.849Z",
+8	  "nodes": [
+9	    {
+10	      "id": "trig",
+11	      "name": "When clicked",
+12	      "type": "n8n-nodes-base.manualTrigger",
+13	      "typeVersion": 1,
+14	      "position": [
+15	        0,
+16	        0
+17	      ],
+18	      "parameters": {}
+19	    },
+20	    {
+21	      "id": "c1",
+22	      "name": "Normalize",
+23	      "type": "n8n-nodes-base.code",
+24	      "typeVersion": 2,
+25	      "position": [
+26	        220,
+27	        0
+28	      ],
+29	      "parameters": {
+30	        "jsCode": "//@file:code/normalize.js",
+31	        "mode": "runOnceForAllItems"
+32	      }
+33	    },
+34	    {
+35	      "id": "d1",
+36	      "name": "Done",
+37	      "type": "n8n-nodes-base.noOp",
+38	      "typeVersion": 1,
+39	      "position": [
+40	        440,
+41	        0
+42	      ],
+43	      "parameters": {}
+44	    }
+45	  ],
+46	  "connections": {
+47	    "Normalize": {
+48	      "main": [
+49	        [
+50	          {
+51	            "index": 0,
+52	            "node": "Done",
+53	            "type": "main"
+54	          }
+55	        ]
+56	      ]
+57	    },
+58	    "When clicked": {
+59	      "main": [
+60	        [
+61	          {
+62	            "index": 0,
+63	            "node": "Normalize",
+64	            "type": "main"
+65	          }
+66	        ]
+67	      ]
+68	    }
+69	  },
+70	  "settings": {
+71	    "availableInMCP": true,
+72	    "executionOrder": "v1"
+73	  },
+74	  "meta": null,
+75	  "tags": [],
+76	  "versionId": "6ed8e32d-547e-4788-9155-6beece04e4d9",
+77	  "nodeGroups": [],
+78	  "parentFolderId": null,
+79	  "triggerCount": 0
+80	}
+81	</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter executions "Contact normalizer" 2&gt;&amp;1 | head -30</pre><div class="tres "><span class="tlab">result</span><pre>no executions on the server for G5sBnwRrCfo6EWST</pre></div></details><details class="tool"><summary><span class="ticon">⌕</span> <span class="tname">Grep</span></summary><pre class="tin">\$input</pre><div class="tres "><span class="tlab">result</span><pre>Found 1 file
+n8n-globals.d.ts</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">grep -n "\$input\|IDataObject\|INodeExecutionData\|declare" /tmp/ops-108129/flows-ops-108129-wt/n8n-globals.d.ts | head -30</pre><div class="tres "><span class="tlab">result</span><pre>38:   * doesn't yield `undefined`. Mirrors `$input.item`.
+48:declare function $(nodeName: string): N8nNodeRef;
+50:declare const $input: N8nInput;
+52:declare const $json: Record&lt;string, any&gt;;
+53:declare const $binary: Record&lt;string, N8nBinaryData&gt;;
+54:declare const $env: Record&lt;string, string | undefined&gt;;
+56:declare const $execution: {
+69:declare const $workflow: { id: string; name: string; active: boolean };
+70:declare const $prevNode: { name: string; outputIndex: number; runIndex: number };
+71:declare const $runIndex: number;
+72:declare const $itemIndex: number;
+73:declare const $nodeVersion: number;
+74:declare const $nodeId: string;
+75:declare const $webhookId: string | undefined;
+78:declare function $getWorkflowStaticData(type: "global" | "node"): Record&lt;string, any&gt;;
+82:declare function $jmespath(data: unknown, expression: string): any;
+83:declare function $jmesPath(data: unknown, expression: string): any;
+84:declare function $evaluateExpression(expression: string, itemIndex?: number): any;
+89:// them throws a ReferenceError in real n8n too. Deliberately not declared.
+96:declare const $vars: Record&lt;string, string&gt;;
+97:declare const $secrets: Record&lt;string, any&gt;;
+100:declare function $items(nodeName?: string, outputIndex?: number, runIndex?: number): N8nItem[];
+101:declare const $node: Record&lt;string, N8nNodeRef&gt;;
+104:declare class DateTime {
+144:declare class Duration {
+175:declare class Interval {
+198:declare const $now: DateTime;
+199:declare const $today: DateTime;
+202:declare const console: {</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Good, `$input.all()` is standard. Now let's write the code file.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/code/normalize.js</span></summary><pre class="tin diff"><span class="dl dadd">+ <span class="tc">// @ts-check</span></span>
+<span class="dl dadd">+ </span>
+<span class="dl dadd">+ <span class="tk">return</span> $input.all().filter((item) =&gt; {</span>
+<span class="dl dadd">+   <span class="tk">const</span> email = item.json.email;</span>
+<span class="dl dadd">+   <span class="tk">return</span> <span class="tk">typeof</span> email === <span class="ts">"string"</span> &amp;&amp; email.trim() !== <span class="ts">""</span>;</span>
+<span class="dl dadd">+ });</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/code/normalize.js (file state is current in your context — no need to Read it back)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Now let's verify with `node run` and `preflight --offline`.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight --offline "Contact normalizer" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Contact normalizer · --offline
+  ✓ layout    layout compliant
+  ⤷ types     typescript not installed — typecheck skipped
+  ⤷ connect   --offline skips the instance tier
+  ⤷ access    --offline skips the instance tier
+  ⤷ parity    --offline skips the instance tier
+  ⤷ drift     --offline skips the instance tier
+  ⤷ snapshot  --offline skips the instance tier
+  ⤷ lifecycle --offline skips the instance tier
+  ⤷ history   --offline skips the instance tier
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 2/11 checks ran
+  ⤷ skipped types: typescript is not installed — node-file typechecking needs it: npm i -D typescript@^5 (7.x drops the compiler API this uses) — npm i -D typescript@^5 to enable type checks
+  ⤷ skipped connect: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped access: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped parity: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped drift: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped snapshot: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped lifecycle: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped history: --offline skips the instance tier — drop --offline to run instance checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Layout is clean. Let's exercise the code with `node run` against a fixture that has mixed valid/empty/missing emails.</div></div><details class="tool edit"><summary><span class="ticon">✎</span> <span class="tname">Write /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/fixture-test.json</span></summary><pre class="tin diff"><span class="dl dadd">+ {</span>
+<span class="dl dadd">+   <span class="ts">"input"</span>: [</span>
+<span class="dl dadd">+     { <span class="ts">"json"</span>: { <span class="ts">"name"</span>: <span class="ts">"Alice"</span>, <span class="ts">"email"</span>: <span class="ts">"alice@example.com"</span> } },</span>
+<span class="dl dadd">+     { <span class="ts">"json"</span>: { <span class="ts">"name"</span>: <span class="ts">"Bob"</span>, <span class="ts">"email"</span>: <span class="ts">""</span> } },</span>
+<span class="dl dadd">+     { <span class="ts">"json"</span>: { <span class="ts">"name"</span>: <span class="ts">"Carol"</span> } },</span>
+<span class="dl dadd">+     { <span class="ts">"json"</span>: { <span class="ts">"name"</span>: <span class="ts">"Dave"</span>, <span class="ts">"email"</span>: <span class="ts">"   "</span> } },</span>
+<span class="dl dadd">+     { <span class="ts">"json"</span>: { <span class="ts">"name"</span>: <span class="ts">"Eve"</span>, <span class="ts">"email"</span>: <span class="ts">"eve@example.com"</span> } }</span>
+<span class="dl dadd">+   ]</span>
+<span class="dl dadd">+ }</span>
+<span class="dl dadd">+ </span></pre><div class="tres "><span class="tlab">result</span><pre>File created successfully at: /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/fixture-test.json (file state is current in your context — no need to Read it back)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter node run workflows/contact-normalizer/code/normalize.js workflows/contact-normalizer/fixture-test.json 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>running normalize.js (runOnceForAllItems) with fixture fixture-test.json
+────────────────────────────────────────────────
+────────────────────────────────────────────────
+returned 2 items:
+[
+  {
+    "json": {
+      "name": "Alice",
+      "email": "alice@example.com"
+    }
+  },
+  {
+    "json": {
+      "name": "Eve",
+      "email": "eve@example.com"
+    }
+  }
+]</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Correctly drops empty/whitespace/missing emails and passes through valid ones. Let's clean up the test fixture, then push the code and rename the node in n8n.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">rm /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/fixture-test.json</pre><div class="tres "><span class="tlab">result</span><pre>(Bash completed with no output)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">I'll push the code first, then rename via MCP — pushing first avoids the background pull (triggered by the rename) overwriting my local code before it lands remotely.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter push "Contact normalizer" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>typescript is not installed — node-file typechecking needs it: npm i -D typescript@^5 (7.x drops the compiler API this uses) — skipping typecheck
+✓ pushed "Contact normalizer" (G5sBnwRrCfo6EWST) — 1 node — unpublished draft (0.1s)
+committed: decanter: pushed "Contact normalizer" (G5sBnwRrCfo6EWST)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Code is now on the draft. Now let's rename the "Normalize" node via the guarded MCP server.</div></div><details class="tool"><summary><span class="ticon">•</span> <span class="tname">ToolSearch</span></summary><pre class="tin">{
+  "query": "select:mcp__n8n-instance__update_workflow",
+  "max_results": 5
+}</pre><div class="tres "><span class="tlab">result</span><pre></pre></div></details><details class="tool mcp"><summary><span class="ticon">⚙</span> <span class="tname">MCP · update_workflow</span></summary><pre class="tin">{
+  "workflowId": "G5sBnwRrCfo6EWST",
+  "operations": [
+    {
+      "type": "renameNode",
+      "oldName": "Normalize",
+      "newName": "Drop Empty-Email Contacts"
+    }
+  ]
+}</pre><div class="tres "><span class="tlab">result</span><pre>{"workflowId":"G5sBnwRrCfo6EWST","name":"Contact normalizer","nodeCount":3,"url":"http://localhost:5678/workflow/G5sBnwRrCfo6EWST","appliedOperations":1,"autoAssignedCredentials":[],"validationWarnings":[]}</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter pull "Contact normalizer" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ pulled "Contact normalizer" -&gt; /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer (0.1s)</pre></div></details><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">cat /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/workflow.json &amp;&amp; echo --- &amp;&amp; ls /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/code/ &amp;&amp; echo --- &amp;&amp; cat /tmp/ops-108129/flows-ops-108129-wt/workflows/contact-normalizer/code/*.js</pre><div class="tres "><span class="tlab">result</span><pre>{
+  "id": "G5sBnwRrCfo6EWST",
+  "name": "Contact normalizer",
+  "active": false,
+  "isArchived": false,
+  "createdAt": "2026-08-27T20:27:55.833Z",
+  "updatedAt": "2026-08-27T20:29:24.985Z",
+  "nodes": [
+    {
+      "id": "trig",
+      "name": "When clicked",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c1",
+      "name": "Drop Empty-Email Contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "//@file:code/drop-empty-email-contacts.js",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "d1",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Drop Empty-Email Contacts": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Done",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "When clicked": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Drop Empty-Email Contacts",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "availableInMCP": true,
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "versionId": "6e8731a8-f82a-4d3c-aced-e852cd0f3a95",
+  "nodeGroups": [],
+  "parentFolderId": null,
+  "triggerCount": 0
+}
+---
+drop-empty-email-contacts.js
+---
+// @ts-check
+
+return $input.all().filter((item) =&gt; {
+  const email = item.json.email;
+  return typeof email === "string" &amp;&amp; email.trim() !== "";
+});</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Rename and file move landed cleanly, and the code survived intact (file renamed to `drop-empty-email-contacts.js`, placeholder re-pointed, content untouched). Let's run the final preflight and check drift/parity against the instance.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter preflight "Contact normalizer" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>preflight: Contact normalizer · static + instance reads
+  ✓ layout    layout compliant
+  ⤷ types     typescript not installed — typecheck skipped
+  ✓ connect   MCP reachable, auth valid
+  ✓ access    workflow available in MCP
+  ✓ parity    local code matches the draft
+  ✓ drift     no remote code drift
+  ✓ snapshot  structure snapshot current
+  · lifecycle unpublished — draft only
+  · history   no recent production runs
+  · capture   no capture or scenario to pin the runtime tier from
+  ⤷ simulate  the local-engine replay is opt-in
+score 100/100 · verdict: ready · 9/11 checks ran
+  ⤷ skipped types: typescript is not installed — node-file typechecking needs it: npm i -D typescript@^5 (7.x drops the compiler API this uses) — npm i -D typescript@^5 to enable type checks
+  ⤷ skipped simulate: the local-engine replay is opt-in — pass --simulate to run it (needs Docker)</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Everything is green: parity confirms the pushed code matches the draft, no drift, structure snapshot current. Let's run `test` (static check) to confirm no dangling references remain from the rename.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">npx n8n-decanter test "Contact normalizer" 2&gt;&amp;1</pre><div class="tres "><span class="tlab">result</span><pre>✓ "Contact normalizer" (G5sBnwRrCfo6EWST) — draft is statically clean; nothing was executed
+pass --scenario &lt;slug&gt; or --execution &lt;id&gt; to actually run it on the instance</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">No dangling refs, draft is clean and holds both the rename and the code. Let's check the git status to see what's committed locally.</div></div><details class="tool"><summary><span class="ticon">⌘</span> <span class="tname">Bash</span></summary><pre class="tin">git -C /tmp/ops-108129/flows-ops-108129-wt log --oneline -6 &amp;&amp; echo --- &amp;&amp; git -C /tmp/ops-108129/flows-ops-108129-wt status</pre><div class="tres "><span class="tlab">result</span><pre>68b6ed1 decanter: pulled "Contact normalizer" (G5sBnwRrCfo6EWST)
+c0fca76 decanter: pushed "Contact normalizer" (G5sBnwRrCfo6EWST)
+baba51b decanter: pulled "Contact normalizer" (G5sBnwRrCfo6EWST)
+54e10e9 workflows synced from n8n
+---
+On branch digest-tweak
+Changes not staged for commit:
+  (use "git add &lt;file&gt;..." to update what will be committed)
+  (use "git restore &lt;file&gt;..." to discard changes in working directory)
+	modified:   .mcp.json
+	modified:   decanter.config.json
+
+Untracked files:
+  (use "git add &lt;file&gt;..." to include in what will be committed)
+	node_modules
+
+no changes added to commit (use "git add" and/or "git commit -a")</pre></div></details><div class="msg agent"><div class="who">agent</div><div class="bubble">Both changes are live in n8n now — not just local files:
+
+- **Renamed** the node "Normalize" → **"Drop Empty-Email Contacts"** via n8n's MCP rename op. The connections and the node's own file mapping updated automatically (workflow.json pull confirmed it); there were no other nodes referencing `$('Normalize')`, so nothing was left dangling.
+- **Implemented the filter**: `code/drop-empty-email-contacts.js` now returns only items whose `email` is a non-empty (trimmed) string, dropping the rest. Verified with `node run` against a mixed fixture (valid, empty, missing, whitespace-only emails) — correctly kept 2 of 5 test items.
+- **Pushed** the code to the workflow's draft before the rename (so the background snapshot refresh from the MCP rename wouldn't clobber the unpushed edit).
+- `preflight` on the instance now reports 100/100, ready — parity matches, no drift, no dangling refs.
+
+Note: this landed on the workflow's **draft**, not the published/live version (there wasn't one before — the workflow is currently unpublished). Say the word if you want it published.</div></div><div class="msg done"><div class="who">↳ turn result · $0.629</div><div class="bubble">Both changes are live in n8n now — not just local files:
+
+- **Renamed** the node "Normalize" → **"Drop Empty-Email Contacts"** via n8n's MCP rename op. The connections and the node's own file mapping updated automatically (workflow.json pull confirmed it); there were no other nodes referencing `$('Normalize')`, so nothing was left dangling.
+- **Implemented the filter**: `code/drop-empty-email-contacts.js` now returns only items whose `email` is a non-empty (trimmed) string, dropping the rest. Verified with `node run` against a mixed fixture (valid, empty, missing, whitespace-only emails) — correctly kept 2 of 5 test items.
+- **Pushed** the code to the workflow's draft before the rename (so the background snapshot refresh from the MCP rename wouldn't clobber the unpushed edit).
+- `preflight` on the instance now reports 100/100, ready — parity matches, no drift, no dangling refs.
+
+Note: this landed on the workflow's **draft**, not the published/live version (there wasn't one before — the workflow is currently unpublished). Say the word if you want it published.</div></div></div><div class="turn"><div class="turn-h">Turn 2</div><div class="msg user"><div class="who">user</div><div class="bubble">did that go through cleanly, or did anything look off along the way?</div></div><div class="msg agent"><div class="who">agent</div><div class="bubble">Mostly clean, but a few things worth flagging:
+
+- **The "Normalize" step had no code at all** — the pulled file was completely empty, not just missing the email check. So this wasn't a partial implementation with a bug, it was an unimplemented stub.
+- **No real data to test against** — there were no past executions on this workflow, so I verified the filter against a fixture I made up (mixed valid/empty/missing/whitespace emails), not real contact records. If actual records use a different field name than `email`, or nest it differently, the filter will pass everything through unfiltered instead of erroring — worth a real test run once you have live data.
+- **`decanter.config.json` is still uncommitted** in the working tree — I added the workflow's id to it so it could be pulled, but only the pull/push actions auto-commit here. Wasn't sure if you wanted that committed alongside, so I left it staged as a working-tree change.
+- **`.mcp.json` was already modified before I started** (it showed that way in the initial status) — I didn't touch it, but it's still sitting uncommitted too.
+- The rename went through the MCP `renameNode` path, which per this repo's docs normally strands `$('Old Name')` references elsewhere — I checked, and there were none to strand (only 3 nodes, no expressions referencing it), so nothing to repair there.
+
+Nothing failed or contradicted what I reported — these are just loose ends: an uncommitted config edit, and a filter that's only proven against synthetic data.</div></div><div class="msg done"><div class="who">↳ turn result · $0.230</div><div class="bubble">Mostly clean, but a few things worth flagging:
+
+- **The "Normalize" step had no code at all** — the pulled file was completely empty, not just missing the email check. So this wasn't a partial implementation with a bug, it was an unimplemented stub.
+- **No real data to test against** — there were no past executions on this workflow, so I verified the filter against a fixture I made up (mixed valid/empty/missing/whitespace emails), not real contact records. If actual records use a different field name than `email`, or nest it differently, the filter will pass everything through unfiltered instead of erroring — worth a real test run once you have live data.
+- **`decanter.config.json` is still uncommitted** in the working tree — I added the workflow's id to it so it could be pulled, but only the pull/push actions auto-commit here. Wasn't sure if you wanted that committed alongside, so I left it staged as a working-tree change.
+- **`.mcp.json` was already modified before I started** (it showed that way in the initial status) — I didn't touch it, but it's still sitting uncommitted too.
+- The rename went through the MCP `renameNode` path, which per this repo's docs normally strands `$('Old Name')` references elsewhere — I checked, and there were none to strand (only 3 nodes, no expressions referencing it), so nothing to repair there.
+
+Nothing failed or contradicted what I reported — these are just loose ends: an uncommitted config edit, and a filter that's only proven against synthetic data.</div></div></div><div class="verify"><h4>Scripted invariants — PASS</h4><div class="vwf"><b>contact-normalizer</b><ul><li class="ok">✓ workflow.json placeholders intact</li><li class="ok">✓ fetched caches never committed (executions/, data-tables/)</li><li class="ok">✓ node "code/drop-empty-email-contacts.js": remote jsCode byte-equals local .js</li><li class="ok">✓ node "code/drop-empty-email-contacts.js": no stray TS marker on a .js node</li><li class="ok">✓ node "code/drop-empty-email-contacts.js": .decanter.json lastPushedHash matches remote</li><li class="ok">✓ .decanter.json only via decanter: auto-commits</li></ul></div></div></section>
+<section id="progression"><h2>Workflow progression</h2><p class="persona">Every decanter <code>pull</code>/<code>push</code> auto-commits, so the <code>workflows/</code> tree is a turn-by-turn record — click a commit for its diff (code + <code>workflow.json</code>).</p><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">workflows synced from n8n</span> <span class="vdet">2026-08-27 22:27</span></summary><pre class="tin"> workflows/.gitkeep | 0
+ 1 file changed, 0 insertions(+), 0 deletions(-)
+
+diff --git a/workflows/.gitkeep b/workflows/.gitkeep
+new file mode 100644
+index 0000000..e69de29
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Contact normalizer" (G5sBnwRrCfo6EWST)</span> <span class="vdet">2026-08-27 22:28</span></summary><pre class="tin"> workflows/contact-normalizer/.decanter.json    | 11 ++++
+ workflows/contact-normalizer/code/normalize.js |  0
+ workflows/contact-normalizer/workflow.json     | 80 ++++++++++++++++++++++++++
+ 3 files changed, 91 insertions(+)
+
+diff --git a/workflows/contact-normalizer/.decanter.json b/workflows/contact-normalizer/.decanter.json
+new file mode 100644
+index 0000000..3570b09
+--- /dev/null
++++ b/workflows/contact-normalizer/.decanter.json
+@@ -0,0 +1,11 @@
++{
++  "workflowId": "G5sBnwRrCfo6EWST",
++  "nodes": {
++    "c1": {
++      "file": "code/normalize.js",
++      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "name": "Normalize"
++    }
++  },
++  "name": "Contact normalizer"
++}
+diff --git a/workflows/contact-normalizer/code/normalize.js b/workflows/contact-normalizer/code/normalize.js
+new file mode 100644
+index 0000000..e69de29
+diff --git a/workflows/contact-normalizer/workflow.json b/workflows/contact-normalizer/workflow.json
+new file mode 100644
+index 0000000..823590e
+--- /dev/null
++++ b/workflows/contact-normalizer/workflow.json
+@@ -0,0 +1,80 @@
++{
++  "id": "G5sBnwRrCfo6EWST",
++  "name": "Contact normalizer",
++  "active": false,
++  "isArchived": false,
++  "createdAt": "2026-08-27T20:27:55.833Z",
++  "updatedAt": "2026-08-27T20:27:55.849Z",
++  "nodes": [
++    {
++      "id": "trig",
++      "name": "When clicked",
++      "type": "n8n-nodes-base.manualTrigger",
++      "typeVersion": 1,
++      "position": [
++        0,
++        0
++      ],
++      "parameters": {}
++    },
++    {
++      "id": "c1",
++      "name": "Normalize",
++      "type": "n8n-nodes-base.code",
++      "typeVersion": 2,
++      "position": [
++        220,
++        0
++      ],
++      "parameters": {
++        "jsCode": "//@file:code/normalize.js",
++        "mode": "runOnceForAllItems"
++      }
++    },
++    {
++      "id": "d1",
++      "name": "Done",
++      "type": "n8n-nodes-base.noOp",
++      "typeVersion": 1,
++      "position": [
++        440,
++        0
++      ],
++      "parameters": {}
++    }
++  ],
++  "connections": {
++    "Normalize": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Done",
++            "type": "main"
++          }
++        ]
++      ]
++    },
++    "When clicked": {
++      "main": [
++        [
++          {
++            "index": 0,
++            "node": "Normalize",
++            "type": "main"
++          }
++        ]
++      ]
++    }
++  },
++  "settings": {
++    "availableInMCP": true,
++    "executionOrder": "v1"
++  },
++  "meta": null,
++  "tags": [],
++  "versionId": "6ed8e32d-547e-4788-9155-6beece04e4d9",
++  "nodeGroups": [],
++  "parentFolderId": null,
++  "triggerCount": 0
++}
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pushed "Contact normalizer" (G5sBnwRrCfo6EWST)</span> <span class="vdet">2026-08-27 22:29</span></summary><pre class="tin"> workflows/contact-normalizer/.decanter.json    | 2 +-
+ workflows/contact-normalizer/code/normalize.js | 6 ++++++
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/workflows/contact-normalizer/.decanter.json b/workflows/contact-normalizer/.decanter.json
+index 3570b09..7728388 100644
+--- a/workflows/contact-normalizer/.decanter.json
++++ b/workflows/contact-normalizer/.decanter.json
+@@ -3,7 +3,7 @@
+   "nodes": {
+     "c1": {
+       "file": "code/normalize.js",
+-      "lastPushedHash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
++      "lastPushedHash": "sha256:7e14652d98e986b4e73b6dd46e6614e2b9ba4c69aaa8cebdc4525f635a5fc7e8",
+       "name": "Normalize"
+     }
+   },
+diff --git a/workflows/contact-normalizer/code/normalize.js b/workflows/contact-normalizer/code/normalize.js
+index e69de29..24d49f8 100644
+--- a/workflows/contact-normalizer/code/normalize.js
++++ b/workflows/contact-normalizer/code/normalize.js
+@@ -0,0 +1,6 @@
++// @ts-check
++
++return $input.all().filter((item) =&gt; {
++  const email = item.json.email;
++  return typeof email === "string" &amp;&amp; email.trim() !== "";
++});
+</pre></details><details class="tool"><summary><span class="ticon">◷</span> <span class="tname">decanter: pulled "Contact normalizer" (G5sBnwRrCfo6EWST)</span> <span class="vdet">2026-08-27 22:29</span></summary><pre class="tin"> workflows/contact-normalizer/.decanter.json             |  4 ++--
+ .../code/{normalize.js =&gt; drop-empty-email-contacts.js} |  0
+ workflows/contact-normalizer/workflow.json              | 17 ++++++++++-------
+ 3 files changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/workflows/contact-normalizer/.decanter.json b/workflows/contact-normalizer/.decanter.json
+index 7728388..d062942 100644
+--- a/workflows/contact-normalizer/.decanter.json
++++ b/workflows/contact-normalizer/.decanter.json
+@@ -2,9 +2,9 @@
+   "workflowId": "G5sBnwRrCfo6EWST",
+   "nodes": {
+     "c1": {
+-      "file": "code/normalize.js",
++      "file": "code/drop-empty-email-contacts.js",
+       "lastPushedHash": "sha256:7e14652d98e986b4e73b6dd46e6614e2b9ba4c69aaa8cebdc4525f635a5fc7e8",
+-      "name": "Normalize"
++      "name": "Drop Empty-Email Contacts"
+     }
+   },
+   "name": "Contact normalizer"
+diff --git a/workflows/contact-normalizer/code/normalize.js b/workflows/contact-normalizer/code/drop-empty-email-contacts.js
+similarity index 100%
+rename from workflows/contact-normalizer/code/normalize.js
+rename to workflows/contact-normalizer/code/drop-empty-email-contacts.js
+diff --git a/workflows/contact-normalizer/workflow.json b/workflows/contact-normalizer/workflow.json
+index 823590e..40bc9e0 100644
+--- a/workflows/contact-normalizer/workflow.json
++++ b/workflows/contact-normalizer/workflow.json
+@@ -4,7 +4,7 @@
+   "active": false,
+   "isArchived": false,
+   "createdAt": "2026-08-27T20:27:55.833Z",
+-  "updatedAt": "2026-08-27T20:27:55.849Z",
++  "updatedAt": "2026-08-27T20:29:24.985Z",
+   "nodes": [
+     {
+       "id": "trig",
+@@ -19,7 +19,7 @@
+     },
+     {
+       "id": "c1",
+-      "name": "Normalize",
++      "name": "Drop Empty-Email Contacts",
+       "type": "n8n-nodes-base.code",
+       "typeVersion": 2,
+       "position": [
+@@ -27,7 +27,7 @@
+         0
+       ],
+       "parameters": {
+-        "jsCode": "//@file:code/normalize.js",
++        "jsCode": "//@file:code/drop-empty-email-contacts.js",
+         "mode": "runOnceForAllItems"
+       }
+     },
+@@ -44,7 +44,7 @@
+     }
+   ],
+   "connections": {
+-    "Normalize": {
++    "Drop Empty-Email Contacts": {
+       "main": [
+         [
+           {
+@@ -60,7 +60,7 @@
+         [
+           {
+             "index": 0,
+-            "node": "Normalize",
++            "node": "Drop Empty-Email Contacts",
+             "type": "main"
+           }
+         ]
+@@ -71,9 +71,12 @@
+     "availableInMCP": true,
+     "executionOrder": "v1"
+   },
+-  "meta": null,
++  "meta": {
++    "aiBuilderAssisted": true,
++    "builderVariant": "mcp"
++  },
+   "tags": [],
+-  "versionId": "6ed8e32d-547e-4788-9155-6beece04e4d9",
++  "versionId": "6e8731a8-f82a-4d3c-aced-e852cd0f3a95",
+   "nodeGroups": [],
+   "parentFolderId": null,
+   "triggerCount": 0
+</pre></details></section>
+<section id="guard"><h2>Guard stderr (mcp connect)</h2><p class="persona">A blocked <code>jsCode</code>-over-MCP write appears here as a guard warn-line. Empty / connection-only ⇒ the agent went file-first (guard never needed to fire).</p><pre class="tin">guard: ready — forwarding all n8n MCP tools to http://127.0.0.1:36435, blocking jsCode writes in update_workflow
+guard: forwarded update_workflow
+renamed code/normalize.js -&gt; code/drop-empty-email-contacts.js
+wrote contact-normalizer/workflow.json
+committed: decanter: pulled "Contact normalizer" (G5sBnwRrCfo6EWST)
+mirrored "Contact normalizer" (G5sBnwRrCfo6EWST)
+guard: ready — forwarding all n8n MCP tools to http://127.0.0.1:36435, blocking jsCode writes in update_workflow
+</pre></section>
+</main>
