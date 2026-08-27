@@ -1105,10 +1105,16 @@ await step("watch: debounce coalesces, queued save re-pushes, close() stops", as
     // The mock counts `update_workflow` on ARRIVAL and holds only the response
     // for `slowUpdateMs`, so `updateCount` reaching 2 IS the moment the
     // in-flight window opens — precisely what the sleep was approximating.
-    // (What consumed the margin under a concurrent suite was never isolated;
-    // fs.watch delivery was measured at 0-1 ms idle and under 2x CPU
-    // oversubscription, so it is not that. Hence: remove the margin, don't
-    // widen it.)
+    // Where the margin went, measured on a failing run rather than guessed:
+    // the sleep was accurate (321 ms elapsed for a 320 ms sleep — no timer lag)
+    // and `fs.watch` delivery is 0-1 ms idle and under 2x CPU oversubscription,
+    // yet only ONE push had arrived. What sits in that window is `pushSingleNode`'s
+    // pre-write work — the folder-wide `validateWorkflowDir` (reads workflow.json
+    // and every code file) plus the `getWorkflowDetails` round trip that resolves
+    // id -> name. Idle that is ~12 ms (212 total against a 200 ms debounce);
+    // against a second suite it stretched past 121 ms and ate the slack whole.
+    // Nothing there is a defect — a guard and a confirming read per push are by
+    // design — which is exactly why the margin had to go rather than grow.
     slowUpdateMs = 300;
     writeFileSync(js, "return $input.all(); // queued-1\n");
     await waitFor(() => updateCount - before === 2, "the queued-1 push reaches the instance");
