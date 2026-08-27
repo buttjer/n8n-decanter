@@ -623,15 +623,16 @@ functions; the CLI process is the surface users touch.
 - **`fs.watch` dies under sandboxed shells** (`EMFILE, watch` from FSEvents)
   and takes the watch process down — run watch drives unsandboxed; it is an
   environment artifact, not a code failure.
-- **Second, distinct watch artifact — the e2e step `watch: debounce coalesces…`
-  can fail `2 !== 3` on a machine where CI is green, sandboxed *and*
-  unsandboxed.** Don't read the `EMFILE` note above as covering it: nothing
-  dies, and unsandboxing is not the fix. The step asserts an exact push count
-  against a 200 ms debounce, so wherever filesystem events arrive slower or
-  batched, the queued save coalesces into the preceding push and one push goes
-  missing from the count. **That makes it a property of the machine, not of your
-  change** — confirm it by running the suite on unmodified `main`: if it fails
-  there too, that is your local baseline and CI is the authority.
+- **Never coordinate a watch step with a sleep — wait for the observed effect
+  (`waitFor` in `test/e2e.mts`).** The step `watch: debounce coalesces…` used to
+  fail `2 !== 3` often enough that this file called it "a property of the
+  machine" and told you to accept it. It was not: it slept 320 ms for a push
+  that arrives ~212 ms after the save (200 ms debounce, measured idle), and that
+  ~106 ms of slack disappeared **reproducibly whenever a second e2e suite ran at
+  the same time** — which is exactly what happens when you work in two
+  worktrees. Two concurrent runs still fail the old code and pass the new one.
+  So: a sleep is only for asserting an **absence** (no second push, nothing
+  after `close()`), never for waiting on something that will happen.
 - The e2e suite's mock (`test/e2e.mts`) is in-process and not importable;
   building a fresh mock is faster than extracting it.
 - CLI output contains ANSI codes even when piped (known, Plan 11) — match

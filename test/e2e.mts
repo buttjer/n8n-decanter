@@ -479,6 +479,26 @@ const wfDir = (name: string) => path.join(ROOT, kebabCase(name));
 const read = (...p: string[]) => readFileSync(path.join(...p), "utf8");
 const state = (dir: string) => JSON.parse(read(dir, ".decanter.json"));
 const remoteNode = (id: string, nid: string) => db.get(id).nodes.find((n: any) => n.id === nid);
+/**
+ * Block until `cond` holds, then return — the watch steps' replacement for
+ * "sleep long enough that it has probably happened".
+ *
+ * A sleep encodes a *margin*, and a margin is only ever as good as the worst
+ * scheduling the machine will do. Measured here (idle): a save's push reaches
+ * the mock ~212 ms after the write, against a 200 ms debounce. The step that
+ * kept failing slept 320 ms for that push, i.e. bet on ~106 ms of slack — and
+ * lost it reproducibly when a second e2e suite ran at the same time. Waiting on
+ * the observed effect has no margin to get wrong; the timeout keeps a genuine
+ * hang loud instead of silently passing.
+ */
+async function waitFor(cond: () => boolean, what: string, timeoutMs = 10_000): Promise<void> {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error(`timed out after ${timeoutMs} ms waiting for: ${what}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
 /** In-process McpClient on the mock (bearer auth) for the watch/push steps. */
 async function mcpClient() {
   const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib/mcp.mts")).href);
@@ -1060,26 +1080,45 @@ await step("watch: debounce coalesces, queued save re-pushes, close() stops", as
   assert.ok(logs.some((m) => m.includes("updates live on each push")), "live-reflect note:\n" + logs.join("\n"));
   const before = updateCount;
   try {
-    // two rapid saves coalesce into a single push of the final content
+    // Two rapid saves coalesce into a single push of the final content.
+    // Coalescing is an ABSENCE (no second push), so this half cannot be purely
+    // event-driven — but it can still stop guessing WHEN to start looking:
+    // wait for the push that must happen, then settle and prove no second one
+    // followed. A fixed sleep alone would fail with `0 !== 1` on a machine slow
+    // enough to deliver both events after the window.
     writeFileSync(js, "return $input.all(); // debounce-1\n");
     await sleep(30);
     writeFileSync(js, "return $input.all(); // debounce-2\n");
-    await sleep(900);
+    await waitFor(() => updateCount - before === 1, "the coalesced push");
+    await sleep(400);
     assert.equal(updateCount - before, 1, "rapid saves must coalesce into one push:\n" + logs.join("\n"));
     assert.match(remoteNode("wf123", "n2").parameters.jsCode, /debounce-2/);
-    // a save landing while a push is in flight is queued and re-pushed
+    // A save landing while a push is in flight is queued and re-pushed.
+    //
+    // Every wait here is on the OBSERVED push, never on a guessed duration.
+    // This used to `sleep(320)` between the two saves, betting that the 200 ms
+    // debounce had already fired. When the bet lost, `queued-2` landed BEFORE
+    // any push had started, both saves coalesced into one, and the step failed
+    // `2 !== 3` against a perfectly healthy watch — the flake that got written
+    // off as "a property of the machine".
+    //
+    // The mock counts `update_workflow` on ARRIVAL and holds only the response
+    // for `slowUpdateMs`, so `updateCount` reaching 2 IS the moment the
+    // in-flight window opens — precisely what the sleep was approximating.
+    // (What consumed the margin under a concurrent suite was never isolated;
+    // fs.watch delivery was measured at 0-1 ms idle and under 2x CPU
+    // oversubscription, so it is not that. Hence: remove the margin, don't
+    // widen it.)
     slowUpdateMs = 300;
     writeFileSync(js, "return $input.all(); // queued-1\n");
-    await sleep(320); // debounce fired, update held open
-    writeFileSync(js, "return $input.all(); // queued-2\n");
-    await sleep(1500);
+    await waitFor(() => updateCount - before === 2, "the queued-1 push reaches the instance");
+    writeFileSync(js, "return $input.all(); // queued-2\n"); // lands mid-flight by construction
+    await waitFor(() => updateCount - before === 3, "the queued save triggers a follow-up push");
     slowUpdateMs = 0;
-    assert.equal(updateCount - before, 3, "queued save must trigger a follow-up push:\n" + logs.join("\n"));
     assert.match(remoteNode("wf123", "n2").parameters.jsCode, /queued-2/);
     // restore the synced content through watch itself, then stop
     writeFileSync(js, original);
-    await sleep(900);
-    assert.equal(updateCount - before, 4, "restore push:\n" + logs.join("\n"));
+    await waitFor(() => updateCount - before === 4, "the restore pushes");
   } finally {
     slowUpdateMs = 0;
     await handle.close();
