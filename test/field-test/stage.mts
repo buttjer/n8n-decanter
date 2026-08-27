@@ -97,7 +97,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 if (process.argv.includes("--down")) {
   const mfPath = process.argv[process.argv.indexOf("--down") + 1];
   if (!mfPath) { console.error("--down needs a manifest path"); process.exit(2); }
-  const mf = JSON.parse(readFileSync(mfPath, "utf8")) as { container: string | null; harnessRoot: string; workDir: string; launchDir?: string };
+  const mf = JSON.parse(readFileSync(mfPath, "utf8")) as { container: string | null; harnessRoot: string; workDir: string; launchDir?: string; mainCheckout?: string | null };
   if (mf.container && process.env.FIELD_KEEP !== "1") {
     await docker("rm", "-f", mf.container).catch(() => {});
     console.log(`removed container ${mf.container}`);
@@ -117,9 +117,14 @@ if (process.argv.includes("--down")) {
   // manifest (workDir directly under tmp) nor a nested one can ever take the
   // tmp root with it: the check is on the parent of the OUTERMOST agent dir,
   // which this stage always creates inside `ops-<pid>`.
+  // A FIELD_WORKTREE round's main checkout is the worktree's SIBLING, not its
+  // ancestor, so `outerDir` does not take it — it only goes with the shared
+  // `ops-<pid>` parent below. Remove it by name too, so a manifest whose parent
+  // is not the usual one cannot leave a checkout (and its credentials) behind.
+  if (mf.mainCheckout) rmSync(mf.mainCheckout, { recursive: true, force: true });
   const workParent = path.dirname(outerDir);
   if (path.basename(workParent).startsWith("ops-")) rmSync(workParent, { recursive: true, force: true });
-  console.log(`removed ${mf.harnessRoot} and ${outerDir}`);
+  console.log(`removed ${mf.harnessRoot} and ${outerDir}${mf.mainCheckout ? ` (+ main checkout ${mf.mainCheckout})` : ""}`);
   process.exit(0);
 }
 
@@ -708,7 +713,7 @@ function writeOuterAppRepo(repoRoot: string, syncDirName: string): string[] {
 }
 
 // ---------- scaffold the neutral scratch project ----------
-async function scaffold(): Promise<{ workDir: string; launchDir: string; nested: boolean; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean }> {
+async function scaffold(): Promise<{ workDir: string; launchDir: string; nested: boolean; harnessRoot: string; skills: SkillsInstall; decanterInstalled: boolean; inited: boolean; cliTarball: string | null; decanterSpec: string | null; noCli: boolean; seedEnv: boolean; worktree: boolean; mainCheckout: string | null }> {
   const base = os.tmpdir();
   // The scratch project gets its OWN parent dir, never the system tmp root: a
   // real project's `..` holds a handful of entries, not thousands. Round
@@ -725,8 +730,10 @@ async function scaffold(): Promise<{ workDir: string; launchDir: string; nested:
   // `launchDir` is the new, separate answer to "where does the blind session
   // start?".
   const repoRoot = NESTED ? path.join(parentDir, `back-office-${PID}`) : null;
-  const workDir = repoRoot === null ? path.join(parentDir, `flows-ops-${PID}`) : path.join(repoRoot, "flows");
-  const launchDir = repoRoot ?? workDir;
+  // `let`: FIELD_WORKTREE moves both onto a linked worktree at the very end,
+  // once the project they describe has been scaffolded and committed.
+  let workDir = repoRoot === null ? path.join(parentDir, `flows-ops-${PID}`) : path.join(repoRoot, "flows");
+  let launchDir = repoRoot ?? workDir;
   const harnessRoot = path.join(base, `ftrun-${PID}`);
   rmSync(parentDir, { recursive: true, force: true });
   rmSync(harnessRoot, { recursive: true, force: true });
@@ -927,7 +934,49 @@ async function scaffold(): Promise<{ workDir: string; launchDir: string; nested:
     console.log(`FIELD_NESTED=1 — the sync dir is a folder of an ordinary app repo: launch dir ${repoRoot}, sync dir ${workDir}`);
     console.log("  the scaffolded .mcp.json and .claude/settings.json live in the sync dir ONLY — a session started at the launch dir loads neither");
   }
-  return { workDir, launchDir, nested: repoRoot !== null, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv };
+
+  // FIELD_WORKTREE=1 — the LINKED-WORKTREE condition.
+  //
+  // The shape decanter's own AGENTS.md tells agents to work in, and the one
+  // where the gitignored files are simply not there: `.env` and
+  // `.decanter-auth.json` live in the main checkout and nowhere else, and
+  // `node_modules` with them. The session is then pointed at the worktree, so
+  // everything it does — pull, push, the guard — runs from a tree that carries
+  // the committed project and none of the credentials.
+  //
+  // The CLI stays reachable on purpose (the staged global prefix is on PATH
+  // either way, simulating the global install most users have), because "can an
+  // agent get an uninstalled CLI running" is S6's question and re-measuring it
+  // here would just make this round a worse copy of that one. Set
+  // FIELD_NO_PATH_HELP=1 for the harder variant.
+  let worktree = false;
+  let mainCheckout: string | null = null;
+  if (process.env.FIELD_WORKTREE === "1") {
+    // A worktree needs a commit to branch from, and the persona's story is a
+    // checked-in project anyway. FIELD_NO_CLI already committed; don't do it twice.
+    if (!noCli) {
+      try {
+        await execFile("git", ["-C", gitDir, "add", "-A"]);
+        await execFile("git", ["-C", gitDir, "commit", "-qm", "workflows synced from n8n"]);
+      } catch (err) {
+        console.warn(`could not commit before branching a worktree (${(err as Error).message.split("\n")[0]})`);
+      }
+    }
+    const linked = `${gitDir}-wt`;
+    const branch = await execFile("git", ["-C", gitDir, "symbolic-ref", "--short", "HEAD"]).then((r) => r.stdout.trim()).catch(() => "main");
+    await execFile("git", ["-C", gitDir, "worktree", "add", "-b", "digest-tweak", linked, branch]);
+    mainCheckout = gitDir;
+    // The session's whole world moves; the main checkout keeps the credentials.
+    // `gitDir` is the launch dir, so the sync dir keeps its position relative to
+    // it — which is what makes this compose with FIELD_NESTED unchanged.
+    workDir = path.join(linked, path.relative(gitDir, workDir));
+    launchDir = linked;
+    worktree = true;
+    console.log(`FIELD_WORKTREE=1 — the session works in a linked worktree: ${workDir}`);
+    console.log(`  credentials and node_modules stayed in the main checkout (${mainCheckout}) — both are gitignored`);
+  }
+
+  return { workDir, launchDir, nested: repoRoot !== null, harnessRoot, skills, decanterInstalled: decanterInstalled && !noCli, inited, cliTarball: noCli ? null : cliTarball, decanterSpec: spec ?? null, noCli, seedEnv, worktree, mainCheckout };
 }
 
 // ---------- allow-list extension (runner merges into settings.local.json post-init) ----------
@@ -957,7 +1006,7 @@ const ALLOW_EXTENSION = [
 // ---------- run ----------
 try {
   const { container, seeded } = await provision();
-  const { workDir, launchDir, nested, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv } = await scaffold();
+  const { workDir, launchDir, nested, harnessRoot, skills, decanterInstalled, inited, cliTarball, decanterSpec, noCli, seedEnv, worktree, mainCheckout } = await scaffold();
   const manifest = {
     createdAt: new Date().toISOString(),
     n8nTag: process.env.FIELD_N8N_URL ? null : IMAGE,
@@ -994,6 +1043,12 @@ try {
     // condition. Recorded so a scenario can refuse a stage that would make it
     // measure nothing (S14), and so a round's archive states which world it saw.
     seedEnv,
+    // FIELD_WORKTREE=1: the session works in a LINKED git worktree, so the
+    // gitignored files (.env, .decanter-auth.json, node_modules) exist only in
+    // `mainCheckout`. Recorded so S17 can refuse a stage that would make it
+    // measure nothing, and so teardown knows there is a worktree to remove.
+    worktree,
+    mainCheckout,
     // the stage pre-ran init, so scenarios start from a configured project
     inited,
     // Container mode (run.mts --container) bakes one of these into the fenced

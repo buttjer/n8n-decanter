@@ -33,6 +33,7 @@ interface Spine {
   requiresNoCli?: unknown;
   requiresSeedEnvOff?: unknown;
   requiresSeedKinds?: unknown;
+  requiresWorktree?: unknown;
   persona?: unknown;
   unsandboxedOnly?: unknown;
   optional?: unknown;
@@ -150,6 +151,21 @@ describe("field-test scenario pack", () => {
           assert.equal(hit, null, `${file}: turn ${i + 1} names the removed verb ${JSON.stringify(hit?.[1])} (Plan 59)`);
         }
       });
+    });
+  }
+});
+
+// A linked worktree's `.git` is a FILE pointing into the MAIN checkout, which
+// sits outside the fenced container's single sync-dir mount — so git itself is
+// broken in there and the condition cannot be staged. The runner already treats
+// `requiresWorktree` as host-only; this keeps the scenario file saying so too,
+// where the person reading it is.
+describe("worktree scenarios are host-only", () => {
+  for (const file of files) {
+    const spine = spineOf(file);
+    if (spine.requiresWorktree !== true) continue;
+    it(`${file} declares unsandboxedOnly`, () => {
+      assert.equal(spine.unsandboxedOnly, true, `${file}: requiresWorktree needs unsandboxedOnly — the fenced container mounts only the sync dir, so a worktree's .git pointer resolves to nothing`);
     });
   }
 });

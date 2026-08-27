@@ -460,6 +460,13 @@ npm run field-test:stage  # OPT-IN, dev-only: blind-agent field-test harness
                       #   global install can't silently satisfy the round; node/
                       #   npm/npx/git survive and `npm install` still recovers.
                       #   Host mode only (the container bakes the CLI globally).
+                      #   FIELD_WORKTREE=1 stages the LINKED-WORKTREE condition
+                      #   (scenario S17): the project is committed and a
+                      #   `git worktree add` sibling becomes the session's world,
+                      #   so every gitignored file lives only in the main
+                      #   checkout. Scores whether the agent ships from there or
+                      #   starts copying credential files in — copying the auth
+                      #   file forks a single-use rotating token. Host mode only.
                       #   The stage packs + locally installs OUR built CLI (no
                       #   global link) + pre-seeds a correct
                       #   .env. Never part of npm test; grading is a separate pass.

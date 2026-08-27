@@ -152,7 +152,7 @@ if (argv.includes("--isolate")) {
     // in-network host — so the blind agent sees the host-side 127.0.0.1:<port>
     // from the manifest, which does not resolve inside the fence. The stage
     // already warns about it, but only AFTER the unit has been booted and spent.
-    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true || s.requiresNested === true || s.requiresSeedEnvOff === true || (typeof s.preHook === "string" && OUTSIDE_SYNC_DIR_HOOKS.has(s.preHook)); });
+    const hostOnly = ids.filter((id) => { const s = loadScenario(id); return s.unsandboxedOnly === true || s.requiresNoCli === true || s.requiresNested === true || s.requiresSeedEnvOff === true || s.requiresWorktree === true || (typeof s.preHook === "string" && OUTSIDE_SYNC_DIR_HOOKS.has(s.preHook)); });
     if (hostOnly.length > 0) {
       console.log(`--container: ${hostOnly.join(", ")} are host-only and are NOT part of this sweep — run them separately:\n    node test/field-test/run.mts --isolate ${hostOnly.join(" ")}\n`);
       ids = ids.filter((id) => !hostOnly.includes(id));
@@ -262,7 +262,7 @@ const manifestPath = positional[0] ?? process.env.FIELD_MANIFEST;
 if (!manifestPath) { console.error("run: pass <manifest.json> or set FIELD_MANIFEST"); process.exit(2); }
 const scenarioIds = positional.slice(1).length ? positional.slice(1) : ["S1", "S2", "S3", "S4"];
 
-interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; launchDir?: string; nested?: boolean; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedEnv?: boolean; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
+interface Manifest { createdAt?: string; host: string; container: string | null; mcpToken: string; apiKey: string; ownerCookie?: string; workDir: string; launchDir?: string; nested?: boolean; harnessRoot: string; root: string; allowExtension: string[]; cliTarball: string | null; decanterSpec: string | null; noCli?: boolean; seedEnv?: boolean; worktree?: boolean; mainCheckout?: string | null; seedPack?: string; seeded: Array<{ id: string; name: string; kind: string; availableInMCP: boolean }>; }
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
 const WORKDIR = manifest.workDir;
 // Where the blind session STARTS. Equal to the sync dir in every ordinary
@@ -299,7 +299,7 @@ const SEED_NODE_MODULES = [
 ].join("\n");
 
 // ---------- scenario parsing ----------
-interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresNested?: boolean; requiresSeedEnvOff?: boolean; requiresSeedKinds?: string[]; readOnly?: boolean }
+interface Scenario { id: string; turns: string[]; verifyWorkflows: string | string[]; preHook?: string; optional?: boolean; unsandboxedOnly?: boolean; persona?: string; requires?: string[]; requiresNoCli?: boolean; requiresNested?: boolean; requiresSeedEnvOff?: boolean; requiresSeedKinds?: string[]; requiresWorktree?: boolean; readOnly?: boolean }
 
 /**
  * Which workflow the `remote-drift` preHook edits — kept in one place so the
@@ -597,6 +597,12 @@ function assertPrerequisites(ids: string[]): void {
     // cannot exist there. Host mode only.
     if (sc.requiresNoCli === true && containerMode) {
       problems.push(`${id} cannot run in --container mode: the image installs the CLI globally, so it stays on PATH and the no-CLI condition cannot be staged. Run it host-mode (unsandboxed).`);
+    }
+    // Same shape again: against an ordinary stage the session sits in the main
+    // checkout, where the credential files are — so a worktree scenario would
+    // measure an unremarkable round at full price.
+    if (sc.requiresWorktree === true && manifest.worktree !== true) {
+      problems.push(`${id} needs a stage created with FIELD_WORKTREE=1 (this manifest has worktree=${JSON.stringify(manifest.worktree)}); against a normal stage the session runs in the main checkout and the condition does not exist`);
     }
     // Same shape, other direction: the hook stages ABOVE the sync dir, and the
     // fence mounts only the sync dir. Refuse rather than let the agent report
