@@ -991,6 +991,26 @@ async function scaffold(): Promise<{ workDir: string; launchDir: string; nested:
       const to = path.join(workDir, "node_modules");
       if (existsSync(from)) {
         symlinkSync(from, to, "dir");
+        // The scaffolded `.gitignore` says `node_modules/`, and a trailing
+        // slash means DIRECTORY ONLY — a symlink is not a directory to git, so
+        // the link shows up as untracked and reads as a harness tell. Measured:
+        // ftrun-110915's agent spent five commands on `git check-ignore`
+        // working out why.
+        //
+        // It goes in `info/exclude` of the COMMON git dir, not the worktree's
+        // own — verified both ways: git reads the per-worktree
+        // `$GIT_DIR/info/exclude` for a linked worktree not at all, and only the
+        // shared file takes effect. Excluding rather than editing `.gitignore`
+        // keeps the tracked tree clean, which is the other half of the tell.
+        try {
+          const pointer = readFileSync(path.join(linked, ".git"), "utf8").trim();
+          const wtGitDir = path.resolve(linked, pointer.slice("gitdir:".length).trim());
+          const commonDir = path.resolve(wtGitDir, readFileSync(path.join(wtGitDir, "commondir"), "utf8").trim());
+          mkdirSync(path.join(commonDir, "info"), { recursive: true });
+          writeFileSync(path.join(commonDir, "info", "exclude"), "node_modules\n");
+        } catch (err) {
+          console.warn(`  could not exclude the node_modules symlink from git status (${(err as Error).message.split("\n")[0]})`);
+        }
         linkedModules = true;
         console.log(`  FIELD_WORKTREE_LINK_MODULES=1 — symlinked node_modules from the main checkout (the guard can start)`);
       } else {
