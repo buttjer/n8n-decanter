@@ -3,6 +3,7 @@
 // resolution precedence, and the OAuth refresh-rotation persistence — all
 // against a tiny in-process node:http server (no real n8n).
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync as fsWriteFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -207,6 +208,56 @@ describe("resolveMcpAuth", () => {
     assert.equal(readAuthFile(dir)?.accessToken, "a");
     fsWriteFileSync(authFilePath(dir), "{nope");
     assert.throws(() => readAuthFile(dir), /corrupt \.decanter-auth\.json/);
+  });
+
+  describe("in a linked git worktree", () => {
+    let main: string;
+    let worktree: string;
+    beforeEach(() => {
+      // A real repo + `git worktree add`, not a hand-built pointer: the whole
+      // resolver rests on git's own on-disk layout.
+      main = path.join(TMP, `wt-main-${seq++}`);
+      mkdirSync(path.join(main, "flows"), { recursive: true });
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: main, stdio: "ignore" });
+      fsWriteFileSync(path.join(main, "flows", "decanter.config.json"), "{}\n");
+      git("init", "-b", "main");
+      git("config", "user.name", "t");
+      git("config", "user.email", "t@example.com");
+      git("add", "-A");
+      git("commit", "-m", "sync dir");
+      worktree = `${main}-linked`;
+      execFileSync("git", ["worktree", "add", "-b", `probe-${seq}`, worktree, "main"], { cwd: main, stdio: "ignore" });
+    });
+
+    it("reads the main checkout's auth file, and rotation persists THERE", () => {
+      writeAuthFile(path.join(main, "flows"), { host: "http://h", clientId: "c", refreshToken: "r" });
+      const { log, lines } = capturingLog();
+      const auth = resolveMcpAuth(path.join(worktree, "flows"), "http://h", log);
+
+      assert.equal(auth?.kind, "oauth");
+      // The persist target is what keeps the single-use rotating token
+      // single-writer — a copy in the worktree would fork the token chain.
+      assert.equal(auth?.kind === "oauth" && auth.file, authFilePath(path.join(main, "flows")));
+      assert.match(lines.join("\n"), /using the main checkout's copy/);
+    });
+
+    it("prefers the worktree's own auth file, silently", () => {
+      writeAuthFile(path.join(main, "flows"), { host: "http://h", clientId: "main", refreshToken: "r" });
+      writeAuthFile(path.join(worktree, "flows"), { host: "http://h", clientId: "local", refreshToken: "r" });
+      const { log, lines } = capturingLog();
+      const auth = resolveMcpAuth(path.join(worktree, "flows"), "http://h", log);
+
+      assert.equal(auth?.kind === "oauth" && auth.data.clientId, "local");
+      assert.equal(auth?.kind === "oauth" && auth.file, authFilePath(path.join(worktree, "flows")));
+      // Nothing borrowed, so nothing to report.
+      assert.equal(lines.length, 0, `expected no log lines, got: ${lines.join("\n")}`);
+    });
+
+    it("writeAuthFile stays local — `init` in a worktree cannot clobber the main checkout", () => {
+      writeAuthFile(path.join(main, "flows"), { host: "http://h", clientId: "main", refreshToken: "r" });
+      writeAuthFile(path.join(worktree, "flows"), { host: "http://h", clientId: "fresh", refreshToken: "r" });
+      assert.equal(readAuthFile(path.join(main, "flows"))?.clientId, "main");
+    });
   });
 });
 

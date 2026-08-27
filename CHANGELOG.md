@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Credentials now resolve in a git worktree.** Both `.env` and
+  `.decanter-auth.json` are gitignored, so a fresh linked worktree had neither
+  and every credentialed verb died on `N8N_HOST must be set` — including the
+  `mcp connect` guard, which left agents in a worktree with no `n8n-instance`
+  tools at all. A worktree without its own credentials now reads the main
+  checkout's copies (same path, resolved from git's own worktree pointer, no
+  `git` subprocess). **A local file still wins**, so a worktree deliberately
+  aimed at another instance keeps its own, and nothing else is redirected —
+  `workflows/`, `.decanter.json` and `decanter.config.json` stay worktree-local.
+  For `.decanter-auth.json` the shared file is the only correct shape: the
+  refresh token is single-use and rotates, so **copying** it into a worktree
+  (what Claude Code's `.worktreeinclude` would do) forks it into two token
+  chains and kills the loser. New [Git
+  worktrees](/docs/concepts/configuration/#git-worktrees) section covers the two
+  remaining worktree gaps decanter cannot fix — a missing `node_modules` and the
+  per-path MCP approval — and the troubleshooting entry for missing
+  `n8n-instance` tools gained the worktree case.
+
 ## [0.10.2] - 2026-08-18
 
 ### Changed

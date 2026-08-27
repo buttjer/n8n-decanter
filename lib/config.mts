@@ -1,6 +1,10 @@
 import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { credentialFile } from "./git.mts";
 import type { DecanterConfig } from "./types.mts";
+
+/** The env file `init` writes next to `decanter.config.json` (gitignored). */
+export const ENV_FILE = ".env";
 
 /**
  * The one message every cold start hits — a fresh clone has no `.env`, so this
@@ -41,9 +45,15 @@ export function requireApiKey(config: DecanterConfig, verb: string): DecanterCon
   return config;
 }
 
-/** Load .env (if present) into process.env, not overriding existing vars. */
+/**
+ * Load the env file (if present) into process.env, not overriding existing
+ * vars. In a linked worktree without one of its own, the main checkout's copy
+ * is read instead (`credentialFile`) — the file is gitignored, so every fresh
+ * worktree starts without it and every credentialed verb would otherwise fail
+ * on `HOST_UNSET`.
+ */
 export function loadEnv(dir: string): void {
-  for (const [key, value] of Object.entries(parseEnvFile(path.join(dir, ".env")))) {
+  for (const [key, value] of Object.entries(parseEnvFile(credentialFile(dir, ENV_FILE)))) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
 }

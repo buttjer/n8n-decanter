@@ -381,6 +381,26 @@ names the verb in its error) — only `executions`, `data-tables`, and `backup`
 need it (Plan 33 + 51). `loadConfig`'s old `requireCredentials` became
 `requireHost`.
 
+**Both credential files fall back to the main checkout in a linked git
+worktree** (`credentialFile` / `mainCheckoutTwin`, `lib/git.mts`). They are
+gitignored, so every fresh worktree has neither and every credentialed verb —
+the `mcp connect` guard included — died on `HOST_UNSET`; an agent with no
+`n8n-instance` tools is precisely the one that goes hunting for an unguarded
+route. Resolution is **local-wins**, and the fallback is scoped to the two
+credential files: nothing about the sync dir itself moves. Detection is pure
+filesystem (a worktree's `.git` is a *file* → `gitdir:` →
+`<gitdir>/commondir` → the shared git dir, whose parent is the main checkout;
+the `worktrees` path segment is what distinguishes this from a submodule,
+whose `.git` is also a file). **No `git` subprocess** — the callers are sync
+and sit on `mcp connect`'s per-session startup path. For the auth file the
+shared copy is not a convenience but a correctness requirement: the refresh
+token is single-use and rotating, and the lost-race recovery re-reads *the
+same file* to adopt the winner's token — two copies fork into two chains it
+cannot repair, which is what the obvious workaround (copying the file, e.g.
+via Claude Code's `.worktreeinclude`) silently does. `writeAuthFile` stays
+strictly local so `init` in a worktree cannot clobber the main checkout's
+credentials; rotation persists to whatever `resolveMcpAuth` read.
+
 **Where the search STARTS (Plan 81): `--dir <path>` > `N8N_DECANTER_DIR` >
 `process.cwd()`.** `resolveSearchStart` (`lib/config.mts`) resolves it once in
 `main()` and every verb loads from there — the guard included, so there is no

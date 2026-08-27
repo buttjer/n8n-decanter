@@ -128,3 +128,51 @@ which workflows still need it.
 `preflight --offline`, `node run`, `scenario check`, and plain `list` need no
 credentials at all (`scenario create --scaffold` is the exception — it needs
 MCP).
+
+## Git worktrees
+
+Both credential files are gitignored, so a **linked git worktree starts with
+neither** — and every credentialed verb there would fail on `N8N_HOST must be
+set`, the guard included. Since an agent that finds no n8n MCP tools is exactly
+the agent that goes looking for an unguarded route, decanter closes that gap
+itself:
+
+**In a worktree without its own credentials, decanter reads the main
+checkout's.** It maps the sync dir onto the same path in the main checkout
+(`.git` is a file in a worktree, pointing back at the shared git dir) and reads
+`.env` / `.decanter-auth.json` from there. **A local file always wins**, so a
+worktree deliberately pointed at a staging instance keeps its own; the fallback
+only fires where the alternative is failing outright. Nothing else is
+redirected — `workflows/`, `.decanter.json` and `decanter.config.json` stay
+worktree-local, which is the whole point of the worktree.
+
+**Do not copy `.decanter-auth.json` into a worktree.** The OAuth refresh token
+is single-use and rotates on every redemption, and decanter's recovery from a
+lost race re-reads *the same file* to adopt the winner's token. Two copies fork
+into two token chains, and the one that loses is dead — you get "MCP session
+expired" and an `init` re-consent. One shared file is the correct shape, and it
+is what the fallback gives you.
+
+### Claude Code worktrees
+
+Two more things break in a worktree that decanter cannot fix, because they
+happen before decanter runs. Both are Claude Code settings (other agents have no
+equivalent):
+
+- **`node_modules` is missing**, so the scaffolded `npx --no-install
+  n8n-decanter` finds nothing under a local install. Either install decanter
+  globally, run `npm install` in each worktree, or symlink it from the main
+  checkout by putting this in `.claude/settings.json`:
+
+  ```json
+  { "worktree": { "symlinkDirectories": ["node_modules"] } }
+  ```
+
+- **The MCP server is unapproved at the new path.** Approval is stored per
+  absolute project directory, so a fresh worktree re-asks — and a
+  non-interactive session simply starts without the server.
+
+A `.worktreeinclude` file in the repository root (gitignore syntax) copies
+gitignored files into each new worktree, which is the upstream answer to the
+credential problem. It is safe for `.env` and **wrong for
+`.decanter-auth.json`** — see above; decanter's fallback covers both without it.
