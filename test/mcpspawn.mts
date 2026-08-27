@@ -19,7 +19,7 @@
 // Deliberately NOT sandbox-hostile: it binds a localhost mock (like e2e) and
 // spawns processes; no Docker, no real n8n.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -102,6 +102,55 @@ const repoShim = path.join(repoRoot, "node_modules", ".bin", "n8n-decanter");
 mkdirSync(path.dirname(repoShim), { recursive: true });
 writeFileSync(repoShim, `#!/bin/sh\n: > ${JSON.stringify(repoShimRan)}\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"\n`);
 chmodSync(repoShim, 0o755);
+
+// ---------- a LINKED GIT WORKTREE of a repo whose sync dir holds the creds ----------
+// The fourth dimension: the credential files are gitignored, so a fresh
+// worktree has NEITHER and the guard used to die on HOST_UNSET before it could
+// say why — an agent with no n8n-instance tools, which is the agent most likely
+// to go looking for an unguarded route to n8n.
+//
+// **The install is placed in the worktree on purpose.** A real worktree also
+// lacks `node_modules`, but that is a *different* failure (bin resolution — the
+// LOCAL/GLOBAL steps own it) and one decanter cannot fix from inside, since the
+// command never resolves. Held fixed here, a failure can only mean credentials.
+const wtMain = path.join(TMP, "wt-main");
+const wtMainSync = path.join(wtMain, "flows");
+mkdirSync(path.join(wtMainSync, "workflows"), { recursive: true });
+const wtGit = (...args: string[]) => execFileSync("git", args, { cwd: wtMain, stdio: "ignore" });
+writeFileSync(path.join(wtMainSync, "decanter.config.json"), JSON.stringify({ root: "./workflows", workflows: [] }, null, 2));
+writeFileSync(path.join(wtMain, ".gitignore"), "node_modules/\n.env\n");
+wtGit("init", "-b", "main");
+wtGit("config", "user.name", "spawn-test");
+wtGit("config", "user.email", "spawn-test@example.com");
+wtGit("add", "-A");
+wtGit("commit", "-m", "sync dir");
+// Written after the commit to make the point: this file is gitignored, so it
+// exists in the main checkout and nowhere else.
+writeFileSync(path.join(wtMainSync, ".env"), `N8N_HOST=http://127.0.0.1:${PORT}\nN8N_MCP_TOKEN=test-mcp-token\n`);
+
+const worktree = path.join(TMP, "wt-linked");
+execFileSync("git", ["worktree", "add", "-b", "spawn-probe", worktree, "main"], { cwd: wtMain, stdio: "ignore" });
+const wtSync = path.join(worktree, "flows");
+const wtShimRan = path.join(TMP, "wt-shim-ran");
+const wtShim = path.join(wtSync, "node_modules", ".bin", "n8n-decanter");
+mkdirSync(path.dirname(wtShim), { recursive: true });
+writeFileSync(wtShim, `#!/bin/sh\n: > ${JSON.stringify(wtShimRan)}\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)} "$@"\n`);
+chmodSync(wtShim, 0o755);
+
+// A second upstream, distinguishable by name: the local-wins step asserts WHICH
+// instance answered, which is the only way to prove precedence end-to-end.
+const server2 = http.createServer((req, res) => {
+  let body = "";
+  req.on("data", (c) => { body += c; });
+  req.on("end", () => {
+    const msg = JSON.parse(body || "{}") as { id?: number; method?: string };
+    if (msg.method?.startsWith("notifications/")) return void res.writeHead(202).end();
+    res.writeHead(200, { "content-type": "application/json", "mcp-session-id": "mock-session-2" });
+    res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-03-26", capabilities: {}, serverInfo: { name: "mock-n8n-staging", version: "0" } } }));
+  });
+});
+await new Promise<void>((r) => server2.listen(0, "127.0.0.1", r));
+const PORT2 = (server2.address() as { port: number }).port;
 
 /** Is a global `n8n-decanter` reachable on this machine's ambient PATH? */
 const globalInstalled = (process.env.PATH ?? "")
@@ -236,8 +285,38 @@ try {
       },
     );
   });
+
+  await step("WORKTREE: a credential-less worktree starts the guard on the main checkout's creds", async () => {
+    rmSync(wtShimRan, { force: true });
+    // The worktree's own sync dir has decanter.config.json (tracked) and no
+    // credentials (gitignored) — the exact state `git worktree add` leaves. An
+    // answered `initialize` proves the whole chain: resolved the command, found
+    // the worktree's config, followed .git back to the main checkout, read ITS
+    // credentials, and reached the upstream they name.
+    assert.ok(!existsSync(path.join(wtSync, ".env")), "the fixture worktree really has no credentials of its own");
+    const msg = await initializeVia({ PATH: CLEAN_PATH, HOME: TMP }, wtSync);
+    assert.equal(msg.id, 1, `the guard answered initialize from the worktree: ${JSON.stringify(msg).slice(0, 200)}`);
+    assert.ok(existsSync(wtShimRan), "the fixture's own CLI answered (not a machine-global install npx re-added to PATH)");
+  });
+
+  await step("WORKTREE: the worktree's OWN credentials win over the main checkout's", async () => {
+    rmSync(wtShimRan, { force: true });
+    // Precedence is what makes the fallback safe to have on unconditionally: a
+    // worktree deliberately aimed at another instance must keep aiming there.
+    // Asserting WHICH upstream answered is the only end-to-end proof of that —
+    // both files are well-formed, so a wrong pick still yields a valid reply.
+    writeFileSync(path.join(wtSync, ".env"), `N8N_HOST=http://127.0.0.1:${PORT2}\nN8N_MCP_TOKEN=test-mcp-token\n`);
+    try {
+      const msg = await initializeVia({ PATH: CLEAN_PATH, HOME: TMP }, wtSync);
+      const info = (msg.result as { serverInfo?: { name?: string } } | undefined)?.serverInfo;
+      assert.equal(info?.name, "mock-n8n-staging", `the worktree's own credentials chose the upstream: ${JSON.stringify(msg).slice(0, 200)}`);
+    } finally {
+      rmSync(path.join(wtSync, ".env"), { force: true });
+    }
+  });
 } finally {
   server.close();
+  server2.close();
   rmSync(TMP, { recursive: true, force: true });
 }
 
