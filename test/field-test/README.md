@@ -96,7 +96,7 @@ adds the ladder/loop workflows, `corpus-v1` adds the real-world imports.
 | `pull` / `push` / `diff` / drift guard / TS conversion / MCP structure + reconcile | S1–S4 | runnable (only 3 archived rounds on the post-Plan-59 verb surface) |
 | CLI discoverability from a fresh clone | S6 (`FIELD_NO_CLI=1`) | runnable — 6 rounds, 6 PASS |
 | Agent wiring when the sync dir is nested in a bigger repo | **S16** (`FIELD_NESTED=1`) | **runnable** — the layout behind [Plan 81](../../plans/done/81-nested-syncdir-agent-wiring.md); 2 valid rounds, both PASS. `ftrun-468939` found the agent misdiagnosing the missing tools as "restart needed" ([Plan 82](../../plans/done/82-nested-field-test-condition.md)); `ftrun-526356` re-measured after the wording fix and got both causes back ([Plan 83](../../plans/done/83-missing-tools-nested-diagnosis.md)). Both agents took Option A unprompted — `--dir` still unexercised by a blind round |
-| **n8n MCP tools going missing in a linked git worktree** | **S17** (`FIELD_WORKTREE=1`) | **runnable** — 3 rounds, all PASS. `ftrun-71032` (guard DOWN) reproduced the reported symptom: turn 1 opened with `n8n-instance` `"failed"` and **0** tools, because `npx --no-install` cannot resolve without `node_modules`; the agent fixed the install in one hop but **the tools only returned in the next process** — repairing the install does not restore MCP in-session and nothing says a restart is needed. `ftrun-96756` (guard UP, old code-only turn) is the control: 0 MCP calls, correctly, which is what proved the *turn* was the problem. `ftrun-100458` + five more (`-105616`, `-108129`, `-110915`, `-112848`, `-115788`) are **MCP-WORKING, 6/6**: every one reached for guarded MCP for the rename and files + `push` for the code, unprompted; 0 credential files touched; 0 guard blocks. `ftrun-110915` renamed *before* pulling and the mirror's "isn't tracked locally — run `pull`" hint landed verbatim as its next command. Still unexercised: the guard's **block** path, and `COPIED-CREDENTIALS` (needs a build without the #287 fallback) |
+| **n8n MCP tools going missing in a linked git worktree** | **S17** (`FIELD_WORKTREE=1`) | **runnable** — 3 rounds, all PASS. `ftrun-71032` (guard DOWN) reproduced the reported symptom: turn 1 opened with `n8n-instance` `"failed"` and **0** tools, because `npx --no-install` cannot resolve without `node_modules`; the agent fixed the install in one hop but **the tools only returned in the next process** — repairing the install does not restore MCP in-session and nothing says a restart is needed. `ftrun-96756` (guard UP, old code-only turn) is the control: 0 MCP calls, correctly, which is what proved the *turn* was the problem. `ftrun-100458` + five more (`-105616`, `-108129`, `-110915`, `-112848`, `-115788`) are **MCP-WORKING, 6/6**: every one reached for guarded MCP for the rename and files + `push` for the code, unprompted; 0 credential files touched; 0 guard blocks. `ftrun-110915` renamed *before* pulling and the mirror's "isn't tracked locally — run `pull`" hint landed verbatim as its next command. `COPIED-CREDENTIALS` has never fired and is kept as a **regression detector**, not a to-do — see *The guard's block has never fired* below for why neither it nor the block path is worth a staged round |
 | `watch` | S5 | **runnable** — 1 round (`ftrun-78968`, PASS): the agent backgrounds it unprompted. A `workflow.json` save and post-`publish` execution stay unmeasured |
 | `preflight` (`--json`, `--require`, `--fail-on`, `--fail-fast`, coverage block) | **S8** | **runnable** — stage `--seeds wave2` |
 | `scenario create --execution` / `check`, `executions`, `test` after push | **S8** | **runnable** ([Plan 65](../../plans/done/65-three-gate-scenario-mismatch.md) landed) |
@@ -146,6 +146,54 @@ node test/field-test/run.mts <manifest> --hook=<name>
 A scenario naming a hook that does not exist, or a seed kind this stage never
 created, is **refused before any spend** — `run.mts` used to silently no-op an
 unknown hook and run the turns against an untouched environment.
+
+## The guard's block has never fired — and that is the finding, not a gap
+
+Across **every committed round**, measured 2026-08-27 over all archived
+`guard.log`s:
+
+| | |
+| --- | --- |
+| archives carrying a `guard.log` | **138** |
+| rounds with any guard traffic | **74** |
+| rounds where a `jsCode` write was **blocked** | **0** |
+
+Re-derive it by extracting each `runs/*/raw.tgz` and counting
+`blocked a jsCode write` against `guard: forwarded` in the `guard.log`.
+
+**Read it as a result about the contract, not as a hole in the tests.** In 74
+rounds of real agent traffic through the guard — S2/S3/S4 included, which exist
+for structure work — **no agent has ever attempted to write `jsCode` over MCP**.
+The scaffolded `AGENTS.md` is in context from the first token (proven in S6's
+`ftrun-98438`), and agents route code through files on their own. The guard is a
+backstop reality has not reached.
+
+**The zero is trustworthy because the detector was proven to fire.** Counting
+alone would be worthless here — a broken scan and a clean history both print
+`0`. So the block was triggered for real (guard started, `update_workflow`
+carrying `jsCode` sent in, stderr captured) and the same pattern run over it:
+
+```
+! blocked a jsCode write (update_workflow) — pointed the agent at the file + push flow
+```
+
+one match. *(Two earlier versions of this scan **were** blind — a by-name `tar`
+extraction that missed every member, then a pattern that did not match the real
+wording in `lib/mcpserve.mts`. Both printed a confident `0`.)*
+
+**Therefore: do not stage a round to force a block.** The code path is covered
+deterministically and for free by `test/guardproxy.mts` (31 checks, both
+transports) on every PR; only the *behaviour* is unexercised, and 74 rounds say
+it does not occur naturally. Forcing it would need a prompt that names the inline
+edit — steering, which [STYLE.md](scenarios/STYLE.md) rules out precisely because
+a steered agent stops being a measurement.
+
+The same argument retires S17's `COPIED-CREDENTIALS` as a planned round: the harm
+is **mechanical** (two copies of a single-use rotating refresh token fork the
+chain, by construction), so a round would only add a frequency for a world that
+[the main-checkout fallback](../../docs/concepts/configuration.md) has removed.
+The scoring branch stays as a regression detector — if that fallback ever breaks,
+a round will show it.
 
 ## Run it (UNSANDBOXED)
 
