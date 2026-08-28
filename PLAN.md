@@ -739,6 +739,18 @@ Technical enforcement of the Code-node boundary the template's `AGENTS.md`
 states in prose — one guard core (`guardMessage` in `lib/mcpserve.mts`), two
 transports:
 
+**Measured 2026-08-27: the block has never fired in the field.** Across all 138
+committed field rounds, 74 carried real guard traffic and **none** recorded a
+blocked `jsCode` write — S2/S3/S4 included, which exist for structure work. The
+prose contract is loaded from the first token of every session (via the
+scaffolded `CLAUDE.md`'s `@AGENTS.md`), and agents route code through files on
+their own; the guard is a backstop reality has not reached. The zero is
+trustworthy because the detector was proven against a real block first — see
+[the field-test README](test/field-test/README.md). This is an argument for
+keeping the guard cheap and quiet, **not** for removing it: nothing here says
+what an agent would do without the prose, and the guard is what makes that
+question survivable.
+
 - **`mcp connect` (`lib/mcpconnect.mts`) is the default route** — a stdio MCP
   server the agent spawns itself, which is what lets `init` scaffold a
   static, secret-free `.mcp.json`/`opencode.json` entry
