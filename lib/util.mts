@@ -5,7 +5,16 @@ export const CODE_NODE_TYPE = "n8n-nodes-base.code";
 export const FILE_PLACEHOLDER_PREFIX = "//@file:";
 /** Subdir inside a workflow folder that holds the node source files. */
 export const CODE_DIR = "code";
-const MARKER_PREFIX = "// @ts-n8n ";
+/**
+ * Line 1 of a compiled TS push (Plan 84). The literal prefix is the anchor:
+ * `splitMarker` matches it at offset 0, so a node body that merely *starts*
+ * with a `//` comment of the user's own is never mistaken for a marker.
+ */
+const MARKER_LINE_PREFIX = "// n8n-decanter · ";
+/** Field separator on the marker line — a middot, so no field can contain it. */
+const MARKER_SEP = " · ";
+/** The words that make line 1 worth reading for whoever found it in the n8n UI. */
+const DO_NOT_EDIT = "do not edit here";
 
 /** True for Code nodes whose source is JavaScript (the only kind we extract). */
 export function isJsCodeNode(node: WorkflowNode | null | undefined): node is JsCodeNode {
@@ -20,23 +29,98 @@ export function sha256(text: string): string {
   return "sha256:" + createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+/** Where the `@ts-n8n` marker sat in a jsCode payload. */
+export type MarkerPosition = "leading" | "trailing";
+
+/** What a marker line says about the artifact below it. */
+export interface Provenance {
+  /** Node source path, relative to the SYNC DIR (never hashed — it follows renames). */
+  sourcePath: string;
+  /** CLI version that built it, without the leading `v`. */
+  cliVersion?: string | null;
+  /** Short HEAD sha, `+dirty` when the tree carried uncommitted changes. */
+  commit?: string | null;
+  /** Build time, UTC, minute precision (`2026-08-20T09:14Z`). */
+  at?: string | null;
+}
+
+export interface SplitMarker {
+  /** Everything except the marker line, byte-exactly — what the hash covers. */
+  body: string;
+  /** The marker line itself, or null when there is none. */
+  marker: string | null;
+  /** `sha256:<hex>` carried by the marker, or null. */
+  markerHash: string | null;
+  /** Which position it was found in — null when there is no marker. */
+  where: MarkerPosition | null;
+  /** Source path off a leading marker; null for the legacy trailing form. */
+  sourcePath: string | null;
+}
+
 /**
- * Split trailing `// @ts-n8n sha256:<hex>` marker off a jsCode string.
- * The marker must be the last non-blank line. `body` keeps everything up to
- * the marker line byte-exactly (including the newline before it), so
- * hash(body) matches the hash computed at push time.
+ * Split the `@ts-n8n sha256:<hex>` marker off a jsCode string, from EITHER
+ * position (Plan 84).
+ *
+ * **Leading** is the only form push writes: line 1, `// n8n-decanter · <path>
+ * · do not edit here · @ts-n8n sha256:… · v… <commit> <time>`. **Trailing** is
+ * the pre-Plan-84 form, matched unchanged — and that branch is permanent, not
+ * a transition: a node not pushed for a year still has it, and reading it as
+ * in-sync is what makes the relocation a non-event (no migration, no mass
+ * re-push).
+ *
+ * `body` keeps everything except the marker line byte-exactly, so
+ * `sha256(body)` matches the hash computed at push time in both forms. The
+ * marker line is outside its own hash either way — which is why a rename, a
+ * new commit or a CLI bump can never make a node look changed.
  */
-export function splitMarker(code: string): { body: string; marker: string | null; markerHash: string | null } {
+export function splitMarker(code: string): SplitMarker {
+  if (code.startsWith(MARKER_LINE_PREFIX)) {
+    const nl = code.indexOf("\n");
+    const line = nl === -1 ? code : code.slice(0, nl);
+    const hash = line.match(/(?:^|\s)@ts-n8n (sha256:[0-9a-f]{64})(?:\s|$)/);
+    if (hash) {
+      // fields[0] is the path — the tool name is the prefix already stripped.
+      const fields = line.slice(MARKER_LINE_PREFIX.length).split(MARKER_SEP);
+      return {
+        body: nl === -1 ? "" : code.slice(nl + 1),
+        marker: line,
+        markerHash: hash[1],
+        where: "leading",
+        sourcePath: fields.length > 1 ? fields[0] : null,
+      };
+    }
+    // A line-1 comment that only LOOKS like ours (no valid sha) is body, not a
+    // marker — fall through, so a trailing marker below it is still found.
+  }
   const m = code.match(/(?:^|\n)(\/\/ @ts-n8n (sha256:[0-9a-f]{64}))[ \t]*\n?[ \t\n]*$/);
-  if (!m) return { body: code, marker: null, markerHash: null };
+  if (!m) return { body: code, marker: null, markerHash: null, where: null, sourcePath: null };
   const start = m.index! + (m[0].startsWith("\n") ? 1 : 0);
-  return { body: code.slice(0, start), marker: m[1], markerHash: m[2] };
+  return { body: code.slice(0, start), marker: m[1], markerHash: m[2], where: "trailing", sourcePath: null };
+}
+
+/**
+ * Render line 1 for a compiled artifact.
+ *
+ * Human facts first, machine facts last — reading left to right you stop
+ * caring at exactly the point the data stops being for you. `@ts-n8n` stays
+ * the token (mid-line now) so a single `grep -r @ts-n8n` keeps finding both
+ * forms. The build stamp degrades field by field, and vanishes entirely when
+ * nothing about the build is knowable (no git repo, unreadable package.json).
+ */
+export function renderMarkerLine(prov: Provenance, hash: string): string {
+  const stamp = [prov.cliVersion ? "v" + prov.cliVersion : null, prov.commit, prov.at].filter((f) => f).join(" ");
+  const fields = [prov.sourcePath, DO_NOT_EDIT, `@ts-n8n ${hash}`];
+  if (stamp !== "") fields.push(stamp);
+  // The prefix already ends in the separator — it is the anchor `splitMarker`
+  // matches at offset 0, so it has to be one fixed literal, not a joined field.
+  return MARKER_LINE_PREFIX + fields.join(MARKER_SEP);
 }
 
 /** Build the jsCode payload for a TS-managed node from compiled JS. */
-export function withMarker(compiledJs: string): { jsCode: string; hash: string } {
+export function withMarker(compiledJs: string, prov: Provenance): { jsCode: string; hash: string } {
   const body = compiledJs.endsWith("\n") ? compiledJs : compiledJs + "\n";
-  return { jsCode: body + MARKER_PREFIX + sha256(body), hash: sha256(body) };
+  const hash = sha256(body);
+  return { jsCode: renderMarkerLine(prov, hash) + "\n" + body, hash };
 }
 
 /** File a `//@file:` placeholder points at, or null for inline code. */

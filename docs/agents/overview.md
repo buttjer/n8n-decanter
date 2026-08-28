@@ -119,8 +119,11 @@ Violating these corrupts sync state, which is why they're machine-enforced:
 
 1. `jsCode` in `workflow.json` never contains code — only `//@file:`
    placeholders.
-2. Never write a `// @ts-n8n sha256:…` marker line — the tool appends it to
-   compiled output on push.
+2. Never write an `@ts-n8n sha256:…` marker line — push writes it, on **line
+   1** of the compiled output (`// n8n-decanter · <source path> · do not edit
+   here · @ts-n8n sha256:… · v<version> <commit> <time>`). Older nodes carry
+   the same token as a trailing `// @ts-n8n sha256:…` line; neither belongs in
+   a source file, in either position.
 3. `.decanter.json` is machine state — never edit it, never "fix" a hash.
 
 Two boundary rules sit next to them: **Code-node source is authored as files

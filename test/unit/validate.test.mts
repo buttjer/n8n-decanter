@@ -316,12 +316,24 @@ describe("validateNodeFile", () => {
     assert.deepEqual(errors, ["code/nope.js: referenced file code/nope.js is missing"]);
   });
 
-  it("errors on an @ts-n8n marker inside a .js file", () => {
+  it("errors on a trailing @ts-n8n marker inside a .js file", () => {
     const marker = "// @ts-n8n sha256:" + "0".repeat(64);
     const dir = scaffold({ files: { "code/main.js": `return [];\n${marker}\n` } });
     const { errors } = validateNodeFile(dir, "code/main.js");
     assert.equal(errors.length, 1);
-    assert.match(errors[0], /code\/main\.js ends with an @ts-n8n marker/);
+    assert.match(errors[0], /code\/main\.js carries an @ts-n8n marker on its last line/);
+  });
+
+  // Plan 84: line 1 is a push artifact in BOTH tiers — a .ts source that
+  // carries one would compile it into the artifact, below the real line 1.
+  it("errors on a leading marker line, in .js and in .ts alike", () => {
+    const line = `// n8n-decanter · code/main.js · do not edit here · @ts-n8n sha256:${"0".repeat(64)} · v0.10.1`;
+    for (const file of ["code/main.js", "code/main.ts"]) {
+      const dir = scaffold({ files: { [file]: `${line}\nreturn [];\n` } });
+      const { errors } = validateNodeFile(dir, file);
+      assert.equal(errors.length, 1, file);
+      assert.match(errors[0], /carries an @ts-n8n marker on line 1/, file);
+    }
   });
 
   it("errors on an import in a .js node — verbatim tier, imports never bundle", () => {

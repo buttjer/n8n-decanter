@@ -51,11 +51,17 @@ export function validateNodeFile(dir: string, file: string, label: string = file
     errors.push(`${label}: referenced file ${file} is missing`);
     return { errors, warnings };
   }
+  // A marker line in a SOURCE file is an error in either position and in
+  // either extension (Plan 84): push writes that line, nobody hand-writes it.
+  // In a .js file it would make the node look TS-managed on the next pull; in
+  // a .ts file it would be compiled into the artifact, below the real line 1.
+  const marker = splitMarker(readFileSync(filePath, "utf8"));
+  if (marker.marker) {
+    const where = marker.where === "leading" ? "on line 1" : "on its last line";
+    errors.push(`${label}: ${file} carries an @ts-n8n marker ${where} — that line is a push artifact decanter writes itself, never source; remove it`);
+  }
   if (file.endsWith(".js")) {
     const jsSource = readFileSync(filePath, "utf8");
-    if (splitMarker(jsSource).marker) {
-      errors.push(`${label}: ${file} ends with an @ts-n8n marker — that line is reserved for compiled TS pushes and would make the node look TS-managed on the next pull; remove it`);
-    }
     // .js is pushed verbatim — an import would reach n8n unbundled and fail
     // at runtime (imports are a .ts feature, bundled on push; plans/14)
     if (scanNodeImports(jsSource).specifiers.length > 0) {

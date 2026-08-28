@@ -152,17 +152,49 @@ n8n-decanter/
 - **`.js` nodes are the lossless default**: pushed/pulled verbatim, byte-identical
   round-trip. Type-check via JSDoc + `checkJs`. Git merges them like any file.
 - **`.ts` nodes are one-way**: local `.ts` is source of truth. Push compiles and
-  appends a marker (see below). Pull never touches the `.ts`.
-- **Marker** identifies TS-managed nodes, appended post-compile as the last line:
+  stamps a marker line (see below). Pull never touches the `.ts`.
+- **Marker** identifies TS-managed nodes. Since Plan 84 it is **line 1** of the
+  compiled artifact, and it is self-describing — a signpost for whoever opens
+  the node in the n8n UI, not just a token:
 
   ```
-  // @ts-n8n sha256:<hex hash of the compiled JS excluding this line>
+  // n8n-decanter · <source path, relative to the sync dir> · do not edit here · @ts-n8n sha256:<hex hash of everything below line 1> · v<cli version> <short commit> <push time>
   ```
 
-  Presence of the marker ⇒ node is TS-managed (self-describing, no config entry).
-  Pull strips the marker line before hashing/comparing. Push also sends a
-  body-equal node when the remote lacks the marker (so a freshly converted
-  `.ts` node gets marked on its first push instead of warning forever).
+  Human facts first, machine facts last. The `@ts-n8n` token is deliberately
+  unchanged (one `grep -r @ts-n8n` still finds every form), and the build stamp
+  degrades field by field when a field is unknowable (no git repo, unreadable
+  `package.json`). The **commit is HEAD at build time**, i.e. the commit
+  *before* the one `commitOnPush` writes — rendered `<sha>+dirty` whenever the
+  sync dir has uncommitted changes, which under `commitOnPush` is the normal
+  case and correctly reads as "built from working-tree state on top of `<sha>`".
+
+  The **pre-Plan-84 trailing form** — `// @ts-n8n sha256:<hex>` as the last
+  line — is read **forever**, and never written again. Read-both / write-one is
+  what makes the relocation a non-event: **a legacy-positioned node is in sync,
+  not stale**, so nothing is ever re-pushed merely to move its marker, and a
+  node adopts line 1 on its next real code push. The deliberate break runs the
+  other way — an older CLI's trailing-only reader does not recognise a
+  newly-pushed node (pre-1.0, accepted, no compat shim).
+
+  Presence of the marker in either position ⇒ node is TS-managed
+  (self-describing, no config entry). Pull strips the marker line before
+  hashing/comparing. Push also sends a body-equal node when the remote lacks
+  the marker (so a freshly converted `.ts` node gets marked on its first push
+  instead of warning forever) — but there is no equivalent for a *misplaced*
+  marker, by design.
+
+  **The path on line 1 is outside the hash, and must stay there.** The path
+  follows renames, so hashing it would re-open the trap the entry-label rule
+  below already fixed once: a pure remote rename would change the artifact and
+  the node would read "push pending" forever on a comment-only diff. Same
+  reason line 1 as a whole is outside its own hash — a new commit or a CLI
+  upgrade must never look like a code change. The cost of that choice is that
+  line 1 is not tamper-proof: someone can edit it in the n8n UI undetected, and
+  deleting it destroys the node's identity (self-healing via the body-equal
+  no-marker push above, while `.decanter.json` still knows the node). Accepted;
+  "do not edit here" on the line itself is the deterrent, and the audit record
+  is the hash plus n8n's version history.
 - **The compiled artifact must depend only on the SOURCE, never on the node's
   filename** (decided 2026-07-27, after a real smoke failure). esbuild labels
   each bundled module with a `// <path>` comment, so anything we name the stdin
@@ -624,8 +656,9 @@ carries every violation in its `details` (what `check` printed in full).
 
 Errors (block push / exit 1): inline `jsCode` in the snapshot instead of a
 placeholder; placeholders referencing missing files, `.remote.js` leftovers,
-non-`.js`/`.ts` files, or files outside `code/`; a `.js` file ending with an
-`@ts-n8n` marker; imports in `.js` nodes / Node-builtin and
+non-`.js`/`.ts` files, or files outside `code/`; an `@ts-n8n` marker line in a
+node source file — `.js` or `.ts`, on line 1 or on the last line (push writes
+that line; it is never source); imports in `.js` nodes / Node-builtin and
 un-opted-in-package imports in `.ts` nodes (plans/14, plans/79 — esbuild is
 silent about both, so the failure would otherwise surface at runtime on the
 instance); missing/corrupt `workflow.json` or `.decanter.json`;

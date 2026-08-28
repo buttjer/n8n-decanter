@@ -22,6 +22,21 @@ edge); Sonnet for the docs + test tasks.
 > e2e mock is now the dual REST+MCP one. Re-resolve inline file/line refs at
 > execution time (pull/push/PLAN.md were rewritten in Plan 32).
 
+> **Post-Plan-84 review (2026-08-28, by the agent that shipped Plan 84):** the
+> `@js-n8n` half of this plan is now optional. [Plan
+> 84](../done/84-generated-node-header.md) moved the marker to **line 1** and
+> put the node's **source path on it**, and `splitMarker` returns that path as
+> `sourcePath` when `where === "leading"`. So the reason a second token existed
+> — "a fresh pull must recreate the correct file *extension* from `jsCode`
+> alone, and its only signal is the marker line" — no longer holds for anything
+> pushed since: the extension is in the path. Plan 84 deliberately did **not**
+> change `lib/pull.mts`'s ladder (it still reads marker ⇒ `.ts`), because with
+> `.js` unmanaged today a path-derived `.js` could only be dead code with a
+> trap in it — flipping that one line is this plan's work, not Plan 84's.
+> `@js-n8n` is still needed for *trailing*-form bundled `.js` nodes if any are
+> ever written, and the `missingMarker`/`strayMarker` rework in Task 1 is
+> unaffected.
+>
 > **Post-#107/#114 review (2026-07-23):** design still sound; three post-plan
 > push behaviors must be absorbed and one task collapsed. (1) **#107's marker
 > reconciliation in `collectOps` is extension-keyed and must become

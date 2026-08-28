@@ -7,7 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: a compiled `.ts` node now identifies itself on line 1, not on
+  its last line.** Open a bundled node in n8n and you used to see
+  `var __n8n_node = {}` followed by a few hundred lines of inlined helpers,
+  with the only trace of where it came from — `// @ts-n8n sha256:…` — at the
+  bottom, where nobody looks, naming *n8n* rather than the tool that put it
+  there. Push now writes one self-describing line where the editor opens:
+
+  ```js
+  // n8n-decanter · workflows/orders/code/normalize-lines.ts · do not edit here · @ts-n8n sha256:39af5ea6… · v0.10.1 ca3c201 2026-08-20T09:14Z
+  ```
+
+  **Nothing you already pushed has to change.** The old trailing form is read
+  forever and counts as fully in sync — `push`, `diff` and `preflight` say
+  nothing about it, and no write is queued just to relocate a marker. Nodes
+  adopt line 1 on their next real code push; there is no migration and no mass
+  re-push. The break runs the other way: **an older n8n-decanter will not
+  recognise a node pushed by this version** (its reader only looks at the last
+  line) and would pull such a node down as a plain `.js` file. Pre-1.0, that is
+  accepted rather than shimmed — upgrade the CLI everywhere that pulls the same
+  instance. The `@ts-n8n` token itself is unchanged, so one `grep -r @ts-n8n`
+  still finds both forms.
+
+- **The layout guard now rejects a marker line in a node source file in either
+  position, and in `.ts` files too** (it was trailing-only and `.js`-only).
+  That line is written by `push`; it is never source. Surfaces as before via
+  `preflight`'s `layout` check.
+
 ### Added
+
+- **The provenance line carries the build stamp, not just the hash**: the
+  node's source path relative to the sync dir, "do not edit here", the CLI
+  version, the git commit and the push time. The commit is HEAD at build time
+  and renders as `ca3c201+dirty` when the sync dir has uncommitted changes —
+  which, with `commitOnPush` on, is the normal case and reads correctly as
+  "built from working-tree state on top of `ca3c201`". Fields that cannot be
+  known (no git repo, unreadable `package.json`) are simply left out. **None of
+  it is hashed**, so a rename, a new commit or a CLI upgrade never makes a node
+  look changed — only the code below line 1 does.
 
 - **Credentials now resolve in a git worktree.** Both `.env` and
   `.decanter-auth.json` are gitignored, so a fresh linked worktree had neither
