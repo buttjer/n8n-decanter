@@ -542,10 +542,16 @@ mock server.
   - `.js` node files are lossless (byte-identical round-trip). `.ts` files
     are one-way: push compiles via esbuild (`bundle: true` — helper files
     from anywhere in the sync dir (`shared/` is the scaffolded default) and
-    opted-in npm deps are inlined into each importing node) and
-    appends a `// @ts-n8n sha256:<hash of compiled JS>` marker line — marker
-    presence is what identifies a TS-managed node on pull. Because a bundler
-    really does resolve those specifiers, the node-file tsconfig uses
+    opted-in npm deps are inlined into each importing node) and prepends a
+    **line-1 provenance marker** (Plan 84) — `// n8n-decanter · <source path>
+    · do not edit here · @ts-n8n sha256:<hash of everything below line 1> ·
+    v<version> <commit> <push time>`. Marker presence is what identifies a
+    TS-managed node on pull; only the hash is load-bearing, the build stamp is
+    never hashed. The **pre-Plan-84 trailing** form (`// @ts-n8n sha256:<hex>`
+    as the last line) is still read forever and counts as fully in sync — a
+    node adopts line 1 on its next real code push, and the layout guard rejects
+    a marker line in a source file in either position, `.js` or `.ts`. Because
+    a bundler really does resolve those specifiers, the node-file tsconfig uses
     `moduleResolution: "bundler"`; `node16`/`nodenext` would reject the
     extensionless relative imports the template documents (TS2835). It also
     sets `allowImportingTsExtensions` (legal because `noEmit`): esbuild
