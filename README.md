@@ -37,6 +37,10 @@ clean git diffs.
 - **Shared code and small libraries** — `.ts` nodes import helper files from
   anywhere in the sync dir (`shared/` by default) and opted-in npm packages,
   bundled on push to run anywhere, n8n Cloud included.
+- **The deployed node says where it came from** — a compiled `.ts` node opens
+  in n8n with its source path, "do not edit here", the content hash and the
+  build stamp (CLI version, git commit, push time) on line 1, so a bundle full
+  of inlined helpers is never a mystery artifact.
 - **Agent-native** — `init` scaffolds Claude Code / Cursor / Codex configs;
   `preflight --offline` and `node run` give agents a credential-free loop.
 - **Guarded agent access to n8n's MCP, wired by default** — the scaffolded

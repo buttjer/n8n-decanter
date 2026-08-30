@@ -1,6 +1,6 @@
 # Plan 84 — Provenance line on generated node code
 
-**Status:** Not started
+**Status:** Done
 **Priority:** P2
 **Source:** External review feedback (2026-08-22) on the shared-code/bundling
 pattern: *"I'd want the source file path, version/commit, and maybe a short
@@ -9,7 +9,7 @@ that body came from. The build step should improve maintainability without
 making the deployed node feel mysterious."* Shape settled over the following
 session (prototyped against the real compiler at each step). Extends
 [Plan 14](../done/14-bundle-shared-code-into-ts-pushes.md); simplifies part of
-[Plan 24](24-shared-code-in-js-nodes.md) — see Notes.
+[Plan 24](../open/24-shared-code-in-js-nodes.md) — see Notes.
 **Snapshot:** 2026-08-24T06:41Z @ c4e6ec6
 **Theme:** A compiled/bundled Code node in the n8n UI says nothing about where
 it came from. Move the whole self-description to **line 1** — tool name, source
@@ -281,13 +281,43 @@ The explicit requirement, and the reason the design is read-both / write-one.
   position, no dual-write, no version negotiation. Pre-1.0, the break is wanted
   (compat item 3); a shim would only preserve the problem the plan exists to fix.
 - **No marker for verbatim `.js` nodes** — that tier's contract is a
-  byte-identical round-trip. When [Plan 24](24-shared-code-in-js-nodes.md) lands,
+  byte-identical round-trip. When [Plan 24](../open/24-shared-code-in-js-nodes.md) lands,
   bundled `.js` becomes managed and inherits line 1.
 - **No tamper-proofing.** Line 1 is outside the hash, so a viewer can edit it
   without detection (see compat item 5). It is a signpost; the audit record is
   the hash plus n8n's version history.
 - **No marker in `workflow.json`.** Pull placeholders every tracked node's
   `jsCode` (`lib/pull.mts:178`), so the snapshot never carries it.
+
+## As built (2026-08-28)
+
+Shipped as designed. Three decisions the task list left open, and how they went:
+
+- **`buildNodeCode` still emits a marker line for its non-push callers — just
+  without the build stamp.** Task 2 says provenance must not be attached there,
+  and it is not: `assembleForRestore` and `simulate` get
+  `// n8n-decanter · <path> · do not edit here · @ts-n8n sha256:…` and nothing
+  after it. Dropping the line entirely would have been the other reading, and
+  it would have silently changed `backup restore` — a restored TS node would
+  stop being TS-managed, and a pull of the restored workflow would write the
+  compiled bundle out as `.js`. The stamp is a `stamp?: BuildStamp` option that
+  only `collectOps` passes, computed **once per push batch** so every node in
+  it names the same commit and the same minute.
+- **`pull`'s extension ladder is untouched** — a marker still means `.ts`. The
+  path is available (`splitMarker(...).sourcePath` on the leading form), but
+  with `.js` unmanaged today a path-derived `.js` branch could only ever be
+  dead code with a trap in it: it would immediately trip `strayMarker` and push
+  to clear the very marker it just read. Recorded as a Post-Plan-84 review note
+  on [Plan 24](../open/24-shared-code-in-js-nodes.md), whose work it is.
+- **`+dirty` is scoped to the whole sync dir**, not to this node's own bundled
+  inputs (esbuild's input list is not plumbed out of `compileTs`). It therefore
+  over-reports — an unrelated edit elsewhere in the dir also reads as dirty —
+  which is the side that cannot mislead someone trying to reproduce an artifact
+  from the commit it names. Under `commitOnPush` the field is `+dirty` almost
+  always anyway, exactly as Task 4 predicted.
+
+Measured, not estimated: line 1 renders at **195 characters** for the plan's
+example path, matching the shape agreed above byte for byte.
 
 ## Notes
 
@@ -319,7 +349,7 @@ The explicit requirement, and the reason the design is read-both / write-one.
   nothing.
 - **Cross-links:** [Plan 14](../done/14-bundle-shared-code-into-ts-pushes.md)
   (the compiler and marker this relocates),
-  [Plan 24](24-shared-code-in-js-nodes.md) (inherits line 1; loses its second
+  [Plan 24](../open/24-shared-code-in-js-nodes.md) (inherits line 1; loses its second
   marker token), [Plan 79](../done/79-shared-code-roots-anywhere.md) (why
   machine-specific bytes must stay out of the hashed artifact),
   [Plan 27](../done/27-verb-first-cli-grammar.md) (sticky workflow folders — why

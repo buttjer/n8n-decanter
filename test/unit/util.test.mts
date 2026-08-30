@@ -10,6 +10,7 @@ import {
   placeholderFile,
   publicationState,
   publishedVersionLagsDraft,
+  renderMarkerLine,
   sanitizeFilename,
   sanitizeForPut,
   sha256,
@@ -20,14 +21,20 @@ import {
 } from "../../lib/util.mts";
 
 const HEX = "0123456789abcdef".repeat(4);
+/** The pre-Plan-84 form: trailing, and still read forever. */
 const MARKER = `// @ts-n8n sha256:${HEX}`;
+const PROV = { sourcePath: "workflows/orders/code/normalize-lines.ts" };
 
-describe("splitMarker", () => {
+// ---------- the trailing (legacy) form: these cases must not change ----------
+
+describe("splitMarker — trailing (legacy) form", () => {
   it("splits a trailing marker, keeping the body byte-exact", () => {
     const r = splitMarker(`return [];\n${MARKER}`);
     assert.equal(r.body, "return [];\n");
     assert.equal(r.marker, MARKER);
     assert.equal(r.markerHash, `sha256:${HEX}`);
+    assert.equal(r.where, "trailing");
+    assert.equal(r.sourcePath, null);
   });
 
   it("tolerates trailing whitespace and newline variants after the marker", () => {
@@ -41,12 +48,13 @@ describe("splitMarker", () => {
   it("does not match a marker that is not the last non-blank line", () => {
     const r = splitMarker(`a\n${MARKER}\nmore code\n`);
     assert.equal(r.marker, null);
+    assert.equal(r.where, null);
     assert.equal(r.body, `a\n${MARKER}\nmore code\n`);
   });
 
   it("returns the input unchanged when there is no marker", () => {
     const code = "return $input.all();\n";
-    assert.deepEqual(splitMarker(code), { body: code, marker: null, markerHash: null });
+    assert.deepEqual(splitMarker(code), { body: code, marker: null, markerHash: null, where: null, sourcePath: null });
   });
 
   it("handles marker-only input (empty body)", () => {
@@ -59,19 +67,89 @@ describe("splitMarker", () => {
     assert.equal(splitMarker(`x\n// @ts-n8n sha256:short`).marker, null);
     assert.equal(splitMarker(`x\n// @ts-n8n md5:${HEX}`).marker, null);
   });
+});
+
+// ---------- the leading form (Plan 84): what push writes now ----------
+
+describe("splitMarker — leading form", () => {
+  it("splits line 1, keeping the body byte-exact", () => {
+    const line = renderMarkerLine(PROV, `sha256:${HEX}`);
+    const r = splitMarker(`${line}\nreturn [];\n`);
+    assert.equal(r.body, "return [];\n");
+    assert.equal(r.marker, line);
+    assert.equal(r.markerHash, `sha256:${HEX}`);
+    assert.equal(r.where, "leading");
+    assert.equal(r.sourcePath, PROV.sourcePath);
+  });
+
+  it("recovers the same body and hash as the legacy form for the same code", () => {
+    const body = "const x = 1;\nreturn [x];\n";
+    const hash = sha256(body);
+    const leading = splitMarker(`${renderMarkerLine(PROV, hash)}\n${body}`);
+    const trailing = splitMarker(`${body}// @ts-n8n ${hash}`);
+    assert.equal(leading.body, trailing.body);
+    assert.equal(leading.markerHash, trailing.markerHash);
+    assert.equal(sha256(leading.body), hash);
+  });
+
+  it("reads a marker line that carries no build stamp", () => {
+    const r = splitMarker(`${renderMarkerLine(PROV, `sha256:${HEX}`)}\nreturn [];\n`);
+    assert.equal(r.markerHash, `sha256:${HEX}`);
+    assert.equal(r.sourcePath, PROV.sourcePath);
+  });
+
+  it("leaves a body that starts with the user's own comment intact", () => {
+    for (const code of ["// helper\nreturn [];\n", "/* banner */\nreturn [];\n", "// n8n-decanter is great\nreturn [];\n"]) {
+      const r = splitMarker(code);
+      assert.equal(r.marker, null, code);
+      assert.equal(r.body, code, code);
+    }
+  });
+
+  it("falls through to the trailing branch when line 1 has no valid sha", () => {
+    const fake = "// n8n-decanter · notes · @ts-n8n sha256:short";
+    const r = splitMarker(`${fake}\nreturn [];\n${MARKER}`);
+    assert.equal(r.where, "trailing");
+    assert.equal(r.body, `${fake}\nreturn [];\n`);
+  });
+});
+
+describe("renderMarkerLine / withMarker", () => {
+  it("renders the pinned shape", () => {
+    assert.equal(
+      renderMarkerLine({ sourcePath: "workflows/orders/code/normalize-lines.ts", cliVersion: "0.10.1", commit: "ca3c201", at: "2026-08-20T09:14Z" }, `sha256:${HEX}`),
+      `// n8n-decanter · workflows/orders/code/normalize-lines.ts · do not edit here · @ts-n8n sha256:${HEX} · v0.10.1 ca3c201 2026-08-20T09:14Z`,
+    );
+  });
+
+  it("degrades field by field, and drops the stamp entirely when nothing is knowable", () => {
+    assert.match(renderMarkerLine({ ...PROV, cliVersion: "0.10.1", commit: null, at: "2026-08-20T09:14Z" }, `sha256:${HEX}`), / · v0\.10\.1 2026-08-20T09:14Z$/);
+    assert.match(renderMarkerLine({ ...PROV, cliVersion: null, commit: null, at: null }, `sha256:${HEX}`), /@ts-n8n sha256:[0-9a-f]{64}$/);
+  });
 
   it("round-trips withMarker: hash(body) equals the recorded hash", () => {
     for (const compiled of ["return [];", "return [];\n", "", "a\nb\n"]) {
-      const { jsCode, hash } = withMarker(compiled);
+      const { jsCode, hash } = withMarker(compiled, PROV);
       const { body, markerHash } = splitMarker(jsCode);
       assert.equal(sha256(body), hash, JSON.stringify(compiled));
       assert.equal(markerHash, hash, JSON.stringify(compiled));
     }
   });
 
-  it("withMarker adds a trailing newline to the body when missing", () => {
-    assert.ok(withMarker("return [];").jsCode.startsWith("return [];\n// @ts-n8n "));
-    assert.equal(withMarker("return [];\n").hash, withMarker("return [];").hash);
+  it("writes the marker on line 1 and nothing on the last line", () => {
+    const { jsCode } = withMarker("return [];", PROV);
+    assert.ok(jsCode.startsWith("// n8n-decanter · "));
+    assert.ok(!/@ts-n8n sha256:[0-9a-f]{64}\s*$/.test(jsCode), "no trailing marker on new pushes");
+  });
+
+  it("adds a trailing newline to the body when missing", () => {
+    assert.equal(withMarker("return [];\n", PROV).hash, withMarker("return [];", PROV).hash);
+  });
+
+  it("keeps the hash independent of the provenance fields", () => {
+    const a = withMarker("return [];\n", PROV);
+    const b = withMarker("return [];\n", { sourcePath: "workflows/other/code/renamed.ts", cliVersion: "9.9.9", commit: "deadbee+dirty", at: "2030-01-01T00:00Z" });
+    assert.equal(a.hash, b.hash, "a rename, a new commit or a CLI bump must never look like a code change");
   });
 });
 

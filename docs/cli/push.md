@@ -19,6 +19,14 @@ packages — are bundled in — see
 [TypeScript nodes](/docs/concepts/typescript-nodes/). Structure is never
 pushed — `workflow.json` is a read-only snapshot.
 
+A compiled `.ts` node is uploaded with a **provenance line on line 1** —
+`// n8n-decanter · <source path> · do not edit here · @ts-n8n sha256:… ·
+v<version> <commit> <time>` — so whoever opens the node in the n8n UI can tell
+which file it was built from, that editing it there is pointless, and how it
+was built. It is not hashed, so a rename, a new commit or a CLI upgrade never
+queues a push; see
+[TypeScript nodes](/docs/concepts/typescript-nodes/#ts-nodes--one-way).
+
 **Every push lands on the workflow's draft.** The live (published) version
 does not change until [`publish`](/docs/cli/publish/) — or `push --publish`,
 which publishes right after a successful push. n8n keeps running the

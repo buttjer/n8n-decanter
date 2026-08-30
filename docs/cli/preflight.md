@@ -151,7 +151,8 @@ them):
 - inline code in `workflow.json` without a `//@file:` placeholder
 - placeholders pointing at missing, `.remote.js`, or non-`.js`/`.ts` files,
   or at files outside `code/`
-- an `@ts-n8n` marker inside a `.js` file
+- an `@ts-n8n` marker line inside a node source file — `.js` or `.ts`, on
+  line 1 or on the last line; push writes that line, it is never source
 - an `import` in a `.js` node file — `.js` is pushed verbatim and n8n has no
   module loader; convert the node to `.ts`, where imports are bundled on push
 - an import in a `.ts` node that breaks the blocking half of the

@@ -12,9 +12,22 @@ import { promisify } from "node:util";
 import { createStepRunner } from "./harness.mts";
 import { createMirror } from "../lib/mirror.mts";
 import { startGuardProxy } from "../lib/mcpserve.mts";
-import { kebabCase } from "../lib/util.mts";
+import { kebabCase, sha256 } from "../lib/util.mts";
 
 const execFile = promisify(execFileCb);
+
+// ---------- the @ts-n8n marker, both positions (Plan 84) ----------
+// Push writes LEADING only; the trailing form is legacy and read forever.
+// Timestamps make line 1 non-deterministic — match it, never compare it.
+const LEADING_MARKER = /^\/\/ n8n-decanter · \S[^\n·]* · do not edit here · @ts-n8n sha256:[0-9a-f]{64}(?: · [^\n]*)?\n/;
+const TRAILING_MARKER = /\n\/\/ @ts-n8n sha256:[0-9a-f]{64}[ \t\n]*$/;
+/** Drop a leading marker line, keeping the body below it byte-exact. */
+const stripLeadingMarker = (code: string) => code.replace(/^\/\/ n8n-decanter · [^\n]*\n/, "");
+/** Re-frame a new-form payload as a pre-Plan-84 node, for the legacy fixtures. */
+const asLegacyForm = (code: string) => {
+  const body = stripLeadingMarker(code);
+  return body + "// @ts-n8n " + sha256(body);
+};
 const PROJECT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(PROJECT, "n8n-decanter.mts");
 const TMP = path.join(os.tmpdir(), `n8n-decanter-e2e-${process.pid}`);
@@ -861,14 +874,47 @@ await step("convert node to .ts, then pull BEFORE pushing: a mirror pull must no
   assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.js")), "the deleted .js stays gone");
 });
 
-await step("push the converted .ts node: compiles, appends marker (placeholder re-point drove the file map)", async () => {
+await step("push the converted .ts node: compiles, stamps line 1 (placeholder re-point drove the file map)", async () => {
   const r = await cli("push");
   assert.equal(r.code, 0, r.out);
   const code = remoteNode("wf123", "n3").parameters.jsCode;
-  assert.match(code, /\n\/\/ @ts-n8n sha256:[0-9a-f]{64}$/);
+  assert.match(code, LEADING_MARKER, "Plan 84: provenance on line 1");
+  assert.ok(!TRAILING_MARKER.test(code), "and nothing on the last line");
+  assert.match(code, /\/\/ n8n-decanter · workflows\/order-sync\/code\/amazon-feed\.ts · /, "the path is sync-dir-relative, not workflow-dir-relative");
   assert.ok(!code.includes("FeedRow[]"), "types must be stripped");
   assert.ok(code.includes("rows.map"), "logic must survive");
   assert.equal(state(dir1).nodes.n3.file, "code/amazon-feed.ts");
+});
+
+// The single most important assertion in Plan 84: a node still carrying the
+// pre-relocation trailing marker is IN SYNC — not stale, not queued. That is
+// what makes the move a non-event (no migration, no mass re-push), so it is
+// asserted against the real CLI, not just the splitMarker unit suite.
+await step("legacy trailing marker: in sync, and relocation alone never queues a push", async () => {
+  const legacy = asLegacyForm(remoteNode("wf123", "n3").parameters.jsCode);
+  remoteNode("wf123", "n3").parameters.jsCode = legacy;
+
+  let r = await cli("diff");
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!r.out.includes("amazon-feed"), "diff must say nothing about a legacy-positioned node: " + r.out);
+  r = await cli("preflight", "--offline");
+  assert.equal(r.code, 0, r.out);
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /already in sync/, "no write may be queued merely to relocate a marker: " + r.out);
+  assert.equal(remoteNode("wf123", "n3").parameters.jsCode, legacy, "the remote node is left untouched");
+
+  // ...but a REAL code edit pushes, and adopts line 1 on the way through.
+  const ts = read(dir1, "code", "amazon-feed.ts");
+  writeFileSync(path.join(dir1, "code", "amazon-feed.ts"), ts.replace("rows.map", "rows.slice().map"));
+  r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /1 node/, "one node written: " + r.out);
+  const code = remoteNode("wf123", "n3").parameters.jsCode;
+  assert.match(code, LEADING_MARKER, "adopted line 1 opportunistically");
+  assert.ok(!TRAILING_MARKER.test(code), "the old trailing marker is gone");
+  writeFileSync(path.join(dir1, "code", "amazon-feed.ts"), ts);
+  assert.equal((await cli("push")).code, 0);
 });
 
 await step("pull after ts push: in sync, .ts untouched, no .remote.js artifacts", async () => {
@@ -908,19 +954,19 @@ await step("marker removed remotely (rewrite in UI): .ts never clobbered", async
   assert.ok(!existsSync(path.join(dir1, "code", "amazon-feed.remote.js")), "no conflict artifact since Plan 32");
   const r2 = await cli("push");
   assert.equal(r2.code, 0, r2.out);
-  assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/);
+  assert.match(remoteNode("wf123", "n3").parameters.jsCode, LEADING_MARKER);
 
   // body-equal but marker stripped (say, a UI copy-paste of the identical
   // compiled code): push must still send the node so the marker re-registers
   // TS management (PLAN.md's body-equal-no-marker contract, Plan 33)
   const marked = remoteNode("wf123", "n3").parameters.jsCode;
-  // strip only the marker line, keeping the body byte-exact (incl. its trailing \n)
-  remoteNode("wf123", "n3").parameters.jsCode = marked.replace(/\/\/ @ts-n8n sha256:[0-9a-f]+\s*$/, "");
+  // strip only the marker line, keeping the body byte-exact
+  remoteNode("wf123", "n3").parameters.jsCode = stripLeadingMarker(marked);
   assert.ok(!/@ts-n8n/.test(remoteNode("wf123", "n3").parameters.jsCode), "marker stripped for the scenario");
   const r3 = await cli("push");
   assert.equal(r3.code, 0, r3.out);
   assert.match(r3.out, /pushed/, "a body-equal no-marker node is still written: " + r3.out);
-  assert.match(remoteNode("wf123", "n3").parameters.jsCode, /\/\/ @ts-n8n sha256:/, "marker re-registered");
+  assert.match(remoteNode("wf123", "n3").parameters.jsCode, LEADING_MARKER, "marker re-registered");
 });
 
 await step("structure changed remotely: never blocks push; preflight's snapshot check warns; pull refreshes it", async () => {
@@ -1861,7 +1907,8 @@ await step("bundle: shared/ value import inlines on push, drifts on shared edit,
   const code = remoteNode("wf123", "n3").parameters.jsCode;
   assert.match(code, /function total/, "helper inlined into the pushed node");
   assert.match(code, /shared\/money\.ts/, "sync-root-relative module label");
-  assert.match(code, /return __n8n_node\.default\(\);\n\/\/ @ts-n8n sha256:/, "re-enter footer + marker");
+  assert.match(code, LEADING_MARKER, "marker on line 1, above the inlined helpers");
+  assert.match(code, /return __n8n_node\.default\(\);\n$/, "re-enter footer is the last line now");
   // pull: confirming-read hash matches the compiled local → in sync, no warnings
   r = await cli("pull");
   assert.equal(r.code, 0, r.out);
@@ -2879,17 +2926,17 @@ await step("guarded authoring loop: addNode WITHOUT jsCode over raw MCP → pull
   r = await cli("push", id);
   assert.equal(r.code, 0, r.out);
   const typedRemote = db.get(id).nodes.find((n: any) => n.name === "Typed Step");
-  assert.match(typedRemote.parameters.jsCode, /\/\/ @ts-n8n sha256:/, "first push TS-marks the node");
+  assert.match(typedRemote.parameters.jsCode, LEADING_MARKER, "first push TS-marks the node");
 });
 
 await step("convert a .ts node back to .js: re-point + body-equal push clears the remote marker (Plan 33)", async () => {
   const id = [...db.values()].find((w) => w.name === "Authoring Demo")!.id;
   const dir = wfDir("Authoring Demo");
   const remoteJs = () => db.get(id).nodes.find((n: any) => n.name === "Typed Step").parameters.jsCode as string;
-  assert.match(remoteJs(), /\/\/ @ts-n8n sha256:/, "precondition: TS-managed remotely");
+  assert.match(remoteJs(), LEADING_MARKER, "precondition: TS-managed remotely");
   // the sharpest case: the new .js is byte-identical to the remote compiled
   // body — only the marker state differs, and push must STILL write to clear it
-  const body = remoteJs().replace(/\/\/ @ts-n8n sha256:[0-9a-f]+\s*$/, "");
+  const body = stripLeadingMarker(remoteJs());
   rmSync(path.join(dir, "code", "typed-step.ts"));
   writeFileSync(path.join(dir, "code", "typed-step.js"), body);
   const wf = JSON.parse(read(dir, "workflow.json"));

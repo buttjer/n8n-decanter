@@ -27,9 +27,9 @@ This document is the contract for creating and editing these files.
   or through n8n's own MCP tools (the scaffolded `n8n-instance` MCP server is
   the guarded route) — creating and renaming workflows, adding/renaming/wiring
   nodes, archiving. `pull` reconciles the local mirror afterwards.
-- **Never hand-edit `.decanter.json`, and never write a `// @ts-n8n sha256:`
-  marker.** These are machine-owned; touching them corrupts sync state and the
-  CLI blocks it at `push`.
+- **Never hand-edit `.decanter.json`, and never write an `@ts-n8n sha256:`
+  marker line.** These are machine-owned; touching them corrupts sync state and
+  the CLI blocks it at `push`.
 - **Orient before you edit: run `preflight` at the *start* of a task, not only
   before the push.** It is read-only. It tells you whether someone edited that
   code on the instance (`drift`), whether both sides moved (`CONFLICT`), and
@@ -73,8 +73,14 @@ is **wrong** about how Code-node code is stored and edited here. The deviations:
    (via the guarded server). The one local edit that IS meaningful:
    re-pointing a `//@file:` placeholder (e.g. `.js` → `.ts` conversion), which
    updates the file map on the next push.
-5. **Never write a `// @ts-n8n sha256:…` line.** That marker is appended by the
-   tool to *compiled* output on push. It must not appear in any repo file.
+5. **Never write an `@ts-n8n sha256:…` marker line.** `push` writes it onto
+   *compiled* output, as line 1: `// n8n-decanter · <source path> · do not edit
+   here · @ts-n8n sha256:… · v<version> <commit> <time>`. It tells whoever
+   opens the node in n8n where the code came from and that editing it there is
+   pointless. Nodes pushed by an older decanter carry the same token as a
+   trailing `// @ts-n8n sha256:…` line instead — that form still counts as in
+   sync, so never re-push a node just to move its marker. Neither position
+   belongs in a repo file.
 6. **`.decanter.json` is machine state** (node-id → filename map, per-node sync
    hashes, cached names). Never edit it by hand; never "fix" a hash.
 7. **Renames go through n8n — and an MCP rename leaves the `$('…')` refs to
@@ -411,7 +417,8 @@ discriminated unions). Costs, so you can weigh them:
 
 - esbuild compiles on push: **comments are stripped** and **line numbers shift**
   — n8n error line numbers won't match the source, and the node code in the
-  n8n UI is undocumented output. Documentation belongs in the `.ts`.
+  n8n UI is undocumented output (bar line 1, the provenance line push stamps
+  on it, which names this source file). Documentation belongs in the `.ts`.
 - Instance-side edits can't be merged back automatically — `pull` warns and
   `n8n-decanter diff` shows what changed remotely; port it into the `.ts` by
   hand (the next push overwrites the remote edit).

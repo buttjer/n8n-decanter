@@ -16,7 +16,9 @@ Hard rules (violating any of these corrupts sync state):
 - Code-node source is authored as files here and synced by decanter — never edit a
   node's `jsCode` on the instance (UI or MCP tools).
 - Never edit `.decanter.json` or `.decanter-auth.json` (machine state / credentials).
-- Never write a `// @ts-n8n sha256:` line — the tool appends it on push.
+- Never write an `@ts-n8n sha256:` marker line — push writes it on line 1 of the
+  compiled output (`// n8n-decanter · <path> · do not edit here · @ts-n8n …`);
+  older nodes carry it as a trailing line, and both are still read.
 - Code nodes run as a function body with a top-level `return`, no `import`/`require`
   in `.js` nodes.
 - Run `npm run typecheck` after editing node source. `push` writes the DRAFT and only

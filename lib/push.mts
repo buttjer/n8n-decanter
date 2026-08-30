@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mts";
+import { compileTs, findBundleContext } from "./compile.mts";
 import { ForceableError } from "./errors.mts";
-import { commitWorkflowDir } from "./git.mts";
+import { commitWorkflowDir, headCommit } from "./git.mts";
+import { cliVersion } from "./init.mts";
 import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
@@ -17,17 +18,53 @@ export function assertCompliant({ errors, warnings }: ValidationResult, log: Log
   throw new Error(`${what} does not comply with the decanter layout (${errors.length} problem${errors.length === 1 ? "" : "s"}) — fix the issues above, see also: n8n-decanter preflight --offline`);
 }
 
+/** Build-time facts shared by every node in one push (Plan 84). */
+export interface BuildStamp {
+  cliVersion: string | null;
+  commit: string | null;
+  at: string | null;
+}
+
+/**
+ * The stamp for one push — computed ONCE per batch, so every node in it names
+ * the same commit and the same minute (and so a workflow with twenty nodes
+ * runs one `git status`, not twenty).
+ */
+export async function buildStamp(dir: string): Promise<BuildStamp> {
+  const root = findBundleContext(dir).syncRoot ?? dir;
+  return { cliVersion: cliVersion(), commit: await headCommit(root), at: new Date().toISOString().slice(0, 16) + "Z" };
+}
+
+/**
+ * The node's source path as line 1 spells it: relative to the SYNC DIR, so it
+ * reads the same in every checkout, with forward slashes on every platform.
+ * Deliberately outside the hash — the path follows renames (lib/compile.mts
+ * fixed this trap once already for the bundler's own module labels).
+ */
+function sourcePathFor(dir: string, file: string): string {
+  const root = findBundleContext(dir).syncRoot;
+  const rel = root === null ? path.join(path.basename(dir), file) : path.relative(root, path.join(dir, file));
+  return rel.split(path.sep).join("/");
+}
+
 /**
  * Turn a node source file into the jsCode payload (+ hash of the marker-less
  * body). `quietImportWarnings` is for callers whose guard tier already
  * printed the advisory import findings (push, backup) — without it each
  * finding would print twice per run, once per channel (Plan 79 task 7).
+ *
+ * `stamp` is the push's build facts (Plan 84). It is OPTIONAL because the
+ * other two callers — `assembleForRestore` (lib/backup.mts) and
+ * `lib/simulate.mts` — build an artifact for something that is not a push, and
+ * must not stamp it with a "built and pushed at" claim. They still get the
+ * marker line (it is what identifies a TS-managed node), just without the
+ * version/commit/time fields.
  */
-export async function buildNodeCode(dir: string, file: string, log?: Log, opts?: { quietImportWarnings?: boolean }): Promise<{ jsCode: string; hash: string }> {
+export async function buildNodeCode(dir: string, file: string, log?: Log, opts?: { quietImportWarnings?: boolean; stamp?: BuildStamp }): Promise<{ jsCode: string; hash: string }> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) throw new Error(`referenced node file missing: ${filePath}`);
   if (file.endsWith(".ts")) {
-    return withMarker(await compileTs(filePath, log, opts));
+    return withMarker(await compileTs(filePath, log, opts), { sourcePath: sourcePathFor(dir, file), ...opts?.stamp });
   }
   const jsCode = readFileSync(filePath, "utf8");
   return { jsCode, hash: sha256(jsCode) };
@@ -101,6 +138,10 @@ async function collectOps(
   const byId = new Map(remote.nodes.map((n) => [n.id, n]));
   const ops: McpOperation[] = [];
   const problems: string[] = [];
+  // The single op-construction site, and therefore the single place line 1's
+  // provenance is attached (Plan 84). pushSingleNode — the watch save — routes
+  // through here too, so it inherits the stamp rather than re-deriving it.
+  const stamp = await buildStamp(dir);
   for (const [nodeId, ns] of Object.entries(state.nodes)) {
     if (onlyNodeIds && !onlyNodeIds.has(nodeId)) continue;
     const node = byId.get(nodeId);
@@ -112,7 +153,7 @@ async function collectOps(
       log.warn(`node "${node.name}" (${ns.file}) is no longer a JS Code node remotely — skipped; pull to clean up state`);
       continue;
     }
-    const { jsCode, hash } = await buildNodeCode(dir, ns.file, log, { quietImportWarnings: true });
+    const { jsCode, hash } = await buildNodeCode(dir, ns.file, log, { quietImportWarnings: true, stamp });
     const remoteSplit = splitMarker(node.parameters.jsCode);
     const remoteHash = sha256(remoteSplit.body);
     if (codeDrift(remoteHash, hash, ns.lastPushedHash)) {
@@ -123,6 +164,12 @@ async function collectOps(
     // hasn't landed yet pushes to REGISTER TS management, and a node
     // re-pointed back to .js whose remote still carries a marker pushes to
     // CLEAR it (otherwise the next pull would resurrect the node as .ts).
+    //
+    // There is deliberately NO `wrongPosition` sibling (Plan 84): a marker
+    // still sitting on the last line is neither absent nor stray, so a
+    // body-equal legacy node stays on the `continue` path below. Relocation
+    // alone must never force a write — the absence of line 1 is not even a
+    // stale, which is what makes the move a non-event instead of a migration.
     const missingMarker = ns.file.endsWith(".ts") && remoteSplit.markerHash === null;
     const strayMarker = ns.file.endsWith(".js") && remoteSplit.markerHash !== null;
     if (hash === remoteHash && !missingMarker && !strayMarker) continue; // already in sync — no write needed

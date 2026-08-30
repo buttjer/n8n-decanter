@@ -16,9 +16,11 @@
 //   1. workflow.json Code nodes are all `//@file:` placeholders (no inline code)
 //   2. plain .js node: remote jsCode BYTE-EQUALS the local file, and carries no
 //      @ts-n8n marker
-//   3. .ts-converted node: remote jsCode is compiled JS + a `// @ts-n8n
-//      sha256:<h>` marker whose hash matches the compiled body (marker-hash
-//      relation — NOT byte-equality to the .ts source; Plan 35 §Observation)
+//   3. .ts-converted node: remote jsCode is compiled JS + a `@ts-n8n sha256:<h>`
+//      marker whose hash matches the compiled body (marker-hash relation — NOT
+//      byte-equality to the .ts source; Plan 35 §Observation). Either position:
+//      line 1 for anything pushed since Plan 84, the last line before it — so
+//      archived rounds keep verifying against the form they were recorded in.
 //   4. no jsCode landed via MCP: proven from instance state — final remote code
 //      equals the local file (check 2/3) AND the version trail is recorded as
 //      evidence
@@ -117,8 +119,20 @@ function placeholderTarget(jsCode: string | undefined): string | null {
   return jsCode.slice("//@file:".length).trim();
 }
 
-/** Recover a trailing `// @ts-n8n sha256:<hex>` marker (mirrors lib/util splitMarker, reimplemented on purpose). */
+/**
+ * Recover an `@ts-n8n sha256:<hex>` marker from either position (mirrors
+ * lib/util splitMarker, reimplemented on purpose). Since Plan 84 push writes
+ * it on LINE 1, inside the `// n8n-decanter · …` provenance line; before that
+ * it was the last line. Both are read here — an archived round contains
+ * whichever form the CLI of its day wrote.
+ */
 function splitMarker(code: string): { body: string; markerHash: string | null } {
+  if (code.startsWith("// n8n-decanter · ")) {
+    const nl = code.indexOf("\n");
+    const line = nl === -1 ? code : code.slice(0, nl);
+    const lead = line.match(/(?:^|\s)@ts-n8n (sha256:[0-9a-f]{64})(?:\s|$)/);
+    if (lead) return { body: nl === -1 ? "" : code.slice(nl + 1), markerHash: lead[1] };
+  }
   const m = code.match(/(?:^|\n)(\/\/ @ts-n8n (sha256:[0-9a-f]{64}))[ \t]*\n?[ \t\n]*$/);
   if (!m) return { body: code, markerHash: null };
   const start = m.index! + (m[0].startsWith("\n") ? 1 : 0);

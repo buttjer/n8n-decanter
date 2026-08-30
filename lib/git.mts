@@ -57,6 +57,38 @@ export async function commitWorkflowDir(dir: string, message: string, log: Log, 
   }
 }
 
+/**
+ * Short HEAD sha for the provenance line (Plan 84), `+dirty` when anything
+ * under `dir` is uncommitted. `null` outside a repo, on an unborn branch, or
+ * when git is missing — the marker line simply drops the field.
+ *
+ * Two things about the value are deliberately imprecise, and the imprecision
+ * runs the safe way:
+ *
+ * - **HEAD is the commit BEFORE the one that will contain the pushed source.**
+ *   `commitWorkflowDir` runs *after* the MCP write (lib/push.mts), so at build
+ *   time the source is still working-tree state. Rendering `ca3c201+dirty`
+ *   says exactly that, and honestly. (Moving the auto-commit ahead of the
+ *   write was rejected: it would leave a commit claiming a push that failed.)
+ * - **The dirty check is scoped to the whole sync dir**, not to this node's
+ *   own inputs. A bundled node pulls in helpers from anywhere in the sync dir
+ *   (Plan 79), and esbuild's input list is not plumbed out here — so an
+ *   unrelated edit elsewhere in the dir also reads as dirty. That over-reports
+ *   rather than under-reports, which is the side that cannot mislead someone
+ *   trying to reproduce the artifact from the named commit.
+ */
+export async function headCommit(dir: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFile("git", ["-C", dir, "rev-parse", "--short", "HEAD"]);
+    const sha = stdout.trim();
+    if (sha === "") return null;
+    const { stdout: status } = await execFile("git", ["-C", dir, "status", "--porcelain", "--", "."]);
+    return status.trim() === "" ? sha : `${sha}+dirty`;
+  } catch {
+    return null;
+  }
+}
+
 // ---------- linked worktrees ----------
 
 /**

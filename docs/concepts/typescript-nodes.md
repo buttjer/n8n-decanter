@@ -22,9 +22,26 @@ Comments survive into n8n and document the node in place.
 Choose `.ts` when the type surface is heavy (interfaces, generics,
 discriminated unions). The local `.ts` is the only source of truth:
 
-- [push](/docs/cli/push/) compiles it with esbuild and appends a
-  `// @ts-n8n sha256:…` marker line to the uploaded code — the marker is how
-  pull recognizes a TS-managed node. Never write that marker yourself.
+- [push](/docs/cli/push/) compiles it with esbuild and puts a **provenance
+  line on line 1** of the uploaded code:
+
+  ```js
+  // n8n-decanter · workflows/orders/code/normalize-lines.ts · do not edit here · @ts-n8n sha256:39af5ea6… · v0.10.1 ca3c201 2026-08-20T09:14Z
+  ```
+
+  It says which tool wrote the node, which source file it came from, that
+  editing it in n8n is pointless (the next push overwrites it), and how it was
+  built — CLI version, git commit (`+dirty` when it was built from
+  working-tree state), and the push time. The `@ts-n8n sha256:` part is what
+  pull uses to recognize a TS-managed node, and it covers **everything below
+  line 1** — so a rename, a new commit or a CLI upgrade never makes the node
+  look changed. Never write that line yourself.
+- **Nodes pushed by an older decanter carry the same marker as a `// @ts-n8n
+  sha256:…` line at the *bottom* instead.** That form is read forever and
+  counts as fully in sync: nothing re-pushes a node just to move its marker,
+  and a node adopts line 1 on its next real code push. The break runs the
+  other way — an **older** CLI does not recognize a node pushed by this one,
+  and would treat it as a plain `.js` node on pull.
 - **Comments are stripped and line numbers shift** in the compiled output —
   n8n error line numbers won't match the source, and the node code shown in
   the n8n UI is undocumented output. Documentation belongs in the `.ts`.
@@ -41,7 +58,8 @@ won't revert the placeholder.
 
 The reverse works the same way: replace the `.ts` with a `code/<node>.js`
 (plain JavaScript — the file is pushed verbatim) and re-point the
-placeholder. The next push clears the remote `@ts-n8n` marker even when the
+placeholder. The next push clears the remote `@ts-n8n` marker line (in either
+position) even when the
 code is otherwise identical, so the node stops being TS-managed. **Push
 before you pull again**: until that push lands, a pull still sees the remote
 marker and treats the node as TS-managed (renaming the file back to `.ts`).

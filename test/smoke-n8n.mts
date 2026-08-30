@@ -316,7 +316,7 @@ try {
     assert.equal(r.code, 0, r.out);
   });
 
-  await step("marker survival: TS push round-trips the @ts-n8n line byte-intact", async () => {
+  await step("marker survival: TS push round-trips the provenance line byte-intact", async () => {
     unlinkSync(path.join(wfDir, "code", "compute.js"));
     writeFileSync(path.join(wfDir, "code", "compute.ts"),
       "interface Payload { n?: number }\nconst body = $input.first().json.body as Payload;\nconst n = Number(body.n ?? 0);\nreturn [{ json: { doubled: n * 2 } }];\n");
@@ -326,7 +326,11 @@ try {
     assert.equal(r.code, 0, r.out);
     const remote = await api("GET", `/api/v1/workflows/${wfId}`);
     const jsCode: string = remote.nodes.find((n: any) => n.id === "c1").parameters.jsCode;
-    assert.match(jsCode, /\n\/\/ @ts-n8n sha256:[0-9a-f]{64}$/, "marker must come back byte-intact — TS-managed detection depends on it");
+    // Plan 84: line 1 now, not the last line. A real instance is the only place
+    // that can prove the middot and the whole line survive a round-trip intact
+    // — TS-managed detection depends on the `@ts-n8n sha256:` inside it.
+    assert.match(jsCode, /^\/\/ n8n-decanter · \S[^\n·]* · do not edit here · @ts-n8n sha256:[0-9a-f]{64}(?: · [^\n]*)?\n/, "provenance line must come back byte-intact: " + jsCode.slice(0, 200));
+    assert.ok(!/\n\/\/ @ts-n8n sha256:[0-9a-f]{64}[ \t\n]*$/.test(jsCode), "and no trailing marker is written any more");
     r = await cli("pull");
     assert.equal(r.code, 0, r.out);
     assert.ok(!existsSync(path.join(wfDir, "code", "compute.remote.js")), "TS round-trip in sync");
@@ -355,6 +359,11 @@ try {
     // pushes are draft-only now — the deliberate publish takes it live
     r = await cli("publish", wfId);
     assert.equal(r.code, 0, r.out);
+    // Plan 84 assumes nothing about the task-runner sandbox (Plan 14's history
+    // says not to): the deployed body starts with a comment line now, so prove
+    // on a real instance that a leading line comment in a function body runs.
+    const deployed: string = (await api("GET", `/api/v1/workflows/${wfId}`)).nodes.find((n: any) => n.id === "c1").parameters.jsCode;
+    assert.ok(deployed.startsWith("// n8n-decanter · "), "the artifact about to execute carries line 1");
     const out = await webhook({ n: 21 }); // its own bounded poll covers webhook registration lag
     assert.deepEqual(out, [{ doubled: 42, plus: 121 }], `bundled node must compute through shared/ AND the npm package: ${JSON.stringify(out)}`);
   });

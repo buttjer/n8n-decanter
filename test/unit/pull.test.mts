@@ -48,7 +48,7 @@ describe("pullWorkflow — TS-managed node reporting", () => {
     writeFileSync(path.join(dir, ".decanter.json"), JSON.stringify({ workflowId: "wf1", name: "Order Sync", nodes: { c: { file: "code/compute.ts", name: "Compute" } } }));
     const { log, lines } = capture();
 
-    await pullWorkflow(stubMcp(remoteWorkflow(withMarker("return [{ json: { remote: 1 } }];\n").jsCode)), tmp, "wf1", {}, log);
+    await pullWorkflow(stubMcp(remoteWorkflow(withMarker("return [{ json: { remote: 1 } }];\n", { sourcePath: "order-sync/code/compute.ts" }).jsCode)), tmp, "wf1", {}, log);
 
     assert.equal(lines.filter((l) => l.includes("CONFLICT")).length, 0, `no baseline is not a conflict — got:\n${lines.join("\n")}`);
   });
