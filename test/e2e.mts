@@ -848,6 +848,89 @@ await step("init: refuses to scaffold on top of a sync dir sitting BELOW the tar
   assert.equal(below.code, 0, below.out);
 });
 
+await step("init: on a terminal the nested refusal is a QUESTION — bare Enter declines, `y` scaffolds anyway (Plan 86)", async () => {
+  // The refusal's other half. Every other run in this suite is piped, where the
+  // guard throws outright; the branch a human actually meets is gated on
+  // `process.stdin.isTTY`, so only a real pty reaches it. util-linux `script`
+  // allocates one while this driver still feeds answers over a pipe (`-e`
+  // returns the child's exit code, `-q` drops the session banner). BSD `script`
+  // (macOS) cannot do that with piped stdin — the documented failure is
+  // "tcgetattr … not supported on socket" — so the step says it skipped rather
+  // than failing on an environment difference.
+  if (process.platform !== "linux") {
+    console.log("     (init TTY prompt: skipped — needs util-linux `script` for a pty)");
+    return;
+  }
+  const nestedDir = (name: string): string => {
+    const dir = path.join(TMP, name);
+    mkdirSync(path.join(dir, "n8n"), { recursive: true });
+    writeFileSync(path.join(dir, "n8n", "decanter.config.json"), '{"root":"./workflows","workflows":[]}\n');
+    return dir;
+  };
+  const onTty = (dir: string) => {
+    const pending = execFile("script", ["-qec", `"${process.execPath}" "${CLI}" init "${dir}"`, "/dev/null"], {
+      cwd: TMP,
+      // no browser can open in a test, and the OAuth attempt a TTY triggers
+      // must fail on the mock's 404 rather than wander off to one
+      env: { ...env, DECANTER_NO_BROWSER: "1" },
+      encoding: "utf8",
+    });
+    let out = "";
+    pending.child.stdout!.on("data", (c) => (out += c));
+    pending.child.stderr!.on("data", (c) => (out += c));
+    return {
+      out: () => out,
+      answer: async (prompt: RegExp, line: string) => {
+        await waitFor(() => prompt.test(out), `the prompt ${prompt}`);
+        pending.child.stdin!.write(line);
+      },
+      settled: async () => {
+        try {
+          await pending;
+          return { code: 0, out };
+        } catch (err) {
+          return { code: (err as { code?: number }).code ?? 1, out };
+        }
+      },
+    };
+  };
+  const QUESTION = /scaffold a second sync dir .* anyway\? \[y\/N\]/;
+
+  // 1. bare Enter declines — the question defaults to no, like every other
+  //    confirm in this CLI
+  const declined = nestedDir("init-tty-default");
+  const bare = onTty(declined);
+  await bare.answer(QUESTION, "\n");
+  const bareResult = await bare.settled();
+  assert.equal(bareResult.code, 1, bareResult.out);
+  assert.match(bareResult.out, /a sync dir already exists at/, "the terminal gets the same finding as a piped run");
+  assert.match(bareResult.out, /init cancelled — nothing was written/);
+  assert.deepEqual(readdirSync(declined), ["n8n"], "a declined init writes nothing — not even the target it was given");
+
+  // 2. anything that is not yes is also no
+  const said = nestedDir("init-tty-no");
+  const no = onTty(said);
+  await no.answer(QUESTION, "later\n");
+  const noResult = await no.settled();
+  assert.equal(noResult.code, 1, noResult.out);
+  assert.deepEqual(readdirSync(said), ["n8n"], "only y/yes may scaffold");
+
+  // 3. `y` scaffolds anyway. Answered one prompt at a time on purpose: the
+  //    guard's prompt session closes with its own question, so answers written
+  //    ahead of the next one would be buffered into a reader that is already
+  //    gone (the hazard init's shared session exists to avoid).
+  const accepted = nestedDir("init-tty-yes");
+  const yes = onTty(accepted);
+  await yes.answer(QUESTION, "y\n");
+  await yes.answer(/n8n host:/, `${env.N8N_HOST}\n`);
+  await yes.answer(/MCP token/, `${MCP_TOKEN}\n`); // the OAuth attempt 404s on the mock, then falls back to this
+  await yes.answer(/public API key/, "\n");
+  const yesResult = await yes.settled();
+  assert.equal(yesResult.code, 0, yesResult.out);
+  assert.ok(existsSync(path.join(accepted, "decanter.config.json")), "`y` really does scaffold the second sync dir");
+  assert.ok(existsSync(path.join(accepted, "n8n", "decanter.config.json")), "and leaves the one that was already there alone");
+});
+
 await step("bare invocation piped: usage, never the interactive picker", async () => {
   // Plan 19's picker is TTY-gated; this whole suite runs the CLI piped, so a
   // bare run in an inited project must keep printing plain usage text

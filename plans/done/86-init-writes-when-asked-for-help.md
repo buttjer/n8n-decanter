@@ -127,12 +127,22 @@ All four tasks, in one PR.
    than the global `--dir` note it would otherwise advertise. `help <verb>` is
    the same question as `<verb> --help`.
 
-Two e2e steps pin it: one loops **every** verb parsed out of the CLI's own
-`VERBS` set (`--help`, `-h` and `help <verb>` must agree, all exit 0) and
-asserts the mock server saw **zero** requests plus an untouched directory after
-`init <dir> --help`; the other exercises the nested refusal, the flag-driven
-refusal, and the two shapes that must stay allowed (re-init in place, init
-below an existing sync dir).
+Three e2e steps pin it, all through the real CLI as a subprocess:
+
+- one loops **every** verb parsed out of the CLI's own `VERBS` set (`--help`,
+  `-h` and `help <verb>` must agree, all exit 0) and asserts the mock server saw
+  **zero** requests plus an untouched directory after `init <dir> --help`;
+- one exercises the nested refusal piped and flag-driven, plus the two shapes
+  that must stay allowed (re-init in place, init below an existing sync dir);
+- one drives the **TTY branch on a real pty**, which is the only way to reach
+  it — bare Enter declines, a non-yes answer declines, and `y` scaffolds the
+  second sync dir for real while leaving the existing one alone. util-linux
+  `script -qec … /dev/null` supplies the pty and no `expect` is involved; the
+  step skips off Linux, where BSD `script` cannot take piped stdin. The recipe
+  in the root `AGENTS.md` said to reach for `expect` and is corrected to this,
+  including the trap that cost the most time: answers must be written **one
+  prompt at a time**, because the guard's prompt session closes with its own
+  question and a reader that is already gone takes any buffered lines with it.
 
 ## Notes
 
