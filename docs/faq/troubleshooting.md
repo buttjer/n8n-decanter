@@ -203,16 +203,42 @@ credentials, so `pull` / `push` / `preflight` keep working (add `--dir flows`
 when you run them from above the sync dir). What the missing tools cost you is
 workflow **structure** work over MCP, not the Code-node flow.
 
-## "MCP session expired … re-run: n8n-decanter init"
+## "MCP session expired … re-run: n8n-decanter init --reauth"
 
 The stored OAuth refresh token was invalidated (they rotate on every use — a
-crash at the wrong moment, or a concurrent run, can burn one). Re-running
-`init` re-consents and mints a fresh pair.
+crash at the wrong moment, or a concurrent run, can burn one). Run
+[`init --reauth`](/docs/cli/init/#re-authorizing-reauth): it skips the
+credential-reuse step, re-consents in the browser, and writes a fresh pair.
+
+**A bare `init` is not enough**, which is why the message names the flag.
+`init` reuses `.decanter-auth.json` whenever its host matches, so it would
+re-probe with the same dead token and finish with "credentials written
+anyway". You do not have to delete anything by hand.
 
 A second **copy** of `.decanter-auth.json` produces this reliably rather than
 occasionally: two copies rotate independently and the loser's token is spent for
 good. Never copy the file between checkouts — see
 [Git worktrees](/docs/concepts/configuration/#git-worktrees).
+
+## "n8n is rate-limiting the OAuth token endpoint (429)"
+
+**Your credentials are fine.** This is n8n throttling, not an expired session,
+and the CLI already retried (five times, honouring `Retry-After`) before
+printing it. Wait for the window to pass — n8n's default is 5 minutes — and run
+the command again. Nothing needs re-authorizing, and deleting
+`.decanter-auth.json` would only cost you a browser round-trip.
+
+The usual cause is many decanter runs at once (several `watch` processes, or a
+CI matrix) against one instance from one IP.
+
+## "MCP token refresh failed (…)"
+
+Anything other than the two cases above — an HTTP 500, a malformed response, a
+connection that dropped. Decanter deliberately does **not** diagnose these as
+an expiry: nothing in them says the stored credentials are spent. Retry first,
+then check that the host is reachable and MCP access is still enabled in
+n8n → Settings → MCP. Only re-authorize if the message actually says the token
+was spent or revoked.
 
 ## "ambiguous ref" / "no workflow matches"
 

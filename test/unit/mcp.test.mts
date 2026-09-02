@@ -587,6 +587,126 @@ describe("429 backoff", () => {
   });
 });
 
+// Plan 87 — the OAuth endpoints had no 429 backoff and one error message for
+// every failure, so n8n merely throttling a refresh reached the user as a dead
+// session, with advice that could only end in deleting good credentials.
+describe("token-endpoint 429 backoff (Plan 87)", () => {
+  it("retries a throttled refresh on the injected sleep and says nothing about an expired session", async () => {
+    let tokenCalls = 0;
+    const srv = await mcpServer({
+      token: "fresh-access", // only the refreshed token is accepted
+      tool: () => ({ content: [{ type: "text", text: '{"ok":true}' }] }),
+      onRequest: oauthEndpoints((params, res) => {
+        tokenCalls++;
+        assert.equal(params.get("refresh_token"), "r1", "the same token is re-presented — a 429 redeemed nothing");
+        if (tokenCalls === 1) return void res.writeHead(429, { "retry-after": "2" }).end("slow down");
+        grant(res, "fresh-access", "r2");
+      }),
+    });
+    const dir = path.join(TMP, "token-429");
+    mkdirSync(dir, { recursive: true });
+    const delays: number[] = [];
+    try {
+      writeAuthFile(dir, { host: srv.host, clientId: "c1", refreshToken: "r1", accessToken: "stale", accessTokenExpiresAt: "2000-01-01T00:00:00.000Z" });
+      const mcp = new McpClient({ host: srv.host, auth: resolveMcpAuth(dir, srv.host)!, sleep: async (ms) => void delays.push(ms) });
+      const out = await mcp.callTool<{ ok: boolean }>("probe", {});
+      assert.equal(out.ok, true, "the call went through after the retry");
+      assert.equal(tokenCalls, 2, "one throttled attempt, one that worked");
+      assert.deepEqual(delays, [2000], "waited on Retry-After — through the INJECTED sleep, not a real one");
+      assert.equal(readAuthFile(dir)!.refreshToken, "r2", "the rotated token still lands on disk");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("a persistent 429 says rate-limited, says the credentials are fine, and never names init", async () => {
+    let tokenCalls = 0;
+    const srv = await mcpServer({
+      token: "never",
+      onRequest: oauthEndpoints((_params, res) => {
+        tokenCalls++;
+        res.writeHead(429).end("still slow");
+      }),
+    });
+    const dir = path.join(TMP, "token-429-forever");
+    mkdirSync(dir, { recursive: true });
+    const delays: number[] = [];
+    try {
+      writeAuthFile(dir, { host: srv.host, clientId: "c1", refreshToken: "r1" });
+      const mcp = new McpClient({ host: srv.host, auth: resolveMcpAuth(dir, srv.host)!, sleep: async (ms) => void delays.push(ms) });
+      const err = (await mcp.callTool("probe", {}).then(() => null, (e: Error) => e))!;
+      assert.ok(err !== null, "a refresh that never succeeds must still fail");
+      assert.equal(tokenCalls, 6, "1 attempt + 5 retries — the same ceiling #rpc uses");
+      assert.deepEqual(delays, [1000, 2000, 4000, 8000, 8000], "exponential without a Retry-After header, capped at 8s");
+      assert.match(err.message, /rate-limiting/, err.message);
+      assert.match(err.message, /credentials are fine/, err.message);
+      assert.ok(!/expired/.test(err.message), `throttling is not an expiry: ${err.message}`);
+      assert.ok(!/n8n-decanter init/.test(err.message), `must not send the user to init over a 429: ${err.message}`);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("discovery sits on the same path and gets the same backoff", async () => {
+    let discoveryCalls = 0;
+    const srv = await mcpServer({
+      onRequest: (req, res) => {
+        if (req.url !== "/.well-known/oauth-authorization-server") return false;
+        discoveryCalls++;
+        if (discoveryCalls === 1) {
+          res.writeHead(429, { "retry-after": "1" }).end("busy");
+          return true;
+        }
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+          authorization_endpoint: "http://x/mcp-oauth/authorize",
+          token_endpoint: "http://x/mcp-oauth/token",
+          registration_endpoint: "http://x/mcp-oauth/register",
+        }));
+        return true;
+      },
+    });
+    const delays: number[] = [];
+    try {
+      const disco = await oauthDiscovery(srv.host, 5000, { sleep: async (ms) => void delays.push(ms) });
+      assert.equal(discoveryCalls, 2);
+      assert.deepEqual(delays, [1000]);
+      assert.equal(disco.token_endpoint, `${srv.host}/mcp-oauth/token`);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("refresh failures are diagnosed apart (Plan 87)", () => {
+  /** One refresh against a token endpoint that answers `respond`. */
+  async function refreshAgainst(respond: (res: http.ServerResponse) => void): Promise<Error> {
+    const srv = await mcpServer({ onRequest: oauthEndpoints((_p, res) => respond(res)) });
+    try {
+      return (await refreshAccessToken(srv.host, "c1", "r1", 5000, { sleep: async () => {} }).then(() => null, (e: Error) => e))!;
+    } finally {
+      await srv.close();
+    }
+  }
+
+  it("invalid_grant is the ONLY failure that names a re-mint — and it names one that works", async () => {
+    const err = await refreshAgainst(denyGrant);
+    assert.match(err.message, /session expired/, err.message);
+    assert.match(err.message, /spent or was revoked/, err.message);
+    // The plan in one assertion: a BARE `init` reuses the same dead file, so
+    // the command in the message has to be the one that re-consents.
+    assert.match(err.message, /n8n-decanter init --reauth/, err.message);
+    assert.ok(!/n8n-decanter init(?! --reauth)/.test(err.message), `the dead-end advice must be gone: ${err.message}`);
+  });
+
+  it("an unrelated failure names the reason without diagnosing it, and advises discarding nothing", async () => {
+    const err = await refreshAgainst((res) => void res.writeHead(500, { "content-type": "application/json" }).end("{}"));
+    assert.match(err.message, /HTTP 500/, err.message);
+    assert.match(err.message, /does not mean your credentials are spent/, err.message);
+    assert.ok(!/session expired/.test(err.message), `a 500 does not diagnose an expiry: ${err.message}`);
+    assert.ok(!/init/.test(err.message), `and must not suggest re-minting: ${err.message}`);
+  });
+});
+
 describe("client resilience", () => {
   it("a failed handshake does not poison later calls (initialized reset on rejection)", async () => {
     let initTries = 0;

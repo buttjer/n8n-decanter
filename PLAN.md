@@ -370,16 +370,26 @@ dependency). Everything below is verified against n8n 2.30.7 (spike + smoke,
   client id, refresh token, cached access token + expiry; 0600). **Refresh
   tokens rotate and the old one is invalid the moment a refresh succeeds** —
   the client persists the rotated pair before doing anything else, caches
-  access tokens (3600 s, 60 s margin) so refreshes stay rare, refreshes once
-  on a 401, and maps a terminal `invalid_grant` to "re-run init". An auth
-  file minted for a different host is ignored with a warning. OAuth endpoint
+  access tokens (3600 s, 60 s margin) so refreshes stay rare, and refreshes
+  once on a 401. **A failed refresh is diagnosed, not lumped together**
+  (Plan 87): only a terminal `invalid_grant` concludes the credential is spent
+  and names `init --reauth` — the one command that re-mints; a 429 says n8n is
+  throttling and that the credentials are fine; anything else names the reason
+  and advises discarding nothing. The rule behind the split is that we never
+  advise discarding a credential unless we know it is spent, and only
+  `invalid_grant` knows that. An auth file minted for a different host is
+  ignored with a warning (`init` does re-mint for that case, and for a corrupt
+  file, so their "re-run init" advice stays correct). OAuth endpoint
   discovery (`/.well-known/oauth-authorization-server`) re-bases every
   advertised endpoint onto the configured host — instances behind
   proxies/containers advertise their own idea of their URL.
 - **Rate limiting:** n8n 429s the MCP endpoint under bursts (hit live by the
   smoke suite's rapid CLI runs). The client backs off and retries (≤ 5,
   Retry-After-aware, else 1/2/4/8 s) — safe for every tool since a 429'd
-  request was not applied.
+  request was not applied. **The same backoff covers the OAuth token and
+  discovery endpoints** (Plan 87, one shared `rateLimitDelayMs` so the two
+  cannot drift): they were bare `fetch` calls, which is why a throttled
+  refresh used to surface as a dead session instead of a wait.
 - **Errors:** 404 → "enable MCP access in n8n (Settings → MCP; needs ~2.20+)";
   401 bearer → "mint a fresh token (the public API key is not a valid MCP
   token)"; timeouts honor `requestTimeoutMs` with the same guidance as the
@@ -1277,7 +1287,13 @@ Bootstraps a sync directory. Plan 32 made it OAuth-first:
    error message.
 1. **Host** prompt (existing `.env` value reused with a note; normalized).
 2. **MCP credentials** — existing `N8N_MCP_TOKEN` or a host-matching
-   `.decanter-auth.json` are reused. Otherwise, on a TTY: the **OAuth
+   `.decanter-auth.json` are reused, **unless `--reauth` is passed** (Plan 87):
+   that skips the reuse branch and goes straight to consent, which is what
+   makes a spent refresh token fixable by a command instead of by deleting a
+   file. It refuses up front on a non-TTY (consent needs a browser) and when
+   an `N8N_MCP_TOKEN` is set (a bearer always wins over OAuth, so minting
+   would change nothing) — both before the browser opens, not after.
+   Otherwise, on a TTY: the **OAuth
    consent flow** (`runOAuthConsent` in `lib/mcp.mts`) — RFC 7591 dynamic
    client registration → PKCE S256 authorize URL opened in the browser
    (`DECANTER_NO_BROWSER=1` prints it only) → localhost callback server
@@ -1294,7 +1310,12 @@ Bootstraps a sync directory. Plan 32 made it OAuth-first:
 5. **Verification probes**: an MCP `search_workflows` reporting how many
    workflows are visible and how many are `availableInMCP` (with a hint about
    the per-workflow switch), plus the old `GET /api/v1/workflows?limit=1`
-   probe when an API key was given.
+   probe when an API key was given. **A spent refresh token here is acted on,
+   not shrugged at** (Plan 87): on a TTY the probe offers re-consent and
+   re-verifies; off one it names `init --reauth`. Only `invalid_grant`
+   qualifies — a network error, a 401 or Plan 74's 403 still end in
+   "credentials written anyway", since none of them says the credential is
+   spent.
 6. **The official-skills pointer** (Plan 55, `lib/skills.mts`) — dead last, so
    it can never block credential setup. On a **first** init (no
    `.decanter-template.json` yet) decanter names the pack and prints the
