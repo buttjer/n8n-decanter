@@ -626,10 +626,22 @@ functions; the CLI process is the surface users touch.
 - **watch**: spawn it, poll its captured stdout for marker lines
   ("watching workflow", "pushed", conflict text); 200 ms debounce — allow
   ~500 ms after a file write before asserting. Piped stdin exercises the
-  non-TTY paths. For TTY-only paths (the structural-conflict prompt) wrap
-  the CLI in `expect` — macOS `script -q /dev/null` does NOT work with piped
-  stdin ("tcgetattr … not supported on socket"). Coordinate `expect` sends
-  with driver-side file edits via marker files.
+  non-TTY paths. Coordinate `expect` sends with driver-side file edits via
+  marker files.
+- **TTY-only paths** (the structural-conflict prompt, `init`'s nested-sync-dir
+  question) need a real pty, because the code branches on
+  `process.stdin.isTTY`. On **Linux, util-linux `script` is the whole answer
+  and no `expect` is needed** (there is none installed here): `script -qec
+  '"<node>" "<cli>" <args>' /dev/null` runs the CLI on a pty while the driver
+  still writes answers into `child.stdin` — `-e` returns the child's exit code,
+  `-q` drops the session banner. **macOS BSD `script` cannot do this with piped
+  stdin** ("tcgetattr … not supported on socket"), so gate such a step on
+  `process.platform === "linux"` and print a skip line rather than failing on
+  the difference (CI is ubuntu). **Answer one prompt at a time** — `waitFor` the
+  prompt text, then write that line: a CLI that closes one prompt session and
+  opens another (init does, either side of the nested-dir question) loses every
+  line the first reader had already buffered, so writing all the answers up
+  front hangs on the second question.
 
 ### Gotchas
 

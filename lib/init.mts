@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseEnvFile } from "./config.mts";
+import { findConfigBelow, parseEnvFile } from "./config.mts";
 import {
   AUTH_FILE,
   McpClient,
@@ -535,6 +535,57 @@ async function refreshTemplate(srcDir: string, destDir: string, { force, protect
  * Plan 55: a first init closes by pointing at n8n's official skills pack — a
  * printed recommendation, never a prompt, so no run's stdin changes.
  */
+/**
+ * Plan 86: refuse to scaffold on top of a sync dir that already sits BELOW the
+ * target. `init` is the only verb that writes into a directory the user has not
+ * vetted, and it was the verb with the fewest guards on the way in — run from a
+ * repo root whose sync dir lives in `n8n/`, it dropped config, template,
+ * `workflows/`, `shared/`, `tsconfig.json` and `opencode.json` into the root.
+ * Every read verb already recognises that shape (`loadConfig`'s failure path,
+ * Plan 81) and says the right thing; this is the same detection, one step
+ * earlier, and the message deliberately mirrors that one so the two read as one
+ * voice.
+ *
+ * Runs BEFORE the target directory is created, so a refusal leaves the
+ * filesystem exactly as it found it. `findConfigBelow` never counts `start`
+ * itself, so re-initing an existing sync dir is untouched; it is depth-, count-
+ * and wall-clock-capped, so a miss costs nothing.
+ *
+ * Only a terminal gets a say — a piped or flag-driven run refuses outright,
+ * because the scaffold is the irreversible half and an unattended caller cannot
+ * consent to it. The prompt opens its own short-lived session rather than
+ * `init`'s shared one: that session exists to keep PIPED answers from being
+ * buffered away by a second reader, and this question is asked on a TTY or not
+ * at all.
+ */
+async function refuseNestedSyncDir(dir: string, flagDriven: boolean, log: Log): Promise<void> {
+  const nested = findConfigBelow(dir);
+  if (nested === undefined) return;
+  const rel = path.relative(dir, nested) || ".";
+  const advice =
+    "  a sync dir already sits BELOW this directory: " + nested + "\n" +
+    "  scaffolding here would put a SECOND one on top of a working setup\n" +
+    "  to use the existing one from here, name it instead of re-initing:\n" +
+    // The `=` form for the same reason config.mts uses it: `--dir <rel>` declines
+    // to eat a value that is also a verb, so a sync dir called `test/` or `list/`
+    // would come back as "--dir needs a value" from a copy-paste.
+    "  n8n-decanter <verb> --dir=" + rel + "\n" +
+    "  or set N8N_DECANTER_DIR=" + rel + " (agents: the `env` block of the decanter MCP server entry)\n" +
+    "  to set up a different sync dir, give init its own target: n8n-decanter init <dir>";
+  if (!(process.stdin.isTTY === true) || flagDriven) {
+    throw new Error("refusing to scaffold a sync dir here\n" + advice);
+  }
+  log.warn("a sync dir already exists at " + nested);
+  log.info(advice);
+  const rl = createPrompt();
+  try {
+    const answer = (await rl.question("scaffold a second sync dir in " + dir + " anyway? [y/N]: ")).trim().toLowerCase();
+    if (answer !== "y" && answer !== "yes") throw new Error("init cancelled — nothing was written");
+  } finally {
+    rl.close();
+  }
+}
+
 export async function init(
   targetDir: string | undefined,
   { force = false, host: hostFlag, token: tokenFlag, apiKey: apiKeyFlag }: { force?: boolean; host?: string; token?: string; apiKey?: string } = {},
@@ -542,6 +593,7 @@ export async function init(
 ): Promise<void> {
   printBanner(log);
   const dir = path.resolve(targetDir ?? ".");
+  await refuseNestedSyncDir(dir, hostFlag !== undefined || tokenFlag !== undefined || apiKeyFlag !== undefined, log);
   mkdirSync(dir, { recursive: true });
   const envFile = path.join(dir, ".env");
   const existing = parseEnvFile(envFile);

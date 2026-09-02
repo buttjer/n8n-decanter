@@ -7,7 +7,7 @@ backups already on disk. Worth doing, not worth doing first.
 'credential refs point at the SOURCE instance' kommt auch, wenn Quelle und Ziel
 dieselbe Instanz sind. Ein Vergleich der Instanz-Id würde die Warnung dort
 sparen"). Verified the same day — correct diagnosis, larger fix than it looks.
-Same batch as [Plan 86](86-init-writes-when-asked-for-help.md),
+Same batch as [Plan 86](../done/86-init-writes-when-asked-for-help.md),
 [Plan 87](87-auth-errors-point-the-wrong-way.md),
 [Plan 88](88-data-tables-stale-rows-and-refs.md),
 [Plan 89](89-rest-verbs-prerequisite-chain.md) and

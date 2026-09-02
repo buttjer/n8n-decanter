@@ -5,7 +5,7 @@
 building.
 **Source:** user field feedback 2026-09-02, report 1, closing observation ("Eine
 Beobachtung noch, die nicht decanter gehört, aber ihm begegnet"). Same batch as
-[Plan 86](../open/86-init-writes-when-asked-for-help.md) …
+[Plan 86](../done/86-init-writes-when-asked-for-help.md) …
 [Plan 90](../open/90-backup-source-instance-stamp.md).
 **Snapshot:** 2026-09-02T04:57Z @ 3c5ee4d
 

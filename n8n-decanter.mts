@@ -47,65 +47,174 @@ const log: Log = {
   },
 };
 
-const usage = (): string => {
+/**
+ * The command surface as data: one entry per verb line, so the same source
+ * renders the whole listing and a single verb's block (Plan 86 — `<verb> --help`
+ * used to fall through to the verb, which on `init` meant a scaffold into a
+ * directory the user had not vetted). `verb` keys on the TOP-LEVEL word, so
+ * `backup --help` and `backup restore --help` both print the Backup section.
+ */
+const usageSections = (): Array<{ title: string; note?: string; entries: Array<{ verb: string; lines: string[] }> }> => {
   const b = style.bold;
   const d = style.dim;
-  return `Usage: ${b("n8n-decanter")} <verb> [workflow…] [flags]
-  ${d("Run with no arguments in a terminal for the interactive picker; `help` prints this.")}
+  return [
+    {
+      title: b("Setup"),
+      entries: [
+        {
+          verb: "init",
+          lines: [
+            `  ${b("init")} [dir] [--force] [--host <url> --token <mcp-token> --api-key <public-api-key>]`,
+            `  ${d("                                              setup: .env, starter files, config (flags drive it non-interactively)")}`,
+          ],
+        },
+        { verb: "completion", lines: [`  ${b("completion")} zsh|bash                     ${d("print a shell completion script for your rc file")}`] },
+      ],
+    },
+    {
+      title: b("Sync"),
+      note: d("(over n8n's MCP server — Code-node source only; structure lives in n8n)"),
+      entries: [
+        { verb: "pull", lines: [`  ${b("pull")} [workflow…]                        ${d("pull code into workflows/<kebab>/ (default: config list)")}`] },
+        { verb: "push", lines: [`  ${b("push")} [workflow…] [--force] [--publish] [--no-typecheck]   ${d("push code to the draft (--publish takes it live)")}`] },
+        { verb: "watch", lines: [`  ${b("watch")} [workflow]                        ${d("watch code/, push each save to the draft")}`] },
+        { verb: "publish", lines: [`  ${b("publish")} [workflow…]                     ${d("take the draft(s) live")}`] },
+        { verb: "unpublish", lines: [`  ${b("unpublish")} [workflow…]                   ${d("return the draft(s) to draft-only")}`] },
+      ],
+    },
+    {
+      title: b("Inspect & test"),
+      entries: [
+        {
+          verb: "preflight",
+          lines: [
+            `  ${b("preflight")} [workflow…] [--simulate] [--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]`,
+            `  ${d("                                            the gate: grades LOCAL code into one scored, read-only verdict")}`,
+            `  ${d("                                            --simulate ADDS a local-engine run (Docker); --offline DROPS instance reads")}`,
+          ],
+        },
+        { verb: "diff", lines: [`  ${b("diff")} [workflow…]                        ${d("per-node line diff, local code vs the n8n draft (always exits 0)")}`] },
+        {
+          verb: "executions",
+          lines: [
+            `  ${b("executions")} [workflow…] [--status=…] [--limit=N]   ${d("fetch execution data (numeric arg = one by id)")}`,
+            `  ${b("executions")} [workflow…] clean            ${d("delete fetched execution data (offline)")}`,
+          ],
+        },
+        {
+          verb: "data-tables",
+          lines: [
+            `  ${b("data-tables")} [table…] [--filter=… --search=… --sort=… --limit=N --all]   ${d("fetch data-table schema + rows (read-only)")}`,
+            `  ${b("data-tables")} [table…] clean              ${d("delete fetched data-table data (offline)")}`,
+          ],
+        },
+        {
+          verb: "test",
+          lines: [
+            `  ${b("test")} <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]`,
+            `  ${d("                                            grades the INSTANCE's draft (after push). Bare: static check only,")}`,
+            `  ${d("                                            nothing runs. With --execution/--scenario: pinned run, exits 1 on divergence")}`,
+          ],
+        },
+        { verb: "list", lines: [`  ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}`] },
+      ],
+    },
+    {
+      title: b("Scenario"),
+      note: d("(named, committed pin-data sets — captured or schema-scaffolded)"),
+      entries: [
+        {
+          verb: "scenario",
+          lines: [
+            `  ${b("scenario create")} <workflow> ["<slug>"] [--execution <id>] [--scaffold]   ${d("write a committed scenario from a capture and/or the workflow's schemas")}`,
+            `  ${b("scenario create")} <workflow> "<slug>" --extend            ${d("top an existing scenario up with the nodes `test` still needs")}`,
+            `  ${b("scenario check")} <workflow> ["<slug>"]                     ${d("structurally validate a scenario (or all); exits 1 on invalid")}`,
+          ],
+        },
+      ],
+    },
+    {
+      title: b("Backup"),
+      note: d("(git-native, redeployable disaster-recovery store — REST, needs N8N_API_KEY)"),
+      entries: [
+        {
+          verb: "backup",
+          lines: [
+            `  ${b("backup create")} <workflow>                  ${d("capture the workflow's full REST export into backups/ (not auto-committed)")}`,
+            `  ${b("backup restore")} <workflow> [<backup>]      ${d("redeploy a backup as a NEW, unpublished workflow (node ids preserved)")}`,
+            `  ${b("backup list")} <workflow>                    ${d("list retained backups: timestamp · versionId · node count")}`,
+          ],
+        },
+      ],
+    },
+    {
+      title: b("Node"),
+      entries: [
+        { verb: "node", lines: [`  ${b("node run")} <node-file> [fixture.json] [--allow-env]  ${d("run a node locally (offline)")}`] },
+      ],
+    },
+    {
+      title: b("Agent guard"),
+      note: d("(structure/lifecycle acts go through n8n's MCP — guarded; jsCode writes are blocked toward the file + push flow)"),
+      entries: [
+        {
+          verb: "mcp",
+          lines: [
+            `  ${b("mcp connect")}                             ${d("stdio MCP guard for agents — the scaffolded .mcp.json spawns it; no secret")}`,
+            `  ${b("mcp serve")} [--port N]                    ${d("HTTP variant: localhost guard-proxy for URL-configured agents")}`,
+          ],
+        },
+      ],
+    },
+  ];
+};
 
-${b("Setup")}
-  ${b("init")} [dir] [--force] [--host <url> --token <mcp-token> --api-key <public-api-key>]
-  ${d("                                              setup: .env, starter files, config (flags drive it non-interactively)")}
-  ${b("completion")} zsh|bash                     ${d("print a shell completion script for your rc file")}
+/**
+ * The full listing, or — given a known verb — just that verb's block (Plan 86).
+ * The scoped form is the same lines plus only the notes that apply to them, so
+ * `push --help` cannot drift from `help`: there is one source for both.
+ */
+const usage = (verb?: string): string => {
+  const b = style.bold;
+  const d = style.dim;
+  const sections = usageSections();
+  const workflowNote = `A ${b("<workflow>")} is its id, name, unique name-prefix, or folder name (case-insensitive;\nambiguity is an error).`;
+  const pickerNote = `A ref verb with no ${b("<workflow>")} on a terminal opens the picker.`;
+  const executionNote = `An ${b("<execution-id>")} is an n8n execution id (numeric).`;
+  const globalNote = `Global: ${b("--dir")} <path> (or ${b("N8N_DECANTER_DIR")}) starts the config search somewhere\nelse — for a sync dir nested in a bigger repo, addressed from the repo root.`;
+  const configNote = `Config: decanter.config.json (searched upward from cwd). Credentials: N8N_HOST +\nMCP (OAuth via ${b("init")}, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional)\npowers executions, data-tables, and backup.`;
 
-${b("Sync")} ${d("(over n8n's MCP server — Code-node source only; structure lives in n8n)")}
-  ${b("pull")} [workflow…]                        ${d("pull code into workflows/<kebab>/ (default: config list)")}
-  ${b("push")} [workflow…] [--force] [--publish] [--no-typecheck]   ${d("push code to the draft (--publish takes it live)")}
-  ${b("watch")} [workflow]                        ${d("watch code/, push each save to the draft")}
-  ${b("publish")} [workflow…]                     ${d("take the draft(s) live")}
-  ${b("unpublish")} [workflow…]                   ${d("return the draft(s) to draft-only")}
+  const section = verb === undefined ? undefined : sections.find((s) => s.entries.some((e) => e.verb === verb));
+  if (section !== undefined && verb !== undefined) {
+    const lines = section.entries.filter((e) => e.verb === verb).flatMap((e) => e.lines);
+    // Which notes apply is read off the verb's own lines rather than kept in a
+    // second list to forget to update: a verb that never prints `<workflow>`
+    // has nothing to say about resolving one.
+    const block = lines.join("\n");
+    const notes = [
+      ...(/\[workflow|<workflow>/.test(block) ? [`${workflowNote}${REF_VERBS.has(verb) ? ` ${pickerNote}` : ""}`] : []),
+      ...(/<execution-id>|--execution/.test(block) ? [executionNote] : []),
+    ];
+    return [
+      `Usage: ${b("n8n-decanter")} ${b(verb)} — ${section.title}${section.note !== undefined ? ` ${section.note}` : ""}`,
+      block,
+      ...notes,
+      // `--dir` points the config search at an EXISTING sync dir, and `init`
+      // hard-errors on it (its target is an argument) — printing the global
+      // note under `init --help` would advertise the one flag it refuses.
+      verb === "init" ? `${b("init")} takes its target as an argument (${b("n8n-decanter init n8n/")}); ${b("--dir")} names an\nEXISTING sync dir for the other verbs.` : verb === "completion" ? configNote : globalNote,
+      d("`n8n-decanter help` prints every verb."),
+    ].join("\n\n");
+  }
 
-${b("Inspect & test")}
-  ${b("preflight")} [workflow…] [--simulate] [--offline] [--json] [--fail-on=warn] [--fail-fast] [--require=<ids>]
-  ${d("                                            the gate: grades LOCAL code into one scored, read-only verdict")}
-  ${d("                                            --simulate ADDS a local-engine run (Docker); --offline DROPS instance reads")}
-  ${b("diff")} [workflow…]                        ${d("per-node line diff, local code vs the n8n draft (always exits 0)")}
-  ${b("executions")} [workflow…] [--status=…] [--limit=N]   ${d("fetch execution data (numeric arg = one by id)")}
-  ${b("executions")} [workflow…] clean            ${d("delete fetched execution data (offline)")}
-  ${b("data-tables")} [table…] [--filter=… --search=… --sort=… --limit=N --all]   ${d("fetch data-table schema + rows (read-only)")}
-  ${b("data-tables")} [table…] clean              ${d("delete fetched data-table data (offline)")}
-  ${b("test")} <workflow> [--execution <execution-id> | --scenario <slug>] [--trigger <node>] [--json]
-  ${d("                                            grades the INSTANCE's draft (after push). Bare: static check only,")}
-  ${d("                                            nothing runs. With --execution/--scenario: pinned run, exits 1 on divergence")}
-  ${b("list")} [--remote] [--json]                ${d("pulled workflows: name, id, folder")}
-
-${b("Scenario")} ${d("(named, committed pin-data sets — captured or schema-scaffolded)")}
-  ${b("scenario create")} <workflow> ["<slug>"] [--execution <id>] [--scaffold]   ${d("write a committed scenario from a capture and/or the workflow's schemas")}
-  ${b("scenario create")} <workflow> "<slug>" --extend            ${d("top an existing scenario up with the nodes `test` still needs")}
-  ${b("scenario check")} <workflow> ["<slug>"]                     ${d("structurally validate a scenario (or all); exits 1 on invalid")}
-
-${b("Backup")} ${d("(git-native, redeployable disaster-recovery store — REST, needs N8N_API_KEY)")}
-  ${b("backup create")} <workflow>                  ${d("capture the workflow's full REST export into backups/ (not auto-committed)")}
-  ${b("backup restore")} <workflow> [<backup>]      ${d("redeploy a backup as a NEW, unpublished workflow (node ids preserved)")}
-  ${b("backup list")} <workflow>                    ${d("list retained backups: timestamp · versionId · node count")}
-
-${b("Node")}
-  ${b("node run")} <node-file> [fixture.json] [--allow-env]  ${d("run a node locally (offline)")}
-
-${b("Agent guard")} ${d("(structure/lifecycle acts go through n8n's MCP — guarded; jsCode writes are blocked toward the file + push flow)")}
-  ${b("mcp connect")}                             ${d("stdio MCP guard for agents — the scaffolded .mcp.json spawns it; no secret")}
-  ${b("mcp serve")} [--port N]                    ${d("HTTP variant: localhost guard-proxy for URL-configured agents")}
-
-A ${b("<workflow>")} is its id, name, unique name-prefix, or folder name (case-insensitive;
-ambiguity is an error). A ref verb with no ${b("<workflow>")} on a terminal opens the picker.
-An ${b("<execution-id>")} is an n8n execution id (numeric).
-
-Global: ${b("--dir")} <path> (or ${b("N8N_DECANTER_DIR")}) starts the config search somewhere
-else — for a sync dir nested in a bigger repo, addressed from the repo root.
-
-Config: decanter.config.json (searched upward from cwd). Credentials: N8N_HOST +
-MCP (OAuth via ${b("init")}, or N8N_MCP_TOKEN) power sync; N8N_API_KEY (optional)
-powers executions, data-tables, and backup.`;
+  const body = sections.map((s) => [`${s.title}${s.note !== undefined ? ` ${s.note}` : ""}`, ...s.entries.flatMap((e) => e.lines)].join("\n")).join("\n\n");
+  return [
+    `Usage: ${b("n8n-decanter")} <verb> [workflow…] [flags]\n  ${d("Run with no arguments in a terminal for the interactive picker; `help` prints this.")}\n  ${d("`--help` after a verb (or `help <verb>`) prints that verb's block on its own.")}`,
+    body,
+    `${workflowNote} ${pickerNote}\n${executionNote}`,
+    globalNote,
+    configNote,
+  ].join("\n\n");
 };
 
 // Verb-first grammar (Plan 27): the command is positional[0]. The structure/
@@ -240,6 +349,21 @@ async function main() {
   // namespace whose real verb is positional[1], dispatched as `node:<sub>`.
   let command = positional[0];
   let rest = positional.slice(1);
+  // Plan 86: `--help` wins from ANY position, and before every branch below —
+  // the namespace dispatch, the `init --dir` guard, the picker and the verbs
+  // themselves. It used to be tested at argument slot 0 only, and `positional`
+  // drops every `--flag`, so `<verb> --help` was byte-indistinguishable from a
+  // bare `<verb>` by the time dispatch ran: on the read verbs that was noise,
+  // on `init` it scaffolded a sync dir the user had asked for help about.
+  // `__complete` is exempt because it is the completion scripts' hidden helper
+  // and offers `--help` as one of its own candidate words — its contract is to
+  // print words and never fail.
+  if (command !== "__complete" && (args.includes("--help") || args.includes("-h"))) {
+    // `<verb> --help` and `help <verb>` are the same question. An unknown word
+    // falls back to the full listing, which is where an unknown verb belongs.
+    console.log(usage(command === "help" ? positional[1] : command));
+    return;
+  }
   if (command === "node") {
     const sub = positional[1];
     if (sub === undefined || !NODE_VERBS.has(sub)) {
@@ -316,8 +440,8 @@ async function main() {
     }
   }
 
-  if (!command || command === "help" || args[0] === "--help") {
-    console.log(usage());
+  if (!command || command === "help") {
+    console.log(usage(command === "help" ? positional[1] : undefined));
     return;
   }
 

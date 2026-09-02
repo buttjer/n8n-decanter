@@ -268,7 +268,12 @@ function callMcpTool(name: string, args: any): any | null {
   }
 }
 
+// Every request the CLI makes, of any kind — the `--help` step asserts a delta
+// of zero, which is the only way to prove help ran no verb (a verb that only
+// READ would still print nothing of its own).
+let httpRequests = 0;
 const server = http.createServer((req, res) => {
+  httpRequests++;
   // ---- MCP endpoint (bearer-authed JSON-RPC over streamable HTTP) ----
   if (req.url === "/mcp-server/http") {
     if (req.headers.authorization !== `Bearer ${MCP_TOKEN}`) return void res.writeHead(401).end("unauthorized");
@@ -773,6 +778,157 @@ await step("init: credential probes — skipped MCP, non-2xx and unreachable API
   pending.child.stdin!.end();
   const { stdout, stderr } = await pending;
   assert.match(stdout + stderr, /could not reach http:\/\/127\.0\.0\.1:\d+ \([^)]*\) — \.env written anyway/);
+});
+
+await step("`<verb> --help` prints that verb's help and runs NOTHING (Plan 86)", async () => {
+  // The defect this pins: the `--help` test read argument slot 0 only, and
+  // `positional` drops every `--flag`, so `init --help` was byte-identical to a
+  // bare `init` by the time dispatch ran — a request for help SCAFFOLDED a sync
+  // dir. Asserted on the directory listing, not just on stdout.
+  const target = path.join(TMP, "help-must-not-scaffold");
+  mkdirSync(target);
+  const before = httpRequests;
+  const r = await cli("init", target, "--help");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^Usage: .*init/);
+  assert.deepEqual(readdirSync(target), [], "`init --help` must leave the target directory untouched");
+
+  // Every other verb too, straight from the CLI's own VERBS set so a new verb
+  // is covered the day it is added.
+  const verbs = /const VERBS = new Set\(\[([^\]]*)\]\)/
+    .exec(readFileSync(path.join(PROJECT, "n8n-decanter.mts"), "utf8"))![1]!
+    .split(",")
+    .map((v) => v.trim().replace(/^"|"$/g, ""))
+    .filter((v) => v !== "help" && v !== "__complete");
+  assert.ok(verbs.length > 10, `parsed too few verbs: ${verbs.join(",")}`);
+  for (const verb of verbs) {
+    const help = await cli(verb, "--help");
+    assert.equal(help.code, 0, `${verb} --help: ${help.out}`);
+    assert.match(help.out, /^Usage:/, `${verb} --help must print usage`);
+    // `-h` is the same door, and `help <verb>` the same question
+    const short = await cli(verb, "-h");
+    assert.equal(short.out, help.out, `${verb} -h must print exactly what --help prints`);
+    assert.equal((await cli("help", verb)).out, help.out, `help ${verb} must print exactly what ${verb} --help prints`);
+  }
+  // A flag before the verb, and one after a workflow ref — both still help
+  assert.match((await cli("pull", "wf1", "--help")).out, /^Usage: .*pull/);
+  assert.equal(httpRequests, before, "no verb may reach the network on a --help run");
+});
+
+await step("init: refuses to scaffold on top of a sync dir sitting BELOW the target (Plan 86)", async () => {
+  // The user's report: a sync dir under `n8n/` in a bigger repo, `init` run at
+  // the repo root, and config + template + workflows/ + shared/ + tsconfig.json
+  // landed in the root. Every read verb already detects this shape (Plan 81);
+  // init is the one that WRITES, so it must detect it before writing anything.
+  const root = path.join(TMP, "init-nested-guard");
+  mkdirSync(path.join(root, "n8n"), { recursive: true });
+  writeFileSync(path.join(root, "n8n", "decanter.config.json"), '{"root":"./workflows","workflows":[]}\n');
+  const before = readdirSync(root);
+
+  const piped = await cli("init", root);
+  assert.equal(piped.code, 1, piped.out);
+  assert.match(piped.out, /refusing to scaffold a sync dir here/);
+  assert.match(piped.out, /sits BELOW this directory: .*n8n$/m, "the message names the found sync dir");
+  assert.match(piped.out, /--dir=n8n/, "and the flag that uses it from here");
+  assert.deepEqual(readdirSync(root), before, "a refused init writes nothing");
+
+  // Flag-driven is a refusal too — an unattended caller cannot consent to a
+  // scaffold, and the flags are exactly how an agent drives init.
+  const flagged = await cli("init", root, "--host", env.N8N_HOST!, "--token", MCP_TOKEN);
+  assert.equal(flagged.code, 1, flagged.out);
+  assert.deepEqual(readdirSync(root), before, "a refused flag-driven init writes nothing either");
+
+  // The target itself holding a config is a RE-INIT, not a nested one: the
+  // scan never counts its own starting directory.
+  const reinit = await cli("init", path.join(root, "n8n"), "--host", env.N8N_HOST!, "--token", MCP_TOKEN);
+  assert.equal(reinit.code, 0, reinit.out);
+
+  // And init below an existing sync dir is untouched — the scan only looks down.
+  const below = await cli("init", path.join(root, "n8n", "nested-target"), "--host", env.N8N_HOST!, "--token", MCP_TOKEN);
+  assert.equal(below.code, 0, below.out);
+});
+
+await step("init: on a terminal the nested refusal is a QUESTION — bare Enter declines, `y` scaffolds anyway (Plan 86)", async () => {
+  // The refusal's other half. Every other run in this suite is piped, where the
+  // guard throws outright; the branch a human actually meets is gated on
+  // `process.stdin.isTTY`, so only a real pty reaches it. util-linux `script`
+  // allocates one while this driver still feeds answers over a pipe (`-e`
+  // returns the child's exit code, `-q` drops the session banner). BSD `script`
+  // (macOS) cannot do that with piped stdin — the documented failure is
+  // "tcgetattr … not supported on socket" — so the step says it skipped rather
+  // than failing on an environment difference.
+  if (process.platform !== "linux") {
+    console.log("     (init TTY prompt: skipped — needs util-linux `script` for a pty)");
+    return;
+  }
+  const nestedDir = (name: string): string => {
+    const dir = path.join(TMP, name);
+    mkdirSync(path.join(dir, "n8n"), { recursive: true });
+    writeFileSync(path.join(dir, "n8n", "decanter.config.json"), '{"root":"./workflows","workflows":[]}\n');
+    return dir;
+  };
+  const onTty = (dir: string) => {
+    const pending = execFile("script", ["-qec", `"${process.execPath}" "${CLI}" init "${dir}"`, "/dev/null"], {
+      cwd: TMP,
+      // no browser can open in a test, and the OAuth attempt a TTY triggers
+      // must fail on the mock's 404 rather than wander off to one
+      env: { ...env, DECANTER_NO_BROWSER: "1" },
+      encoding: "utf8",
+    });
+    let out = "";
+    pending.child.stdout!.on("data", (c) => (out += c));
+    pending.child.stderr!.on("data", (c) => (out += c));
+    return {
+      out: () => out,
+      answer: async (prompt: RegExp, line: string) => {
+        await waitFor(() => prompt.test(out), `the prompt ${prompt}`);
+        pending.child.stdin!.write(line);
+      },
+      settled: async () => {
+        try {
+          await pending;
+          return { code: 0, out };
+        } catch (err) {
+          return { code: (err as { code?: number }).code ?? 1, out };
+        }
+      },
+    };
+  };
+  const QUESTION = /scaffold a second sync dir .* anyway\? \[y\/N\]/;
+
+  // 1. bare Enter declines — the question defaults to no, like every other
+  //    confirm in this CLI
+  const declined = nestedDir("init-tty-default");
+  const bare = onTty(declined);
+  await bare.answer(QUESTION, "\n");
+  const bareResult = await bare.settled();
+  assert.equal(bareResult.code, 1, bareResult.out);
+  assert.match(bareResult.out, /a sync dir already exists at/, "the terminal gets the same finding as a piped run");
+  assert.match(bareResult.out, /init cancelled — nothing was written/);
+  assert.deepEqual(readdirSync(declined), ["n8n"], "a declined init writes nothing — not even the target it was given");
+
+  // 2. anything that is not yes is also no
+  const said = nestedDir("init-tty-no");
+  const no = onTty(said);
+  await no.answer(QUESTION, "later\n");
+  const noResult = await no.settled();
+  assert.equal(noResult.code, 1, noResult.out);
+  assert.deepEqual(readdirSync(said), ["n8n"], "only y/yes may scaffold");
+
+  // 3. `y` scaffolds anyway. Answered one prompt at a time on purpose: the
+  //    guard's prompt session closes with its own question, so answers written
+  //    ahead of the next one would be buffered into a reader that is already
+  //    gone (the hazard init's shared session exists to avoid).
+  const accepted = nestedDir("init-tty-yes");
+  const yes = onTty(accepted);
+  await yes.answer(QUESTION, "y\n");
+  await yes.answer(/n8n host:/, `${env.N8N_HOST}\n`);
+  await yes.answer(/MCP token/, `${MCP_TOKEN}\n`); // the OAuth attempt 404s on the mock, then falls back to this
+  await yes.answer(/public API key/, "\n");
+  const yesResult = await yes.settled();
+  assert.equal(yesResult.code, 0, yesResult.out);
+  assert.ok(existsSync(path.join(accepted, "decanter.config.json")), "`y` really does scaffold the second sync dir");
+  assert.ok(existsSync(path.join(accepted, "n8n", "decanter.config.json")), "and leaves the one that was already there alone");
 });
 
 await step("bare invocation piped: usage, never the interactive picker", async () => {
