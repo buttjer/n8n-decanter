@@ -6,7 +6,7 @@ a small decision (stamp vs. remove) but no design change.
 **Source:** user field feedback 2026-09-02, report 1 ("Kleinigkeiten"), verified
 against the code the same day. Twenty minutes of the reporter's debugging went
 into an evaluation run that silently read the previous fetch. Same batch as
-[Plan 86](86-init-writes-when-asked-for-help.md),
+[Plan 86](../done/86-init-writes-when-asked-for-help.md),
 [Plan 87](87-auth-errors-point-the-wrong-way.md),
 [Plan 89](89-rest-verbs-prerequisite-chain.md),
 [Plan 90](90-backup-source-instance-stamp.md) and

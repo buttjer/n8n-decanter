@@ -36,7 +36,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   That line is written by `push`; it is never source. Surfaces as before via
   `preflight`'s `layout` check.
 
+### Fixed
+
+- **`<verb> --help` prints help instead of running the verb.** `--help` was
+  only recognised in argument slot 0, and every `--flag` is stripped before
+  dispatch, so `n8n-decanter init --help` was indistinguishable from a bare
+  `init` — a request for help **scaffolded a sync dir** into whatever directory
+  it was asked from. `--help` (and `-h`) now wins from any position, before any
+  verb, any namespace and the picker. It prints **that verb's own block** rather
+  than the whole listing, with only the notes that apply to it; `help <verb>` is
+  the same question, and a bare `help`/`--help` still prints everything.
+
 ### Added
+
+- **`init` refuses to scaffold on top of a sync dir that already exists below
+  the target.** Run from the root of a bigger repo whose sync dir lives in
+  `n8n/`, `init` used to drop a second `decanter.config.json`, the template,
+  `workflows/`, `shared/`, `tsconfig.json` and the agent configs into the root.
+  It now looks a few levels down first and stops, naming the sync dir it found
+  and the `--dir=`/`N8N_DECANTER_DIR` form that addresses it from where you are
+  — the same advice every read verb already gives. A terminal gets it as a
+  question (`y` scaffolds anyway); a piped or flag-driven run exits 1 having
+  written nothing, not even the target directory. Re-running `init` **inside**
+  an existing sync dir is unchanged.
 
 - **The provenance line carries the build stamp, not just the hash**: the
   node's source path relative to the sync dir, "do not edit here", the CLI

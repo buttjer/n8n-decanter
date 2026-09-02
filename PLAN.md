@@ -460,12 +460,28 @@ dir's own `.env` cannot fight the `N8N_DECANTER_DIR` that found it either.
 
 **The not-found error has two branches** (Plan 81), because the advice inverts
 between them. A bounded breadth-first scan *below* the starting point (depth 3,
-≤300 dirs, skipping `node_modules` and every dot-dir) is the evidence: a hit
-means the setup is fine and the search merely began too high → name the dir with
-`--dir`/`N8N_DECANTER_DIR`. No hit keeps the Plan 75 cold-start advice (a
-half-setup `.env`, run `init`). Sending the nested case to `init` would scaffold
-a second sync dir on top of a working one. The scan exists only to improve a
-message — unreadable dirs are skipped, never authoritative.
+≤400 dirs, 250 ms deadline, skipping `node_modules` and every dot-dir) is the
+evidence: a hit means the setup is fine and the search merely began too high →
+name the dir with `--dir`/`N8N_DECANTER_DIR`. No hit keeps the Plan 75
+cold-start advice (a half-setup `.env`, run `init`). Sending the nested case to
+`init` would scaffold a second sync dir on top of a working one. On the read
+verbs the scan exists only to sharpen a message — unreadable dirs are skipped,
+never authoritative.
+
+**`init` asks the same question, and there it is a gate, not a message** (Plan
+86). 81 taught every verb's *failure* path to recognise a sync dir below the
+cwd; `init` runs before `loadConfig` by design (a fresh directory has no config
+yet) and so inherited nothing — it stayed the one verb that writes into a
+directory the user has not vetted, with the fewest guards on the way in. It now
+runs the same scan on its resolved target **before creating it**, so a refusal
+leaves the filesystem untouched, and the message mirrors the `loadConfig` one so
+the two read as one voice. `findConfigBelow` never counts its own starting
+directory, which is what keeps a re-init inside an existing sync dir working.
+Only a terminal gets a say (prompt, defaulting to no) — a piped or flag-driven
+run refuses outright, because the scaffold is the irreversible half and an
+unattended caller cannot consent to it. A git root with **no** config below it
+is deliberately *not* refused: that is the legitimate "the sync dir is the repo"
+shape.
 
 ## Workflow refs & CLI output (plans/11)
 
@@ -490,6 +506,20 @@ failure for a silent one: `<verb> … --version <id>` would print the version an
 skip the work the user asked for. So the version flag only answers when **no
 verb is present**; alongside a verb it is a hard error naming the replacement.
 Same rule for any future reserved global.
+
+**`--help`/`-h` is the other reserved global, and it inverts that rule** (Plan
+86): help *is* what the user asked for, so alongside a verb it answers **that
+verb**, and no verb runs. It is tested with `includes` over the whole argv and
+answered before namespace dispatch, before the `init --dir` guard and before the
+picker — earlier than the check it replaced, which read argument slot 0 only.
+That slot-0 test failed in exactly the silent way the paragraph above warns
+about: `positional` drops every `--flag`, so `<verb> --help` reached dispatch
+byte-identical to a bare `<verb>`. On the read verbs that was noise; on `init`
+it **scaffolded a sync dir into a directory the user had only asked about**.
+`__complete` is the one exemption — the completion helper prints candidate words
+(`--help` among them) and never fails. The scoped output renders from the same
+section/entry data as the full listing, so the two cannot drift, and each verb
+carries only the notes its own lines earn.
 
 Every `[workflow…]` argument is a **ref**: an id, a workflow/folder name, or
 a unique name prefix. Resolution is tiered — exact id → exact name
@@ -1241,6 +1271,10 @@ no capability lost.
 
 Bootstraps a sync directory. Plan 32 made it OAuth-first:
 
+0. **Refuse a nested target** (Plan 86) — before the target directory is even
+   created, a `findConfigBelow` scan of it; a hit refuses, or asks on a TTY. The
+   configuration section above has why this one is a gate rather than a sharper
+   error message.
 1. **Host** prompt (existing `.env` value reused with a note; normalized).
 2. **MCP credentials** — existing `N8N_MCP_TOKEN` or a host-matching
    `.decanter-auth.json` are reused. Otherwise, on a TTY: the **OAuth

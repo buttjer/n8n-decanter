@@ -1,17 +1,17 @@
 # Plan 86 — `init` writes when it should have printed help, or refused
 
-**Status:** Not started
+**Status:** Done
 **Priority:** P1 — both defects are a handful of lines, offline, with the
 correct behaviour already written elsewhere in the repo; one of them makes a
 help request scaffold files into a directory the user never vetted.
 **Source:** user field feedback 2026-09-02, report 1 ("Zwei echte Fußangeln"),
 verified claim-by-claim against the code the same day. Same batch as
-[Plan 87](87-auth-errors-point-the-wrong-way.md),
-[Plan 88](88-data-tables-stale-rows-and-refs.md),
-[Plan 89](89-rest-verbs-prerequisite-chain.md),
-[Plan 90](90-backup-source-instance-stamp.md) and
+[Plan 87](../open/87-auth-errors-point-the-wrong-way.md),
+[Plan 88](../open/88-data-tables-stale-rows-and-refs.md),
+[Plan 89](../open/89-rest-verbs-prerequisite-chain.md),
+[Plan 90](../open/90-backup-source-instance-stamp.md) and
 [Plan 91](../draft/91-guard-hint-for-credential-type-refusal.md). Task 2
-finishes what [Plan 81](../done/81-nested-syncdir-agent-wiring.md) started: 81
+finishes what [Plan 81](81-nested-syncdir-agent-wiring.md) started: 81
 taught `loadConfig` to recognise a sync dir sitting *below* the cwd, but only
 `loadConfig`.
 **Snapshot:** 2026-09-02T04:57Z @ 3c5ee4d
@@ -102,6 +102,37 @@ from `init`.
 - Drive it through the real CLI as a subprocess per the root `AGENTS.md`
   "Verifying changes at the CLI surface" recipe — task 1's whole point is
   argument parsing, which an imported function call would not exercise.
+
+## What shipped
+
+All four tasks, in one PR.
+
+1. `--help`/`-h` is tested with `args.includes(…)` and answered **before** the
+   namespace dispatch, the `init --dir` guard, the picker and every verb —
+   earlier than the old slot-0 check sat, because `backup --help` used to die in
+   the namespace branch ("unknown backup command") before reaching help at all.
+   `__complete` is exempt: it is the completion scripts' hidden helper and lists
+   `--help` among its own candidate words.
+2. `refuseNestedSyncDir` in `lib/init.mts` runs before `mkdirSync`, so a refusal
+   does not even create the target directory. Non-TTY and flag-driven runs throw;
+   a terminal is asked and defaults to no. `findConfigBelow` is now exported for
+   it (`lib/config.mts`), and its doc comment records the second caller.
+3. Decided as the plan predicted: **no** refusal for a git-root target with no
+   config below it. That is the legitimate "the sync dir is the repo" shape.
+4. Per-verb help landed here rather than as a follow-up. `usage()` became a small
+   section/entry data structure so the full listing and one verb's block render
+   from one source and cannot drift; the scoped view carries only the notes its
+   own lines earn (`<workflow>` resolution, the picker sentence for ref verbs,
+   `<execution-id>`), and `init --help` prints why `--dir` is not its flag rather
+   than the global `--dir` note it would otherwise advertise. `help <verb>` is
+   the same question as `<verb> --help`.
+
+Two e2e steps pin it: one loops **every** verb parsed out of the CLI's own
+`VERBS` set (`--help`, `-h` and `help <verb>` must agree, all exit 0) and
+asserts the mock server saw **zero** requests plus an untouched directory after
+`init <dir> --help`; the other exercises the nested refusal, the flag-driven
+refusal, and the two shapes that must stay allowed (re-init in place, init
+below an existing sync dir).
 
 ## Notes
 

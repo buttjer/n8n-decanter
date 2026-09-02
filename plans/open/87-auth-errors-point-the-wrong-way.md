@@ -5,7 +5,7 @@
 user into deleting credentials that were never broken.
 **Source:** user field feedback 2026-09-02, report 1 ("Fehlermeldungen, die in
 die falsche Richtung zeigen"), verified against the code the same day. Same
-batch as [Plan 86](86-init-writes-when-asked-for-help.md),
+batch as [Plan 86](../done/86-init-writes-when-asked-for-help.md),
 [Plan 88](88-data-tables-stale-rows-and-refs.md),
 [Plan 89](89-rest-verbs-prerequisite-chain.md),
 [Plan 90](90-backup-source-instance-stamp.md) and

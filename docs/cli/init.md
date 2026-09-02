@@ -174,6 +174,32 @@ Why any of it is necessary — which file loads from where — is the matrix in
 the root MCP entry is spelled out in
 [mcp connect](/docs/cli/mcp-connect/#when-your-sync-dir-is-not-your-project-root).
 
+### Running `init` from the repo root is refused
+
+The reverse mistake is the costly one. `init` started *above* an existing sync
+dir used to scaffold a second one — `decanter.config.json`, the template,
+`workflows/`, `shared/`, `tsconfig.json`, the agent configs — into a directory
+you never meant to set up, and the report that prompted this fix came from a
+user who had only asked for `init --help`. So before writing anything, `init`
+looks a few levels *down* for a `decanter.config.json`, and refuses when it
+finds one:
+
+```text
+✗ refusing to scaffold a sync dir here
+  a sync dir already sits BELOW this directory: /repo/n8n
+  scaffolding here would put a SECOND one on top of a working setup
+  to use the existing one from here, name it instead of re-initing:
+  n8n-decanter <verb> --dir=n8n
+  or set N8N_DECANTER_DIR=n8n (agents: the `env` block of the decanter MCP server entry)
+  to set up a different sync dir, give init its own target: n8n-decanter init <dir>
+```
+
+In a terminal the same text comes as a question, and `y` scaffolds anyway. A
+piped or flag-driven run refuses outright (exit 1) and leaves the directory
+exactly as it found it — an unattended caller cannot consent to a scaffold.
+Re-running `init` **inside** an existing sync dir is unaffected: the search
+never counts the target directory itself, only what is below it.
+
 ## Re-running init
 
 `init` is safe to re-run — for example to pick up template improvements after

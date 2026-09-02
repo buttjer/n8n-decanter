@@ -126,8 +126,15 @@ export function resolveSearchStart(
  * One `readdirSync` per visited dir, and the hit is read out of those entries —
  * the earlier shape (readdir the parent, then stat `<child>/decanter.config.json`
  * for every child) paid two round trips per directory to learn the same thing.
+ *
+ * Exported for `init` (Plan 86), the second caller and the only one that asks
+ * *before* writing: 81 taught the failure path of every read verb to recognise a
+ * sync dir below the cwd, while `init` — the one verb that scaffolds into a
+ * directory the user has not vetted — kept scaffolding a second one on top of it.
+ * `start` itself is never a hit, so a re-init inside an existing sync dir is
+ * unaffected.
  */
-function findConfigBelow(start: string, maxDepth = 3, maxDirs = 400, maxMs = 250): string | undefined {
+export function findConfigBelow(start: string, maxDepth = 3, maxDirs = 400, maxMs = 250): string | undefined {
   const deadline = Date.now() + maxMs;
   const queue: Array<{ dir: string; depth: number }> = [{ dir: start, depth: 0 }];
   let visited = 0;

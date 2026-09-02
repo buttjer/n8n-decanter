@@ -268,7 +268,12 @@ function callMcpTool(name: string, args: any): any | null {
   }
 }
 
+// Every request the CLI makes, of any kind — the `--help` step asserts a delta
+// of zero, which is the only way to prove help ran no verb (a verb that only
+// READ would still print nothing of its own).
+let httpRequests = 0;
 const server = http.createServer((req, res) => {
+  httpRequests++;
   // ---- MCP endpoint (bearer-authed JSON-RPC over streamable HTTP) ----
   if (req.url === "/mcp-server/http") {
     if (req.headers.authorization !== `Bearer ${MCP_TOKEN}`) return void res.writeHead(401).end("unauthorized");
@@ -773,6 +778,74 @@ await step("init: credential probes — skipped MCP, non-2xx and unreachable API
   pending.child.stdin!.end();
   const { stdout, stderr } = await pending;
   assert.match(stdout + stderr, /could not reach http:\/\/127\.0\.0\.1:\d+ \([^)]*\) — \.env written anyway/);
+});
+
+await step("`<verb> --help` prints that verb's help and runs NOTHING (Plan 86)", async () => {
+  // The defect this pins: the `--help` test read argument slot 0 only, and
+  // `positional` drops every `--flag`, so `init --help` was byte-identical to a
+  // bare `init` by the time dispatch ran — a request for help SCAFFOLDED a sync
+  // dir. Asserted on the directory listing, not just on stdout.
+  const target = path.join(TMP, "help-must-not-scaffold");
+  mkdirSync(target);
+  const before = httpRequests;
+  const r = await cli("init", target, "--help");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^Usage: .*init/);
+  assert.deepEqual(readdirSync(target), [], "`init --help` must leave the target directory untouched");
+
+  // Every other verb too, straight from the CLI's own VERBS set so a new verb
+  // is covered the day it is added.
+  const verbs = /const VERBS = new Set\(\[([^\]]*)\]\)/
+    .exec(readFileSync(path.join(PROJECT, "n8n-decanter.mts"), "utf8"))![1]!
+    .split(",")
+    .map((v) => v.trim().replace(/^"|"$/g, ""))
+    .filter((v) => v !== "help" && v !== "__complete");
+  assert.ok(verbs.length > 10, `parsed too few verbs: ${verbs.join(",")}`);
+  for (const verb of verbs) {
+    const help = await cli(verb, "--help");
+    assert.equal(help.code, 0, `${verb} --help: ${help.out}`);
+    assert.match(help.out, /^Usage:/, `${verb} --help must print usage`);
+    // `-h` is the same door, and `help <verb>` the same question
+    const short = await cli(verb, "-h");
+    assert.equal(short.out, help.out, `${verb} -h must print exactly what --help prints`);
+    assert.equal((await cli("help", verb)).out, help.out, `help ${verb} must print exactly what ${verb} --help prints`);
+  }
+  // A flag before the verb, and one after a workflow ref — both still help
+  assert.match((await cli("pull", "wf1", "--help")).out, /^Usage: .*pull/);
+  assert.equal(httpRequests, before, "no verb may reach the network on a --help run");
+});
+
+await step("init: refuses to scaffold on top of a sync dir sitting BELOW the target (Plan 86)", async () => {
+  // The user's report: a sync dir under `n8n/` in a bigger repo, `init` run at
+  // the repo root, and config + template + workflows/ + shared/ + tsconfig.json
+  // landed in the root. Every read verb already detects this shape (Plan 81);
+  // init is the one that WRITES, so it must detect it before writing anything.
+  const root = path.join(TMP, "init-nested-guard");
+  mkdirSync(path.join(root, "n8n"), { recursive: true });
+  writeFileSync(path.join(root, "n8n", "decanter.config.json"), '{"root":"./workflows","workflows":[]}\n');
+  const before = readdirSync(root);
+
+  const piped = await cli("init", root);
+  assert.equal(piped.code, 1, piped.out);
+  assert.match(piped.out, /refusing to scaffold a sync dir here/);
+  assert.match(piped.out, /sits BELOW this directory: .*n8n$/m, "the message names the found sync dir");
+  assert.match(piped.out, /--dir=n8n/, "and the flag that uses it from here");
+  assert.deepEqual(readdirSync(root), before, "a refused init writes nothing");
+
+  // Flag-driven is a refusal too — an unattended caller cannot consent to a
+  // scaffold, and the flags are exactly how an agent drives init.
+  const flagged = await cli("init", root, "--host", env.N8N_HOST!, "--token", MCP_TOKEN);
+  assert.equal(flagged.code, 1, flagged.out);
+  assert.deepEqual(readdirSync(root), before, "a refused flag-driven init writes nothing either");
+
+  // The target itself holding a config is a RE-INIT, not a nested one: the
+  // scan never counts its own starting directory.
+  const reinit = await cli("init", path.join(root, "n8n"), "--host", env.N8N_HOST!, "--token", MCP_TOKEN);
+  assert.equal(reinit.code, 0, reinit.out);
+
+  // And init below an existing sync dir is untouched — the scan only looks down.
+  const below = await cli("init", path.join(root, "n8n", "nested-target"), "--host", env.N8N_HOST!, "--token", MCP_TOKEN);
+  assert.equal(below.code, 0, below.out);
 });
 
 await step("bare invocation piped: usage, never the interactive picker", async () => {

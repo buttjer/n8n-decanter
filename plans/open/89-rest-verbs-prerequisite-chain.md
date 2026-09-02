@@ -7,7 +7,7 @@ status and the prerequisite behind it is nowhere in the text.
 den Workflow in der Pull-Liste; für einen frisch angelegten Workflow kommt ein
 nacktes REST-404. `backup create` genauso"). Verified the same day — **the
 `backup create` half did not reproduce as described**, see "Findings". Same batch
-as [Plan 86](86-init-writes-when-asked-for-help.md),
+as [Plan 86](../done/86-init-writes-when-asked-for-help.md),
 [Plan 87](87-auth-errors-point-the-wrong-way.md),
 [Plan 88](88-data-tables-stale-rows-and-refs.md),
 [Plan 90](90-backup-source-instance-stamp.md) and

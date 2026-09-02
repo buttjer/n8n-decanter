@@ -12,6 +12,7 @@ argument (no special rule). Flags may still sit anywhere.
 n8n-decanter                        # interactive picker (terminal, inited project)
 n8n-decanter --version              # print the installed version and exit (-v; errors if combined with a verb)
 n8n-decanter help                   # the command surface (also --help, or a bare run when piped)
+n8n-decanter <verb> --help          # just that verb's block (-h, or `help <verb>`) — the verb does NOT run
 n8n-decanter <verb> --dir <path>    # global: start the config search in <path> (or N8N_DECANTER_DIR)
 
 # Setup
