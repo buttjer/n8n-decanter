@@ -1,11 +1,11 @@
 # Plan 87 — the auth failure message sends users to a dead end, and calls throttling an expiry
 
-**Status:** Not started
+**Status:** Done
 **Priority:** P1 — the advice is a closed loop, and the mislabelling can talk a
 user into deleting credentials that were never broken.
 **Source:** user field feedback 2026-09-02, report 1 ("Fehlermeldungen, die in
 die falsche Richtung zeigen"), verified against the code the same day. Same
-batch as [Plan 86](../done/86-init-writes-when-asked-for-help.md),
+batch as [Plan 86](86-init-writes-when-asked-for-help.md),
 [Plan 88](88-data-tables-stale-rows-and-refs.md),
 [Plan 89](89-rest-verbs-prerequisite-chain.md),
 [Plan 90](90-backup-source-instance-stamp.md) and
@@ -92,7 +92,7 @@ a credential unless we know it is spent.** Only `invalid_grant` knows that.
 4. **Let `init`'s verify step act on what it learns.** When the probe at
    `lib/init.mts:680` fails with a spent-token error specifically (not a network
    error, not a 403 `MCP access is disabled` — that is
-   [Plan 74](../done/74-mcp-disabled-403.md)'s case), offer re-consent on a TTY
+   [Plan 74](74-mcp-disabled-403.md)'s case), offer re-consent on a TTY
    instead of `credentials written anyway`. This is what closes the loop the
    user fell into.
 5. **Audit the sibling messages for the same advice.** `lib/mcp.mts:110`

@@ -38,6 +38,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An auth failure no longer sends you in a circle, and throttling is no
+  longer called an expiry.** Every failed OAuth token refresh used to print
+  the same sentence — `MCP session expired … re-run: n8n-decanter init` — and
+  both halves of it could be wrong. `init` reuses `.decanter-auth.json`
+  whenever the host matches and never re-mints, so following the advice
+  re-probed with the same dead credentials and finished with "credentials
+  written anyway"; the only apparent way out was deleting a credential file
+  that was often perfectly fine. The three cases are now told apart:
+  - **the refresh token really is spent** (`invalid_grant`) — named as such,
+    and pointed at `init --reauth`, a command that actually re-mints;
+  - **n8n is rate-limiting** (429) — now **retried** with the same backoff the
+    MCP endpoint has always had (honouring `Retry-After`, five attempts), and
+    if it still fails it says the credentials are fine and never mentions
+    `init`. OAuth discovery got the same retry; both sat on bare `fetch` calls;
+  - **anything else** — the reason is named without a diagnosis, and nothing
+    is suggested for discarding.
+
+- **`init`'s closing connection check acts on a spent token instead of
+  shrugging.** It had the failure in hand and printed "credentials written
+  anyway". On a terminal it now offers to re-authorize on the spot; off one it
+  names `init --reauth`. Deliberately narrow — a network error, a 401, or a
+  403 "MCP access is disabled" still report as before, because none of them
+  says anything about your credentials.
+
+- **A successful first OAuth consent no longer warns "no MCP credentials
+  yet".** The check looked for a *pre-existing* auth file, so a browser
+  authorization that had just succeeded still ended with advice to re-run
+  `init` with a token.
+
 - **`<verb> --help` prints help instead of running the verb.** `--help` was
   only recognised in argument slot 0, and every `--flag` is stripped before
   dispatch, so `n8n-decanter init --help` was indistinguishable from a bare

@@ -653,6 +653,78 @@ try {
     assert.match(r.out, /not found|permission/i, r.out);
   });
 
+  // Plan 87. The whole message split hangs on ONE assumption about the real
+  // server: that a spent refresh token comes back as `invalid_grant` and not
+  // as some other code. Mock tests cannot prove that — they answer what the
+  // test author decided. So this step registers a real OAuth client on the
+  // live instance and presents a refresh token n8n has never issued.
+  await step("spent refresh token: real n8n says invalid_grant, and the CLI points at `init --reauth`", async () => {
+    // RFC 7591 dynamic registration — unauthenticated by design, and the same
+    // call `init`'s consent flow makes.
+    const reg = await fetch(`${HOST}/mcp-oauth/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // `token_endpoint_auth_method: "none"` is not decoration: without it n8n
+      // issues a confidential client and every grant comes back
+      // `invalid_client — Client secret is required`, which would test the
+      // wrong error entirely. Same body decanter's own consent flow registers.
+      body: JSON.stringify({ client_name: "n8n-decanter smoke", redirect_uris: ["http://127.0.0.1:1/callback"], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }),
+    });
+    const regText = await reg.text(); // read ONCE — a later .json() on a consumed body throws
+    assert.ok(reg.ok, `dynamic client registration must work: ${reg.status} ${regText.slice(0, 300)}`);
+    const { client_id } = JSON.parse(regText) as { client_id: string };
+
+    // First, the raw fact, straight from n8n — asserted separately so a
+    // future n8n that changes the code fails HERE, naming the cause, rather
+    // than in the CLI assertion below where it would look like our bug.
+    const grant = await fetch(`${HOST}/mcp-oauth/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: "never-issued-by-this-instance", client_id }),
+    });
+    const grantBody = (await grant.json().catch(() => ({}))) as { error?: string };
+    assert.equal(grantBody.error, "invalid_grant", `n8n must call a dead refresh token invalid_grant, got ${grant.status} ${JSON.stringify(grantBody)}`);
+
+    // Now the same state through the CLI. N8N_MCP_TOKEN has to go from BOTH
+    // places it lives — the process env and the sync dir's `.env` — or the
+    // bearer path wins and the OAuth code under test never runs. (Dropping
+    // only the env var is how the first run of this step passed vacuously.)
+    const authFile = path.join(TMP, ".decanter-auth.json");
+    const envFile = path.join(TMP, ".env");
+    const envBackup = readFileSync(envFile, "utf8");
+    const oauthEnv = { ...env };
+    delete oauthEnv.N8N_MCP_TOKEN;
+    try {
+      writeFileSync(envFile, envBackup.split("\n").filter((l) => !l.startsWith("N8N_MCP_TOKEN=")).join("\n"));
+      writeFileSync(authFile, JSON.stringify({ host: HOST, clientId: client_id, refreshToken: "never-issued-by-this-instance" }));
+      const { out, code } = await (async () => {
+        try {
+          const { stdout, stderr } = await execFile(process.execPath, [CLI, "diff", wfId], { cwd: TMP, env: oauthEnv, encoding: "utf8" });
+          return { out: stdout + stderr, code: 0 };
+        } catch (err) {
+          const e = err as { stdout?: string; stderr?: string; code?: number };
+          return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
+        }
+      })();
+      assert.equal(code, 1, "a dead session must exit non-zero: " + out);
+      // Guards against the vacuous pass: if a bearer token were still in play
+      // the command would simply succeed, and every assertion below would be
+      // testing nothing.
+      assert.ok(!/no differences/.test(out), "the OAuth path must be the one under test, not a surviving bearer token: " + out);
+      assert.match(out, /spent or was revoked/, "the cause is named: " + out);
+      assert.match(out, /n8n-decanter init --reauth/, "and the fix is a command that re-mints: " + out);
+      // The defect this plan fixes: a BARE `init` reuses this very file and
+      // re-probes with the same dead token, which is how a user ends up
+      // deleting credentials by hand.
+      assert.ok(!/n8n-decanter init(?! --reauth)/.test(out), "the dead-end advice must be gone: " + out);
+      assert.ok(!out.includes("    at "), "no stack trace without DEBUG: " + out);
+    } finally {
+      // Later steps share this dir — put the working credentials back.
+      writeFileSync(envFile, envBackup);
+      rmSync(authFile, { force: true });
+    }
+  });
+
   await step("mcp serve: guard-proxy against the REAL instance — reads pass, a jsCode write is blocked (Plan 33); live mirror auto-refreshes the snapshot (Plan 51 Part A)", async () => {
     // the live mirror needs git as its safety net (commit-before-pull); the
     // shared smoke dir isn't a repo, so make it one before the guard boots

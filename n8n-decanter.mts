@@ -64,7 +64,7 @@ const usageSections = (): Array<{ title: string; note?: string; entries: Array<{
         {
           verb: "init",
           lines: [
-            `  ${b("init")} [dir] [--force] [--host <url> --token <mcp-token> --api-key <public-api-key>]`,
+            `  ${b("init")} [dir] [--force] [--reauth] [--host <url> --token <mcp-token> --api-key <public-api-key>]`,
             `  ${d("                                              setup: .env, starter files, config (flags drive it non-interactively)")}`,
           ],
         },
@@ -465,7 +465,10 @@ async function main() {
     // `--mcp-token` is an accepted alias: two blind rounds probed for the name
     // (`--token FAKE`, then `--mcp-token FAKE`) before committing (Plan 75). The
     // token IS the MCP one, so the longer spelling is the reasonable guess.
-    await init(rest[0], { force, host: valueFlags.get("host"), token: valueFlags.get("token") ?? valueFlags.get("mcp-token"), apiKey: valueFlags.get("api-key") }, log);
+    // `--reauth` (Plan 87) skips the credential-reuse branch and re-consents:
+    // without it, `init` never re-mints, so a spent refresh token had no
+    // command that could replace it.
+    await init(rest[0], { force, reauth: args.includes("--reauth"), host: valueFlags.get("host"), token: valueFlags.get("token") ?? valueFlags.get("mcp-token"), apiKey: valueFlags.get("api-key") }, log);
     return;
   }
 
@@ -488,7 +491,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--dir=", "--host=", "--token=", "--mcp-token=", "--api-key=", "--help", "--version");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--dir=", "--host=", "--token=", "--mcp-token=", "--api-key=", "--reauth", "--help", "--version");
     try {
       const config = loadConfig(syncDir(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);

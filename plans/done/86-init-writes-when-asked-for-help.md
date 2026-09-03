@@ -6,7 +6,7 @@ correct behaviour already written elsewhere in the repo; one of them makes a
 help request scaffold files into a directory the user never vetted.
 **Source:** user field feedback 2026-09-02, report 1 ("Zwei echte Fußangeln"),
 verified claim-by-claim against the code the same day. Same batch as
-[Plan 87](../open/87-auth-errors-point-the-wrong-way.md),
+[Plan 87](87-auth-errors-point-the-wrong-way.md),
 [Plan 88](../open/88-data-tables-stale-rows-and-refs.md),
 [Plan 89](../open/89-rest-verbs-prerequisite-chain.md),
 [Plan 90](../open/90-backup-source-instance-stamp.md) and

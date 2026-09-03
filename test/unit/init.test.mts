@@ -2,7 +2,8 @@
 // the 2026-07-18 release blocker: from the published build (dist/lib/), a
 // plain `../template` URL resolved to the nonexistent dist/template.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
@@ -93,6 +94,193 @@ describe("init (non-interactive flags)", () => {
       !lines.some((l) => /restart your agent/.test(l)),
       `a re-init in a set-up dir must stay quiet: ${lines.join("|")}`,
     );
+  });
+});
+
+// Plan 87: the old advice for a spent refresh token was a bare `init`, which
+// reuses .decanter-auth.json whenever the host matches and never re-mints — so
+// following it re-probed with the same dead credentials and ended in
+// "credentials written anyway". `--reauth` is the way out; init's own verify
+// step now offers it instead of shrugging.
+describe("init --reauth (Plan 87)", () => {
+  const nullLog: Log = { info: () => {}, ok: () => {}, warn: () => {}, error: () => {} };
+  const capture = (lines: string[]): Log => ({
+    info: (m) => void lines.push(m),
+    ok: (m) => void lines.push(m),
+    warn: (m) => void lines.push(m),
+    error: (m) => void lines.push(m),
+  });
+
+  /** Discovery + a token endpoint that refuses every grant, like a spent token. */
+  async function deadTokenServer(): Promise<{ host: string; close: () => Promise<void> }> {
+    const server = http.createServer((req, res) => {
+      if (req.url === "/.well-known/oauth-authorization-server") {
+        return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+          authorization_endpoint: "http://x/mcp-oauth/authorize",
+          token_endpoint: "http://x/mcp-oauth/token",
+          registration_endpoint: "http://x/mcp-oauth/register",
+        }));
+      }
+      if (req.url === "/mcp-oauth/token") {
+        return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "invalid_grant" }));
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const host = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    return { host, close: () => new Promise((r) => server.close(() => r())) };
+  }
+
+  it("refuses on a non-TTY and names the flag that works without a browser", async () => {
+    const dir = path.join(TMP, "reauth-no-tty");
+    await assert.rejects(
+      init(dir, { reauth: true, host: "http://127.0.0.1:9" }, nullLog),
+      /--reauth needs a terminal[\s\S]*init --token <mcp-token>/,
+    );
+  });
+
+  it("refuses BEFORE the browser when N8N_MCP_TOKEN would win over the minted credentials anyway", async () => {
+    const dir = path.join(TMP, "reauth-vs-token");
+    await assert.rejects(
+      init(dir, { reauth: true, host: "http://127.0.0.1:9", token: "tok" }, nullLog),
+      /--reauth mints OAuth credentials, but an MCP token is set[\s\S]*always wins/,
+    );
+  });
+
+  it("a spent refresh token at the verify step names --reauth instead of 'credentials written anyway'", async () => {
+    const srv = await deadTokenServer();
+    const dir = path.join(TMP, "reauth-verify-spent");
+    mkdirSync(dir, { recursive: true });
+    const lines: string[] = [];
+    try {
+      // credentials that look fine and are not: exactly the state a user is in
+      // when a rotation is lost and the next run reports a dead session.
+      writeFileSync(path.join(dir, ".decanter-auth.json"), JSON.stringify({ host: srv.host, clientId: "c1", refreshToken: "spent" }));
+      await init(dir, { host: srv.host }, capture(lines));
+      const out = lines.join("\n");
+      assert.match(out, /refresh token is spent or was revoked/, out);
+      assert.match(out, /n8n-decanter init --reauth/, out);
+      assert.ok(!/credentials written anyway/.test(out), `the shrug is what this plan removes: ${out}`);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  /**
+   * The other half of the loop: an instance that refuses every refresh grant
+   * (the token is spent) but completes a fresh consent, then accepts the
+   * access token it just issued. Enough to prove `--reauth` ends in working
+   * credentials rather than merely printing something nicer.
+   */
+  async function reconsentServer(): Promise<{ host: string; close: () => Promise<void> }> {
+    const json = (res: http.ServerResponse, code: number, body: unknown): void =>
+      void res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(body));
+    const readBody = (req: http.IncomingMessage, done: (s: string) => void): void => {
+      let b = "";
+      req.on("data", (c) => (b += c));
+      req.on("end", () => done(b));
+    };
+    const server = http.createServer((req, res) => {
+      if (req.url === "/.well-known/oauth-authorization-server") {
+        return json(res, 200, {
+          authorization_endpoint: "http://internal/mcp-oauth/authorize",
+          token_endpoint: "http://internal/mcp-oauth/token",
+          registration_endpoint: "http://internal/mcp-oauth/register",
+        });
+      }
+      if (req.url === "/mcp-oauth/register") return readBody(req, () => json(res, 201, { client_id: "client-1" }));
+      if (req.url === "/mcp-oauth/token") {
+        return readBody(req, (b) => {
+          const p = new URLSearchParams(b);
+          // the OLD credential stays dead — only a real consent gets tokens
+          if (p.get("grant_type") !== "authorization_code") return json(res, 400, { error: "invalid_grant" });
+          json(res, 200, { access_token: "acc-new", token_type: "Bearer", expires_in: 3600, refresh_token: "ref-new" });
+        });
+      }
+      if (req.url === "/mcp-server/http") {
+        if (req.headers.authorization !== "Bearer acc-new") return void res.writeHead(401).end();
+        return readBody(req, (b) => {
+          const msg = JSON.parse(b);
+          if (String(msg.method).startsWith("notifications/")) return void res.writeHead(202).end();
+          const result = msg.method === "initialize"
+            ? { protocolVersion: "2025-03-26" }
+            : { content: [{ type: "text", text: JSON.stringify({ workflows: [{ id: "w1", name: "One", availableInMCP: true }] }) }] };
+          res.writeHead(200, { "content-type": "application/json", "mcp-session-id": "s1" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
+        });
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const host = `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    return { host, close: () => new Promise((r) => server.close(() => r())) };
+  }
+
+  // Timeout, not just assertions: a consent this test fails to drive lands on
+  // the verify step's `[Y/n]` prompt, which reads a stdin node:test never
+  // feeds — so the failure mode without it is a hang, not a red test.
+  it("closes the loop: --reauth replaces a spent token with credentials that work", { timeout: 20_000 }, async () => {
+    const srv = await reconsentServer();
+    const dir = path.join(TMP, "reauth-happy");
+    mkdirSync(dir, { recursive: true });
+    const lines: string[] = [];
+    // The consent step branches on a TTY, and the flow always PRINTS the
+    // authorize URL (for headless users), so the test can play the browser
+    // off the log without an injection point of its own.
+    const realIsTTY = process.stdin.isTTY;
+    const noBrowser = process.env.DECANTER_NO_BROWSER;
+    try {
+      process.stdin.isTTY = true;
+      process.env.DECANTER_NO_BROWSER = "1";
+      writeFileSync(path.join(dir, ".decanter-auth.json"), JSON.stringify({ host: srv.host, clientId: "old-client", refreshToken: "spent" }));
+      const log: Log = {
+        info: (m) => {
+          lines.push(m);
+          // The line reads `… open this URL yourself: <url>)` — the closing
+          // paren is prose, and leaving it on corrupts `state` into a CSRF
+          // mismatch (which then hangs on the re-consent prompt, not fails).
+          const url = /open this URL yourself: (\S+)/.exec(m)?.[1]?.replace(/\)$/, "");
+          if (url !== undefined) {
+            const u = new URL(url);
+            const redirect = new URL(u.searchParams.get("redirect_uri")!);
+            redirect.searchParams.set("code", "auth-code-1");
+            redirect.searchParams.set("state", u.searchParams.get("state")!);
+            void fetch(redirect); // the browser approving consent
+          }
+        },
+        ok: (m) => void lines.push(m),
+        warn: (m) => void lines.push(m),
+        error: (m) => void lines.push(m),
+      };
+      // `--host` keeps the run prompt-free; --reauth is what forces consent.
+      await init(dir, { reauth: true, host: srv.host }, log);
+      const out = lines.join("\n");
+      assert.ok(!/using existing MCP OAuth credentials/.test(out), `--reauth must SKIP the reuse branch: ${out}`);
+      const persisted = JSON.parse(readFileSync(path.join(dir, ".decanter-auth.json"), "utf8")) as { refreshToken: string; clientId: string };
+      assert.equal(persisted.refreshToken, "ref-new", "the spent token is gone from disk");
+      assert.equal(persisted.clientId, "client-1", "and so is the client it was minted for");
+      // The whole point: the run ENDS verified, not in "written anyway".
+      assert.match(out, /MCP connection verified/, out);
+      assert.ok(!/credentials written anyway/.test(out), out);
+    } finally {
+      process.stdin.isTTY = realIsTTY;
+      if (noBrowser === undefined) delete process.env.DECANTER_NO_BROWSER;
+      else process.env.DECANTER_NO_BROWSER = noBrowser;
+      await srv.close();
+    }
+  });
+
+  it("stays narrow: an unreachable host is still 'credentials written anyway', not an offer to re-consent", async () => {
+    const dir = path.join(TMP, "reauth-verify-offline");
+    mkdirSync(dir, { recursive: true });
+    const lines: string[] = [];
+    // Port 9 (discard) refuses instantly — a transport failure says NOTHING
+    // about the credential, so re-consenting would burn a working token.
+    const host = "http://127.0.0.1:9";
+    writeFileSync(path.join(dir, ".decanter-auth.json"), JSON.stringify({ host, clientId: "c1", refreshToken: "probably-fine" }));
+    await init(dir, { host }, capture(lines));
+    const out = lines.join("\n");
+    assert.match(out, /MCP check failed[\s\S]*credentials written anyway/, out);
+    assert.ok(!/--reauth/.test(out.replace(/re-consent with `init --reauth`/g, "")), `no re-consent offer on a network error: ${out}`);
   });
 });
 

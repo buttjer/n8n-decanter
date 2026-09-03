@@ -17,6 +17,7 @@ n8n-decanter <verb> --dir <path>    # global: start the config search in <path> 
 
 # Setup
 n8n-decanter init [dir] [--force]   # bootstrap (add --host/--token/--api-key to skip prompts)
+n8n-decanter init --reauth          # re-consent after a spent OAuth refresh token
 n8n-decanter completion zsh|bash
 
 # Sync — over n8n's MCP server, Code-node source only (structure lives in n8n)

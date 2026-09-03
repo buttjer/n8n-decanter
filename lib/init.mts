@@ -5,11 +5,13 @@ import { findConfigBelow, parseEnvFile } from "./config.mts";
 import {
   AUTH_FILE,
   McpClient,
+  type McpAuth,
   type McpAuthFile,
   openBrowserCommand,
   readAuthFile,
   runOAuthConsent,
   searchWorkflows,
+  TokenRefreshError,
   writeAuthFile,
 } from "./mcp.mts";
 import { PROXY_STATE_FILE } from "./mcpserve.mts";
@@ -586,9 +588,33 @@ async function refuseNestedSyncDir(dir: string, flagDriven: boolean, log: Log): 
   }
 }
 
+/**
+ * Browser consent → a fresh OAuth pair on disk. Shared by the setup step and
+ * the verify step's re-consent offer (Plan 87), so the two cannot write the
+ * auth file differently. Throws on a consent that did not complete; the
+ * existing file is untouched until consent succeeds.
+ */
+async function mintOAuthCredentials(dir: string, host: string, log: Log): Promise<McpAuthFile> {
+  const { clientId, tokens } = await runOAuthConsent(host, { log, openBrowser: openBrowserCommand });
+  const data: McpAuthFile = { host, clientId, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessTokenExpiresAt: tokens.accessTokenExpiresAt };
+  writeAuthFile(dir, data);
+  log.ok(`connected to ${host} via OAuth — credentials in ${AUTH_FILE} (gitignored)`);
+  return data;
+}
+
+/** The connection probe init closes with: one MCP read, reported for humans. */
+async function verifyMcpConnection(host: string, auth: McpAuth, log: Log): Promise<void> {
+  const workflows = await searchWorkflows(new McpClient({ host, auth, requestTimeoutMs: 10_000 }));
+  const available = workflows.filter((w) => w.availableInMCP).length;
+  log.ok(`MCP connection verified — ${workflows.length} workflow${workflows.length === 1 ? "" : "s"} visible, ${available} available to pull`);
+  if (available < workflows.length) {
+    log.info(style.dim(`  workflows must be opted in per-workflow: n8n workflow card (⋯ menu) or workflow settings → "Available in MCP"`));
+  }
+}
+
 export async function init(
   targetDir: string | undefined,
-  { force = false, host: hostFlag, token: tokenFlag, apiKey: apiKeyFlag }: { force?: boolean; host?: string; token?: string; apiKey?: string } = {},
+  { force = false, reauth = false, host: hostFlag, token: tokenFlag, apiKey: apiKeyFlag }: { force?: boolean; reauth?: boolean; host?: string; token?: string; apiKey?: string } = {},
   log: Log,
 ): Promise<void> {
   printBanner(log);
@@ -610,6 +636,10 @@ export async function init(
   // baseline manifest yet). Printed, never asked — every run's stdin stays
   // exactly as it was.
   const firstInit = !existsSync(path.join(dir, MANIFEST_FILE));
+  // Whether OAuth credentials are usable at the end — reused or freshly
+  // minted. Drives both the "no MCP credentials yet" warning and the verify
+  // step's decision about whether re-consent is even on the table.
+  let oauthOk = false;
   // ONE shared prompt session for every question: a second createPrompt()
   // would lose piped answers the first one already buffered, so the session
   // opens lazily on the first question and closes once at the end.
@@ -635,17 +665,42 @@ export async function init(
     // piped runs go straight to the token prompt so init stays scriptable.
     // --token / any setup flag suppresses every prompt (non-interactive mode).
     const auth = readAuthFileTolerant(dir, log);
+    // Plan 87: `--reauth` is the way OUT of a spent refresh token. Reuse is
+    // otherwise unconditional whenever the host matches, so the "re-run init"
+    // a dead session used to print came straight back here and re-probed with
+    // the same dead credentials — a closed loop.
+    const reuseAuth = auth !== null && auth.host === host && !reauth;
+    if (reauth) {
+      if (mcpToken !== "") {
+        // N8N_MCP_TOKEN wins over the auth file in resolveMcpAuth, so a freshly
+        // minted OAuth pair would be ignored — refuse BEFORE the browser
+        // consent rather than after it changed nothing.
+        throw new Error(
+          `--reauth mints OAuth credentials, but an MCP token is set (${tokenFlag !== undefined ? "--token" : `N8N_MCP_TOKEN in ${envFile}`}) and always wins over them\n` +
+            `  to move back to OAuth, remove N8N_MCP_TOKEN from ${envFile}, then: n8n-decanter init --reauth\n` +
+            `  to replace the token instead: n8n-decanter init --token <mcp-token>`,
+        );
+      }
+      if (!interactive) {
+        throw new Error(
+          "--reauth needs a terminal — the OAuth consent step opens a browser\n" +
+            "  no browser (CI, a headless box, a coding agent)? mint an MCP token in n8n\n" +
+            "  (Settings → MCP → API key) and pass it: n8n-decanter init --token <mcp-token>",
+        );
+      }
+    }
     if (mcpToken !== "") {
       // Doesn't name the flag: `--token` and `--mcp-token` both land here, and
       // echoing a spelling the user didn't type reads like a correction.
       log.info(tokenFlag !== undefined ? "using the MCP token given on the command line" : "using existing MCP token from .env (N8N_MCP_TOKEN)");
-    } else if (auth !== null && auth.host === host) {
-      log.info(`using existing MCP OAuth credentials (${AUTH_FILE})`);
+    } else if (reuseAuth) {
+      log.info(`using existing MCP OAuth credentials (${AUTH_FILE}) — re-consent with \`init --reauth\``);
+      oauthOk = true;
     } else if (interactive) {
+      if (reauth) log.info(`re-authorizing with ${host} — the existing ${AUTH_FILE} is replaced only if consent succeeds`);
       try {
-        const { clientId, tokens } = await runOAuthConsent(host, { log, openBrowser: openBrowserCommand });
-        writeAuthFile(dir, { host, clientId, refreshToken: tokens.refreshToken, accessToken: tokens.accessToken, accessTokenExpiresAt: tokens.accessTokenExpiresAt });
-        log.ok(`connected to ${host} via OAuth — credentials in ${AUTH_FILE} (gitignored)`);
+        await mintOAuthCredentials(dir, host, log);
+        oauthOk = true;
       } catch (err) {
         log.warn(`OAuth consent did not complete (${(err as Error).message})`);
         if (!flagDriven) mcpToken = await ask("paste an n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
@@ -653,7 +708,10 @@ export async function init(
     } else if (!flagDriven) {
       mcpToken = await ask("n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
     }
-    if (mcpToken === "" && !(auth !== null && auth.host === host)) {
+    // `oauthOk`, not a re-test of `auth`: a successful FIRST consent leaves
+    // `auth` null, so the old condition told a user who had just authorized in
+    // the browser that they had "no MCP credentials yet".
+    if (mcpToken === "" && !oauthOk) {
       // Names the flag, not just "re-run init": this fires on exactly the
       // host-only `init --host …` a blind agent reaches first (Plan 75).
       log.warn("no MCP credentials yet — sync verbs (pull/push/watch/…) will not work until you re-run init with `--token <mcp-token>` (n8n → Settings → MCP → API key) or set N8N_MCP_TOKEN");
@@ -729,14 +787,44 @@ export async function init(
       })();
   if (mcpAuth !== null) {
     try {
-      const workflows = await searchWorkflows(new McpClient({ host, auth: mcpAuth, requestTimeoutMs: 10_000 }));
-      const available = workflows.filter((w) => w.availableInMCP).length;
-      log.ok(`MCP connection verified — ${workflows.length} workflow${workflows.length === 1 ? "" : "s"} visible, ${available} available to pull`);
-      if (available < workflows.length) {
-        log.info(style.dim(`  workflows must be opted in per-workflow: n8n workflow card (⋯ menu) or workflow settings → "Available in MCP"`));
-      }
+      await verifyMcpConnection(host, mcpAuth, log);
     } catch (err) {
-      log.warn(`MCP check failed (${(err as Error).message.split("\n")[0]}) — credentials written anyway`);
+      // Plan 87: a spent refresh token is the ONE failure `init` can actually
+      // fix, and it used to end here in "credentials written anyway" — leaving
+      // the user at the start of the same loop. Deliberately narrow: only
+      // `invalid_grant` says the credential is spent. A network error, a 403
+      // "MCP access is disabled" (Plan 74) or a 401 say nothing about it, and
+      // re-consenting for those would burn a working token for no reason.
+      const spent = err instanceof TokenRefreshError && err.reason === "invalid_grant" && mcpEnv === undefined;
+      if (!spent) {
+        log.warn(`MCP check failed (${(err as Error).message.split("\n")[0]}) — credentials written anyway`);
+      } else if (!interactive) {
+        log.warn(`MCP check failed — the stored OAuth refresh token is spent or was revoked`);
+        log.info("  re-authorize on a terminal: n8n-decanter init --reauth");
+      } else {
+        log.warn("the stored OAuth refresh token is spent or was revoked — n8n will not renew it");
+        // A second prompt session is safe here and only here: this branch is
+        // TTY-gated, so there are no piped answers a closed reader could have
+        // swallowed (root AGENTS.md, "TTY-only paths").
+        const rl2 = createPrompt();
+        let yes: boolean;
+        try {
+          const answer = (await rl2.question(`re-authorize with ${host} in the browser now? [Y/n]: `)).trim().toLowerCase();
+          yes = answer === "" || answer === "y" || answer === "yes";
+        } finally {
+          rl2.close();
+        }
+        if (!yes) {
+          log.info("  skipped — when you are ready: n8n-decanter init --reauth");
+        } else {
+          try {
+            const fresh = await mintOAuthCredentials(dir, host, log);
+            await verifyMcpConnection(host, { kind: "oauth", file: path.join(dir, AUTH_FILE), data: fresh }, log);
+          } catch (reErr) {
+            log.warn(`re-authorization did not complete (${(reErr as Error).message.split("\n")[0]}) — retry with: n8n-decanter init --reauth`);
+          }
+        }
+      }
     }
   }
   if (apiKey !== "") {

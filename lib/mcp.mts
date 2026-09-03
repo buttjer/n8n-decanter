@@ -147,6 +147,54 @@ export function resolveMcpAuth(configDir: string, host: string, log?: Log): McpA
   return { kind: "oauth", file, data };
 }
 
+// ---------- 429 backoff, shared by every n8n endpoint we call ----------
+
+/** How many times a 429 is retried before the status reaches the caller. */
+const RATE_LIMIT_RETRIES = 5;
+
+/**
+ * The wait after a 429. Honor `Retry-After` up to n8n's verified 5-minute
+ * window (a bogus header must not stall longer); the cap must NOT be shorter
+ * than the window, or a burst-heavy run gives up inside it (smoke-proven
+ * regression). Without a header, exponential over the TOTAL retry count.
+ *
+ * Shared by `#rpc` and the OAuth endpoints (Plan 87) so the two cannot drift:
+ * the token endpoint had no backoff at all, which is why a throttled refresh
+ * reached the user as a dead session.
+ */
+function rateLimitDelayMs(res: Response, retryCount: number): number {
+  const retryAfter = Number(res.headers.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter * 1000, 310_000);
+  return Math.min(1000 * 2 ** (retryCount - 1), 8000);
+}
+
+/** Injectable for tests only — the backoff would otherwise take real seconds. */
+export interface RetryOpts {
+  sleep?: (ms: number) => Promise<void>;
+  log?: Log;
+}
+
+const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * `fetch` with the 429 backoff. The timeout signal is rebuilt per attempt —
+ * one `AbortSignal.timeout` created up front would already be spent by the
+ * time a retry goes out, turning a survivable rate-limit into a timeout.
+ */
+async function fetchRateLimited(url: string, init: RequestInit, timeoutMs: number, what: string, opts?: RetryOpts): Promise<Response> {
+  const sleep = opts?.sleep ?? realSleep;
+  let retries = 0;
+  for (;;) {
+    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    if (res.status !== 429 || retries >= RATE_LIMIT_RETRIES) return res;
+    retries++;
+    const delayMs = rateLimitDelayMs(res, retries);
+    if (delayMs > 5000) opts?.log?.warn(`n8n rate-limited ${what} (429) — waiting ${Math.round(delayMs / 1000)}s before retrying`);
+    await res.text().catch(() => {}); // drain before the retry
+    await sleep(delayMs);
+  }
+}
+
 // ---------- OAuth plumbing (shared by init's consent flow and token refresh) ----------
 
 interface OAuthDiscovery {
@@ -161,8 +209,8 @@ interface OAuthDiscovery {
  * behind a proxy (or a Docker container) advertises its own idea of its URL,
  * which may not be reachable from here — the paths are what matters.
  */
-export async function oauthDiscovery(host: string, timeoutMs: number): Promise<OAuthDiscovery> {
-  const res = await fetch(`${host}/.well-known/oauth-authorization-server`, { signal: AbortSignal.timeout(timeoutMs) });
+export async function oauthDiscovery(host: string, timeoutMs: number, opts?: RetryOpts): Promise<OAuthDiscovery> {
+  const res = await fetchRateLimited(`${host}/.well-known/oauth-authorization-server`, {}, timeoutMs, "OAuth discovery", opts);
   if (!res.ok) {
     throw new Error(`OAuth discovery failed (${res.status}) — is MCP access enabled on ${host}? (n8n Settings → MCP; needs n8n ≥ ~2.20)`);
   }
@@ -190,6 +238,26 @@ export interface OAuthTokens {
 }
 
 /**
+ * One failure, three diagnoses (Plan 87). The old text called EVERY non-ok
+ * refresh an expiry and sent the user to a bare `init` — which reuses the same
+ * auth file and never re-mints, so the advice looped back to the start and the
+ * only way out looked like deleting credentials that were often fine.
+ *
+ * The safe side here is unambiguous: **never advise discarding a credential
+ * unless we know it is spent**, and only `invalid_grant` knows that.
+ */
+function refreshErrorMessage(reason: string): string {
+  if (reason === "invalid_grant") {
+    return `MCP session expired (invalid_grant — the stored refresh token is spent or was revoked) — re-run: n8n-decanter init --reauth`;
+  }
+  if (reason === "HTTP 429") {
+    // Only reachable after fetchRateLimited has spent its retries.
+    return `n8n is rate-limiting the OAuth token endpoint (429) — your credentials are fine; wait for the limit to reset (n8n's window is 5 minutes) and run the command again`;
+  }
+  return `MCP token refresh failed (${reason}) — this does not mean your credentials are spent; retry, and check that n8n is reachable and MCP access is still enabled`;
+}
+
+/**
  * A failed token-grant call, carrying the server's OAuth error code so the
  * client can tell a lost refresh race (`invalid_grant` — recoverable by
  * re-reading the rotated auth file) from a genuinely dead session.
@@ -197,7 +265,7 @@ export interface OAuthTokens {
 export class TokenRefreshError extends Error {
   reason: string;
   constructor(reason: string) {
-    super(`MCP session expired (token refresh failed: ${reason}) — re-run: n8n-decanter init`);
+    super(refreshErrorMessage(reason));
     this.name = "TokenRefreshError";
     this.reason = reason;
   }
@@ -229,14 +297,19 @@ function tokensFromResponse(body: Record<string, unknown>, fallbackRefreshToken?
  * used (or revoked) — the client treats that as a possibly-lost refresh race
  * (see `#refresh`) before surfacing the re-init guidance.
  */
-export async function refreshAccessToken(host: string, clientId: string, refreshToken: string, timeoutMs: number): Promise<OAuthTokens> {
-  const { token_endpoint } = await oauthDiscovery(host, timeoutMs);
-  const res = await fetch(token_endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+export async function refreshAccessToken(host: string, clientId: string, refreshToken: string, timeoutMs: number, opts?: RetryOpts): Promise<OAuthTokens> {
+  const { token_endpoint } = await oauthDiscovery(host, timeoutMs, opts);
+  const res = await fetchRateLimited(
+    token_endpoint,
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId }),
+    },
+    timeoutMs,
+    "the OAuth token endpoint",
+    opts,
+  );
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok || typeof body.access_token !== "string") {
     const reason = typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
@@ -509,7 +582,7 @@ export class McpClient {
   }
 
   async #redeemAndPersist(data: McpAuthFile, file: string): Promise<string> {
-    const tokens = await refreshAccessToken(this.#host, data.clientId, data.refreshToken, this.#timeoutMs);
+    const tokens = await refreshAccessToken(this.#host, data.clientId, data.refreshToken, this.#timeoutMs, { sleep: this.#sleep, log: this.#log });
     // the refresh token ROTATED — persist before anything can interrupt us
     data.refreshToken = tokens.refreshToken;
     data.accessToken = tokens.accessToken;
@@ -560,14 +633,12 @@ export class McpClient {
       // n8n rate-limits the MCP endpoint (verified: 100 requests per IP per
       // 5 MINUTES on 2.30.7 — mcp.config.ts, N8N_MCP_SERVER_RATE_LIMIT) — a
       // rejected request was NOT applied, so retrying is safe for every
-      // method, including update_workflow. Honor Retry-After up to that
-      // verified window (a bogus header must not stall longer); the cap must
-      // NOT be shorter than the window, or a burst-heavy run gives up inside
-      // it (smoke-proven regression).
-      if (res.status === 429 && rateRetries < 5) {
+      // method, including update_workflow. The wait itself is
+      // `rateLimitDelayMs`, shared with the OAuth endpoints so the two
+      // backoffs cannot drift apart.
+      if (res.status === 429 && rateRetries < RATE_LIMIT_RETRIES) {
         rateRetries++;
-        const retryAfter = Number(res.headers.get("retry-after"));
-        const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 310_000) : Math.min(1000 * 2 ** (rateRetries - 1), 8000);
+        const delayMs = rateLimitDelayMs(res, rateRetries);
         if (delayMs > 5000) this.#log?.warn(`n8n rate-limited the MCP endpoint (429) — waiting ${Math.round(delayMs / 1000)}s before retrying (n8n allows 100 requests / 5 min by default)`);
         await res.text().catch(() => {}); // drain before the retry
         await this.#sleep(delayMs);

@@ -6,6 +6,7 @@ order: 2
 
 ```sh
 n8n-decanter init [dir] [--force]
+n8n-decanter init [dir] --reauth                                              # re-consent (spent token)
 n8n-decanter init [dir] --host <url> [--token <mcp-token>] [--api-key <key>]   # non-interactive
 ```
 
@@ -23,9 +24,11 @@ Interactive setup for a new (or existing) [sync dir](/docs/concepts/sync-layout/
   [executions](/docs/cli/executions/), [data-tables](/docs/cli/data-tables/),
   and [backup](/docs/cli/backup/).
 - When credentials already exist they are reused — edit or delete `.env` /
-  `.decanter-auth.json` to change them. A best-effort connection check runs
-  at the end (it also reports how many workflows are already
-  "Available in MCP").
+  `.decanter-auth.json` to change them, or pass
+  [`--reauth`](#re-authorizing-reauth) to re-consent without touching a file. A
+  best-effort connection check runs at the end (it also reports how many
+  workflows are already "Available in MCP"), and if that check finds the stored
+  refresh token spent, it offers to re-authorize on the spot.
 - Copies the starter template. Files named `X.example` in the template land
   as `X` in the target, and a copy-time baseline is recorded in
   `.decanter-template.json` (see [Re-running init](#re-running-init)).
@@ -74,6 +77,42 @@ n8n-decanter init ./flows --host n8n.example.com --token "$TOK" --api-key "$KEY"
 
 An explicit flag wins over an existing `.env` value; the end-of-init connection
 checks run exactly as they do interactively. `--force` composes with all three.
+
+## Re-authorizing (`--reauth`)
+
+OAuth refresh tokens rotate on every use, so one can be spent for good — a
+crash at the wrong moment, a concurrent run, or a stray second copy of
+`.decanter-auth.json`. Decanter then reports:
+
+```text
+MCP session expired (invalid_grant — the stored refresh token is spent or was
+revoked) — re-run: n8n-decanter init --reauth
+```
+
+`--reauth` is the one command that fixes it:
+
+```sh
+n8n-decanter init --reauth
+```
+
+It **skips the credential-reuse step**, opens the browser consent page again,
+and replaces `.decanter-auth.json` — but only if consent succeeds, so a
+cancelled re-auth leaves you exactly where you were. A plain `init` cannot do
+this: it reuses the auth file whenever the host matches, so it would re-probe
+with the same dead token.
+
+Two refusals, both up front rather than after a pointless browser trip:
+
+- **No terminal** — the consent flow needs a browser. Use
+  `init --token <mcp-token>` instead (n8n → Settings → MCP → API key).
+- **`N8N_MCP_TOKEN` is set** — a bearer token always wins over OAuth
+  credentials, so freshly minted ones would be ignored. Remove it from `.env`
+  first, or replace the token with `init --token <mcp-token>`.
+
+**Not every failure is a spent token, and only this one warrants `--reauth`.**
+A 429 means n8n is rate-limiting (the CLI already retried; your credentials are
+fine), and any other error is reported without a diagnosis. See
+[Troubleshooting](/docs/faq/troubleshooting/#mcp-session-expired--re-run-n8n-decanter-init---reauth).
 
 ## The n8n skills pointer
 
