@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, beforeEach, describe, it } from "node:test";
-import { HOST_UNSET, loadConfig, loadEnv, parseEnvFile, requireApiKey, resolveSearchStart } from "../../lib/config.mts";
+import { AUTH_MODE_ENV, HOST_UNSET, loadConfig, loadEnv, parseEnvFile, readAuthMode, requireApiKey, resolveSearchStart } from "../../lib/config.mts";
 
 const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-config-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
@@ -34,6 +34,7 @@ beforeEach(() => {
   delete process.env.N8N_API_KEY;
   delete process.env.N8N_MCP_TOKEN;
   delete process.env.N8N_DECANTER_DIR;
+  delete process.env.N8N_DECANTER_AUTH;
 });
 
 describe("parseEnvFile", () => {
@@ -241,6 +242,45 @@ describe("loadConfig", () => {
     assert.throws(() => requireApiKey(cfg, "data-tables"), /N8N_API_KEY/);
     const withKey = { ...cfg, apiKey: "k" };
     assert.equal(requireApiKey(withKey, "executions"), withKey, "passes the config through when the key exists");
+  });
+
+  // Plan 92. A proxy in front of n8n attaches the credentials, so there is no
+  // key to require — and the old workaround (a placeholder value in
+  // N8N_API_KEY) does not work: the proxy APPENDS its key to whatever the
+  // client sent and n8n 401s the pair (measured 2026-09-09).
+  it("requireApiKey asks for nothing in upstream mode — there is no key to set", () => {
+    const dir = configDir({}, `N8N_HOST=http://n8n.local\n${AUTH_MODE_ENV}=upstream\n`);
+    const cfg = loadConfig(dir);
+    assert.equal(cfg.authMode, "upstream");
+    assert.equal(cfg.apiKey, "", "and no placeholder is needed to get there");
+    assert.equal(requireApiKey(cfg, "executions"), cfg, "passes straight through");
+  });
+});
+
+describe("readAuthMode", () => {
+  it("defaults to credentials when unset or blank", () => {
+    assert.equal(readAuthMode(undefined), "credentials");
+    assert.equal(readAuthMode(""), "credentials");
+    assert.equal(readAuthMode("  "), "credentials");
+    assert.equal(readAuthMode("credentials"), "credentials");
+    assert.equal(readAuthMode("upstream"), "upstream");
+  });
+
+  // The mode decides whether a credential header is sent at all. Falling back
+  // to the default on a typo would restore the header silently and reproduce
+  // the very 401 the mode exists to remove — and it would read as a server
+  // problem, not a config one. So it throws, and names both legal values.
+  it("throws on an unknown value instead of falling back", () => {
+    assert.throws(() => readAuthMode("upsteam"), /not a known auth mode/);
+    assert.throws(() => readAuthMode("upsteam"), /upstream/);
+    assert.throws(() => readAuthMode("upsteam"), /credentials/);
+    assert.throws(() => readAuthMode("true"), new RegExp(AUTH_MODE_ENV));
+  });
+
+  it("loadConfig surfaces a typo'd mode on ANY verb, offline ones included", () => {
+    const dir = configDir({}, `N8N_HOST=http://n8n.local\n${AUTH_MODE_ENV}=gateway\n`);
+    assert.throws(() => loadConfig(dir), /not a known auth mode/);
+    assert.throws(() => loadConfig(dir, { requireHost: false }), /not a known auth mode/);
   });
 });
 

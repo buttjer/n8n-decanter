@@ -1,4 +1,5 @@
-import type { DataTable, DataTableColumn, DataTableRow, Execution, Workflow } from "./types.mts";
+import { AUTH_MODE_ENV } from "./config.mts";
+import type { AuthMode, DataTable, DataTableColumn, DataTableRow, Execution, Workflow } from "./types.mts";
 
 /**
  * n8n public REST API client — since Plan 33 only the surfaces MCP cannot
@@ -18,7 +19,20 @@ import type { DataTable, DataTableColumn, DataTableRow, Execution, Workflow } fr
  * fold into `dataTable:read`, so a key that lists tables fine still 403s on
  * `/columns`.
  */
-function scopeHint(method: string, pathname: string): string {
+function scopeHint(method: string, pathname: string, authMode: AuthMode): string {
+  const scope = scopeName(method, pathname);
+  // In upstream mode the under-scoped key belongs to the proxy, so the scope
+  // name alone would send the reader to an `.env` that holds no key (Plan 92).
+  // Credentials mode keeps its exact previous wording.
+  if (authMode === "upstream") {
+    const where = "The key belongs to the upstream auth proxy, not to your .env — fix it where the proxy mints it.";
+    return scope === "" ? where : `${scope} ${where}`;
+  }
+  return scope === "" ? "Check the key's scopes in n8n → Settings → n8n API." : scope;
+}
+
+/** The scope a refused path needed, or `""` when the path is not one we map. */
+function scopeName(method: string, pathname: string): string {
   const readOnly = " decanter only ever READS data tables — no write scope is needed.";
   if (pathname.includes("/data-tables/") && pathname.includes("/columns")) return `Add \`dataTableColumn:read\` (listing tables uses \`dataTable:list\`, which does NOT cover columns).${readOnly}`;
   if (pathname.includes("/data-tables/") && pathname.includes("/rows")) return `Add \`dataTableRow:read\` (separate from \`dataTable:read\`).${readOnly}`;
@@ -27,18 +41,20 @@ function scopeHint(method: string, pathname: string): string {
   if (pathname.startsWith("/api/v1/executions")) return "Add `execution:list` (and `execution:read` to fetch one).";
   if (pathname.startsWith("/api/v1/workflows") && method === "POST") return "Add `workflow:create` (`backup restore` redeploys a backup as a new workflow).";
   if (pathname.startsWith("/api/v1/workflows")) return "Add `workflow:read` (and `workflow:list` for init's connection check).";
-  return "Check the key's scopes in n8n → Settings → n8n API.";
+  return "";
 }
 
 export class N8nApi {
   #host: string;
   #apiKey: string;
   #timeoutMs: number;
+  #authMode: AuthMode;
 
-  constructor({ host, apiKey, requestTimeoutMs = 30_000 }: { host: string; apiKey: string; requestTimeoutMs?: number }) {
+  constructor({ host, apiKey, requestTimeoutMs = 30_000, authMode = "credentials" }: { host: string; apiKey: string; requestTimeoutMs?: number; authMode?: AuthMode }) {
     this.#host = host;
     this.#apiKey = apiKey;
     this.#timeoutMs = requestTimeoutMs;
+    this.#authMode = authMode;
   }
 
   /**
@@ -142,7 +158,10 @@ export class N8nApi {
       const res = await fetch(this.#host + pathname, {
         method,
         headers: {
-          "X-N8N-API-KEY": this.#apiKey,
+          // OMITTED, not blanked, in upstream mode: the proxy in front of n8n
+          // APPENDS its key to whatever the client sent, and n8n answers 401 to
+          // the pair (measured 2026-09-09). An empty header is still a header.
+          ...(this.#authMode === "credentials" && { "X-N8N-API-KEY": this.#apiKey }),
           accept: "application/json",
           ...(body !== undefined && { "content-type": "application/json" }),
         },
@@ -155,8 +174,18 @@ export class N8nApi {
         // and n8n does not say which scope is missing. Mapped HERE rather than
         // in each caller so every REST surface (executions, data-tables, backup)
         // gets it: `pathname` already identifies what was refused.
+        // 401 used to fall through to the bare status line below — the least
+        // helpful place to land, and the failure upstream mode makes most
+        // likely (a proxy that forwards but attaches nothing).
+        if (res.status === 401) {
+          throw new Error(this.#authMode === "upstream"
+            ? `${method} ${pathname} was rejected (401) — decanter sent no API key by design (${AUTH_MODE_ENV}=upstream); the upstream auth proxy did not attach a valid one`
+            : `${method} ${pathname} was rejected (401) — N8N_API_KEY is not valid for ${this.#host} (n8n → Settings → n8n API)`);
+        }
         if (res.status === 403) {
-          throw new Error(`${method} ${pathname} was refused (403) — N8N_API_KEY is valid but lacks a scope. ${scopeHint(method, pathname)}`);
+          throw new Error(this.#authMode === "upstream"
+            ? `${method} ${pathname} was refused (403) — the API key the upstream auth proxy attaches is valid but lacks a scope. ${scopeHint(method, pathname, this.#authMode)}`
+            : `${method} ${pathname} was refused (403) — N8N_API_KEY is valid but lacks a scope. ${scopeHint(method, pathname, this.#authMode)}`);
         }
         throw new Error(`${method} ${pathname} failed: ${res.status} ${res.statusText}\n${text.slice(0, 2000)}`);
       }

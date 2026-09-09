@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`N8N_DECANTER_AUTH=upstream` — an auth mode for instances behind a proxy
+  that attaches the n8n credentials itself.** In this mode decanter sends *no*
+  credential header at all: no `Authorization` on MCP, no `X-N8N-API-KEY` on
+  REST. That is the only thing that works — a proxy which adds its own key
+  **appends** it to whatever the client sent, and n8n answers `401` to the pair,
+  so the previous workaround (a placeholder value in `N8N_API_KEY`, to satisfy
+  the REST-verb guard) fails just like an empty one. `N8N_API_KEY` stops being
+  required, so `executions`, `data-tables` and `backup` work with no key of your
+  own. `mcp serve` drops the agent's session secret instead of swapping it for a
+  credential, so that local secret is never forwarded upstream. Set it in `.env`
+  or with the new **`init --auth upstream`**, which needs no token, no browser
+  and no TTY, and verifies both backends through the proxy. Existing credentials
+  are kept, ignored, and reported as unused. Any other value of the variable is
+  an error on every verb — a typo must not silently restore the header.
+
+### Fixed
+
+- **A REST 401 now says what is wrong.** It used to fall through to a bare
+  `401 Unauthorized` status line; it now names `N8N_API_KEY` as invalid for the
+  host (or, in upstream mode, points at the proxy).
+
 ## [0.11.0] - 2026-09-03
 
 ### Changed

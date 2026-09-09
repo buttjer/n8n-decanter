@@ -129,6 +129,40 @@ which workflows still need it.
 credentials at all (`scenario create --scaffold` is the exception — it needs
 MCP).
 
+### When a proxy in front of n8n holds the credentials
+
+Some setups put a gateway between you and n8n, and the gateway attaches the n8n
+credentials itself. Then decanter must send **none** — not a placeholder, none.
+A proxy that adds its own key **appends** it to whatever the client sent, and
+n8n rejects the pair with a `401`. Point `N8N_HOST` at the proxy and set:
+
+```sh
+N8N_DECANTER_AUTH=upstream
+```
+
+Or let `init` write it, with nothing to paste and no browser:
+
+```sh
+n8n-decanter init . --host <proxy-url> --auth upstream
+```
+
+In this mode decanter omits the `Authorization` header on MCP and the
+`X-N8N-API-KEY` header on REST. `N8N_API_KEY` stops being required, so
+[executions](/docs/cli/executions/), [data-tables](/docs/cli/data-tables/) and
+[backup](/docs/cli/backup/) work with no key of your own — the proxy's key
+needs the scopes listed above instead. `mcp serve` drops the agent's session
+secret rather than forwarding it, since that secret authenticates the agent to
+decanter and means nothing upstream.
+
+Existing credentials are left on disk and ignored, and `init` says so. Nothing
+sends them while the mode is on; remove them yourself if you are not switching
+back. A value other than `upstream` or `credentials` is an error rather than a
+silent fallback to the default — a typo here would quietly restore the header
+and reproduce the very `401` the mode removes.
+
+No URL changes are needed: REST stays `<host>/api/v1/…` and MCP stays
+`<host>/mcp-server/http`, so one proxy route serves both.
+
 ## Git worktrees
 
 Both credential files are gitignored, so a **linked git worktree starts with

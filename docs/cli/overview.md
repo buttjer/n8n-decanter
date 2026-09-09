@@ -169,6 +169,12 @@ verbs; the **public API key** (`N8N_API_KEY`, optional) powers only
 `executions`, `data-tables`, and `backup` — the surfaces n8n's MCP server
 doesn't cover.
 
+Behind a proxy that attaches the n8n credentials for you, set
+`N8N_DECANTER_AUTH=upstream` (or `init --auth upstream`) and decanter sends no
+credential header at all — including on the REST verbs, which then need no
+`N8N_API_KEY`. See
+[configuration](/docs/concepts/configuration/#when-a-proxy-in-front-of-n8n-holds-the-credentials).
+
 ## Output and scripting
 
 Output is styled (color, `✓`/`!`/`✗` glyphs, progress) **only when writing to

@@ -237,7 +237,7 @@ export interface PreflightContext {
   /** Engine version for the `simulate` stage. */
   simVersion: string;
   /** True when N8N_API_KEY is set (REST auto-fetch + `history` fallback). */
-  hasApiKey: boolean;
+  restAvailable: boolean;
   /** Lazy default-timeout MCP client (throws on missing creds — caught by `connect`). */
   mcp: () => McpClient;
   /** Lazy REST client (throws without a key). */
@@ -351,7 +351,12 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
           unavailable = true;
           return { status: "pass", message: "MCP reachable, auth valid" };
         }
-        return { status: "fail", message: `cannot reach MCP: ${(err as Error).message.split("\n")[0]}`, remediation: `n8n-decanter init  (or check N8N_HOST / N8N_MCP_TOKEN)` };
+        // In upstream mode `init` fixes nothing about the credential — a proxy
+        // holds it — so the usual advice DROPS OUT rather than gaining a clause.
+        const remediation = ctx.config.authMode === "upstream"
+          ? "check the upstream auth proxy attaches valid n8n credentials (or check N8N_HOST)"
+          : "n8n-decanter init  (or check N8N_HOST / N8N_MCP_TOKEN)";
+        return { status: "fail", message: `cannot reach MCP: ${(err as Error).message.split("\n")[0]}`, remediation };
       }
     });
 
@@ -497,7 +502,7 @@ async function resolveSource(ctx: PreflightContext, remote: Workflow | undefined
   // capture source
   let ref = ctx.executionId ?? latestCaptureId(ctx.dir) ?? undefined;
   let autoFetched = false;
-  if (ctx.executionId === undefined && runtimeActive && !ctx.noFetch && ctx.hasApiKey && remote !== undefined) {
+  if (ctx.executionId === undefined && runtimeActive && !ctx.noFetch && ctx.restAvailable && remote !== undefined) {
     const stale = ref !== undefined ? captureStaleness(ctx.dir, ref, "capture", remote) : "missing";
     if (stale === "missing" || stale === "stale") {
       try {
@@ -510,7 +515,7 @@ async function resolveSource(ctx: PreflightContext, remote: Workflow | undefined
     }
   }
   if (ref === undefined) {
-    const message = ctx.hasApiKey || !runtimeActive ? "no capture or scenario to pin the runtime tier from" : "no capture or scenario, and no N8N_API_KEY to auto-fetch one";
+    const message = ctx.restAvailable || !runtimeActive ? "no capture or scenario to pin the runtime tier from" : "no capture or scenario, and no N8N_API_KEY to auto-fetch one";
     return { source: "capture", finding: { status: runtimeActive ? "warn" : "info", message, remediation: bothPaths, reason: message, unlock: bothPaths } };
   }
   const stale = captureStaleness(ctx.dir, ref, "capture", remote);
@@ -627,7 +632,7 @@ async function historyCheck(ctx: PreflightContext): Promise<Omit<CheckFinding, "
   try {
     rows = await searchExecutions(ctx.mcp(), { workflowId: ctx.id, limit: LIMIT });
   } catch {
-    if (ctx.hasApiKey) {
+    if (ctx.restAvailable) {
       try {
         rows = await ctx.api().listExecutions({ workflowId: ctx.id, limit: LIMIT, includeData: false });
       } catch {
@@ -636,7 +641,7 @@ async function historyCheck(ctx: PreflightContext): Promise<Omit<CheckFinding, "
     }
   }
   if (rows === undefined) {
-    const reason = ctx.hasApiKey ? "search_executions unavailable and the REST executions probe failed" : "no MCP search_executions and no N8N_API_KEY for the REST fallback";
+    const reason = ctx.restAvailable ? "search_executions unavailable and the REST executions probe failed" : "no MCP search_executions and no N8N_API_KEY for the REST fallback";
     return { status: "skip", message: reason, reason, unlock: "upgrade n8n for search_executions, or set N8N_API_KEY" };
   }
   if (rows.length === 0) return { status: "info", message: "no recent production runs" };

@@ -785,3 +785,9 @@ below are written bare for readability; add the prefix if your shell needs it.
 - **Credentials:** MCP (OAuth via `init`, or `N8N_MCP_TOKEN`) powers the sync,
   structure, and lifecycle verbs; the optional public API key (`N8N_API_KEY`)
   powers `executions`, `data-tables`, and `backup`.
+- **`N8N_DECANTER_AUTH=upstream`** means a proxy in front of n8n attaches the
+  credentials and decanter sends none — so this project may legitimately have
+  **no** token and no API key anywhere. Do not "fix" that by minting one or
+  putting a placeholder in `N8N_API_KEY`: the proxy appends its key to whatever
+  the client sends and n8n rejects the pair. A 401 in this mode is the proxy's
+  to fix, and re-running `init` changes nothing.

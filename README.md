@@ -94,7 +94,9 @@ set a bare `pull`/`push`/`diff` acts on.)
 headless/CI — pass it to `init --host <url> --token <mcp-token>` rather than
 hand-writing `.env`, which leaves the config, template, `.gitignore` and agent
 configs unscaffolded; `N8N_API_KEY` is optional, needed only for `executions`,
-`data-tables`, and `backup`. Details: [Installation](docs/getting-started/installation.md),
+`data-tables`, and `backup`. Behind a proxy that attaches the n8n credentials
+itself, `init --auth upstream` sets `N8N_DECANTER_AUTH=upstream` and decanter
+sends none of its own. Details: [Installation](docs/getting-started/installation.md),
 [init](docs/cli/init.md), [Configuration](docs/concepts/configuration.md).
 
 ## Works with n8n's official skills

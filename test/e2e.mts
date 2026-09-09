@@ -47,6 +47,13 @@ const UNAVAILABLE_TEXT = "Workflow is not available in MCP. Enable MCP access fr
 const db = new Map<string, any>();
 let updateCount = 0; // update_workflow calls served — watch steps assert deltas
 let slowUpdateMs = 0; // when > 0, update_workflow responses are delayed (queued-push test)
+// Plan 92. When true the mock stands in for an n8n behind an auth proxy: it
+// 401s ANY client-sent credential, because that is what the real thing does —
+// measured 2026-09-09, the proxy APPENDS its own key to the client's and n8n
+// rejects the pair. Inverting the gates (rather than dropping them) is what
+// makes a regression that reintroduces a placeholder header fail loudly, and
+// it catches a blank header too, which a value assertion never would.
+let gatewayMode = false;
 let createCount = 0;
 // ---- test_workflow scripting (the `test` verb steps) ----
 let lastTestCall: { workflowId: string; pinData: Record<string, unknown[]>; triggerNodeName?: string } | undefined;
@@ -276,7 +283,7 @@ const server = http.createServer((req, res) => {
   httpRequests++;
   // ---- MCP endpoint (bearer-authed JSON-RPC over streamable HTTP) ----
   if (req.url === "/mcp-server/http") {
-    if (req.headers.authorization !== `Bearer ${MCP_TOKEN}`) return void res.writeHead(401).end("unauthorized");
+    if (gatewayMode ? req.headers.authorization !== undefined : req.headers.authorization !== `Bearer ${MCP_TOKEN}`) return void res.writeHead(401).end("unauthorized");
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
@@ -304,7 +311,7 @@ const server = http.createServer((req, res) => {
   }
 
   // ---- REST endpoints (the API-only verbs) ----
-  if (req.headers["x-n8n-api-key"] !== "test-key") return void res.writeHead(401).end("unauthorized");
+  if (gatewayMode ? req.headers["x-n8n-api-key"] !== undefined : req.headers["x-n8n-api-key"] !== "test-key") return void res.writeHead(401).end("unauthorized");
   // init's API-key probe (GET /workflows?limit=1) — a shallow list suffices
   if (req.method === "GET" && req.url!.startsWith("/api/v1/workflows?")) {
     return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: [], nextCursor: null }));
@@ -2638,6 +2645,68 @@ await step("requireApiKey at the CLI surface: an API-only verb without N8N_API_K
   } finally {
     env = savedEnv;
   }
+});
+
+// Plan 92. The whole point of the mode is a NEGATIVE — that no credential
+// header leaves the process — so the mock is flipped to 401 anything it is
+// sent, and every assertion below that exits 0 is that negative, proven at the
+// CLI surface. The old workaround (a placeholder in N8N_API_KEY) fails this
+// step, which is why it is written as an inversion rather than a relaxation.
+await step("upstream auth mode: init writes it, and both backends work with NO credentials at all", async () => {
+  gatewayMode = true;
+  const savedEnv = env;
+  const upstreamTarget = path.join(TMP, "upstream-target");
+  try {
+    // --- init: no prompts, no browser, nothing to paste
+    const { stdout, stderr } = await execFile(process.execPath, [CLI, "init", upstreamTarget, "--host", env.N8N_HOST!, "--auth", "upstream"], { encoding: "utf8", env: savedEnv });
+    const out = stdout + stderr;
+    assert.equal(read(upstreamTarget, ".env"), `N8N_HOST=${env.N8N_HOST}\nN8N_DECANTER_AUTH=upstream\n`, "no credential lines, and no placeholder either");
+    assert.ok(!existsSync(path.join(upstreamTarget, ".decanter-auth.json")), "no OAuth credentials minted");
+    assert.match(out, /MCP connection verified/, "the MCP half is checked");
+    // The REST half used to be gated on the API key being set, which would
+    // have left `init --auth upstream` verifying MCP and nothing else.
+    assert.match(out, /REST API reachable through the upstream auth proxy/, "and so is the REST half");
+
+    // --- the verbs themselves, in the established sync dir
+    env = { ...savedEnv, N8N_DECANTER_AUTH: "upstream" };
+    delete env.N8N_API_KEY;
+    delete env.N8N_MCP_TOKEN;
+    let r = await cli("diff", "wf123");
+    assert.equal(r.code, 0, "MCP backend, no Authorization header: " + r.out);
+    r = await cli("executions", "wf123", "--limit=1");
+    assert.equal(r.code, 0, "REST backend, no X-N8N-API-KEY header: " + r.out);
+    // ...and the same REST verb is the one that hard-refuses in the default
+    // mode, so this is the requireApiKey gate standing down, not going missing.
+    r = await cli("preflight", "wf123", "--offline");
+    assert.equal(r.code, 0, r.out);
+  } finally {
+    env = savedEnv;
+    gatewayMode = false;
+  }
+});
+
+await step("upstream auth mode: a typo'd mode fails loudly, on an OFFLINE verb too", async () => {
+  const savedEnv = env;
+  env = { ...savedEnv, N8N_DECANTER_AUTH: "upsteam" };
+  try {
+    // Offline on purpose: the mode is read in loadConfig, so a setup error
+    // surfaces on the first command that reads config — not on the first one
+    // that happens to need a credential.
+    const r = await cli("preflight", "wf123", "--offline");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /N8N_DECANTER_AUTH="upsteam" is not a known auth mode/);
+    assert.match(r.out, /upstream/);
+  } finally {
+    env = savedEnv;
+  }
+});
+
+await step("upstream auth mode: --auth upstream refuses a credential flag instead of ignoring it", async () => {
+  const r = await cli("init", path.join(TMP, "upstream-conflict"), "--host", env.N8N_HOST!, "--auth", "upstream", "--token", "unused");
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /--token/);
+  assert.match(r.out, /nothing to configure/);
+  assert.ok(!existsSync(path.join(TMP, "upstream-conflict", ".env")), "refused before writing anything");
 });
 
 const dtDir = path.join(TMP, "data-tables");

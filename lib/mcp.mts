@@ -2,13 +2,14 @@
 // Speaks JSON-RPC over n8n's Streamable-HTTP MCP endpoint with a minimal
 // hand-rolled client — no SDK dependency. Auth is either a rotatable bearer
 // token (N8N_MCP_TOKEN) or OAuth (client id + refresh token minted by `init`,
-// stored in .decanter-auth.json). All shapes verified against n8n 2.30.7
-// (plans/OPEN-32 spike).
+// stored in .decanter-auth.json) — or nobody's, when a proxy in front of n8n
+// attaches it (N8N_DECANTER_AUTH=upstream, Plan 92). All shapes verified
+// against n8n 2.30.7 (plans/OPEN-32 spike).
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { HOST_UNSET } from "./config.mts";
+import { AUTH_MODE_ENV, HOST_UNSET } from "./config.mts";
 import { credentialFile } from "./git.mts";
-import type { Log, Workflow } from "./types.mts";
+import type { AuthMode, Log, Workflow } from "./types.mts";
 import { CODE_NODE_TYPE } from "./util.mts";
 
 export const MCP_PATH = "/mcp-server/http";
@@ -81,7 +82,14 @@ export interface McpAuthFile {
 
 export type McpAuth =
   | { kind: "bearer"; token: string }
-  | { kind: "oauth"; file: string; data: McpAuthFile };
+  | { kind: "oauth"; file: string; data: McpAuthFile }
+  /**
+   * Decanter holds no credential and sends no `Authorization` header at all —
+   * a proxy in front of n8n attaches one (Plan 92). It is a MEMBER rather than
+   * a second nullable concept so that `resolveMcpAuth` returning `null` keeps
+   * meaning exactly "unusable, tell the user how to set up".
+   */
+  | { kind: "upstream" };
 
 /**
  * Strictly local — the path `init` mints into and every rotation rewrites.
@@ -131,7 +139,17 @@ export function writeAuthFile(configDir: string, data: McpAuthFile): void {
  * auth file. An auth file minted for a different host is stale and ignored
  * (warned) — `init` against the new host refreshes it.
  */
-export function resolveMcpAuth(configDir: string, host: string, log?: Log): McpAuth | null {
+export function resolveMcpAuth(configDir: string, host: string, log?: Log, authMode: AuthMode = "credentials"): McpAuth | null {
+  // FIRST, ahead of the token and the auth file: in upstream mode a credential
+  // sitting in the environment is not a fallback, it is a header decanter must
+  // not send. Warn rather than obey, so an ignored secret reads as ignored.
+  if (authMode === "upstream") {
+    // `existsSync`, not `readAuthFile`: a corrupt auth file is irrelevant here
+    // and must not throw on the one path that never reads it.
+    const stale = [process.env.N8N_MCP_TOKEN ? "N8N_MCP_TOKEN" : "", existsSync(readAuthFilePath(configDir)) ? AUTH_FILE : ""].filter((s) => s !== "");
+    if (stale.length > 0) log?.warn(`${AUTH_MODE_ENV}=upstream — ignoring ${stale.join(" and ")}; decanter sends no MCP credential and the upstream auth proxy attaches one`);
+    return { kind: "upstream" };
+  }
   const token = process.env.N8N_MCP_TOKEN ?? "";
   if (token !== "") return { kind: "bearer", token };
   const file = readAuthFilePath(configDir);
@@ -509,9 +527,17 @@ export class McpClient {
     return this.#initialized;
   }
 
-  /** Current bearer: the static token, or a cached/refreshed OAuth access token. */
+  /**
+   * Current bearer: the static token, or a cached/refreshed OAuth access token.
+   * There is no upstream answer — that mode has no token to return, which is
+   * why `authHeaders` checks for it ABOVE this method rather than here.
+   */
   async #accessToken(forceRefresh = false): Promise<string> {
     if (this.#auth.kind === "bearer") return this.#auth.token;
+    // Unreachable via `authHeaders`; a guard, not a code path, so a future
+    // caller that skips it fails with a sentence instead of a TypeError on
+    // `data` deep inside the refresh machinery.
+    if (this.#auth.kind === "upstream") throw new Error("internal: no MCP access token exists in upstream auth mode — use authHeaders()");
     const { data } = this.#auth;
     if (!forceRefresh && this.#cacheValid(data)) return data.accessToken!;
     // one refresh at a time in-process: concurrent callTool()s join the same
@@ -523,13 +549,38 @@ export class McpClient {
   }
 
   /**
-   * The upstream bearer for the guard proxy (Plan 33): the static token, or a
-   * cached/refreshed OAuth access token — same path `callTool` uses, so the
-   * proxy inherits the refresh-race coordination. `forceRefresh` after an
-   * upstream 401.
+   * The auth headers for one n8n request — for `#rpc` and for both guard
+   * proxies (Plan 33). The static token, or a cached/refreshed OAuth access
+   * token (same path `callTool` uses, so the proxies inherit the refresh-race
+   * coordination), or **nothing at all** in upstream mode. `forceRefresh`
+   * after a 401.
+   *
+   * Returns headers rather than a token so "send no credential" lives in ONE
+   * place. With a nullable token each of the three call sites would spell out
+   * its own conditional spread, and a `...(token && {…})` that silently drops
+   * on `""` is not a mistake the compiler catches. It also keeps the upstream
+   * check ABOVE `#accessToken`, whose OAuth machinery (`#refresh`,
+   * `#redeemAndPersist`, `#refreshInFlight`) would otherwise need widening for
+   * a case that can never reach it — and would TypeError if one did.
    */
-  bearerToken(forceRefresh = false): Promise<string> {
-    return this.#accessToken(forceRefresh);
+  async authHeaders(forceRefresh = false): Promise<Record<string, string>> {
+    if (this.#auth.kind === "upstream") return {};
+    return { authorization: `Bearer ${await this.#accessToken(forceRefresh)}` };
+  }
+
+  /**
+   * Whether a 401 is worth one forced-refresh retry. Only OAuth can mint a new
+   * token; a static bearer and upstream mode would send the identical request
+   * again, for nothing — and n8n's MCP endpoint allows 100 requests per IP per
+   * 5 minutes, so a pointless retry is not free.
+   */
+  get canRefresh(): boolean {
+    return this.authKind === "oauth";
+  }
+
+  /** Which credential shape this client uses — for wording a 401 (Plan 92). */
+  get authKind(): McpAuth["kind"] {
+    return this.#auth.kind;
   }
 
   #cacheValid(data: McpAuthFile): boolean {
@@ -608,12 +659,12 @@ export class McpClient {
     let rateRetries = 0;
     let sessionRetried = false;
     for (;;) {
-      const token = await this.#accessToken(refreshed);
+      const auth = await this.authHeaders(refreshed);
       try {
         res = await fetch(this.#host + MCP_PATH, {
           method: "POST",
           headers: {
-            authorization: `Bearer ${token}`,
+            ...auth,
             "content-type": "application/json",
             accept: "application/json, text/event-stream",
             ...(this.#sessionId !== undefined && { "mcp-session-id": this.#sessionId }),
@@ -626,7 +677,7 @@ export class McpClient {
         if (name === "TimeoutError" || name === "AbortError") throw timeoutError();
         throw err;
       }
-      if (res.status === 401 && this.#auth.kind === "oauth" && !refreshed) {
+      if (res.status === 401 && this.canRefresh && !refreshed) {
         refreshed = true; // access token may have just expired — refresh once
         continue;
       }
@@ -672,7 +723,9 @@ export class McpClient {
     if (res.status === 401) {
       throw new Error(this.#auth.kind === "bearer"
         ? "the MCP token was rejected (401) — mint a fresh one in n8n (Settings → MCP) and update N8N_MCP_TOKEN (the public API key is not a valid MCP token)"
-        : "MCP authorization rejected (401) — re-run: n8n-decanter init");
+        : this.#auth.kind === "upstream"
+          ? `MCP authorization rejected (401) — decanter sent no credential by design (${AUTH_MODE_ENV}=upstream); the upstream auth proxy in front of ${this.#host} did not attach a valid one`
+          : "MCP authorization rejected (401) — re-run: n8n-decanter init");
     }
     // 403 is what a SWITCHED-OFF MCP server answers a valid token with, verified
     // on n8n 2.30.7 (Plan 74). It never 404s for that — 404 means the endpoint
@@ -728,11 +781,11 @@ export class McpClient {
  * MCP is the sync backend for the workflow code path (Plan 32) — every
  * pull/push/status/watch/lifecycle verb goes through here.
  */
-export function createMcpClient(config: { host: string; configDir: string; requestTimeoutMs: number }, log?: Log): McpClient {
+export function createMcpClient(config: { host: string; configDir: string; requestTimeoutMs: number; authMode?: AuthMode }, log?: Log): McpClient {
   if (config.host === "") {
     throw new Error(HOST_UNSET);
   }
-  const auth = resolveMcpAuth(config.configDir, config.host, log);
+  const auth = resolveMcpAuth(config.configDir, config.host, log, config.authMode);
   if (auth === null) {
     throw new Error(
       "no MCP credentials — run `n8n-decanter init . --token <mcp-token>` (n8n → Settings → MCP → API key),\n" +

@@ -74,9 +74,36 @@ n8n-decanter init ./flows --host n8n.example.com --token "$TOK" --api-key "$KEY"
   (there is **no** headless OAuth — the browser consent flow needs a terminal).
 - `--api-key <key>` — the optional public API key (`N8N_API_KEY`). Omit it and
   it's simply skipped.
+- `--auth upstream` — a proxy in front of n8n attaches the credentials, so
+  decanter holds and sends none. See below.
 
 An explicit flag wins over an existing `.env` value; the end-of-init connection
-checks run exactly as they do interactively. `--force` composes with all three.
+checks run exactly as they do interactively. `--force` composes with all four.
+
+## Auth handled by a proxy (`--auth upstream`)
+
+When a gateway sits in front of n8n and attaches the n8n credentials itself,
+decanter must send **none of its own**. A placeholder does not work: the proxy
+**appends** its key to whatever the client sent, and n8n `401`s the pair.
+
+```sh
+n8n-decanter init . --host <proxy-url> --auth upstream
+```
+
+That writes `N8N_HOST` and `N8N_DECANTER_AUTH=upstream` to `.env` and nothing
+else — no token to paste, no browser, no `.decanter-auth.json`. Both halves are
+then verified: the MCP connection check, and a REST probe through the proxy.
+
+- **It refuses `--token`, `--api-key` and `--reauth`**, before writing anything.
+  Those configure a credential this mode does not send, and quietly storing one
+  is how a value nothing uses ends up in a credential file awaiting rotation.
+- **Credentials already in `.env` (or `.decanter-auth.json`) are kept and
+  ignored**, and `init` warns which ones. Remove them yourself if you are not
+  switching back.
+
+[Configuration → credentials](/docs/concepts/configuration/#when-a-proxy-in-front-of-n8n-holds-the-credentials)
+has what changes at request level, and what still needs the proxy's key to be
+scoped correctly.
 
 ## Re-authorizing (`--reauth`)
 
@@ -295,6 +322,9 @@ says so, printing the nested options in place of the plain restart line.
 
 ## Flags
 
+- `--auth upstream` — a proxy in front of n8n attaches the credentials
+  ([above](#auth-handled-by-a-proxy---auth-upstream)). Refuses `--token`,
+  `--api-key` and `--reauth`.
 - `--force` — the escape hatch: overwrites **every** template file with its
   template version, including ones you edited (each such file is flagged
   `(had local changes)`), then re-records the baseline. `.env` is never touched.

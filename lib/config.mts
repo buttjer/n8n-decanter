@@ -1,10 +1,36 @@
 import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { credentialFile } from "./git.mts";
-import type { DecanterConfig } from "./types.mts";
+import type { AuthMode, DecanterConfig } from "./types.mts";
 
 /** The env file `init` writes next to `decanter.config.json` (gitignored). */
 export const ENV_FILE = ".env";
+
+/** The env var that selects who attaches the n8n credentials (Plan 92). */
+export const AUTH_MODE_ENV = "N8N_DECANTER_AUTH";
+
+/**
+ * Read `N8N_DECANTER_AUTH`. Unset (or empty, the shape an `.env` line with no
+ * value leaves behind) means decanter holds the credentials itself.
+ *
+ * **An unrecognized value throws rather than falling back to `credentials`.**
+ * The whole point of the upstream mode is that decanter sends no credential
+ * header; a typo that silently restored the header would reintroduce exactly
+ * the 401 this exists to remove, and it would look like a server problem.
+ *
+ * It is `N8N_DECANTER_*` and not `N8N_AUTH_MODE` on purpose: `N8N_HOST`,
+ * `N8N_API_KEY` and `N8N_MCP_TOKEN` carry n8n's name because they ARE n8n's
+ * credentials, while this is a decanter behavior switch — the category
+ * `N8N_DECANTER_DIR` established. It matters because this variable often sits
+ * in a `.env` an n8n container also reads, in a namespace that already holds
+ * `N8N_BASIC_AUTH_*` and `N8N_AUTH_EXCLUDE_ENDPOINTS`.
+ */
+export function readAuthMode(raw: string | undefined): AuthMode {
+  const value = (raw ?? "").trim();
+  if (value === "" || value === "credentials") return "credentials";
+  if (value === "upstream") return "upstream";
+  throw new Error(`${AUTH_MODE_ENV}="${value}" is not a known auth mode — use "upstream" (a proxy in front of n8n attaches the credentials) or "credentials" (the default: decanter attaches them)`);
+}
 
 /**
  * The one message every cold start hits — a fresh clone has no `.env`, so this
@@ -39,6 +65,9 @@ export function parseEnvFile(file: string): Record<string, string> {
  * key is suddenly needed in an otherwise MCP-only setup.
  */
 export function requireApiKey(config: DecanterConfig, verb: string): DecanterConfig {
+  // Upstream mode has no key to require: the proxy in front of n8n attaches
+  // one, and decanter deliberately sends none (Plan 92).
+  if (config.authMode === "upstream") return config;
   if (config.apiKey === "") {
     throw new Error(`\`${verb}\` uses the n8n public REST API (MCP does not cover it) — set N8N_API_KEY in .env next to decanter.config.json (n8n → Settings → n8n API)`);
   }
@@ -200,6 +229,11 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
       loadEnv(dir);
       const host = (process.env.N8N_HOST ?? "").replace(/\/+$/, "");
       const apiKey = process.env.N8N_API_KEY ?? "";
+      // Deliberately BEFORE the host check, and reached by the offline verbs
+      // too (they load config as well): a typo'd mode is a setup error worth
+      // hearing about on the first command that reads config, not on the first
+      // one that happens to need a credential.
+      const authMode = readAuthMode(process.env[AUTH_MODE_ENV]);
       if (requireHost && !host) {
         throw new Error(HOST_UNSET);
       }
@@ -216,6 +250,7 @@ export function loadConfig(cwd: string = process.cwd(), { requireHost = true } =
         backupLimit: typeof cfg.backupLimit === "number" && cfg.backupLimit >= 0 ? Math.floor(cfg.backupLimit) : 20,
         host,
         apiKey,
+        authMode,
       };
     }
     const parent = path.dirname(dir);

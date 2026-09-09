@@ -145,7 +145,7 @@ describe("runPreflight (stubbed)", () => {
 
   const config = (root: string): DecanterConfig => ({
     configDir: root, root, workflows: [], commitOnPush: false, commitOnPull: false,
-    requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: "http://x", apiKey: "k",
+    requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: "http://x", apiKey: "k", authMode: "credentials",
   });
 
   /** Seed a pulled workflow folder in sync with a draft + a fresh capture. */
@@ -186,7 +186,7 @@ describe("runPreflight (stubbed)", () => {
 
   const baseCtx = (dir: string, root: string, mcp: McpClient, over: Partial<PreflightContext> = {}): PreflightContext => ({
     config: config(root), dir, id: "wf1", name: "Order Sync", flags: { simulate: false, offline: false },
-    noFetch: true, failFast: false, simVersion: "1.100.0", hasApiKey: false,
+    noFetch: true, failFast: false, simVersion: "1.100.0", restAvailable: false,
     mcp: () => mcp, api: () => { throw new Error("no api in this test"); },
     dockerAvailable: async () => false, ...over,
   });
@@ -417,7 +417,7 @@ describe("runPreflight (stubbed)", () => {
         return [{ status: "success" }, { status: "error" }, { status: "success" }];
       },
     }) as any;
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { hasApiKey: true, api }));
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { restAvailable: true, api }));
     const hist = report.checks.find((c) => c.id === "history");
     assert.equal(hist?.status, "warn", "the REST fallback surfaced the failed run");
     assert.match(hist!.message, /1 of 3 recent runs failed/);
@@ -438,7 +438,7 @@ describe("runPreflight (stubbed)", () => {
       },
     }) as any;
     // --simulate: the runtime consumer that makes a pin source worth fetching
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { flags: { simulate: true, offline: false }, hasApiKey: true, noFetch: false, api }));
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { flags: { simulate: true, offline: false }, restAvailable: true, noFetch: false, api }));
     assert.equal(fetched, true, "auto-fetch ran");
     const capture = report.checks.find((c) => c.id === "capture");
     assert.match(capture!.message, /auto-fetched/);
@@ -451,7 +451,7 @@ describe("runPreflight (stubbed)", () => {
     const { mcp } = stub(wf(), { Compute: runData([{ x: 1 }]) });
     let fetched = false;
     const api = () => ({ listExecutions: async () => { fetched = true; return []; } }) as any;
-    const report = await runPreflight(baseCtx(dir, tmp, mcp, { hasApiKey: true, noFetch: false, api }));
+    const report = await runPreflight(baseCtx(dir, tmp, mcp, { restAvailable: true, noFetch: false, api }));
     assert.equal(fetched, false, "no runtime stage without --simulate → no fetch");
     assert.equal(report.checks.find((c) => c.id === "capture")?.status, "info", "a missing capture is informational, not a warning");
   });

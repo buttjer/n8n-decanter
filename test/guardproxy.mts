@@ -67,16 +67,28 @@ const upstream = http.createServer((req, res) => {
 await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
 const upstreamHost = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
 
-// A stub client: the proxy needs bearerToken(), plus callTool() since the
-// publish gate (Plan 64 task 3c) reads the draft before letting a publish
-// through. `draftNodes` is what that read returns; null makes it throw, which
-// is the fail-closed path.
+// A stub client: the proxy needs authHeaders() and canRefresh, plus callTool()
+// since the publish gate (Plan 64 task 3c) reads the draft before letting a
+// publish through. `draftNodes` is what that read returns; null makes it throw,
+// which is the fail-closed path.
+//
+// `upstreamAuthMode` flips the stub into the Plan 92 shape: no headers at all,
+// and nothing to refresh — the same two things a real upstream-mode client
+// answers.
 let refreshes = 0;
 let draftNodes: unknown[] | null = [];
+let upstreamAuthMode = false;
 const mcpStub = {
-  bearerToken: async (force = false) => {
+  authHeaders: async (force = false) => {
+    if (upstreamAuthMode) return {};
     if (force) refreshes++;
-    return force ? "refreshed-token" : "real-n8n-token";
+    return { authorization: `Bearer ${force ? "refreshed-token" : "real-n8n-token"}` };
+  },
+  get canRefresh() {
+    return !upstreamAuthMode;
+  },
+  get authKind() {
+    return upstreamAuthMode ? "upstream" : "oauth";
   },
   callTool: async (name: string) => {
     if (name !== "get_workflow_details") throw new Error("unexpected tool " + name);
@@ -286,6 +298,40 @@ await step("publish gate: the refusal routes both halves, and a failed read neve
   draftNodes = [];
 });
 
+
+// Plan 92. The twin of "agent secret swapped for the real credential" above:
+// in upstream mode there is no real credential to swap TO, and the thing that
+// must NOT happen is forwarding the agent's decanter session secret instead.
+// That secret authenticates the agent to decanter and means nothing to n8n —
+// sending it hands a local credential to another service.
+await step("upstream auth mode (HTTP): the agent's session secret is DROPPED, not forwarded", async () => {
+  upstreamAuthMode = true;
+  try {
+    const r = await post(rpc());
+    assert.equal(r.status, 200);
+    const fwd = seen[seen.length - 1];
+    assert.equal(fwd.auth, undefined, "no authorization header may reach the upstream at all");
+    assert.notEqual(fwd.auth, `Bearer ${handle.secret}`, "the session secret must never be forwarded");
+  } finally {
+    upstreamAuthMode = false;
+  }
+});
+
+await step("upstream auth mode (HTTP): a 401 is not retried — there is nothing to refresh", async () => {
+  upstreamAuthMode = true;
+  upstream401s = 1;
+  const beforeSeen = seen.length;
+  const beforeRefreshes = refreshes;
+  try {
+    const r = await post(rpc());
+    assert.equal(r.status, 401, "the upstream status passes through");
+    assert.equal(seen.length - beforeSeen, 1, "exactly one upstream request — no pointless retry");
+    assert.equal(refreshes, beforeRefreshes, "no forced refresh");
+  } finally {
+    upstream401s = 0;
+    upstreamAuthMode = false;
+  }
+});
 
 await step("close removes the discovery file", async () => {
   await handle.close();
@@ -511,6 +557,27 @@ await step("upstream 403 (stdio): a switched-off MCP server is named, with n8n's
   assert.match(msg.error.message, /Settings → MCP/, "must point at the switch");
   upstream403s = 0;
   await s.end();
+});
+
+await step("upstream 401 (stdio): names the proxy, and says `init` cannot fix it", async () => {
+  upstreamAuthMode = true;
+  upstream401s = 1; // no forced-refresh retry to swallow one, so a single 401 is terminal
+  const s = startStdio();
+  const before = seen.length;
+  try {
+    s.send({ jsonrpc: "2.0", id: 23, method: "tools/call", params: { name: "search_workflows", arguments: {} } });
+    const msg = JSON.parse(await s.next());
+    assert.equal(msg.id, 23);
+    assert.match(msg.error.message, /upstream auth proxy/, "must name what actually holds the credential");
+    assert.match(msg.error.message, /N8N_DECANTER_AUTH=upstream/, "must name the mode it is running in");
+    assert.match(msg.error.message, /init` cannot fix it/, "must stop the agent re-running init, which changes nothing here");
+    assert.equal(seen.length - before, 1, "no retry — nothing to refresh");
+    assert.equal(seen[seen.length - 1].auth, undefined, "and still no credential sent");
+  } finally {
+    upstream401s = 0;
+    upstreamAuthMode = false;
+    await s.end();
+  }
 });
 
 await step("publish gate (stdio): identical verdicts — the two transports must not drift", async () => {

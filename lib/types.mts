@@ -173,7 +173,20 @@ export interface DecanterConfig {
    * guidance.
    */
   apiKey: string;
+  /**
+   * Who attaches the n8n credentials (Plan 92). `"credentials"` is decanter
+   * itself, from `apiKey` / `N8N_MCP_TOKEN` / `.decanter-auth.json`.
+   * `"upstream"` says a proxy in front of n8n does it, so decanter must send
+   * **no credential header at all** — measured 2026-09-09 against agentgateway:
+   * a client-sent `X-N8N-API-KEY` is APPENDED to the one the proxy adds, and
+   * n8n answers 401 to the pair. A placeholder value cannot fix that; only
+   * omitting the header can.
+   */
+  authMode: AuthMode;
 }
+
+/** @see DecanterConfig.authMode */
+export type AuthMode = "credentials" | "upstream";
 
 export interface Log {
   info(message: string): void;
