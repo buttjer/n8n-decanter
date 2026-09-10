@@ -1,3 +1,4 @@
+import { satteri } from "@astrojs/markdown-satteri";
 import mdx from "@astrojs/mdx";
 import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
@@ -10,20 +11,25 @@ const base = process.env.SITE_BASE ?? "/n8n-decanter";
 /**
  * Markdown/MDX authors write root-relative links (`/docs/cli/push/`); this
  * prefixes them with the deploy base so content never hardcodes it.
+ *
+ * A Sätteri hast plugin rather than a rehype one: Astro 7.3 made Sätteri the
+ * default processor and stopped installing the unified pipeline, so
+ * `markdown.rehypePlugins` now aborts config validation. The filter is what
+ * replaces the hand-rolled tree walk this used to do.
  */
-function rehypeBaseLinks() {
+function baseLinks() {
   const prefix = base.replace(/\/$/, "");
-  const walk = (node) => {
-    if (node.type === "element" && node.tagName === "a") {
-      const href = node.properties?.href;
-      if (typeof href === "string" && href.startsWith("/") && !href.startsWith(`${prefix}/`)) {
-        node.properties.href = prefix + href;
-      }
-    }
-    for (const child of node.children ?? []) walk(child);
-  };
-  return (tree) => {
-    walk(tree);
+  return {
+    name: "base-links",
+    element: {
+      filter: ["a"],
+      visit(node, ctx) {
+        const href = node.properties?.href;
+        if (typeof href === "string" && href.startsWith("/") && !href.startsWith(`${prefix}/`)) {
+          ctx.setProperty(node, "href", prefix + href);
+        }
+      },
+    },
   };
 }
 
@@ -33,7 +39,7 @@ export default defineConfig({
   integrations: [mdx(), sitemap()],
   vite: { plugins: [tailwindcss()] },
   markdown: {
-    rehypePlugins: [rehypeBaseLinks],
+    processor: satteri({ hastPlugins: [baseLinks()] }),
     shikiConfig: {
       themes: { light: "github-light", dark: "github-dark" },
     },

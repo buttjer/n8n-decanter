@@ -79,7 +79,7 @@ warn — port and delete them.
 
 The workflow hasn't been opted into MCP yet: enable **"Available in MCP"**
 from the workflow card in the n8n workflows list (⋯ menu) or the workflow
-settings, then retry. [list --remote](/docs/cli/list/) marks which workflows
+settings, then retry. [`list --remote`](/docs/cli/list/) marks which workflows
 still need it.
 
 ## "n8n refused the MCP request (403 — MCP access is disabled)"
