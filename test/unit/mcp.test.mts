@@ -202,6 +202,32 @@ describe("resolveMcpAuth", () => {
     assert.match(lines.join("\n"), /minted for http:\/\/h, not http:\/\/other/);
   });
 
+  // Plan 92. Upstream mode is not a fallback for "nothing else was found" — it
+  // is a decision, so it is read FIRST. A token left in the environment must
+  // not quietly become a header the proxy then appends to.
+  it("upstream mode wins over BOTH a token and a matching auth file, and says so", () => {
+    writeAuthFile(dir, { host: "http://h", clientId: "c", refreshToken: "r" });
+    process.env.N8N_MCP_TOKEN = "envtok";
+    const { log, lines } = capturingLog();
+    assert.deepEqual(resolveMcpAuth(dir, "http://h", log, "upstream"), { kind: "upstream" });
+    // An ignored secret has to READ as ignored, or it looks live to whoever
+    // finds it next and gets rotated on a schedule nothing depends on.
+    assert.match(lines.join("\n"), /N8N_MCP_TOKEN and \.decanter-auth\.json/);
+    assert.match(lines.join("\n"), /ignoring/);
+  });
+
+  it("upstream mode needs no credentials at all, and stays silent when there are none", () => {
+    const { log, lines } = capturingLog();
+    assert.deepEqual(resolveMcpAuth(dir, "http://h", log, "upstream"), { kind: "upstream" });
+    assert.equal(lines.length, 0, "nothing to warn about");
+  });
+
+  it("upstream mode is unbothered by a corrupt auth file it never reads", () => {
+    fsWriteFileSync(authFilePath(dir), "{nope");
+    assert.deepEqual(resolveMcpAuth(dir, "http://h", undefined, "upstream"), { kind: "upstream" });
+    assert.throws(() => resolveMcpAuth(dir, "http://h"), /corrupt/, "credentials mode still reports it");
+  });
+
   it("returns null with no credentials; auth file round-trips; corrupt file names itself", () => {
     assert.equal(resolveMcpAuth(dir, "http://h"), null);
     writeAuthFile(dir, { host: "http://h", clientId: "c", refreshToken: "r", accessToken: "a", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z" });
@@ -1088,6 +1114,62 @@ describe("createMcpClient — the cold-start errors name a non-interactive fix",
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Plan 92: the same empty dir, the same host — the mode is the only
+  // difference, and it turns a cold-start error into a working client.
+  it("upstream mode: no credentials is the expected state, not a cold start", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "decanter-coldstart-"));
+    try {
+      const client = createMcpClient({ host: "http://n8n.local", configDir: dir, requestTimeoutMs: 1000, authMode: "upstream" });
+      assert.equal(client.authKind, "upstream");
+      assert.equal(client.canRefresh, false, "nothing to refresh — a 401 retry would be pure waste");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("upstream auth mode over the wire (Plan 92)", () => {
+  it("sends NO authorization header, and the request still lands", async () => {
+    let sawAuthHeader: string | undefined = "unset";
+    const srv = await mcpServer({
+      tool: (_name, _args, req) => {
+        sawAuthHeader = req.headers.authorization;
+        return { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
+      },
+    });
+    try {
+      const client = new McpClient({ host: srv.host, auth: { kind: "upstream" }, requestTimeoutMs: 2000 });
+      assert.deepEqual(await client.callTool("search_workflows", {}), { ok: true });
+      assert.equal(sawAuthHeader, undefined, "an upstream proxy appends to a client header, so there must be none");
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("a 401 names the proxy and does not retry — nothing could change", async () => {
+    let attempts = 0;
+    const srv = await mcpServer({
+      onRequest: (_req, res) => {
+        attempts++;
+        res.writeHead(401).end();
+        return true;
+      },
+    });
+    try {
+      const client = new McpClient({ host: srv.host, auth: { kind: "upstream" }, requestTimeoutMs: 2000 });
+      await assert.rejects(client.callTool("search_workflows", {}), (err: Error) => {
+        assert.match(err.message, /401/);
+        assert.match(err.message, /sent no credential by design/);
+        assert.match(err.message, /upstream auth proxy/);
+        assert.doesNotMatch(err.message, /n8n-decanter init/, "`init` cannot fix a credential decanter does not hold");
+        return true;
+      });
+      assert.equal(attempts, 1, "exactly one request — no refresh-and-retry");
+    } finally {
+      await srv.close();
     }
   });
 });

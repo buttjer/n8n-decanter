@@ -2,11 +2,12 @@
 // the 2026-07-18 release blocker: from the published build (dist/lib/), a
 // plain `../template` URL resolved to the nonexistent dist/template.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
+import { parseEnvFile } from "../../lib/config.mts";
 import { init, nestedWiringNote, normalizeHostInput, packageRootFrom, projectRootAbove } from "../../lib/init.mts";
 import type { Log } from "../../lib/types.mts";
 
@@ -94,6 +95,68 @@ describe("init (non-interactive flags)", () => {
       !lines.some((l) => /restart your agent/.test(l)),
       `a re-init in a set-up dir must stay quiet: ${lines.join("|")}`,
     );
+  });
+});
+
+// Plan 92: `--auth upstream` says a proxy in front of n8n attaches the
+// credentials. The refusals below all fire BEFORE any network call or browser,
+// because the alternative — writing the value and ignoring it — is how a
+// placeholder ends up in a credential file with nothing sending it.
+describe("init --auth upstream (Plan 92)", () => {
+  const nullLog: Log = { info: () => {}, ok: () => {}, warn: () => {}, error: () => {} };
+
+  it("refuses a mode it does not know, rather than falling back to the default", async () => {
+    await assert.rejects(
+      init(path.join(TMP, "auth-bogus"), { host: "http://127.0.0.1:9", auth: "gateway" }, nullLog),
+      /not a known auth mode/,
+    );
+  });
+
+  for (const [flag, opts] of [
+    ["--token", { token: "t" }],
+    ["--api-key", { apiKey: "k" }],
+    ["--reauth", { reauth: true }],
+  ] as const) {
+    it(`refuses ${flag} alongside it — the two ask for opposite things`, async () => {
+      const dir = path.join(TMP, `auth-conflict-${flag.replace(/-/g, "")}`);
+      await assert.rejects(
+        init(dir, { host: "http://127.0.0.1:9", auth: "upstream", ...opts }, nullLog),
+        (err: Error) => {
+          assert.match(err.message, new RegExp(flag), "must name the flag the user actually typed");
+          assert.match(err.message, /--auth upstream/);
+          return true;
+        },
+      );
+      assert.ok(!existsSync(path.join(dir, ".env")), "and refuses before writing anything");
+    });
+  }
+
+  it("writes the mode, skips every credential prompt, and needs no TTY", async () => {
+    const dir = path.join(TMP, "auth-upstream-ok");
+    await init(dir, { host: "http://127.0.0.1:9", auth: "upstream" }, nullLog);
+    const env = parseEnvFile(path.join(dir, ".env"));
+    assert.equal(env.N8N_HOST, "http://127.0.0.1:9");
+    assert.equal(env.N8N_DECANTER_AUTH, "upstream");
+    assert.equal(env.N8N_MCP_TOKEN, undefined, "nothing to store");
+    assert.equal(env.N8N_API_KEY, undefined);
+    assert.ok(!existsSync(path.join(dir, ".decanter-auth.json")), "no OAuth credentials minted");
+  });
+
+  // Kept, not deleted — but an ignored secret has to read as ignored.
+  it("warns that pre-existing credentials are now unused, and leaves them in place", async () => {
+    const dir = path.join(TMP, "auth-upstream-carry");
+    await init(dir, { host: "http://127.0.0.1:9", token: "leftover" }, nullLog);
+    const warnings: string[] = [];
+    const log: Log = { info: () => {}, ok: () => {}, warn: (m) => void warnings.push(m), error: () => {} };
+    await init(dir, { host: "http://127.0.0.1:9", auth: "upstream" }, log);
+    assert.match(warnings.join("\n"), /N8N_MCP_TOKEN.*UNUSED/s);
+    assert.equal(parseEnvFile(path.join(dir, ".env")).N8N_MCP_TOKEN, "leftover", "kept — removing it is the user's call");
+  });
+
+  it("default stays default: no flag writes no mode line", async () => {
+    const dir = path.join(TMP, "auth-default");
+    await init(dir, { host: "http://127.0.0.1:9", token: "t" }, nullLog);
+    assert.equal(parseEnvFile(path.join(dir, ".env")).N8N_DECANTER_AUTH, undefined);
   });
 });
 

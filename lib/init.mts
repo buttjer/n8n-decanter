@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { findConfigBelow, parseEnvFile } from "./config.mts";
+import { AUTH_MODE_ENV, findConfigBelow, parseEnvFile, readAuthMode } from "./config.mts";
 import {
   AUTH_FILE,
   McpClient,
@@ -614,12 +614,23 @@ async function verifyMcpConnection(host: string, auth: McpAuth, log: Log): Promi
 
 export async function init(
   targetDir: string | undefined,
-  { force = false, reauth = false, host: hostFlag, token: tokenFlag, apiKey: apiKeyFlag }: { force?: boolean; reauth?: boolean; host?: string; token?: string; apiKey?: string } = {},
+  { force = false, reauth = false, host: hostFlag, token: tokenFlag, apiKey: apiKeyFlag, auth: authFlag }: { force?: boolean; reauth?: boolean; host?: string; token?: string; apiKey?: string; auth?: string } = {},
   log: Log,
 ): Promise<void> {
   printBanner(log);
+  // Plan 92. Refuse the contradiction rather than silently preferring one:
+  // `--auth upstream --token X` asks decanter both to send a credential and
+  // not to, and quietly writing the token would leave a secret on disk that
+  // nothing ever sends.
+  const authMode = readAuthMode(authFlag);
+  if (authMode === "upstream") {
+    const conflicting = [tokenFlag !== undefined ? "--token" : "", apiKeyFlag !== undefined ? "--api-key" : "", reauth ? "--reauth" : ""].filter((f) => f !== "");
+    if (conflicting.length > 0) {
+      throw new Error(`--auth upstream means an upstream auth proxy attaches the credentials, so ${conflicting.join(" and ")} ${conflicting.length > 1 ? "have" : "has"} nothing to configure — drop ${conflicting.length > 1 ? "them" : "it"}, or drop --auth upstream`);
+    }
+  }
   const dir = path.resolve(targetDir ?? ".");
-  await refuseNestedSyncDir(dir, hostFlag !== undefined || tokenFlag !== undefined || apiKeyFlag !== undefined, log);
+  await refuseNestedSyncDir(dir, hostFlag !== undefined || tokenFlag !== undefined || apiKeyFlag !== undefined || authFlag !== undefined, log);
   mkdirSync(dir, { recursive: true });
   const envFile = path.join(dir, ".env");
   const existing = parseEnvFile(envFile);
@@ -631,7 +642,9 @@ export async function init(
   const interactive = process.stdin.isTTY === true;
   // Any setup flag → non-interactive: drive init purely from flags + existing
   // .env, issuing no prompts (and no OAuth-fallback token prompt either).
-  const flagDriven = hostFlag !== undefined || tokenFlag !== undefined || apiKeyFlag !== undefined;
+  // `--auth` counts: without it, `init --auth upstream` on a TTY would still
+  // walk into the browser consent it has no use for.
+  const flagDriven = hostFlag !== undefined || tokenFlag !== undefined || apiKeyFlag !== undefined || authFlag !== undefined;
   // Plan 55: point at the official skills pack once, on a FIRST init (= no
   // baseline manifest yet). Printed, never asked — every run's stdin stays
   // exactly as it was.
@@ -660,66 +673,79 @@ export async function init(
       host = normalizeHostInput(host);
     }
 
-    // --- MCP credentials (the sync backend): existing → OAuth consent (TTY) →
-    // paste-a-token fallback. Only the browser consent itself is TTY-gated;
-    // piped runs go straight to the token prompt so init stays scriptable.
-    // --token / any setup flag suppresses every prompt (non-interactive mode).
-    const auth = readAuthFileTolerant(dir, log);
-    // Plan 87: `--reauth` is the way OUT of a spent refresh token. Reuse is
-    // otherwise unconditional whenever the host matches, so the "re-run init"
-    // a dead session used to print came straight back here and re-probed with
-    // the same dead credentials — a closed loop.
-    const reuseAuth = auth !== null && auth.host === host && !reauth;
-    if (reauth) {
+    if (authMode === "upstream") {
+      // --- upstream mode: there is no credential ladder to walk. Every branch
+      // below mints, reuses or asks for something decanter must not send, so
+      // the whole block is skipped rather than made conditional line by line.
+      log.info(`auth mode: upstream — an auth proxy in front of ${host} attaches the n8n credentials; decanter will send none`);
+      const carried = [existing.N8N_MCP_TOKEN ? "N8N_MCP_TOKEN" : "", existing.N8N_API_KEY ? "N8N_API_KEY" : "", existsSync(path.join(dir, AUTH_FILE)) ? AUTH_FILE : ""].filter((s) => s !== "");
+      // Kept, not deleted — removing a user's credentials is not init's call,
+      // and they are what a switch back to credentials mode needs. But an
+      // ignored secret has to READ as ignored, or it looks live to whoever
+      // finds it next and gets rotated on a schedule nothing depends on.
+      if (carried.length > 0) log.warn(`${carried.join(", ")} ${carried.length > 1 ? "are" : "is"} still present and now UNUSED — nothing sends ${carried.length > 1 ? "them" : "it"} while ${AUTH_MODE_ENV}=upstream (kept in case you switch back; safe to remove)`);
+    } else {
+      // --- MCP credentials (the sync backend): existing → OAuth consent (TTY) →
+      // paste-a-token fallback. Only the browser consent itself is TTY-gated;
+      // piped runs go straight to the token prompt so init stays scriptable.
+      // --token / any setup flag suppresses every prompt (non-interactive mode).
+      const auth = readAuthFileTolerant(dir, log);
+      // Plan 87: `--reauth` is the way OUT of a spent refresh token. Reuse is
+      // otherwise unconditional whenever the host matches, so the "re-run init"
+      // a dead session used to print came straight back here and re-probed with
+      // the same dead credentials — a closed loop.
+      const reuseAuth = auth !== null && auth.host === host && !reauth;
+      if (reauth) {
+        if (mcpToken !== "") {
+          // N8N_MCP_TOKEN wins over the auth file in resolveMcpAuth, so a freshly
+          // minted OAuth pair would be ignored — refuse BEFORE the browser
+          // consent rather than after it changed nothing.
+          throw new Error(
+            `--reauth mints OAuth credentials, but an MCP token is set (${tokenFlag !== undefined ? "--token" : `N8N_MCP_TOKEN in ${envFile}`}) and always wins over them\n` +
+              `  to move back to OAuth, remove N8N_MCP_TOKEN from ${envFile}, then: n8n-decanter init --reauth\n` +
+              `  to replace the token instead: n8n-decanter init --token <mcp-token>`,
+          );
+        }
+        if (!interactive) {
+          throw new Error(
+            "--reauth needs a terminal — the OAuth consent step opens a browser\n" +
+              "  no browser (CI, a headless box, a coding agent)? mint an MCP token in n8n\n" +
+              "  (Settings → MCP → API key) and pass it: n8n-decanter init --token <mcp-token>",
+          );
+        }
+      }
       if (mcpToken !== "") {
-        // N8N_MCP_TOKEN wins over the auth file in resolveMcpAuth, so a freshly
-        // minted OAuth pair would be ignored — refuse BEFORE the browser
-        // consent rather than after it changed nothing.
-        throw new Error(
-          `--reauth mints OAuth credentials, but an MCP token is set (${tokenFlag !== undefined ? "--token" : `N8N_MCP_TOKEN in ${envFile}`}) and always wins over them\n` +
-            `  to move back to OAuth, remove N8N_MCP_TOKEN from ${envFile}, then: n8n-decanter init --reauth\n` +
-            `  to replace the token instead: n8n-decanter init --token <mcp-token>`,
-        );
-      }
-      if (!interactive) {
-        throw new Error(
-          "--reauth needs a terminal — the OAuth consent step opens a browser\n" +
-            "  no browser (CI, a headless box, a coding agent)? mint an MCP token in n8n\n" +
-            "  (Settings → MCP → API key) and pass it: n8n-decanter init --token <mcp-token>",
-        );
-      }
-    }
-    if (mcpToken !== "") {
-      // Doesn't name the flag: `--token` and `--mcp-token` both land here, and
-      // echoing a spelling the user didn't type reads like a correction.
-      log.info(tokenFlag !== undefined ? "using the MCP token given on the command line" : "using existing MCP token from .env (N8N_MCP_TOKEN)");
-    } else if (reuseAuth) {
-      log.info(`using existing MCP OAuth credentials (${AUTH_FILE}) — re-consent with \`init --reauth\``);
-      oauthOk = true;
-    } else if (interactive) {
-      if (reauth) log.info(`re-authorizing with ${host} — the existing ${AUTH_FILE} is replaced only if consent succeeds`);
-      try {
-        await mintOAuthCredentials(dir, host, log);
+        // Doesn't name the flag: `--token` and `--mcp-token` both land here, and
+        // echoing a spelling the user didn't type reads like a correction.
+        log.info(tokenFlag !== undefined ? "using the MCP token given on the command line" : "using existing MCP token from .env (N8N_MCP_TOKEN)");
+      } else if (reuseAuth) {
+        log.info(`using existing MCP OAuth credentials (${AUTH_FILE}) — re-consent with \`init --reauth\``);
         oauthOk = true;
-      } catch (err) {
-        log.warn(`OAuth consent did not complete (${(err as Error).message})`);
-        if (!flagDriven) mcpToken = await ask("paste an n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
+      } else if (interactive) {
+        if (reauth) log.info(`re-authorizing with ${host} — the existing ${AUTH_FILE} is replaced only if consent succeeds`);
+        try {
+          await mintOAuthCredentials(dir, host, log);
+          oauthOk = true;
+        } catch (err) {
+          log.warn(`OAuth consent did not complete (${(err as Error).message})`);
+          if (!flagDriven) mcpToken = await ask("paste an n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
+        }
+      } else if (!flagDriven) {
+        mcpToken = await ask("n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
       }
-    } else if (!flagDriven) {
-      mcpToken = await ask("n8n MCP token (n8n → Settings → MCP → API key) [Enter to skip]: ");
-    }
-    // `oauthOk`, not a re-test of `auth`: a successful FIRST consent leaves
-    // `auth` null, so the old condition told a user who had just authorized in
-    // the browser that they had "no MCP credentials yet".
-    if (mcpToken === "" && !oauthOk) {
-      // Names the flag, not just "re-run init": this fires on exactly the
-      // host-only `init --host …` a blind agent reaches first (Plan 75).
-      log.warn("no MCP credentials yet — sync verbs (pull/push/watch/…) will not work until you re-run init with `--token <mcp-token>` (n8n → Settings → MCP → API key) or set N8N_MCP_TOKEN");
-    }
+      // `oauthOk`, not a re-test of `auth`: a successful FIRST consent leaves
+      // `auth` null, so the old condition told a user who had just authorized in
+      // the browser that they had "no MCP credentials yet".
+      if (mcpToken === "" && !oauthOk) {
+        // Names the flag, not just "re-run init": this fires on exactly the
+        // host-only `init --host …` a blind agent reaches first (Plan 75).
+        log.warn("no MCP credentials yet — sync verbs (pull/push/watch/…) will not work until you re-run init with `--token <mcp-token>` (n8n → Settings → MCP → API key) or set N8N_MCP_TOKEN");
+      }
 
-    // --- optional public API key (the REST-only surfaces)
-    if (apiKey === "" && !flagDriven) {
-      apiKey = await ask("n8n public API key (optional — executions/data-tables/backup) [Enter to skip]: ");
+      // --- optional public API key (the REST-only surfaces)
+      if (apiKey === "" && !flagDriven) {
+        apiKey = await ask("n8n public API key (optional — executions/data-tables/backup) [Enter to skip]: ");
+      }
     }
   } finally {
     rl?.close();
@@ -729,6 +755,9 @@ export async function init(
   const envOut: Record<string, string> = { ...existing, N8N_HOST: host };
   if (apiKey !== "") envOut.N8N_API_KEY = apiKey;
   if (mcpToken !== "") envOut.N8N_MCP_TOKEN = mcpToken;
+  // Written only for `upstream`: the default mode is the absence of the line,
+  // so an unchanged setup keeps a `.env` that looks exactly as it did.
+  if (authMode === "upstream") envOut[AUTH_MODE_ENV] = "upstream";
   const envText = Object.entries(envOut).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
   if (!existsSync(envFile) || readFileSync(envFile, "utf8") !== envText) {
     writeFileSync(envFile, envText);
@@ -779,7 +808,9 @@ export async function init(
 
   // --- verify: MCP first (the sync backend), then the optional API key
   const mcpEnv = mcpToken !== "" ? mcpToken : undefined;
-  const mcpAuth = mcpEnv !== undefined
+  const mcpAuth: McpAuth | null = authMode === "upstream"
+    ? { kind: "upstream" }
+    : mcpEnv !== undefined
     ? { kind: "bearer" as const, token: mcpEnv }
     : (() => {
         const data = readAuthFileTolerant(dir, log);
@@ -827,14 +858,18 @@ export async function init(
       }
     }
   }
-  if (apiKey !== "") {
+  // Upstream mode always probes, and with NO key header — otherwise `init
+  // --auth upstream` would verify MCP and nothing else, leaving the REST half
+  // of the proxy (executions/data-tables/backup) untested until a user hit it.
+  if (apiKey !== "" || authMode === "upstream") {
     try {
       const res = await fetch(`${host}/api/v1/workflows?limit=1`, {
-        headers: { "X-N8N-API-KEY": apiKey, accept: "application/json" },
+        headers: { ...(authMode === "credentials" && { "X-N8N-API-KEY": apiKey }), accept: "application/json" },
         // best-effort probe: fail fast on a black-holed host rather than hanging init
         signal: AbortSignal.timeout(10_000),
       });
-      if (res.ok) log.info(`API key verified against ${host}`);
+      if (res.ok) log.info(authMode === "upstream" ? `REST API reachable through the upstream auth proxy at ${host}` : `API key verified against ${host}`);
+      else if (authMode === "upstream") log.warn(`REST API check failed (${res.status} ${res.statusText}) — the upstream auth proxy did not attach a working API key; the sync verbs may still work (they use MCP), but executions/data-tables/backup will not`);
       else log.warn(`API key check failed (${res.status} ${res.statusText}) — .env written anyway`);
     } catch (err) {
       const e = err as Error & { cause?: { code?: string } };

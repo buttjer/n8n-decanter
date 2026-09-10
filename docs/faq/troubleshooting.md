@@ -108,6 +108,25 @@ The **401** means the token is wrong — note that the **public API key is not a
 valid MCP token**; mint one under n8n → Settings → MCP → API key, or re-run
 [init](/docs/cli/init/) for OAuth.
 
+## A 401 behind a proxy, or "N8N_API_KEY must be set" when the proxy has one
+
+If a gateway in front of n8n attaches the n8n credentials for you, decanter must
+send **none of its own**. Set `N8N_DECANTER_AUTH=upstream` (or run
+[`init --auth upstream`](/docs/cli/init/#auth-handled-by-a-proxy---auth-upstream)).
+
+**A placeholder value in `N8N_API_KEY` is not a workaround.** A proxy that adds
+its own key **appends** it to the header the client sent, and n8n rejects the
+pair with a `401` — so a fake key fails exactly like a real one, and looks like a
+server fault. Only omitting the header works, which is what this mode does.
+
+Already in upstream mode and still getting a 401? Then the proxy is not
+attaching a working credential — decanter sent nothing, so re-running `init` or
+minting a token changes nothing. The messages say so explicitly.
+
+`N8N_DECANTER_AUTH` set to anything but `upstream` or `credentials` is an error
+on every verb, offline ones included. That is deliberate: a typo falling back to
+the default would silently restore the header.
+
 ## A REST verb fails with 403 — which scope is missing?
 
 `executions`, `data-tables` and `backup` use n8n's **public REST API**, not MCP,
@@ -256,6 +275,9 @@ runs `diff` on the workflow named `push`.
 files out of git. The API key is optional — only `executions` and
 `data-tables` need it — see
 [Configuration](/docs/concepts/configuration/).
+
+With `N8N_DECANTER_AUTH=upstream` they live nowhere: a proxy in front of n8n
+holds them, and decanter stores and sends none.
 
 Being gitignored, neither file exists in a fresh git worktree — decanter reads
 the main checkout's copies there, and a local file still wins if you make one:

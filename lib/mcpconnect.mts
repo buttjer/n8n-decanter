@@ -18,6 +18,7 @@
 // CLOSED, mirroring the HTTP guard.
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
+import { AUTH_MODE_ENV } from "./config.mts";
 import { MCP_PATH, type McpClient, PROTOCOL_VERSION } from "./mcp.mts";
 import { attachMirrorNotices, guardMessage, guardPublish, logToolCall, mirrorTargetId } from "./mcpserve.mts";
 import type { Mirror } from "./mirror.mts";
@@ -123,11 +124,11 @@ export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input =
     let rateRetries = 0;
     try {
       for (;;) {
-        const token = await mcp.bearerToken(refreshed);
+        const auth = await mcp.authHeaders(refreshed);
         res = await fetch(upstream, {
           method: "POST",
           headers: {
-            authorization: `Bearer ${token}`,
+            ...auth,
             "content-type": "application/json",
             accept: "application/json, text/event-stream",
             ...(sessionId !== undefined && { "mcp-session-id": sessionId }),
@@ -135,7 +136,7 @@ export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input =
           body: JSON.stringify(unit),
           signal: AbortSignal.timeout(timeoutMs),
         });
-        if (res.status === 401 && !refreshed) {
+        if (res.status === 401 && mcp.canRefresh && !refreshed) {
           refreshed = true; // expired access token — refresh once and retry
           await res.text().catch(() => {});
           continue;
@@ -171,7 +172,13 @@ export async function runStdioGuard({ mcp, host, timeoutMs, mirror, log, input =
       // CLI's own 401 says the right thing; this one has to match it, because it
       // is the message an agent sees FIRST.
       const detail = res.status === 401
-        ? "n8n rejected decanter's existing MCP credentials (401) — they are configured but no longer valid. Mint a fresh token in n8n (Settings → MCP) and update N8N_MCP_TOKEN, or re-run `n8n-decanter init` for OAuth. This is NOT a missing-setup error."
+        ? mcp.authKind === "upstream"
+          // Same discipline as the line below — lead with the cause. Here the
+          // cause is one layer further out: decanter is configured correctly
+          // and deliberately holds nothing, so neither `init` nor a token
+          // would change anything (Plan 92).
+          ? `n8n rejected the request (401) — decanter sent no MCP credential by design (${AUTH_MODE_ENV}=upstream) and the upstream auth proxy in front of ${host} did not attach a valid one. This is NOT a missing-setup error, and \`n8n-decanter init\` cannot fix it: fix the proxy's credential.`
+          : "n8n rejected decanter's existing MCP credentials (401) — they are configured but no longer valid. Mint a fresh token in n8n (Settings → MCP) and update N8N_MCP_TOKEN, or re-run `n8n-decanter init` for OAuth. This is NOT a missing-setup error."
         : res.status === 403
           ? `n8n refused the request (403)${text !== "" ? `: ${text.slice(0, 200)}` : ""} — MCP access is switched off for this instance (n8n → Settings → MCP), or this token's user lacks access`
           : `n8n answered ${res.status} ${res.statusText}${text !== "" ? `: ${text.slice(0, 300)}` : ""}`;

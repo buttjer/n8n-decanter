@@ -65,6 +65,7 @@ const usageSections = (): Array<{ title: string; note?: string; entries: Array<{
           verb: "init",
           lines: [
             `  ${b("init")} [dir] [--force] [--reauth] [--host <url> --token <mcp-token> --api-key <public-api-key>]`,
+            `  ${b("init")} [dir] --host <url> --auth upstream    ${d("a proxy in front of n8n attaches the credentials")}`,
             `  ${d("                                              setup: .env, starter files, config (flags drive it non-interactively)")}`,
           ],
         },
@@ -296,12 +297,12 @@ async function main() {
   {
     const raw = process.argv.slice(2);
     for (let i = 0; i < raw.length; i++) {
-      const m = raw[i].match(/^--(dir|status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|host|token|mcp-token|api-key)(?:=(.*))?$/);
+      const m = raw[i].match(/^--(dir|status|limit|execution|n8n-version|scenario|filter|search|sort|port|trigger|fail-on|require|host|token|mcp-token|api-key|auth)(?:=(.*))?$/);
       if (!m) {
         args.push(raw[i]);
         continue;
       }
-      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : m[1] === "dir" ? "./flows" : m[1] === "host" ? "http://localhost:5678" : m[1] === "token" || m[1] === "mcp-token" ? "<mcp-token>" : m[1] === "api-key" ? "<api-key>" : "123";
+      const example = m[1] === "limit" ? "5" : m[1] === "status" ? "success" : m[1] === "dir" ? "./flows" : m[1] === "host" ? "http://localhost:5678" : m[1] === "token" || m[1] === "mcp-token" ? "<mcp-token>" : m[1] === "api-key" ? "<api-key>" : m[1] === "auth" ? "upstream" : "123";
       let value = m[2];
       if (value === undefined) {
         // Space-separated form (`--limit 5`): consume the next token — but not
@@ -468,7 +469,7 @@ async function main() {
     // `--reauth` (Plan 87) skips the credential-reuse branch and re-consents:
     // without it, `init` never re-mints, so a spent refresh token had no
     // command that could replace it.
-    await init(rest[0], { force, reauth: args.includes("--reauth"), host: valueFlags.get("host"), token: valueFlags.get("token") ?? valueFlags.get("mcp-token"), apiKey: valueFlags.get("api-key") }, log);
+    await init(rest[0], { force, reauth: args.includes("--reauth"), host: valueFlags.get("host"), token: valueFlags.get("token") ?? valueFlags.get("mcp-token"), apiKey: valueFlags.get("api-key"), auth: valueFlags.get("auth") }, log);
     return;
   }
 
@@ -491,7 +492,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--dir=", "--host=", "--token=", "--mcp-token=", "--api-key=", "--reauth", "--help", "--version");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--dir=", "--host=", "--token=", "--mcp-token=", "--api-key=", "--auth=", "--reauth", "--help", "--version");
     try {
       const config = loadConfig(syncDir(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);
@@ -961,10 +962,12 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
         throw new Error("pass either --scenario <slug> or --execution <id>, not both");
       }
       const simVersion = valueFlags.get("n8n-version") ?? config.n8nVersion ?? DEFAULT_N8N_VERSION;
-      const hasApiKey = config.apiKey !== "";
+      // Upstream mode needs no key of its own — the proxy attaches one, so the
+      // REST checks are on the table (Plan 92).
+      const restAvailable = config.apiKey !== "" || config.authMode === "upstream";
       const palette: Palette = { green: style.green, yellow: style.yellow, red: style.red, dim: style.dim, bold: style.bold };
-      // read-only REST client (auto-fetch + history fallback) — only invoked when hasApiKey, so it never needs requireApiKey
-      const restApi = (): N8nApi => new N8nApi({ host: config.host, apiKey: config.apiKey, requestTimeoutMs: config.requestTimeoutMs });
+      // read-only REST client (auto-fetch + history fallback) — only invoked when restAvailable, so it never needs requireApiKey
+      const restApi = (): N8nApi => new N8nApi({ host: config.host, apiKey: config.apiKey, requestTimeoutMs: config.requestTimeoutMs, authMode: config.authMode });
 
       const reports: Awaited<ReturnType<typeof runPreflight>>[] = [];
       let failed = false;
@@ -1002,7 +1005,7 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
           config, dir, id, name, flags: preflightFlags,
           viewer: viewerFlag, viewerLog: log, noTypecheck, typecheckResult: typechecks.get(path.resolve(dir)),
           scenarioSlug, executionId: valueFlags.get("execution"),
-          noFetch: noFetchFlag, failFast: failFastFlag, requireIds, simVersion, hasApiKey,
+          noFetch: noFetchFlag, failFast: failFastFlag, requireIds, simVersion, restAvailable,
           mcp, api: restApi, dockerAvailable,
           onCheck: jsonFlag ? undefined : (f) => {
             log.info(formatCheckLine(f, palette));
@@ -1168,7 +1171,9 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
       const serveMirror = createMirror({ mcp: serveMcp, root: config.root, workflows: config.workflows, commitOnPull: config.commitOnPull, liveMirror: config.liveMirror, log });
       const handle = await startGuardProxy({ mcp: serveMcp, host: config.host, configDir: config.configDir, port, mirror: serveMirror, log });
       log.ok(`MCP guard-proxy listening on ${handle.url}`);
-      log.info(`  forwards to ${config.host} with decanter's credentials — the agent never sees them`);
+      log.info(config.authMode === "upstream"
+        ? `  forwards to ${config.host} with no credentials — the upstream auth proxy attaches them (the agent's session secret is dropped, never forwarded)`
+        : `  forwards to ${config.host} with decanter's credentials — the agent never sees them`);
       log.info(`  blocks: update_workflow calls carrying jsCode (Code-node source is files + \`n8n-decanter push\`)`);
       log.info(`  blocks: publish_workflow when the draft carries a dangling $('…') reference (fail-closed — an unverifiable draft is not published)`);
       if (config.liveMirror) log.info(`  live mirror: refreshes workflow.json after a forwarded structure edit (liveMirror: false to disable)`);

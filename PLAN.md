@@ -423,6 +423,28 @@ names the verb in its error) — only `executions`, `data-tables`, and `backup`
 need it (Plan 33 + 51). `loadConfig`'s old `requireCredentials` became
 `requireHost`.
 
+**Auth mode (Plan 92):** `N8N_DECANTER_AUTH` — `credentials` (default) or
+`upstream`, on `DecanterConfig.authMode`, read by `readAuthMode` which
+**throws on any other value** rather than falling back (a typo must not
+silently restore a header). `upstream` means a proxy in front of n8n attaches
+the credentials, so decanter sends **none**: `McpAuth` gains a third member
+`{kind:"upstream"}` (a member, so `resolveMcpAuth`'s `null` keeps meaning
+"unusable"), `McpClient.authHeaders()` returns `{}` — replacing
+`bearerToken()`, so "send nothing" lives in one place above the OAuth
+machinery `#accessToken` guards — and `N8nApi` omits `X-N8N-API-KEY`
+entirely. `McpClient.canRefresh` gates the 401 retry, which only OAuth can
+act on. `requireApiKey` passes through; preflight's `hasApiKey` became
+`restAvailable`. The variable is `N8N_DECANTER_*` because it is a decanter
+behavior switch, not one of n8n's credentials, and often shares a `.env` with
+an n8n container whose namespace already holds `N8N_BASIC_AUTH_*`.
+
+**Why a placeholder cannot work** (measured 2026-09-09 against a live
+agentgateway): a proxy that attaches a key **appends** it to the header the
+client sent, and n8n answers `401` to the pair. Omitting the header is the
+only shape that works, which is why the mode is a switch and not a
+credential value — and why the e2e mock, in `gatewayMode`, 401s *any*
+client-sent credential rather than merely tolerating none.
+
 **Both credential files fall back to the main checkout in a linked git
 worktree** (`credentialFile` / `mainCheckoutTwin`, `lib/git.mts`). They are
 gitignored, so every fresh worktree has neither and every credentialed verb —

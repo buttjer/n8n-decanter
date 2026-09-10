@@ -306,15 +306,21 @@ export async function startGuardProxy(
       }
 
       // Forward with the real credential; retry once on an upstream 401
-      // (expired access token — bearerToken(true) redeems/refreshes).
+      // (expired access token — authHeaders(true) redeems/refreshes).
+      //
+      // The header set is built FRESH, never copied from `req` — so in upstream
+      // mode, where `authHeaders` yields nothing, the agent's decanter session
+      // secret is dropped rather than forwarded to the proxy (Plan 92). That
+      // secret authenticates the agent to decanter and means nothing upstream;
+      // sending it would leak a local credential to another service.
       let upstreamRes: Response;
       try {
         for (let attempt = 0; ; attempt++) {
-          const token = await mcp.bearerToken(attempt > 0);
+          const auth = await mcp.authHeaders(attempt > 0);
           upstreamRes = await fetch(upstream, {
             method: req.method,
             headers: {
-              authorization: `Bearer ${token}`,
+              ...auth,
               ...(req.headers["content-type"] !== undefined && { "content-type": req.headers["content-type"] }),
               accept: req.headers.accept ?? "application/json, text/event-stream",
               ...(req.headers["mcp-session-id"] !== undefined && { "mcp-session-id": String(req.headers["mcp-session-id"]) }),
@@ -322,7 +328,7 @@ export async function startGuardProxy(
             },
             body: body === undefined ? undefined : new Uint8Array(body),
           });
-          if (upstreamRes.status !== 401 || attempt > 0) break;
+          if (upstreamRes.status !== 401 || attempt > 0 || !mcp.canRefresh) break;
         }
       } catch (err) {
         log.warn(`upstream request failed: ${(err as Error).message}`);

@@ -16,7 +16,7 @@ import type { McpClient } from "../../lib/mcp.mts";
 import { runStdioGuard } from "../../lib/mcpconnect.mts";
 import type { Log } from "../../lib/types.mts";
 
-const mcpStub = { bearerToken: async () => "token" } as unknown as McpClient;
+const mcpStub = { authHeaders: async () => ({ authorization: "Bearer token" }), canRefresh: true } as unknown as McpClient;
 
 /** Drive the guard over pipes, collecting one JSON-RPC message per line. */
 function startStdio(host: string) {
