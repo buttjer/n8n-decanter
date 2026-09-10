@@ -66,6 +66,14 @@ export const VERB_LAST_EXEMPT = new Set([
   "n8n-decanter.mts::bash completion",
 ]);
 
+// Links in `docs/**` the deploy-base scan (check 6) must NOT flag. Same shape
+// and same discipline as VERB_LAST_EXEMPT: key is "<repo-relative-file>::<href>",
+// keep it tiny, comment every entry. A doc that genuinely has to name the live
+// site (rather than link within it) belongs here, not in a loosened rule.
+export const DOC_LINK_EXEMPT = new Set<string>([
+  // (empty — no doc has needed to hardcode the deploy target yet)
+]);
+
 // ── Verb-set parsing (regex over the CLI's `new Set([...])` literals) ────────
 
 /** Parse a `const <name> = new Set([...])` string-literal set from CLI source. */
@@ -281,6 +289,113 @@ export function scanVerbLast(inputs: ScanInput[], model: VerbModel): Violation[]
   return out;
 }
 
+// ── Check 6 — deploy-base leakage in docs links ──────────────────────────────
+
+export type SiteConfig = { site: string; base: string };
+
+/**
+ * Pull the site's deploy target out of `website/astro.config.mjs` — the two
+ * `process.env.X ?? "default"` lines that define where the site is published.
+ * Regex, not import: this script stays offline and dependency-free, and the
+ * config pulls in the whole Astro toolchain.
+ *
+ * Returns null when either default is missing. The caller turns that into a
+ * VIOLATION rather than skipping check 6 — a config rename must fail loudly,
+ * because a scan that silently stops scanning reads exactly like a clean one.
+ */
+export function parseSiteConfig(astroConfigSource: string): SiteConfig | null {
+  const grab = (envVar: string): string | null =>
+    new RegExp(`process\\.env\\.${envVar}\\s*\\?\\?\\s*["']([^"']+)["']`).exec(astroConfigSource)?.[1] ?? null;
+  const site = grab("SITE_URL");
+  const base = grab("SITE_BASE");
+  return site && base ? { site, base: base.replace(/\/$/, "") } : null;
+}
+
+/** Every link target in a Markdown file: inline, reference-style, and raw HTML. */
+function extractHrefs(text: string): { href: string; line: number }[] {
+  const patterns = [
+    /\]\(\s*([^)\s]+)/g, // [text](href) — stops at whitespace, so titles are excluded
+    /^\s*\[[^\]]+\]:\s*(\S+)/gm, // [label]: href
+    /href\s*=\s*["']([^"']+)["']/g, // <a href="...">
+  ];
+  const out: { href: string; line: number }[] = [];
+  for (const re of patterns) {
+    for (const m of text.matchAll(re)) {
+      out.push({ href: m[1], line: text.slice(0, m.index).split("\n").length });
+    }
+  }
+  return out;
+}
+
+/**
+ * Check 6 — no doc may name the deploy target in a link.
+ *
+ * `docs/**` is host-agnostic on purpose: authors write `/docs/cli/push/`, and
+ * the Sätteri `base-links` plugin in `website/astro.config.mjs` prefixes the
+ * deploy base at build time. Both ways of short-circuiting that are bugs, and
+ * neither one is visible in a build that passes:
+ *
+ *   - `/n8n-decanter/docs/...` — the base written by hand. Double-prefixes the
+ *     day the site moves to a custom domain (base `/`), and the plugin skips it.
+ *   - `https://buttjer.github.io/...` — the whole origin nailed down. Survives a
+ *     domain move as a link to the OLD site, and sends PR previews to production.
+ *
+ * The rule this enforces is one line: write the site-root path, let the build
+ * say where the site is. External links, anchors and relative paths pass.
+ */
+export function scanDocLinks(inputs: ScanInput[], config: SiteConfig | null): Violation[] {
+  if (!config) {
+    return [
+      {
+        check: "doc-links",
+        message:
+          "website/astro.config.mjs — could not read the SITE_URL/SITE_BASE defaults, so the deploy-base scan did not run. Restore the `process.env.SITE_URL ?? \"…\"` form, or update parseSiteConfig() in scripts/check-docs-surface.mts.",
+      },
+    ];
+  }
+  let siteHost: string;
+  try {
+    siteHost = new URL(config.site).host.toLowerCase();
+  } catch {
+    return [
+      {
+        check: "doc-links",
+        message: `website/astro.config.mjs — SITE_URL default '${config.site}' is not a URL, so the deploy-base scan cannot resolve the site's host.`,
+      },
+    ];
+  }
+
+  const out: Violation[] = [];
+  for (const { file, text } of inputs) {
+    for (const { href, line } of extractHrefs(text)) {
+      if (DOC_LINK_EXEMPT.has(`${file}::${href}`)) continue;
+
+      if (href === config.base || href.startsWith(`${config.base}/`)) {
+        const stripped = href.slice(config.base.length) || "/";
+        out.push({
+          check: "doc-links",
+          message: `${file}:${line} — '${href}' hardcodes the deploy base '${config.base}'; write '${stripped}' and let the build add it.`,
+        });
+        continue;
+      }
+
+      let host: string | null = null;
+      try {
+        host = /^[a-z][a-z0-9+.-]*:\/\//i.test(href) ? new URL(href).host.toLowerCase() : null;
+      } catch {
+        host = null; // not a parseable absolute URL — nothing to compare
+      }
+      if (host === siteHost) {
+        out.push({
+          check: "doc-links",
+          message: `${file}:${line} — '${href}' hardcodes the deploy host '${siteHost}'; link within the site instead ('/docs/…'), and let the build add the base.`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 // ── I/O + orchestration (not unit-tested; drives the pure checks above) ───────
 
 function walk(dir: string): string[] {
@@ -321,6 +436,15 @@ function main(): number {
   const readme = read(path.join(REPO_ROOT, "README.md"));
   const overview = read(path.join(REPO_ROOT, "docs", "cli", "overview.md"));
 
+  // Check 6 covers `docs/**` only. README.md is deliberately excluded: it is
+  // read on github.com, where a site-root path resolves against github.com and
+  // 404s — so absolute links are the CORRECT form there, not a violation.
+  const astroConfigPath = path.join(REPO_ROOT, "website", "astro.config.mjs");
+  const siteConfig = fs.existsSync(astroConfigPath) ? parseSiteConfig(read(astroConfigPath)) : null;
+  const docMarkdown: ScanInput[] = walk(path.join(REPO_ROOT, "docs"))
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => ({ file: rel(f), text: read(f) }));
+
   const violations: Violation[] = [
     ...checkMapConsistency(model),
     ...checkVerbToPage(model, actualPages),
@@ -328,11 +452,12 @@ function main(): number {
     ...checkVerbInReadme(model, readme),
     ...checkVerbInOverview(model, overview),
     ...scanVerbLast(scanInputs(), model),
+    ...scanDocLinks(docMarkdown, siteConfig),
   ];
 
   if (violations.length === 0) {
     console.log(
-      `check:docs — clean (${model.userVerbs.length} verbs; structural surface parity + verb-first grammar OK).`,
+      `check:docs — clean (${model.userVerbs.length} verbs; structural surface parity + verb-first grammar + host-agnostic doc links OK).`,
     );
     return 0;
   }

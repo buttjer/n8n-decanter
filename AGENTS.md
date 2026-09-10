@@ -177,6 +177,17 @@ current — that stays human/agent review (and the periodic audit that produced
 check flags is fixed by updating the surfaces, or the small maintained map in
 `scripts/check-docs-surface.mts` (its only per-verb manual touch).
 
+**Links in `/docs` name a path, never a host or the deploy base.** Write
+`[push](/docs/cli/push/)` — the site-root path. The `base-links` plugin in
+`website/astro.config.mjs` prefixes the deploy base at build time, so the
+content never has to know where the site is published. Both shortcuts are bugs
+`check:docs` now rejects: `/n8n-decanter/docs/…` double-prefixes the day the
+site moves to a custom domain, and `https://buttjer.github.io/…` survives that
+move as a link to the *old* site while sending PR previews to production.
+Anchors, relative paths and links to other sites are unaffected. **`README.md`
+is deliberately exempt** — it is read on github.com, where a site-root path
+resolves against github.com and 404s, so full URLs are correct there.
+
 **Before opening a user-facing PR, grep the verb name across `README.md`,
 `docs/`, and `CHANGELOG.md`** — every surface that lists sibling verbs should
 list yours too. (The `simulate` verb once shipped in `/docs` + changelog but not
