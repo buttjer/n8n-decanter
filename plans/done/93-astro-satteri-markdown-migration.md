@@ -1,6 +1,6 @@
 # Plan 93 — move the docs site onto Astro's Sätteri Markdown processor
 
-**Status:** Not started
+**Status:** Done
 **Priority:** P2 (blocks the astro 7.3 bump; small in lines, but it replaces the
 one custom plugin the site depends on, so it needs a real verification pass)
 **Source:** housekeeping pass 2026-09-10 — Dependabot [#306](https://github.com/buttjer/n8n-decanter/pull/306)
@@ -86,16 +86,34 @@ Read off `withastro/astro@main` on 2026-09-10:
 
 ## Acceptance / verification
 
-Measured, not eyeballed — these are the exact checks the housekeeping pass ran
-against the legacy-package fix, so the two paths are comparable:
+**The link-count criterion this plan shipped with was wrong, and the execution
+pass replaced it.** It asked for "**12** `href="/n8n-decanter/…`" on one page,
+counted with `grep -c` — which counts matching *lines*, not links. The two
+processors wrap their HTML differently, so that number moved from 12 to 13 on a
+build whose links were in fact byte-identical. A criterion that fires on
+formatting is worse than none: it sends you hunting a regression that isn't
+there. What replaced it:
 
 - `npm run build` in `website/` exits 0 and reports **31 pages built**.
-- `dist/docs/cli/overview/index.html` carries **12** `href="/n8n-decanter/…"`
-  links, and `href="/n8n-decanter/docs/cli/push/"` is among them. A page whose
-  links lost the prefix builds fine and is broken on GitHub Pages — the build
-  exit code alone does not cover this.
-- No `@astrojs/markdown-remark` in `website/package.json` or its lockfile.
+- **The full link set matches, across every page.** Extract every `href="…"`
+  from all 32 built HTML files, sort, count occurrences, and diff that against
+  the same extraction from a build of current `main`. This must come out empty.
+  A page whose links silently lost the base prefix builds fine and is broken on
+  GitHub Pages, so the build exit code does not cover it.
+- **The rendered pages match too**, once entity-escaping style, whitespace and
+  the hashed asset filenames are normalised away (`/tmp/compare-dist.mts` in the
+  execution session; the normaliser is four `replace` calls). This is the check
+  that catches a lost heading id or a dropped attribute, which a link diff does
+  not.
+- No `@astrojs/markdown-remark` in `website/package.json`, its lockfile, or
+  `node_modules`.
+- `npm run check:links` passes.
 - PR #306's `Build site` check passes.
+
+**Result:** link sets identical. Rendered output identical on 31 of 32 pages —
+the one difference is Sätteri **fixing** a legacy SmartyPants bug, rendering the
+opening quote of `## "n8n refused the MCP request (403 …)"` as `“` where the old
+processor emitted a closing `”` at both ends.
 
 ## Notes
 
@@ -103,6 +121,25 @@ against the legacy-package fix, so the two paths are comparable:
   surface of the CLI.
 - **No `/docs`, README or `overview.md` change** — the command surface is
   untouched, so the three-surface rule does not apply here.
+- **`@astrojs/mdx` needed a major bump the plan did not anticipate.** 7.0.3
+  declares `peerOptional @astrojs/markdown-satteri@^0.3.1`, but astro 7.3.2
+  ships 0.4.1 — so adding the explicit dependency Task 2 asks for fails
+  `ERESOLVE`. `@astrojs/mdx@8.0.1` peers on `astro@^7.2.6` and
+  `@astrojs/markdown-satteri@^0.4.0`, and keeps `@astrojs/markdown-remark`
+  optional, so it resolves cleanly and pulls no legacy processor back in. The
+  site has **no `.mdx` content files** (29 plain `.md` under `docs/`), so the
+  major carries no content risk here.
+- **The explicit dependency is not optional.** astro nests
+  `@astrojs/markdown-satteri` under its own `node_modules`, and `astro/markdown`
+  does not re-export `satteri`, so `astro.config.mjs` cannot import it without a
+  direct entry in `website/package.json`.
+- **Two docs sources were fixed on the way**, because they were the only content
+  difference between the two builds: `docs/faq/troubleshooting.md:82` and
+  `docs/concepts/configuration.md:125` wrote `[list --remote](…)` as plain link
+  text, so smart punctuation ate the `--` (an em dash under the old processor,
+  an en dash under Sätteri). They are now backticked, matching how every other
+  flag-bearing link in `/docs` is already written — and a reader can copy the
+  flag again.
 - The legacy `@astrojs/markdown-remark` route stays available as a fallback if
   the port hits something the source read above did not predict. Say so and stop
   rather than half-migrating.

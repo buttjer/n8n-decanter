@@ -122,7 +122,7 @@ In order of resolution:
 The instance needs **MCP access enabled** once (n8n → Settings → MCP;
 requires an n8n with the built-in MCP server, ~2.20+), and each synced
 workflow needs its **"Available in MCP"** flag (workflow card ⋯ menu, or
-workflow settings) — [list --remote](/docs/cli/list/) and the picker show
+workflow settings) — [`list --remote`](/docs/cli/list/) and the picker show
 which workflows still need it.
 
 `preflight --offline`, `node run`, `scenario check`, and plain `list` need no
