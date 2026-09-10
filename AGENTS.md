@@ -697,6 +697,14 @@ the same traps:
   `x-ratelimit-*` headers) — don't spam it; prefer the setup cookie.
 - **Public API key** (for `/api/v1/*`, header `X-N8N-API-KEY`) is minted at
   `POST /rest/api-keys` with the owner cookie (scopes list in `smoke-n8n.mts`).
+- **A DOUBLED `X-N8N-API-KEY` is rejected with 401, even when both values are
+  the same valid key** (verified on 2.30.7, smoke step "upstream auth mode" —
+  the proxy sends `KEY, KEY` and n8n refuses; the proxy's key alone returns
+  200). This is why `N8N_DECANTER_AUTH=upstream` (Plan 92) **omits** the header
+  rather than sending a placeholder: a gateway's `requestHeaderModifier.add`
+  appends to whatever the client sent, so any client value — real, fake or
+  empty — turns a working request into a 401. It was first measured against a
+  live agentgateway on 2026-09-09; the smoke step is what keeps it measured.
 
 ### MCP server (built-in, n8n ≥ ~2.13; verified on 2.30.7)
 
