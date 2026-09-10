@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  DOC_LINK_EXEMPT,
   buildVerbModel,
   checkMapConsistency,
   checkPageToVerb,
@@ -15,6 +16,8 @@ import {
   expectedPagesForVerb,
   parseNamespaces,
   parseSet,
+  parseSiteConfig,
+  scanDocLinks,
   scanVerbLast,
 } from "../../scripts/check-docs-surface.mts";
 
@@ -238,5 +241,93 @@ describe("check 5 — verb-last command scan", () => {
     const text = "Verb-last (`n8n-decanter wf123 push`) errors.";
     assert.deepEqual(run("docs/cli/overview.md", text), []); // exempt file
     assert.equal(run("docs/cli/other.md", text).length, 1); // same text, non-exempt file
+  });
+});
+
+describe("check 6 — deploy-base leakage in docs links", () => {
+  // Mirrors the real website/astro.config.mjs shape closely enough to prove the
+  // parser, including the `?? "…"` defaults it keys on.
+  const ASTRO_CONFIG = `
+const site = process.env.SITE_URL ?? "https://buttjer.github.io";
+const base = process.env.SITE_BASE ?? "/n8n-decanter";
+`;
+  const config = parseSiteConfig(ASTRO_CONFIG);
+  const run = (text: string, file = "docs/cli/x.md") => scanDocLinks([{ file, text }], config);
+
+  it("reads the site and base out of the astro config", () => {
+    assert.deepEqual(config, { site: "https://buttjer.github.io", base: "/n8n-decanter" });
+  });
+
+  it("flags a link that hardcodes the deploy base", () => {
+    const v = run("see [push](/n8n-decanter/docs/cli/push/)");
+    assert.equal(v.length, 1);
+    assert.match(v[0].message, /hardcodes the deploy base/);
+    assert.match(v[0].message, /'\/docs\/cli\/push\/'/); // suggests the stripped form
+  });
+
+  it("flags a link that hardcodes the deploy host", () => {
+    const v = run("see [push](https://buttjer.github.io/n8n-decanter/docs/cli/push/)");
+    assert.equal(v.length, 1);
+    assert.match(v[0].message, /hardcodes the deploy host/);
+  });
+
+  it("flags the host over http as well as https", () => {
+    assert.equal(run("[x](http://buttjer.github.io/n8n-decanter/)").length, 1);
+  });
+
+  it("passes the correct site-root form", () => {
+    assert.deepEqual(run("see [push](/docs/cli/push/) and [init](/docs/cli/init/)"), []);
+  });
+
+  it("passes anchors, relative paths and foreign hosts", () => {
+    const text = "[a](#an-anchor) [b](../concepts/sync-layout.md) [c](https://github.com/n8n-io/skills)";
+    assert.deepEqual(run(text), []);
+  });
+
+  it("does not flag a base-like prefix that is only a path segment", () => {
+    // `/n8n-decanter-notes/` starts with the base STRING but is a different
+    // path; only the exact segment counts.
+    assert.deepEqual(run("[x](/n8n-decanter-notes/faq/)"), []);
+  });
+
+  it("catches reference-style definitions and raw HTML hrefs", () => {
+    assert.equal(run("[push]: /n8n-decanter/docs/cli/push/").length, 1);
+    assert.equal(run('<a href="/n8n-decanter/docs/cli/push/">push</a>').length, 1);
+  });
+
+  it("ignores a link title after the href", () => {
+    assert.deepEqual(run('[x](/docs/cli/push/ "Push a workflow")'), []);
+  });
+
+  it("reports the line the bad link is on", () => {
+    assert.match(run("line one\nline two\n[x](/n8n-decanter/docs/)")[0].message, /:3 —/);
+  });
+
+  it("respects the exemption allowlist by file + href", () => {
+    const text = "[x](/n8n-decanter/docs/cli/push/)";
+    const exempt = "docs/exempt.md::/n8n-decanter/docs/cli/push/";
+    DOC_LINK_EXEMPT.add(exempt);
+    try {
+      assert.deepEqual(run(text, "docs/exempt.md"), []);
+      assert.equal(run(text, "docs/other.md").length, 1); // same href, non-exempt file
+    } finally {
+      DOC_LINK_EXEMPT.delete(exempt);
+    }
+  });
+
+  it("FAILS rather than silently skipping when the config cannot be parsed", () => {
+    // The whole point: a renamed config variable must turn the check red, not
+    // quietly stop scanning — a scan that stopped looks exactly like a pass.
+    assert.equal(parseSiteConfig("const site = SOMETHING_ELSE;"), null);
+    const v = scanDocLinks([{ file: "docs/x.md", text: "[x](/n8n-decanter/a/)" }], null);
+    assert.equal(v.length, 1);
+    assert.match(v[0].message, /did not run/);
+  });
+
+  it("FAILS when SITE_URL is not a parseable URL", () => {
+    const bad = parseSiteConfig('process.env.SITE_URL ?? "not a url"\nprocess.env.SITE_BASE ?? "/b"');
+    const v = scanDocLinks([{ file: "docs/x.md", text: "[x](/docs/a/)" }], bad);
+    assert.equal(v.length, 1);
+    assert.match(v[0].message, /cannot resolve the site's host/);
   });
 });
