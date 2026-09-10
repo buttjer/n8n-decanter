@@ -438,12 +438,22 @@ act on. `requireApiKey` passes through; preflight's `hasApiKey` became
 behavior switch, not one of n8n's credentials, and often shares a `.env` with
 an n8n container whose namespace already holds `N8N_BASIC_AUTH_*`.
 
-**Why a placeholder cannot work** (measured 2026-09-09 against a live
-agentgateway): a proxy that attaches a key **appends** it to the header the
-client sent, and n8n answers `401` to the pair. Omitting the header is the
-only shape that works, which is why the mode is a switch and not a
-credential value — and why the e2e mock, in `gatewayMode`, 401s *any*
+**Why a placeholder cannot work** (first measured 2026-09-09 against a live
+agentgateway, and **since reproduced against real n8n 2.30.7** — smoke step
+"upstream auth mode"): a proxy that attaches a key **appends** it to the header
+the client sent, and n8n answers `401` to the pair. The smoke step sends the
+*same valid key* on both sides, so the doubling is the only thing wrong with
+the request; the proxy's key alone returns 200. Omitting the header is
+therefore the only shape that works, which is why the mode is a switch and not
+a credential value — and why the e2e mock, in `gatewayMode`, 401s *any*
 client-sent credential rather than merely tolerating none.
+
+**Three layers test it, and each proves something the others cannot.** Unit:
+the header is absent, not empty. e2e: the CLI sends nothing on either backend,
+against a mock that refuses anything it is sent. Smoke: a credential-injecting
+reverse proxy in front of the container, so real n8n accepts decanter carrying
+no credential and rejects the doubled header. Only the last one can fail when
+n8n changes its mind.
 
 **Both credential files fall back to the main checkout in a linked git
 worktree** (`credentialFile` / `mainCheckoutTwin`, `lib/git.mts`). They are

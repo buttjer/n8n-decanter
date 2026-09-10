@@ -29,6 +29,7 @@
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -589,6 +590,10 @@ try {
     const config = {
       configDir: TMP, root: ROOT, workflows: [wfId], commitOnPush: false, commitOnPull: false,
       requestTimeoutMs: 30_000, dataTables: true, liveMirror: true, backupLimit: 20, host: HOST, apiKey: KEY,
+      // This literal is passed to a dynamically imported watchWorkflow, so
+      // nothing typechecks it against DecanterConfig — spell the field out
+      // rather than leave it silently undefined (Plan 92).
+      authMode: "credentials" as const,
     };
     const logs: string[] = [];
     const capture = (m: string) => logs.push(m);
@@ -1434,6 +1439,142 @@ try {
     r = await cli("data-tables", "clean");
     assert.equal(r.code, 0, r.out);
     assert.ok(!existsSync(dtRoot), "clean removed the data-tables dir: " + r.out);
+  });
+
+  // ---------- upstream auth mode (Plan 92) ----------
+  //
+  // The unit and e2e suites prove decanter sends no credential header. They
+  // cannot prove the other half — that REAL n8n accepts a request arriving with
+  // only the proxy's credential on it, and rejects one carrying two. That
+  // second fact was a field measurement against a live agentgateway on
+  // 2026-09-09, and a measurement nothing re-runs is a measurement that rots.
+  // This step pins both against the container.
+  await step("upstream auth mode: a credential-injecting proxy, no decanter credentials, and the doubled header REAL n8n rejects (Plan 92)", async () => {
+    const seen: Array<{ path: string; auth?: string; key?: string }> = [];
+
+    // A reverse proxy the shape of the real one: it ADDS its credentials to
+    // whatever arrived, the way agentgateway's `requestHeaderModifier.add`
+    // does. `add` and not `set` is the whole reason a placeholder fails, so
+    // modelling it as a replacement would quietly make the negative below pass
+    // for the wrong reason.
+    const proxy = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        void (async () => {
+          const clientAuth = typeof req.headers.authorization === "string" ? req.headers.authorization : undefined;
+          const clientKey = typeof req.headers["x-n8n-api-key"] === "string" ? req.headers["x-n8n-api-key"] : undefined;
+          seen.push({ path: req.url!, auth: clientAuth, key: clientKey });
+          const headers: Record<string, string> = {};
+          for (const [name, value] of Object.entries(req.headers)) {
+            // hop-by-hop and length headers are fetch's to set; the two
+            // credential headers are rebuilt below
+            if (["host", "connection", "content-length", "authorization", "x-n8n-api-key", "accept-encoding"].includes(name)) continue;
+            if (typeof value === "string") headers[name] = value;
+          }
+          headers.authorization = clientAuth === undefined ? `Bearer ${MCP}` : `${clientAuth}, Bearer ${MCP}`;
+          headers["x-n8n-api-key"] = clientKey === undefined ? KEY : `${clientKey}, ${KEY}`;
+          try {
+            const up = await fetch(HOST + req.url!, {
+              method: req.method,
+              headers,
+              body: chunks.length > 0 ? Buffer.concat(chunks) : undefined,
+            });
+            const body = Buffer.from(await up.arrayBuffer());
+            const out: Record<string, string> = {};
+            // content-encoding/-length would describe the body we no longer
+            // have: fetch decoded it, and this writes a fresh length
+            up.headers.forEach((value, name) => {
+              if (!["content-encoding", "content-length", "transfer-encoding"].includes(name)) out[name] = value;
+            });
+            res.writeHead(up.status, out).end(body);
+          } catch (err) {
+            res.writeHead(502, { "content-type": "text/plain" }).end(String((err as Error).message));
+          }
+        })();
+      });
+    });
+    await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", () => r()));
+    const PROXY = `http://127.0.0.1:${(proxy.address() as import("node:net").AddressInfo).port}`;
+    const upDir = path.join(TMP, "upstream");
+    // No credentials anywhere: not in the env, not in a file. The proxy has
+    // them, which is the entire premise.
+    const upEnv = { ...process.env } as NodeJS.ProcessEnv;
+    delete upEnv.N8N_HOST;
+    delete upEnv.N8N_API_KEY;
+    delete upEnv.N8N_MCP_TOKEN;
+    const upCli = async (...args: string[]) => {
+      try {
+        const { stdout, stderr } = await execFile(process.execPath, [CLI, ...args], { cwd: upDir, env: upEnv, encoding: "utf8" });
+        return { out: stdout + stderr, code: 0 };
+      } catch (err) {
+        const e = err as { stdout?: string; stderr?: string; code?: number };
+        return { out: (e.stdout ?? "") + (e.stderr ?? ""), code: e.code ?? 1 };
+      }
+    };
+
+    try {
+      // --- init, non-interactively, with nothing to paste
+      const initRun = await execFile(process.execPath, [CLI, "init", upDir, "--host", PROXY, "--auth", "upstream"], { env: upEnv, encoding: "utf8", cwd: TMP });
+      const initOut = initRun.stdout + initRun.stderr;
+      assert.equal(read(upDir, ".env"), `N8N_HOST=${PROXY}\nN8N_DECANTER_AUTH=upstream\n`, "no credential lines: " + initOut);
+      assert.ok(!existsSync(path.join(upDir, ".decanter-auth.json")), "no OAuth credentials minted: " + initOut);
+      assert.match(initOut, /MCP connection verified/, "MCP half verified through the proxy: " + initOut);
+      assert.match(initOut, /REST API reachable through the upstream auth proxy/, "REST half verified through the proxy: " + initOut);
+
+      // --- both backends, against the real instance, through the proxy.
+      //
+      // Its OWN workflow, not the suite's `wfId`: by this point that one's only
+      // Code node is TS-managed (`ümläut-nödé.ts`), and pull deliberately never
+      // writes a `.ts` source — so a fresh sync dir gets a correctly EMPTY
+      // `code/`. A step 35 steps deep must not inherit that.
+      const upWf = await api("POST", "/api/v1/workflows", { ...seedWorkflow(), name: "Smoke Upstream" });
+      await enableMcpAccess(upWf.id);
+      writeFileSync(path.join(upDir, "decanter.config.json"),
+        JSON.stringify({ root: "./workflows", workflows: [upWf.id], commitOnPush: false, commitOnPull: false }, null, 2));
+      let r = await upCli("pull", upWf.id);
+      assert.equal(r.code, 0, "pull over MCP with no Authorization header: " + r.out);
+      // The workflow FOLDER, not merely the first entry: init scaffolds a
+      // `workflows/.gitkeep` alongside it, which sorts first.
+      const upRoot = path.join(upDir, "workflows");
+      const slug = readdirSync(upRoot, { withFileTypes: true }).find((e) => e.isDirectory() && existsSync(path.join(upRoot, e.name, "code")))?.name;
+      assert.ok(slug, `pull landed a workflow folder, got ${readdirSync(upRoot).join(", ")}`);
+      const pulled = path.join(upRoot, slug, "code");
+      const srcName = readdirSync(pulled).find((f) => f.endsWith(".js"));
+      assert.ok(srcName, `pull landed a code file, got ${readdirSync(pulled).join(", ")}`);
+
+      // push, then read the draft back with the AUTHORITATIVE client (direct
+      // REST, not through the proxy) — the CLI's own "pushed" line is not
+      // evidence that n8n stored anything.
+      const marker = `// upstream-auth smoke ${Date.now()}`;
+      writeFileSync(path.join(pulled, srcName), `${marker}\n${read(pulled, srcName)}`);
+      r = await upCli("push", upWf.id);
+      assert.equal(r.code, 0, "push over MCP with no Authorization header: " + r.out);
+      const draft: string = (await api("GET", `/api/v1/workflows/${upWf.id}`)).nodes.find((n: any) => n.id === "c1").parameters.jsCode;
+      assert.ok(draft.includes(marker), "the push really landed on the instance's draft");
+
+      r = await upCli("executions", upWf.id, "--limit=1");
+      assert.equal(r.code, 0, "REST verb with no X-N8N-API-KEY header, and no key to set: " + r.out);
+
+      // --- the wire, which is what the mode actually is
+      assert.ok(seen.length >= 4, `the proxy saw the traffic (${seen.length} requests)`);
+      const leaked = seen.filter((s) => s.auth !== undefined || s.key !== undefined);
+      assert.deepEqual(leaked, [], "decanter must send NO credential header on any request");
+      assert.ok(seen.some((s) => s.path.startsWith("/mcp-server/http")), "MCP went through the proxy");
+      assert.ok(seen.some((s) => s.path.startsWith("/api/v1/executions")), "REST went through the proxy");
+
+      // --- why a placeholder cannot work, proven against real n8n rather than
+      // quoted from a field note. The client sends the REAL key, so the proxy
+      // forwards `KEY, KEY`: the only thing wrong with that request is that
+      // the header arrived twice. A fake key here would 401 for being fake and
+      // would prove nothing.
+      const doubled = await fetch(`${PROXY}/api/v1/workflows?limit=1`, { headers: { "X-N8N-API-KEY": KEY, accept: "application/json" } });
+      assert.equal(doubled.status, 401, "real n8n must reject a doubled API key — this is what rules out a placeholder");
+      const single = await fetch(`${PROXY}/api/v1/workflows?limit=1`, { headers: { accept: "application/json" } });
+      assert.equal(single.status, 200, "…while the same request with the proxy's key alone succeeds");
+    } finally {
+      await new Promise<void>((r) => proxy.close(() => r()));
+    }
   });
 } finally {
   await teardown();
