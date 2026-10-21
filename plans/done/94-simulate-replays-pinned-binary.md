@@ -1,6 +1,6 @@
 # Plan 94 — replay pinned binary in `preflight --simulate`
 
-**Status:** Not started
+**Status:** Done — tasks 1, 2, 4 and 5 shipped; the optional task 3 was not done.
 **Priority:** P1 — offline, small, and measured: the stand-in fix is one
 expression, and without it no workflow that reads a file can be replayed past
 its trigger.

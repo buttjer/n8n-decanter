@@ -237,6 +237,12 @@ stripped and no outbound-capable node survives the transform, so the run is dry
 — it writes nothing external. Then each real node's replayed output is
 **diffed against the capture**: divergence is the check's `fail`.
 
+A stand-in replays the pinned item's `binary` as captured, so a node that reads
+an attachment (`this.helpers.getBinaryDataBuffer`, Extract from File, …) sees
+the same bytes the capture did — see
+[binary attachments](/docs/cli/scenario/#binary-attachments) for the one case
+that doesn't replay.
+
 **A pinned node that emitted on several outputs replays all of them.** Each
 extra output — an error output, a second branch — gets its own stand-in node,
 wired to the same input as the original and feeding exactly that output's

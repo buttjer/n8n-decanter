@@ -1009,6 +1009,14 @@ into it):
   trigger and would inject a branch's items into a replay whose real nodes took
   another path. `Simulation.splitOutputs` / `SimulationReport.splitOutputs`
   report the splits.
+- A stand-in keeps `binary` as captured, inline or by reference (Plan 94).
+  n8n's binary-data service reads by `id` whenever one is present and only
+  falls back to inline `data` without it, so a reference resolves on the
+  source instance but not on the local engine a replay runs on. References are
+  kept rather than stripped: a node that only checks whether a file is present
+  still passes with one, and `scenario check`/`scenario create` warn (not
+  error) on a reference so the gap is visible without losing that
+  presence-check value.
 - **"Executable" has to mean something — item coverage bounds the synthetic
   verdict** (Plan 66). A pin feeding a branch nothing reads leaves the
   downstream nodes with no input; n8n

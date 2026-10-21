@@ -958,6 +958,161 @@ describe("scenario check (checkScenarios) + listScenarioSlugs", () => {
   });
 });
 
+// Plan 94 (#328): a stand-in that drops `binary` loses every file a trigger or
+// network node delivered, so nothing after it can read one. And a captured
+// binary that is only a reference (`id` set) reads back on the source instance
+// alone — n8n reads by id whenever there is one — so `scenario check` and
+// `scenario create` must say so, as a warning.
+describe("pinned binary data (Plan 94)", () => {
+  const TEXT = "hello attachment!";
+  const inline = { data: Buffer.from(TEXT).toString("base64"), mimeType: "text/plain", fileName: "a.txt", fileExtension: "txt", fileSize: "17 B" };
+  const ref = (id: string) => ({ data: id.split(":")[0], mimeType: "text/plain", fileName: "a.txt", fileExtension: "txt", fileSize: "17 B", id });
+  const binItem = (json: unknown, binary: Record<string, unknown>, i = 0) => ({ json, binary, pairedItem: { item: i } });
+
+  /** What a stand-in's Code body returns when the engine runs it. */
+  const evalStandIn = (node: WorkflowNode) => new Function(String(node.parameters.jsCode))() as Array<Record<string, unknown>>;
+
+  /**
+   * The reference warning: one line naming node AND key AND saying `id`. Three
+   * at once, so the PII warning or a Plan 66 truncation warning about the same
+   * node cannot satisfy it — and the prose stays free to change.
+   */
+  const refWarnings = (node: string, key: string) =>
+    warnings.filter((w) => w.includes(node) && w.includes(key) && /\bid\b/.test(w));
+
+  // --- the stand-in keeps `binary` -------------------------------------------
+  it("a pinned item's inline binary survives into the stand-in, byte-exact", async () => {
+    const dir = scaffoldBase({
+      Webhook: run([binItem({ body: { n: 21 } }, { attachment_0: inline })]),
+      Compute: run([item({ doubled: 42 })]),
+      Tag: run([item({ tagged: true })]),
+      Fetch: run([item({ status: "ok" })]),
+    });
+    const sim = await buildSimulation(dir, "1", log);
+    const out = evalStandIn(nodeNamed(sim.workflow, "Webhook"));
+    assert.equal(out.length, 1);
+    assert.deepEqual(out[0].json, { body: { n: 21 } });
+    assert.deepEqual(out[0].binary, { attachment_0: inline }, "the stand-in dropped the captured binary");
+    assert.equal(Buffer.from(String((out[0].binary as any).attachment_0.data), "base64").toString(), TEXT);
+  });
+
+  it("a reference binary is carried through as captured — a presence check still needs it", async () => {
+    const dir = scaffoldBase({
+      Webhook: run([binItem({ body: {} }, { attachment_0: ref("database:abc123") })]),
+      Compute: run([item({ doubled: 42 })]),
+      Tag: run([item({ tagged: true })]),
+      Fetch: run([item({ status: "ok" })]),
+    });
+    const sim = await buildSimulation(dir, "1", log);
+    assert.deepEqual(evalStandIn(nodeNamed(sim.workflow, "Webhook"))[0].binary, { attachment_0: ref("database:abc123") });
+  });
+
+  it("an item without binary emits no `binary` key", async () => {
+    const sim = await buildSimulation(scaffoldBase(), "1", log);
+    const out = evalStandIn(nodeNamed(sim.workflow, "Webhook"));
+    assert.deepEqual(out[0].json, { body: { n: 21 } });
+    assert.equal("binary" in out[0], false, `got: ${JSON.stringify(out[0])}`);
+  });
+
+  it("a Plan 66 extra-output stand-in keeps its output's binary too", async () => {
+    const wf: Workflow = {
+      id: "wf1", name: "Err WF", versionId: "v1",
+      nodes: [
+        { id: "w", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], parameters: {} },
+        { id: "h", name: "Fetch", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [200, 0], parameters: { url: "http://x" }, onError: "continueErrorOutput" },
+        { id: "o", name: "OnOk", type: "n8n-nodes-base.set", typeVersion: 3.4, position: [400, -80], parameters: {} },
+        { id: "e", name: "OnError", type: "n8n-nodes-base.noOp", typeVersion: 1, position: [400, 80], parameters: {} },
+      ] as WorkflowNode[],
+      connections: {
+        Webhook: { main: [[{ node: "Fetch", type: "main", index: 0 }]] },
+        Fetch: { main: [[{ node: "OnOk", type: "main", index: 0 }], [{ node: "OnError", type: "main", index: 0 }]] },
+      },
+      settings: { executionOrder: "v1" },
+    };
+    const errFile = { ...inline, fileName: "err.txt" };
+    const dir = scaffold({
+      "workflow.json": JSON.stringify(wf),
+      ".decanter.json": JSON.stringify({ workflowId: "wf1", nodes: {} }),
+      "executions/1.json": JSON.stringify({
+        id: 1, status: "success", workflowId: "wf1", workflowVersionId: "v1",
+        data: { resultData: { runData: {
+          Webhook: run([item({ n: 1 })]),
+          Fetch: [{ data: { main: [[binItem({ status: "ok" }, { data: inline })], [binItem({ error: "boom" }, { report: errFile })]] } }],
+          OnOk: run([item({ ok: true })]),
+        } } },
+      }),
+    });
+    const sim = await buildSimulation(dir, "1", log);
+    assert.deepEqual(evalStandIn(nodeNamed(sim.workflow, "Fetch"))[0].binary, { data: inline }, "output 0's stand-in");
+    const extra = evalStandIn(nodeNamed(sim.workflow, `${SIM_OUT_PREFIX}1__Fetch`));
+    assert.deepEqual(extra[0].json, { error: "boom" });
+    assert.deepEqual(extra[0].binary, { report: errFile }, "the extra-output stand-in dropped the captured binary");
+  });
+
+  // --- the reference warning -------------------------------------------------
+  const scenarioDir = (runData: Record<string, unknown>, settings?: Record<string, unknown>) => {
+    const wf = baseWorkflow();
+    if (settings) wf.settings = { ...wf.settings, ...settings };
+    return scaffold({
+      "workflow.json": JSON.stringify(wf),
+      [`${SCENARIOS_DIR}/bin.json`]: JSON.stringify({
+        id: "bin", _decanterScenario: { source: "capture", fill: [] },
+        // Both pinned nodes filled by default, so the Plan 65 readiness warning
+        // stays out of the way; each case overrides the node it is about.
+        data: { resultData: { runData: { Webhook: run([item({ body: {} })]), Fetch: run([item({ status: "ok" })]), ...runData } } },
+      }),
+    });
+  };
+
+  it("scenario check warns about a `database:` reference on a pinned node, naming node and key, and stays valid", () => {
+    const dir = scenarioDir({ Webhook: run([binItem({ body: {} }, { attachment_0: ref("database:abc123") })]) });
+    assert.equal(checkScenarios(dir, "bin", log), 0, "a warning, not an error");
+    assert.equal(refWarnings("Webhook", "attachment_0").length >= 1, true, `no reference warning naming Webhook + attachment_0 + id; got: ${warnings.join(" | ")}`);
+  });
+
+  it("scenario check warns about a `filesystem-v2:` reference too", () => {
+    const dir = scenarioDir({ Fetch: run([binItem({ status: "ok" }, { download_1: ref("filesystem-v2:workflows/wf1/executions/1/binary_data/f00") })]) });
+    assert.equal(checkScenarios(dir, "bin", log), 0);
+    assert.ok(refWarnings("Fetch", "download_1").length >= 1, `got: ${warnings.join(" | ")}`);
+  });
+
+  it("scenario check stays quiet about inline bytes (base64 in `data`, no id)", () => {
+    const dir = scenarioDir({ Webhook: run([binItem({ body: {} }, { attachment_0: inline })]) });
+    assert.equal(checkScenarios(dir, "bin", log), 0);
+    assert.deepEqual(refWarnings("Webhook", "attachment_0"), [], "inline bytes replay anywhere — nothing to warn about");
+  });
+
+  it("scenario check ignores a reference in a PURE node's output — the replay runs that node for real", () => {
+    const dir = scenarioDir({
+      Webhook: run([item({ body: {} })]),
+      Tag: run([binItem({ tagged: true }, { attachment_0: ref("database:abc123") })]),
+    });
+    assert.equal(checkScenarios(dir, "bin", log), 0);
+    assert.deepEqual(refWarnings("Tag", "attachment_0"), [], `got: ${warnings.join(" | ")}`);
+  });
+
+  it("scenario check warns about a `json._files.<key>` reference in a `binaryMode: combined` workflow", () => {
+    const dir = scenarioDir(
+      { Webhook: run([item({ body: {}, _files: { attachment_0: ref("database:abc123") } })]) },
+      { binaryMode: "combined" },
+    );
+    assert.equal(checkScenarios(dir, "bin", log), 0);
+    assert.ok(refWarnings("Webhook", "attachment_0").length >= 1, `got: ${warnings.join(" | ")}`);
+  });
+
+  it("scenario create --execution warns the same way when the capture holds a reference", async () => {
+    const dir = scaffoldBase({
+      Webhook: run([binItem({ body: {} }, { attachment_0: ref("database:abc123") })]),
+      Compute: run([item({ doubled: 42 })]),
+      Tag: run([item({ tagged: true })]),
+      Fetch: run([item({ status: "ok" })]),
+    });
+    await writeScenario(dir, { execId: "1", slug: "bin" }, log);
+    assert.ok(existsSync(path.join(dir, SCENARIOS_DIR, "bin.json")), "the scenario is still written");
+    assert.ok(refWarnings("Webhook", "attachment_0").length >= 1, `got: ${warnings.join(" | ")}`);
+  });
+});
+
 describe("migration + legacy fixtures guard", () => {
   it("migrateScenariosDir renames a legacy mocks/ dir to scenarios/", () => {
     const dir = scaffold({ "mocks/happy-path.json": "{}" });

@@ -401,7 +401,18 @@ function capLoopDrivers(nodes: WorkflowNode[], connections: Record<string, unkno
 
 /** JS body for a name-preserving replacement node: emit the captured items verbatim. */
 function emitCode(items: RunItem[]): string {
-  const payload = items.map((it) => (it.pairedItem !== undefined ? { json: it.json, pairedItem: it.pairedItem } : { json: it.json }));
+  const payload = items.map((it) => {
+    const entry: { json?: unknown; binary?: unknown; pairedItem?: unknown } = {};
+    entry.json = it.json;
+    // Carry `binary` through unchanged, inline or reference (Plan 94): a
+    // stand-in that dropped it would make every downstream `getBinaryData`
+    // call fail, and n8n reads by `id` whenever one is present, so stripping
+    // it would turn a readable-elsewhere reference into a dead one. Presence
+    // checks (item count, `json` payload) keep working either way.
+    if (it.binary !== undefined) entry.binary = it.binary;
+    if (it.pairedItem !== undefined) entry.pairedItem = it.pairedItem;
+    return entry;
+  });
   return `return ${JSON.stringify(payload)};\n`;
 }
 
@@ -852,6 +863,10 @@ export async function writeScenario(
   const payload = JSON.stringify({ ...cleanExec, _decanterScenario: meta }, null, 2) + "\n";
   writeFileSync(scenarioFile, payload);
   const bytes = Buffer.byteLength(payload);
+  // Pinned binaries that are only references read back on the source instance
+  // alone — say so now, while the capture (and its inline bytes) are in hand,
+  // not on the first replay that cannot read them (Plan 94).
+  reportPinnedBinaryReferences(wf, baseRunData, name, log);
 
   const rel = path.relative(process.cwd(), scenarioFile);
   // Say which of the three it actually was. "workflow schemas" would be a lie
@@ -1029,6 +1044,59 @@ function reportReplayTruncation(dir: string, wf: Workflow, runData: RunData, slu
   }
 }
 
+/**
+ * One captured binary as it appears in run data: inline (base64 in `data`, no
+ * `id`) or a reference (`id` like `database:…`, `filesystem-v2:…`, `s3:…`).
+ * Only the `id` distinguishes the two — the mode is not part of the shape.
+ */
+function isBinaryReference(value: unknown): boolean {
+  return typeof value === "object" && value !== null && typeof (value as { id?: unknown }).id === "string";
+}
+
+/**
+ * Warn about pinned binaries that are **references** (Plan 94): the bytes live
+ * only on the source instance — n8n resolves them by `id` — so a replay on
+ * another instance (or `test` with `pinData`) cannot read them, even though
+ * the items still *carry* the binary and presence checks pass. Kept in the
+ * stand-in for exactly that reason; the reader just needs to know it will not
+ * be readable there. Walks only **pinned** nodes — pure nodes run for real, so
+ * their captured binaries never reach the engine and nothing is lost.
+ * Warning only: exit codes and the valid/invalid count are unchanged.
+ *
+ * With `settings.binaryMode === "combined"`, n8n puts the same entries under
+ * `json._files.<key>` instead of `binary.<key>` — flagged the same way.
+ */
+function reportPinnedBinaryReferences(wf: Workflow, runData: RunData, slug: string, log: Log): void {
+  const combined = (wf.settings as { binaryMode?: unknown } | undefined)?.binaryMode === "combined";
+  for (const node of pinnableNodes(wf)) {
+    const items = firstRunItems(runData[node.name]);
+    if (!items) continue;
+    const refs = new Set<string>();
+    for (const it of items) {
+      const binary = (it as { binary?: unknown }).binary;
+      if (binary && typeof binary === "object" && !Array.isArray(binary)) {
+        for (const [key, entry] of Object.entries(binary as Record<string, unknown>)) {
+          if (isBinaryReference(entry)) refs.add(key);
+        }
+      }
+      if (combined) {
+        const json = it.json;
+        const files = json && typeof json === "object" && !Array.isArray(json) ? (json as { _files?: unknown })._files : undefined;
+        if (files && typeof files === "object" && !Array.isArray(files)) {
+          for (const [key, entry] of Object.entries(files as Record<string, unknown>)) {
+            if (isBinaryReference(entry)) refs.add(key);
+          }
+        }
+      }
+    }
+    if (refs.size === 0) continue;
+    log.warn(
+      `scenario "${slug}": ${node.name} carries binary ${[...refs].map((k) => `"${k}"`).join(", ")} only as a reference (id set) — the bytes live on the SOURCE instance and replay there cannot read them. ` +
+        `For a portable scenario, inline the bytes as base64 in "data" and remove the "id" field.`,
+    );
+  }
+}
+
 export function checkScenarios(dir: string, slug: string | undefined, log: Log): number {
   const slugs = slug !== undefined ? [kebabCase(slug)] : listScenarioSlugs(dir);
   if (slugs.length === 0) {
@@ -1048,6 +1116,7 @@ export function checkScenarios(dir: string, slug: string | undefined, log: Log):
         const runData = ((exec as { data?: { resultData?: { runData?: RunData } } }).data?.resultData?.runData ?? {}) as RunData;
         reportTestReadiness(wf, runData, s, log);
         reportReplayTruncation(dir, wf, runData, s, log);
+        reportPinnedBinaryReferences(wf, runData, s, log);
       }
     } catch (err) {
       log.error((err as Error).message);

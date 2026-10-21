@@ -14,7 +14,7 @@
 // the calls themselves are one layer below the CLI, unchanged by the rename.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -186,6 +186,49 @@ try {
     const report = await runSimulation(TMP, "happy-path", { version: IMAGE_TAG, source: "scenario" }, log as any);
     assert.equal(report.syntheticPins, false, "a pure-capture scenario is not synthetic");
     assert.equal(report.ok, true, "committed-capture replay must still match");
+  });
+
+  // Plan 94 (#328), the spike made permanent. A pinned trigger delivers an
+  // inline attachment (base64 in `data`, no `id` — so no instance store is
+  // involved) and a real Code node reads the bytes back with the helper Extract
+  // from File uses. Hand-built sync dir: no capture server needed.
+  await step("preflight --simulate --scenario: a pinned inline binary reaches the next node, bytes intact (Plan 94)", async () => {
+    const TEXT = "hello attachment!";
+    const readJs = [
+      "const it = $input.first();",
+      "let text = null, err = null;",
+      "try { text = (await this.helpers.getBinaryDataBuffer(0, 'attachment_0')).toString('utf8'); } catch (e) { err = e?.message ? String(e.message) : JSON.stringify(e); }",
+      "return [{ json: { hasBinary: it.binary?.attachment_0 !== undefined, text, err } }];",
+      "",
+    ].join("\n");
+    const binWf = { id: "wfb", name: "Sim Binary WF", versionId: "v1", nodes: [
+      { id: "m3", name: "Mail", type: "n8n-nodes-base.emailReadImap", typeVersion: 2, position: [0, 0], parameters: {} },
+      { id: "r3", name: "Read", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0], parameters: { jsCode: "//@file:code/read.js" } },
+    ], connections: { Mail: { main: [[{ node: "Read", type: "main", index: 0 }]] } }, settings: { executionOrder: "v1" } };
+    const dir = mkdtempSync(path.join(os.tmpdir(), "decanter-simbin-"));
+    mkdirSync(path.join(dir, "code"), { recursive: true });
+    mkdirSync(path.join(dir, "scenarios"), { recursive: true });
+    writeFileSync(path.join(dir, "workflow.json"), JSON.stringify(binWf));
+    writeFileSync(path.join(dir, ".decanter.json"), JSON.stringify({ workflowId: "wfb", nodes: { r3: { file: "code/read.js" } } }));
+    writeFileSync(path.join(dir, "code", "read.js"), readJs);
+    const attachment = { data: Buffer.from(TEXT).toString("base64"), mimeType: "text/plain", fileName: "note.txt", fileExtension: "txt", fileSize: "17 B" };
+    // fill: [] keeps this a capture-provenance scenario, so Read's diff is asserted
+    writeFileSync(path.join(dir, "scenarios", "attach.json"), JSON.stringify({
+      _decanterScenario: { source: "capture", fill: [] },
+      data: { resultData: { runData: {
+        Mail: [{ data: { main: [[{ json: { subject: "with attachment" }, binary: { attachment_0: attachment }, pairedItem: { item: 0 } }]] } }],
+        Read: [{ data: { main: [[{ json: { hasBinary: true, text: TEXT, err: null }, pairedItem: { item: 0 } }]] } }],
+      } } },
+    }));
+
+    const report = await runSimulation(dir, "attach", { version: IMAGE_TAG, source: "scenario" }, log as any);
+    assert.deepEqual(report.pinned, ["Mail"]);
+    assert.equal(report.syntheticPins, false, "the per-node diff must count");
+    assert.equal(report.engineOk, true, `engine error: ${report.engineError}`);
+    const read = report.diffs.find((d) => d.node === "Read");
+    assert.deepEqual(read?.actual, [{ hasBinary: true, text: TEXT, err: null }], "Read must see the pinned attachment and get its exact bytes");
+    assert.equal(report.ok, true, `diverged: ${report.divergent.join(", ")}`);
+    rmSync(dir, { recursive: true, force: true }); // kept on failure, for a look
   });
 
   console.log(`\n${passedCount()} sim steps passed against ${IMAGE}`);

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`scenario check` and `scenario create` warn about reference-only binary
+  data.** A captured attachment often stores its bytes outside the item (an
+  `id` under `binary.<key>` or, in `binaryMode: combined`, under
+  `json._files.<key>`) — readable on the source instance, not on a
+  `--simulate` replay's local engine. The warning names the node and key and
+  says how to fix it: base64 the bytes into `data`, then drop `id`.
+
+### Fixed
+
+- **`preflight --simulate` replays pinned items' binary data**
+  ([#328](https://github.com/buttjer/n8n-decanter/issues/328)). The stand-in
+  node that replaces a pinned node carried over only `json`, so any node
+  reading an attachment (`this.helpers.getBinaryDataBuffer`, Extract from
+  File, …) saw none and the replay failed before reaching the code under
+  test. The stand-in now carries `binary` through unchanged, on the main
+  output and on every extra-output stand-in alike.
+
 ## [0.11.2] - 2026-10-21
 
 ### Fixed
