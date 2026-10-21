@@ -4,6 +4,21 @@ import { publicationState } from "./util.mts";
 import { danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
 
 /**
+ * What a successful publish may honestly claim. From n8n 2.40 on
+ * (`N8N_USE_WORKFLOW_PUBLICATION_SERVICE`, default on) `publish_workflow`
+ * only queues the switch: it returns with `activeVersionId` already moved, and
+ * the triggers follow from a background outbox. Measured on 2.44.5
+ * (Plan 95): 3 of 3 webhook calls made right after it returned ran the OLD
+ * version, and the switch landed within ~1 s; n8n's own fallback poll is 15 s.
+ * The only signal that the switch landed is n8n's cookie-authed
+ * `/rest/workflows/:id/publication-status`, which neither MCP nor the public
+ * API exposes, so there is nothing for decanter to wait on — the message says
+ * so instead of claiming "live now".
+ */
+export const publishedNote = (name: string, id: string): string =>
+  `published "${name}" (${id}) — n8n switches its triggers to this version now (on n8n 2.40+ in the background, usually within a second)`;
+
+/**
  * `publish` — take the draft live (MCP `publish_workflow`, Plan 32). Since
  * pushes are draft-only now, this is THE go-live step: on a published
  * workflow whose draft diverged it publishes the newer draft; only a
@@ -33,7 +48,7 @@ export async function publishWorkflow(mcp: McpClient, id: string, log: Log): Pro
     );
   }
   await publishWorkflowMcp(mcp, id);
-  log.ok(`published "${before.name}" (${id}) — code is live now`);
+  log.ok(publishedNote(before.name, id));
 }
 
 /**

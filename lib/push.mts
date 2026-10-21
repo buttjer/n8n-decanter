@@ -4,6 +4,7 @@ import { compileTs, findBundleContext } from "./compile.mts";
 import { ForceableError } from "./errors.mts";
 import { commitWorkflowDir, headCommit } from "./git.mts";
 import { cliVersion } from "./init.mts";
+import { publishedNote } from "./lifecycle.mts";
 import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
@@ -230,7 +231,7 @@ export async function pushWorkflow(
   }
   if (publish) {
     await publishWorkflowMcp(mcp, id);
-    log.ok(`published "${confirmed.name}" (${id}) — code is live now`);
+    log.ok(publishedNote(confirmed.name, id));
   }
   if (commitOnPush) await commitWorkflowDir(dir, `decanter: pushed "${confirmed.name}" (${id})`, log);
   return { dir, name: confirmed.name };

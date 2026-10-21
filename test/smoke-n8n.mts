@@ -27,11 +27,11 @@
 // (latest at verification time). Keep this list and .github/workflows/ci.yml's
 // `smoke` matrix in sync.
 // Not yet in the matrix: n8nio/n8n:2.44.5, latest stable on 2026-10-21 and the
-// first tested tag past n8n 2.34's MCP tool renames (#327). Run locally that
-// day it did NOT pass unmodified: the "executions API: shape" step and the
-// cleanup DELETE in "MCP read semantics" fail there (the #327 PR has the
-// detail). Every #327 path (test --execution, preflight history, --scaffold)
-// passed once those two were bypassed.
+// first tested tag past n8n 2.34's MCP tool renames (#327). It passes locally
+// since Plan 95; adding it to ci.yml needs a token with the `workflow` scope.
+// From n8n 2.40 a publish (and an unpublish) only queues the trigger switch,
+// so steps that run right after one wait on the run's workflowVersionId
+// (`webhookLive`) and cleanups go through `deleteWorkflow`.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
@@ -147,6 +147,68 @@ const webhook = async (payload: unknown, path = "smoke-hook"): Promise<any> => {
   } catch { /* diagnostics only */ }
   throw new Error(`webhook gave no usable response; last: ${last}; lastExec: ${execInfo}`);
 };
+/**
+ * Trigger once and read back the execution THAT call recorded, by id (Plan 95).
+ * "Newest success in the list" is not that: the list lags the response (the
+ * run is saved after Respond answers), so it can hand back an older run.
+ * Execution ids are increasing integers, so "first id past the one before the
+ * call" is the triggered run.
+ */
+const webhookExecution = async (wf: string, payload: unknown, hookPath = "smoke-hook"): Promise<{ out: any; exec: any }> => {
+  const newestId = async () => Math.max(0, ...((await api("GET", `/api/v1/executions?workflowId=${wf}&limit=5`)).data ?? []).map((e: any) => Number(e.id)));
+  const before = await newestId();
+  const out = await webhook(payload, hookPath);
+  for (let i = 0; i < 40; i++) {
+    const page = await api("GET", `/api/v1/executions?workflowId=${wf}&limit=5`);
+    const hit = (page.data ?? []).filter((e: any) => Number(e.id) > before && e.finished !== false && e.status !== "running")
+      .sort((a: any, b: any) => Number(b.id) - Number(a.id))[0];
+    if (hit) return { out, exec: await api("GET", `/api/v1/executions/${hit.id}?includeData=true`) };
+    await sleep(250);
+  }
+  throw new Error(`webhook answered but no new execution of ${wf} past #${before} was recorded`);
+};
+/**
+ * Trigger until a run executes the workflow's CURRENT activeVersionId (Plan 95).
+ * From n8n 2.40 a publish returns before the triggers switch (measured on
+ * 2.44.5: the first call after it ran the old version, every time; the switch
+ * landed within ~1 s). n8n's fallback outbox poll is 15 s, so the budget is 20 s.
+ * `tries` > 1 is that lag made visible; on 2.30/2.31 it is always 1.
+ */
+const webhookLive = async (wf: string, payload: unknown, hookPath = "smoke-hook"): Promise<{ out: any; exec: any; tries: number }> => {
+  const { activeVersionId } = await api("GET", `/api/v1/workflows/${wf}`);
+  const started = Date.now();
+  for (let tries = 1; ; tries++) {
+    const r = await webhookExecution(wf, payload, hookPath);
+    if (r.exec.workflowVersionId === activeVersionId) return { ...r, tries };
+    if (Date.now() - started > 20_000) {
+      throw new Error(`${tries} run(s) over 20 s still executed ${r.exec.workflowVersionId}, not the published ${activeVersionId}`);
+    }
+    await sleep(250);
+  }
+};
+/**
+ * Delete a workflow, whatever state the steps left it in. From n8n 2.40 a
+ * published workflow refuses deletion (409 "Cannot delete a published
+ * workflow"), and straight after an unpublish it refuses again (409 "still
+ * being unpublished") until the background teardown finishes — ~450 ms on
+ * 2.44.5. Only that second 409 is retried, bounded by the 15 s outbox poll.
+ */
+const deleteWorkflow = async (wf: string): Promise<void> => {
+  const del = () => fetch(`${HOST}/api/v1/workflows/${wf}`, { method: "DELETE", headers: { "X-N8N-API-KEY": KEY } });
+  let res = await del();
+  let text = await res.text();
+  if (res.status === 409 && /Cannot delete a published workflow/.test(text)) {
+    await api("POST", `/api/v1/workflows/${wf}/deactivate`);
+    res = await del();
+    text = await res.text();
+  }
+  for (let i = 0; i < 40 && res.status === 409 && /still being unpublished/.test(text); i++) {
+    await sleep(500);
+    res = await del();
+    text = await res.text();
+  }
+  if (!res.ok) throw new Error(`DELETE /api/v1/workflows/${wf} -> ${res.status}: ${text.slice(0, 300)}`);
+};
 
 /** The seeded workflow: Webhook -> Compute (Code) -> Respond. */
 const seedWorkflow = () => ({
@@ -168,6 +230,7 @@ const seedWorkflow = () => ({
 
 let wfId = "";
 let wfDir = ""; // resolved after the first pull
+let renamedExecId = ""; // the rename step's run, read back by id (Plan 95)
 
 // ---------- run ----------
 try {
@@ -404,7 +467,7 @@ try {
     assert.notEqual(between.versionId, between.activeVersionId, "the draft diverged from the live version");
     r = await cli("push", "--publish"); // no code change left — publish still runs
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /code is live now/, r.out);
+    assert.match(r.out, /n8n switches its triggers to this version/, r.out);
     const out = await webhook({ n: 5 });
     assert.deepEqual(out, [{ doubled: 10, mode: "each" }], JSON.stringify(out));
   });
@@ -476,8 +539,13 @@ try {
     // the rename landed on the draft — publish takes it live for the webhook
     r = await cli("publish", wfId);
     assert.equal(r.code, 0, r.out);
-    const out = await webhook({ n: 3 });
+    // The code is unchanged, so the response alone can't tell the renamed
+    // version from the old one — the run's workflowVersionId can (Plan 95).
+    const { out, exec, tries } = await webhookLive(wfId, { n: 3 });
     assert.deepEqual(out, [{ doubled: 6, mode: "forced" }], "workflow still executes after rename: " + JSON.stringify(out));
+    assert.ok(exec.data?.resultData?.runData?.["Ümläut Nödé"], `the live run used the renamed node: ${Object.keys(exec.data?.resultData?.runData ?? {}).join(",")}`);
+    renamedExecId = exec.id;
+    if (tries > 1) console.log(`  publish returned before the triggers switched: ${tries - 1} run(s) still executed the previous version`);
     r = await cli("diff", wfId);
     assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after rename round-trip: " + r.out);
   });
@@ -851,8 +919,12 @@ try {
   await step("executions API: shape matches what Plan 3 C designs against", async () => {
     const page = await api("GET", "/api/v1/executions?includeData=true&limit=5");
     assert.ok(Array.isArray(page.data) && page.data.length > 0, "executions recorded");
-    const exec = page.data.find((e: any) => e.workflowId === wfId && e.status === "success");
-    assert.ok(exec, "a successful execution of the smoke workflow exists");
+    // by id: the run the rename step triggered on the renamed version — the
+    // list's newest success can be an older run (Plan 95)
+    assert.ok(renamedExecId, "the rename step recorded its execution id");
+    const exec = await api("GET", `/api/v1/executions/${renamedExecId}?includeData=true`);
+    assert.equal(exec.workflowId, wfId);
+    assert.equal(exec.status, "success", "a successful execution of the smoke workflow exists");
     const runData = exec.data?.resultData?.runData;
     assert.ok(runData?.Webhook && runData?.["Ümläut Nödé"], `runData keyed by node name: ${runData && Object.keys(runData).join(",")}`);
     const items = runData["Ümläut Nödé"][0]?.data?.main?.[0];
@@ -934,7 +1006,7 @@ try {
     assert.ok(versions.length >= 3, `get_workflow_history lists every version (>=3): got ${versions.length}`);
     assert.ok(!JSON.stringify(hist).includes("READSEM_V"), "get_workflow_history is metadata-only (no node params)");
 
-    await api("DELETE", `/api/v1/workflows/${rsId}`); // tidy up
+    await deleteWorkflow(rsId); // tidy up
   });
 
   await step("lifecycle: workflow born over raw MCP → pull → publish → unpublish → archive round-trip", async () => {
@@ -970,7 +1042,7 @@ try {
     // publish → live; activeVersionId now matches the draft
     r = await cli("publish", lifeId);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /published "Smoke Lifecycle" \([^)]+\) — code is live now/);
+    assert.match(r.out, /published "Smoke Lifecycle" \([^)]+\) — n8n switches its triggers to this version/);
     remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.active, true, "publish took it live");
     assert.equal(remote.activeVersionId, remote.versionId, "publish set activeVersionId to the draft");
@@ -1001,7 +1073,7 @@ try {
     assert.equal(r.code, 1);
     assert.match(r.out, /is archived and cannot be accessed/);
     // tidy up: the public API hard delete still works for cleanup (not a CLI surface)
-    await api("DELETE", `/api/v1/workflows/${lifeId}`);
+    await deleteWorkflow(lifeId);
     const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
     assert.equal(gone.status, 404, "cleanup delete succeeded");
   });
@@ -1076,7 +1148,7 @@ try {
     assert.equal(out[0]?.body?.n, 21, "scaffold was correctly wired between Webhook and Respond");
 
     // tidy up the authoring workflow (the container is ephemeral, but keep it clean)
-    await api("DELETE", `/api/v1/workflows/${authId}`);
+    await deleteWorkflow(authId);
   });
 
   await step("backup: create captures a redeployable export; restore preserves node ids and executes after publish (Plan 51 Part B)", async () => {
@@ -1117,14 +1189,14 @@ try {
     assert.ok(!restored.nodes.find((n: any) => n.type === "n8n-nodes-base.code").parameters.jsCode.startsWith("//@file:"), "jsCode re-inlined on restore");
 
     // executes after publish: retire the source (frees the webhook path), publish + trigger the restored copy
-    await api("DELETE", `/api/v1/workflows/${srcId}`);
+    await deleteWorkflow(srcId);
     await enableMcpAccess(newId);
     r = await cli("publish", newId);
     assert.equal(r.code, 0, r.out);
     const out = await webhook({ n: 5 }, "smoke-backup-hook");
     assert.equal(out[0]?.stamped, 99, "restored Code node executed after publish: " + JSON.stringify(out).slice(0, 300));
 
-    await api("DELETE", `/api/v1/workflows/${newId}`);
+    await deleteWorkflow(newId);
   });
 
   await step("executions stale-fixture warning: fires on a version mismatch, silent on a match", async () => {

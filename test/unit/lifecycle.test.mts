@@ -47,7 +47,7 @@ describe("publishWorkflow", () => {
     const { log, lines } = capturingLog();
     await publishWorkflow(mcp, "wf1", log);
     assert.deepEqual(calls, ["publish"]);
-    assert.match(lines.join("\n"), /^ok published "Demo" \(wf1\) — code is live now/m);
+    assert.match(lines.join("\n"), /^ok published "Demo" \(wf1\) — n8n switches its triggers to this version/m);
   });
   it("is a no-op-with-a-note when the live version already equals the draft", async () => {
     const { mcp, calls } = stubMcp(wf({ active: true, versionId: "v2", activeVersionId: "v2" }));

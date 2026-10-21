@@ -1014,7 +1014,7 @@ await step("push: a code edit lands on the DRAFT only; --publish takes it live",
   r = await cli("push", "--publish");
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /pushed "Order Sync" \(wf123\)/);
-  assert.match(r.out, /published "Order Sync" \(wf123\) — code is live now/);
+  assert.match(r.out, /published "Order Sync" \(wf123\) — n8n switches its triggers to this version/);
   assert.equal(db.get("wf123").activeVersionId, db.get("wf123").versionId);
 });
 
@@ -2860,7 +2860,7 @@ await step("publish/unpublish: toggle live state over MCP; already-in-state is a
   const id = [...db.values()].find((w) => w.name === "Fresh Flow")!.id;
   let r = await cli("publish", id);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /published "Fresh Flow" \([^)]+\) — code is live now/);
+  assert.match(r.out, /published "Fresh Flow" \([^)]+\) — n8n switches its triggers to this version/);
   assert.equal(db.get(id).active, true);
   assert.equal(db.get(id).activeVersionId, db.get(id).versionId, "activeVersionId set to the draft on publish");
   // publish again → no-op note, still published

@@ -19,6 +19,15 @@ the deliberate go-live half:
   promotes the newer draft.
 - **`unpublish`** returns the workflow to draft-only.
 
+**From n8n 2.40 on, the switch takes a moment.** n8n accepts the publish,
+then moves the triggers to the new version in the background. Measured on
+n8n 2.44.5, a webhook call made right after `publish` returned still ran the
+previous version; the switch landed within about a second. decanter can't
+wait for it: n8n reports that status only to a signed-in editor session, not
+over MCP or its public API. So if a script calls the webhook straight after
+`publish`, give it a second, or check the run's version. Unpublishing works
+the same way.
+
 Both go over n8n's MCP server. Without refs they act on the workflows listed
 in `decanter.config.json`. `push --publish` combines a push with the publish
 in one command.

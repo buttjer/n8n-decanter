@@ -200,6 +200,6 @@ describe("pushWorkflow (MCP)", () => {
     const { log, lines } = capturingLog();
     await pushWorkflow(mcp, r, "wf1", { publish: true }, log);
     assert.equal(remote.active, true);
-    assert.match(lines.join("\n"), /published "Test" \(wf1\) — code is live now/);
+    assert.match(lines.join("\n"), /published "Test" \(wf1\) — n8n switches its triggers to this version/);
   });
 });
