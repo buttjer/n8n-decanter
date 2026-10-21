@@ -1,6 +1,9 @@
 # Plan 89 — the REST verbs need a pulled workflow, and never say so until the raw HTTP shows through
 
-**Status:** Not started
+**Status:** Partial — Task 2 (the 401 mapping) landed with Plan 92 (9c926ca:
+`lib/api.mts` maps a public-API 401, covered by `test/unit/api-scopes.test.mts`,
+changelogged in 0.11.1). Tasks 1, 3, 4 (optional) and 5 are still open
+(housekeeping 2026-10-21).
 **Priority:** P2 — no correctness bug, but the failure lands as an unmapped HTTP
 status and the prerequisite behind it is nowhere in the text.
 **Source:** user field feedback 2026-09-02, report 1 ("`executions <id>` braucht

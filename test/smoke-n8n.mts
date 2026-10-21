@@ -743,7 +743,10 @@ try {
     proc.stdout.on("data", (c: Buffer) => (out += c.toString()));
     proc.stderr.on("data", (c: Buffer) => (out += c.toString()));
     try {
-      for (let i = 0; i < 40 && !out.includes("listening on"); i++) await sleep(250);
+      // Wait for the session secret, not "listening on": the config snippet
+      // carrying it prints several lines later and can arrive in a later
+      // chunk — the 2.31.4 cron run of 2026-10-19 broke off mid-banner.
+      for (let i = 0; i < 40 && !/"Authorization": "Bearer [^"]+"/.test(out); i++) await sleep(250);
       const url = out.match(/listening on (http:\/\/127\.0\.0\.1:\d+\/mcp-server\/http)/)?.[1];
       const secret = out.match(/"Authorization": "Bearer ([^"]+)"/)?.[1];
       assert.ok(url && secret, "serve printed the endpoint + session secret:\n" + out);
