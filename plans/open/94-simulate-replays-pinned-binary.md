@@ -11,6 +11,9 @@ Extends the stand-in design of [Plan 66](../done/66-multi-output-pins.md).
 **Snapshot:** 2026-10-21T14:20Z @ c788309
 **Model:** Sonnet — the construction is settled by the spike below; what is
 left is a helper, a warning and tests.
+**Decided:** 2026-10-21, by the operator — the stand-in keeps reference-only
+binaries rather than stripping them (task 1), and `scenario check` reports them
+as a warning, not an error (task 2). Task 3 stays optional.
 
 The Code stand-in that replaces a pinned node returns only `json` and
 `pairedItem`, so every file a trigger or network node delivered is gone before
