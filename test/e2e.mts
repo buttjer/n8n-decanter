@@ -3352,6 +3352,36 @@ await step("live mirror: a structure edit forwarded THROUGH the guard refreshes 
   assert.ok(!wfjson().nodes.some((n: any) => n.name === "SuppressedHook"), "disabled mirror never refreshed the snapshot");
 });
 
+// Plan 94 (#328). A pinned binary that is only a reference (`id` set) reads back
+// on the source instance alone, so `scenario check` says so — as a warning,
+// exit 0. Last on purpose and self-contained: it builds its scenario by hand
+// from whatever wf123's snapshot holds now (earlier steps rename the webhook).
+await step("scenario check: a pinned binary that is only a `database:` reference warns, exit 0 (Plan 94)", async () => {
+  const scenarioDir = path.join(dirF, "scenarios");
+  const wf = JSON.parse(read(dirF, "workflow.json"));
+  const hook = wf.nodes.find((n: any) => n.type === "n8n-nodes-base.webhook")?.name as string | undefined;
+  assert.ok(hook, "wf123 still has its webhook trigger: " + wf.nodes.map((n: any) => n.name).join(", "));
+  mkdirSync(scenarioDir, { recursive: true });
+  writeFileSync(path.join(scenarioDir, "bin-ref.json"), JSON.stringify({
+    _decanterScenario: { source: "capture", fill: [] },
+    data: { resultData: { runData: { [hook]: [{ data: { main: [[{
+      json: { order: 1 },
+      binary: { attachment_0: { data: "database", mimeType: "application/pdf", fileName: "invoice.pdf", fileExtension: "pdf", fileSize: "12 kB", id: "database:3f9c1a" } },
+      pairedItem: { item: 0 },
+    }]] } }] } } },
+  }));
+  try {
+    const r = await cli("scenario", "check", "wf123", "bin-ref");
+    assert.equal(r.code, 0, "a reference is a warning, not an error: " + r.out);
+    assert.match(r.out, /valid/);
+    // node + key on one line; `id` on it or in the lines that follow (the fix may wrap)
+    const at = r.out.search(new RegExp(`^.*(${hook}.*attachment_0|attachment_0.*${hook})`, "m"));
+    assert.ok(at >= 0 && /\bid\b/.test(r.out.slice(at)), `no reference warning naming ${hook} + attachment_0 + id: ` + r.out);
+  } finally {
+    rmSync(path.join(scenarioDir, "bin-ref.json"), { force: true });
+  }
+});
+
 if (!hasFailed()) {
   server.close();
   rmSync(TMP, { recursive: true, force: true });

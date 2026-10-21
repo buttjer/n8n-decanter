@@ -248,6 +248,29 @@ workflow live with [`test`](/docs/cli/test/) instead of replaying it. The
 [`test` coverage line](/docs/cli/test/#coverage-what-the-run-moved) is the
 same problem caught one step later.
 
+## Binary attachments
+
+A captured item's `binary` field (an attachment, a file Extract from File
+reads, …) replays too — `preflight --simulate`'s stand-in carries it through
+unchanged, inline or by reference, on the main output and on every
+[extra output](#several-outputs-the-sim-replays-them-test-cannot) alike, and
+under `json._files` as well when the workflow's `binaryMode` is `combined`.
+
+The trap is the **reference**. Most binary-data modes (`filesystem`,
+`database`, `s3`, `azure` — everything but the legacy in-memory `default`
+mode) store the bytes outside the item and leave only an `id` behind; n8n
+reads a binary by that `id` whenever one is present, and only falls back to
+the inline `data` without it. An `id` from your source instance resolves
+there, not on the local engine a `--simulate` replay runs on, so a node that
+only checks **whether** a file is present still passes, but a node that reads
+the **bytes** (`this.helpers.getBinaryDataBuffer`, Extract from File) fails.
+
+`scenario check` and `scenario create` warn when a scenario holds a
+reference-only binary, naming the node and the `binary`/`json._files` key.
+It's a warning, not an error — the reference is still good enough for a
+presence check. To make a binary replay its bytes as well: base64-encode the
+file into that entry's `data`, then delete its `id`.
+
 ## The full loop
 
 ```sh
