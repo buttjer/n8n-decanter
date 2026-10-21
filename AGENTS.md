@@ -860,9 +860,16 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    stable release exposes the programmatic compiler API**: `scripts/typecheck.mts`
    drives a custom `CompilerHost` and the ts-plugin tests need that JS API, so a
    green-looking bump would silently break node-file typechecking. TS 6.x is fine.
-6. **CI & tests green** — main's required checks are green, `npm test` and
+6. **Issue triage** — walk the open GitHub issues (`gh issue list --state open`)
+   and place each one: already covered by a plan (which?), reproduced against
+   current `main` or not, needs a new `plans/draft/` note, or is small enough
+   for a fix PR in this pass. Surface every issue you couldn't place as
+   untriaged in the report rather than guessing. **Never close, label, or
+   comment on an issue without the operator** — the issue tracker is a public
+   conversation with the reporter, and a reply there speaks for the project.
+7. **CI & tests green** — main's required checks are green, `npm test` and
    `npm run typecheck` pass locally, and no open PR is red.
-7. **Drift audits** — `template/*.example` still match their repo counterparts;
+8. **Drift audits** — `template/*.example` still match their repo counterparts;
    `n8n-globals.d.ts` is single-sourced (init copies the root file — no
    `template/*.example` duplicate; Plan 43) and its declared surface is checked
    against n8n by `scripts/globals-drift-audit.mts`; run `npm audit` for new
