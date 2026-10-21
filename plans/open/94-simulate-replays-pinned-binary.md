@@ -63,9 +63,12 @@ the reference says "valid".
 4. **Why the reference loses.** `BinaryDataService.getAsBuffer` (n8n-core,
    read in 2.42.5) reads by `id` whenever there is one and only falls back to
    `data` without one. So "inline the bytes" means both: put base64 in `data`,
-   **and delete `id`**. A capture from any instance carries references only:
-   2.x offers `filesystem`, `database` and `s3` (`BinaryDataConfig`), never
-   in-memory.
+   **and delete `id`**. A capture almost always carries references:
+   `BinaryDataConfig` (2.42.5) defaults to `filesystem`, or `database` in queue
+   mode, and `s3`/`azure` store by id too. Only the legacy in-memory `default`
+   mode, which `N8N_DEFAULT_BINARY_DATA_MODE` still accepts, keeps the bytes
+   inline with no `id`. Such a capture already replays, which is why the
+   warning keys on `id` and not on the mode.
 5. **A reference still helps a presence check.** With a `database:` id, `Check`
    saw `binary.attachment_0` and its metadata. Only reading the bytes failed. A
    pure node that only tests whether a file is there replays fine. Extract from
