@@ -978,7 +978,8 @@ into it):
   gitignored capture, recording each node with captured output as
   provenance `capture` and listing every remaining gap under
   `_decanterScenario.fill`. `scenario create --scaffold` calls MCP
-  `prepare_test_pin_data` (read-only) and annotates each gap with its
+  `prepare_workflow_pin_data` (`prepare_test_pin_data` before n8n 2.34,
+  #327; read-only) and annotates each gap with its
   output **JSON Schema** (`expectedSchema`), provenance `scaffolded` — the
   tool returns schemas + coverage counts only, **no data**
   (`readOnlyHint: true`; this corrects an earlier misread of the tool that
@@ -1132,7 +1133,15 @@ verb uses a dedicated client with a ≥320 s timeout):
   and prints "tested the draft, not your local code" when local differs —
   no choice flags, choices are verb composition.
 - **Diff** (client-side): the test execution is read back over MCP
-  `get_execution(includeData)`; each pure node with captured expectations
+  `get_workflow_execution(includeData)` — named `get_execution` before n8n
+  2.34.0, which renamed it (and `search_executions` →
+  `search_workflow_executions`, `prepare_test_pin_data` →
+  `prepare_workflow_pin_data`) with no alias. Hard-coding the old name broke
+  `test --scenario`/`--execution` on 2.34+ (#327), so the three renamed tools
+  go through `callToolByAnyName` (`lib/mcp.mts`): current name first, the old
+  one on `Tool <name> not found`, the answer cached per client so each process
+  probes once. Source-verified 2026-10-21; smoke-run on 2.31.4 and 2.44.5.
+  Each pure node with captured expectations
   diffs first-run/first-output items via `lib/simulate.mts`'s `diffItems`; exit 1
   on divergence; `--json` emits the report. The verb takes exactly ONE
   workflow ref (the plan sketched `[workflow…]`; selectors are per-workflow,
@@ -1254,7 +1263,8 @@ inside `publish` is authoritative for that publish.
   out; read-only, gitignored). Since Plan 60 this only fires when a runtime
   stage is active (`--simulate`) — without that flag there is no runtime stage,
   so a missing capture is `info`, not `warn`. `history` reads recent production runs via a new
-  MCP `searchExecutions` wrapper (`search_executions` — shape source-verified
+  MCP `searchExecutions` wrapper (`search_workflow_executions`, `search_executions`
+  before n8n 2.34 — shape source-verified
   and smoke-asserted on 2.30.7: `{data:[{id,workflowId,status,mode,startedAt,
   stoppedAt}],count,estimated}`) with a REST `listExecutions({includeData:
   false})` fallback (a new lightweight variant — the old one always pulled full

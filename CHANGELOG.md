@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`test --scenario` and `test --execution` work again on n8n 2.34 and
+  newer** ([#327](https://github.com/buttjer/n8n-decanter/issues/327)). The run
+  succeeded on the instance, but decanter then stopped with `Tool get_execution
+  not found` and compared nothing. n8n 2.34 renamed that MCP tool to
+  `get_workflow_execution`, and renamed two more that decanter uses:
+  `search_executions` (behind `preflight`'s `history` check, which quietly
+  fell back to the REST API or skipped) and `prepare_test_pin_data` (behind
+  `scenario create --scaffold`, which quietly produced fills without schemas).
+  decanter now asks for the new name and falls back to the old one, so older n8n
+  keeps working too.
+
 ## [0.11.1] - 2026-09-10
 
 ### Added

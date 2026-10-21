@@ -387,7 +387,8 @@ generated or untrusted node code, `--simulate` is the safer executor.)
   it's skipped with guidance. Without `--simulate` nothing consumes a capture,
   so nothing is fetched; `--offline` never contacts the instance at all.
 - **History as a health signal.** The `history` check reads recent production
-  executions (over MCP `search_executions`, or the REST executions API when
+  executions (over MCP `search_workflow_executions` — `search_executions` on
+  n8n before 2.34 — or the REST executions API when
   `N8N_API_KEY` is set) and reports the error rate — a live workflow that's been
   failing is a **warn**, never a fail (the draft isn't guilty of the past).
 
