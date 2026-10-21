@@ -11,7 +11,7 @@
 // not the thing SUL protects; the .d.ts stays decanter's own paraphrase.
 //
 // Not part of `npm test` (it hits the network). Run on demand — Housekeeping
-// step 7. `--strict` exits non-zero when a NEW (non-known-omitted) global drifts
+// step 8. `--strict` exits non-zero when a NEW (non-known-omitted) global drifts
 // in, so it can gate CI if ever wired up.
 //
 //   node scripts/globals-drift-audit.mts [--tag=n8n@2.33.3] [--strict]
