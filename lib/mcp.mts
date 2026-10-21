@@ -96,9 +96,12 @@ const resolvedToolName = new WeakMap<McpClient, Map<string, string>>();
 /**
  * Call a renamed tool by whichever of its names this n8n knows. Probing beats
  * `tools/list` here: a server only ever lacks one of the names, and a probe
- * that misses costs exactly the one round-trip a listing would. A name that
- * answers anything but "not found" exists, so it is remembered even when the
- * call itself failed.
+ * that misses costs exactly the one round-trip a listing would. A name is
+ * remembered once the tool itself answered — a result, or its own `isError`
+ * (`McpToolError`). A transport failure, a 429 that outlasted the backoff or
+ * any other JSON-RPC error proves nothing about the name, so it is not
+ * remembered: caching it would send every later call in a multi-ref run to a
+ * name an older n8n does not have.
  */
 export async function callToolByAnyName<T = Record<string, unknown>>(mcp: McpClient, names: readonly [string, ...string[]], args: Record<string, unknown>): Promise<T> {
   const cache = resolvedToolName.get(mcp) ?? new Map<string, string>();
@@ -113,7 +116,7 @@ export async function callToolByAnyName<T = Record<string, unknown>>(mcp: McpCli
       return out;
     } catch (err) {
       if (!isToolNotFound(err, name)) {
-        cache.set(names[0], name);
+        if (err instanceof McpToolError) cache.set(names[0], name);
         throw err;
       }
       lastErr = err;

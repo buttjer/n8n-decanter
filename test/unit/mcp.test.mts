@@ -215,6 +215,25 @@ describe("callToolByAnyName (#327: tools n8n renamed in 2.34)", () => {
     assert.deepEqual(calls, ["get_workflow_execution", "get_workflow_execution"], "the name exists, so it is remembered");
   });
 
+  it("a transport failure is not proof the name exists: the next call probes again", async () => {
+    const calls: string[] = [];
+    let flaky = true;
+    const mcp = {
+      callTool: async (name: string) => {
+        calls.push(name);
+        if (flaky) {
+          flaky = false;
+          throw new Error("MCP tools/call failed: 502 Bad Gateway");
+        }
+        if (name === "get_execution") return { via: name };
+        throw rpcMiss(name);
+      },
+    } as unknown as McpClient;
+    await assert.rejects(callToolByAnyName(mcp, MCP_TOOL.getExecution, {}), /502/);
+    assert.deepEqual(await callToolByAnyName(mcp, MCP_TOOL.getExecution, {}), { via: "get_execution" });
+    assert.deepEqual(calls, ["get_workflow_execution", "get_workflow_execution", "get_execution"]);
+  });
+
   it("a server with neither name fails with its own not-found, after trying both", async () => {
     const { mcp, calls } = server("none", rpcMiss);
     await assert.rejects(callToolByAnyName(mcp, MCP_TOOL.searchExecutions, {}), /Tool search_executions not found/);
