@@ -95,7 +95,7 @@ describe("runTest (non-TTY)", () => {
         calls.push(name);
         if (name === "get_workflow_details") return { workflow: structuredClone(remote) };
         if (name === "test_workflow") return { executionId: opts.status === "error" ? null : "exec-1", status: opts.status ?? "success" };
-        if (name === "get_execution") return { execution: {}, data: { resultData: { runData: ranData } } };
+        if (name === "get_workflow_execution") return { execution: {}, data: { resultData: { runData: ranData } } };
         throw new Error("unexpected tool " + name);
       },
     } as unknown as McpClient;

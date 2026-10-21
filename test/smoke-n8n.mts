@@ -26,6 +26,12 @@
 // the floor Plan 18's pinData seeding needs), 2.31.0 (middle), 2.31.4
 // (latest at verification time). Keep this list and .github/workflows/ci.yml's
 // `smoke` matrix in sync.
+// Not yet in the matrix: n8nio/n8n:2.44.5, latest stable on 2026-10-21 and the
+// first tested tag past n8n 2.34's MCP tool renames (#327). Run locally that
+// day it did NOT pass unmodified: the "executions API: shape" step and the
+// cleanup DELETE in "MCP read semantics" fail there (the #327 PR has the
+// detail). Every #327 path (test --execution, preflight history, --scaffold)
+// passed once those two were bypassed.
 import assert from "node:assert/strict";
 import { execFile as execFileCb } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
@@ -1291,17 +1297,18 @@ try {
     assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "non-TTY test mutated nothing");
   });
 
-  await step("preflight: the scored ladder against the REAL instance; search_executions live-shape holds (Plan 36)", async () => {
-    // Task 3 spike: assert the recorded search_executions response shape against
+  await step("preflight: the scored ladder against the REAL instance; search_workflow_executions live-shape holds (Plan 36)", async () => {
+    // Task 3 spike: assert the recorded execution-search response shape against
     // the LIVE instance (the `history` health signal depends on it) — metadata
-    // only, no run data. Version-fragile fact, pinned here.
-    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    // only, no run data. Version-fragile fact, pinned here. The tool was
+    // search_executions before n8n 2.34 (#327); whichever name this tag knows.
+    const { McpClient, callToolByAnyName, MCP_TOOL } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
     const mcpRaw = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
-    const res = await mcpRaw.callTool("search_executions", { workflowId: wfId, limit: 5 }) as {
+    const res = await callToolByAnyName(mcpRaw, MCP_TOOL.searchExecutions, { workflowId: wfId, limit: 5 }) as {
       data: Array<{ id: string; workflowId: string; status: string; mode: string; startedAt: string | null; stoppedAt: string | null }>;
       count: number; estimated: boolean;
     };
-    assert.ok(Array.isArray(res.data), "search_executions returns data[]: " + JSON.stringify(res).slice(0, 300));
+    assert.ok(Array.isArray(res.data), "execution search returns data[]: " + JSON.stringify(res).slice(0, 300));
     assert.equal(typeof res.count, "number", "count is a number");
     assert.equal(typeof res.estimated, "boolean", "estimated is a boolean");
     if (res.data.length > 0) {
@@ -1337,13 +1344,14 @@ try {
     assert.equal((await api("GET", `/api/v1/workflows/${wfId}`)).versionId, draftBefore, "preflight mutated nothing");
   });
 
-  await step("scenario --scaffold: prepare_test_pin_data live-shape holds; a scaffolded scenario writes schemas, not data (Plan 37)", async () => {
-    // Assert the recorded prepare_test_pin_data response shape against the LIVE
+  await step("scenario --scaffold: prepare_workflow_pin_data live-shape holds; a scaffolded scenario writes schemas, not data (Plan 37)", async () => {
+    // Assert the recorded pin-data scaffold response shape against the LIVE
     // instance (the schema-oracle this feature depends on) — the version-fragile
-    // fact this step pins. Schemas only, never data.
-    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    // fact this step pins. Schemas only, never data. The tool was
+    // prepare_test_pin_data before n8n 2.34 (#327); whichever name this tag knows.
+    const { McpClient, callToolByAnyName, MCP_TOOL } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
     const mcpRaw = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
-    const pin = await mcpRaw.callTool("prepare_test_pin_data", { workflowId: wfId }) as {
+    const pin = await callToolByAnyName(mcpRaw, MCP_TOOL.preparePinData, { workflowId: wfId }) as {
       nodeSchemasToGenerate: Record<string, unknown>; nodesWithoutSchema: string[]; nodesSkipped: string[];
       coverage: { withSchemaFromExecution: number; withSchemaFromDefinition: number; withoutSchema: number; skipped: number; total: number };
     };

@@ -67,6 +67,64 @@ export function isUnavailableInMcp(err: unknown): boolean {
   return err instanceof Error && /not available in MCP/i.test(err.message);
 }
 
+/**
+ * The tools decanter calls that n8n RENAMED, current name first. n8n 2.34.0
+ * renamed them (n8n-io/n8n#34347) and kept no alias, so each name works on
+ * one side of that release only: the old one fails "Tool get_execution not
+ * found" on 2.34+ (#327), the new one fails the same way on everything older.
+ * Source-verified 2026-10-21: old names on n8n@2.33.7, new names from
+ * n8n@2.34.0 through n8n@2.44.5. Every other tool decanter calls kept its name.
+ */
+export const MCP_TOOL = {
+  getExecution: ["get_workflow_execution", "get_execution"],
+  searchExecutions: ["search_workflow_executions", "search_executions"],
+  preparePinData: ["prepare_workflow_pin_data", "prepare_test_pin_data"],
+} as const satisfies Record<string, readonly [string, ...string[]]>;
+
+/**
+ * The SDK's unknown-tool answer names the tool, so the match is per name: a
+ * real tool's own "… not found" (an execution, a node) never reads as this.
+ * Covers both carriers — a JSON-RPC error and an `isError` result.
+ */
+function isToolNotFound(err: unknown, name: string): boolean {
+  return err instanceof Error && new RegExp(`\\bTool ${name} not found\\b`).test(err.message);
+}
+
+/** Per client, the name each renamed tool answered to — one probe per process, not per call. */
+const resolvedToolName = new WeakMap<McpClient, Map<string, string>>();
+
+/**
+ * Call a renamed tool by whichever of its names this n8n knows. Probing beats
+ * `tools/list` here: a server only ever lacks one of the names, and a probe
+ * that misses costs exactly the one round-trip a listing would. A name is
+ * remembered once the tool itself answered — a result, or its own `isError`
+ * (`McpToolError`). A transport failure, a 429 that outlasted the backoff or
+ * any other JSON-RPC error proves nothing about the name, so it is not
+ * remembered: caching it would send every later call in a multi-ref run to a
+ * name an older n8n does not have.
+ */
+export async function callToolByAnyName<T = Record<string, unknown>>(mcp: McpClient, names: readonly [string, ...string[]], args: Record<string, unknown>): Promise<T> {
+  const cache = resolvedToolName.get(mcp) ?? new Map<string, string>();
+  resolvedToolName.set(mcp, cache);
+  const known = cache.get(names[0]);
+  if (known !== undefined) return mcp.callTool<T>(known, args);
+  let lastErr: unknown;
+  for (const name of names) {
+    try {
+      const out = await mcp.callTool<T>(name, args);
+      cache.set(names[0], name);
+      return out;
+    } catch (err) {
+      if (!isToolNotFound(err, name)) {
+        if (err instanceof McpToolError) cache.set(names[0], name);
+        throw err;
+      }
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 // ---------- auth ----------
 
 /** .decanter-auth.json — OAuth credentials minted by `init` (gitignored, 0600). */
@@ -837,7 +895,7 @@ export async function updateWorkflow(mcp: McpClient, id: string, operations: Mcp
 }
 
 /**
- * `prepare_test_pin_data` result — a **schema oracle** for scenario scaffolding
+ * `prepare_workflow_pin_data` (`prepare_test_pin_data` before n8n 2.34) result — a **schema oracle** for scenario scaffolding
  * (Plan 37). Read-only/idempotent; the server returns **JSON Schemas, never
  * data** (the caller authors realistic values). `nodeSchemasToGenerate` is keyed
  * by node name; `nodesWithoutSchema` need pins but have no schema (empty
@@ -859,10 +917,10 @@ export interface PinDataScaffold {
 
 /** Ask n8n for the per-node output schemas of the nodes a test run must pin (read-only). */
 export async function prepareTestPinData(mcp: McpClient, id: string): Promise<PinDataScaffold> {
-  return mcp.callTool<PinDataScaffold>("prepare_test_pin_data", { workflowId: id });
+  return callToolByAnyName<PinDataScaffold>(mcp, MCP_TOOL.preparePinData, { workflowId: id });
 }
 
-/** One execution row from `search_executions` — metadata only, never run data. */
+/** One execution row from `search_workflow_executions` — metadata only, never run data. */
 export interface McpExecutionSummary {
   id: string;
   workflowId?: string;
@@ -875,20 +933,21 @@ export interface McpExecutionSummary {
 
 /**
  * Recent executions of a workflow — **metadata only** (status/timing, no run
- * data; `readOnlyHint`/`idempotentHint`), over MCP `search_executions` (n8n
- * ≥ ~2.30, shape source-verified 2026-07-22). The health signal behind
+ * data; `readOnlyHint`/`idempotentHint`), over MCP `search_workflow_executions`
+ * (`search_executions` on n8n ~2.30–2.33; shape source-verified 2026-07-22,
+ * unchanged through 2.44.5 bar an added `nextCursor`). The health signal behind
  * `preflight`'s `history` check. The tool doesn't guarantee an order — the
  * caller sorts/interprets. Throws (in-band `error` or an MCP `isError`) when the
  * server lacks the tool or refuses access, so the caller can fall back to the
  * REST executions API.
  */
 export async function searchExecutions(mcp: McpClient, { workflowId, status, limit }: { workflowId?: string; status?: string[]; limit?: number }): Promise<McpExecutionSummary[]> {
-  const res = await mcp.callTool<{ data?: McpExecutionSummary[]; error?: string }>("search_executions", {
+  const res = await callToolByAnyName<{ data?: McpExecutionSummary[]; error?: string }>(mcp, MCP_TOOL.searchExecutions, {
     ...(workflowId !== undefined && { workflowId }),
     ...(status !== undefined && { status }),
     ...(limit !== undefined && { limit }),
   });
-  if (res.error !== undefined) throw new McpToolError("search_executions", res.error);
+  if (res.error !== undefined) throw new McpToolError(MCP_TOOL.searchExecutions[0], res.error);
   return res.data ?? [];
 }
 

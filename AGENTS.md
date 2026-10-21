@@ -778,15 +778,26 @@ the same traps:
   source): the version-history trio `get_workflow_history` /
   `get_workflow_version` / `restore_workflow_version` (n8n ≥ 2.29;
   restore re-applies a past version **as the draft**, new history entry, live
-  untouched); execution reads `get_execution` (`includeData`/`nodeNames`/
-  `truncateData`) and `search_executions`; `prepare_test_pin_data` (returns
-  per-node output **JSON Schemas + coverage, no data** — read-only, the caller
-  authors the values; decanter builds pin values client-side from captures,
-  and Plan 37 adopts the schemas for scenario gap scaffolding); and
-  `publish_workflow(versionId)` publishes a **past** version
-  straight to live (a future `publish --version`?). `test_workflow` =
-  synchronous/draft/pinData/5-min cap; `execute_workflow` = async/production →
-  read back via `get_execution`.
+  untouched); execution reads `get_workflow_execution` (`includeData`/
+  `nodeNames`/`truncateData`) and `search_workflow_executions`;
+  `prepare_workflow_pin_data` (returns per-node output **JSON Schemas +
+  coverage, no data** — read-only, the caller authors the values; decanter
+  builds pin values client-side from captures, and Plan 37 adopts the schemas
+  for scenario gap scaffolding); and `publish_workflow(versionId)` publishes a
+  **past** version straight to live (a future `publish --version`?).
+  `test_workflow` = synchronous/draft/pinData/5-min cap; `execute_workflow` =
+  async/production → read back via `get_workflow_execution`.
+- **n8n 2.34.0 renamed four tools and kept no alias** (n8n-io/n8n#34347,
+  source-verified 2026-10-21 against the n8n@2.33.7 / n8n@2.34.0 tags, and
+  unchanged through n8n@2.44.5): `get_execution` → `get_workflow_execution`,
+  `search_executions` → `search_workflow_executions`, `prepare_test_pin_data`
+  → `prepare_workflow_pin_data`, `list_tags` → `list_workflow_tags` (plus
+  `get_sdk_reference` → `get_workflow_sdk_reference` in the builder set).
+  Arguments and answer shapes stayed the same. The old name answers
+  `Tool <name> not found` on 2.34+, and the new one answers the same on
+  everything older — so decanter calls the renamed ones through
+  `callToolByAnyName` (`lib/mcp.mts`, `MCP_TOOL`), current name first, one
+  probe per process (#327). Every other tool decanter calls kept its name.
 - **Two auth methods, and workflow visibility is the same under both:**
   `search_workflows` lists **all** workflows regardless of auth; the
   `availableInMCP` gate only limits `get_workflow_details`/edit. Auth is

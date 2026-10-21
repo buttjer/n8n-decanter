@@ -445,9 +445,9 @@ export async function runPreflight(ctx: PreflightContext): Promise<PreflightRepo
         }
       }
 
-      // history: production-run health. MCP search_executions preferred; REST
-      // listExecutions (no run data) fallback; neither → skip. Never fails —
-      // the draft isn't guilty of the live workflow's past.
+      // history: production-run health. MCP search_workflow_executions
+      // preferred; REST listExecutions (no run data) fallback; neither → skip.
+      // Never fails — the draft isn't guilty of the live workflow's past.
       await run("history", "sync", async () => historyCheck(ctx));
     }
   }
@@ -641,8 +641,8 @@ async function historyCheck(ctx: PreflightContext): Promise<Omit<CheckFinding, "
     }
   }
   if (rows === undefined) {
-    const reason = ctx.restAvailable ? "search_executions unavailable and the REST executions probe failed" : "no MCP search_executions and no N8N_API_KEY for the REST fallback";
-    return { status: "skip", message: reason, reason, unlock: "upgrade n8n for search_executions, or set N8N_API_KEY" };
+    const reason = ctx.restAvailable ? "MCP execution search unavailable and the REST executions probe failed" : "no MCP execution search and no N8N_API_KEY for the REST fallback";
+    return { status: "skip", message: reason, reason, unlock: "upgrade n8n for MCP execution search, or set N8N_API_KEY" };
   }
   if (rows.length === 0) return { status: "info", message: "no recent production runs" };
   const failed = rows.filter((r) => r.status === "error" || r.status === "crashed");

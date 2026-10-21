@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { EXECUTIONS_DIR } from "./executions.mts";
-import { getWorkflowDetails, type McpClient, updateWorkflow } from "./mcp.mts";
+import { callToolByAnyName, getWorkflowDetails, MCP_TOOL, type McpClient, updateWorkflow } from "./mcp.mts";
 import { createPrompt } from "./prompt.mts";
 import { buildNodeCode, pushWorkflow } from "./push.mts";
 import { readState, writeState } from "./state.mts";
@@ -371,7 +371,7 @@ export async function runTest(
   const diffs: NodeDiff[] = [];
   let coverage: NodeCoverage | undefined;
   if (result.executionId !== null && result.status === "success") {
-    const execution = await mcp.callTool<{ execution: unknown; data?: { resultData?: { runData?: RunData } }; error?: string }>("get_execution", {
+    const execution = await callToolByAnyName<{ execution: unknown; data?: { resultData?: { runData?: RunData } }; error?: string }>(mcp, MCP_TOOL.getExecution, {
       workflowId: id,
       executionId: result.executionId,
       includeData: true,

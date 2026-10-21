@@ -173,8 +173,8 @@ describe("runPreflight (stubbed)", () => {
           return { workflow: structuredClone(remote) };
         }
         if (name === "test_workflow") return { executionId: opts.testStatus === "error" ? null : "exec-1", status: opts.testStatus ?? "success" };
-        if (name === "get_execution") return { execution: {}, data: { resultData: { runData: ranData } } };
-        if (name === "search_executions") {
+        if (name === "get_workflow_execution") return { execution: {}, data: { resultData: { runData: ranData } } };
+        if (name === "search_workflow_executions") {
           if (opts.searchThrows) throw new Error("search_executions is not supported on this instance");
           return { data: opts.history ?? [{ id: "9", status: "success" }], count: (opts.history ?? []).length, estimated: false };
         }
@@ -222,7 +222,7 @@ describe("runPreflight (stubbed)", () => {
         const dir = seed(tmp);
         const { mcp, calls } = stub(wf(), { Compute: runData([{ x: 1 }]) });
         await runPreflight(baseCtx(dir, tmp, mcp, { flags }));
-        assert.ok(!calls.some((c) => /test_workflow|execute_workflow|get_execution/.test(c)), `${JSON.stringify(flags)} executed on the instance: ${calls.join(",")}`);
+        assert.ok(!calls.some((c) => /test_workflow|execute_workflow|get_(workflow_)?execution/.test(c)), `${JSON.stringify(flags)} executed on the instance: ${calls.join(",")}`);
         rmSync(tmp, { recursive: true, force: true });
         tmp = undefined;
       }

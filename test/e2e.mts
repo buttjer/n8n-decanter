@@ -57,9 +57,23 @@ let gatewayMode = false;
 let createCount = 0;
 // ---- test_workflow scripting (the `test` verb steps) ----
 let lastTestCall: { workflowId: string; pinData: Record<string, unknown[]>; triggerNodeName?: string } | undefined;
-let testRunData: Record<string, unknown> = {}; // runData get_execution serves back
+let testRunData: Record<string, unknown> = {}; // runData get_workflow_execution serves back
 let testRunOutcome: { status: string; error?: string; executionId?: string | null } = { status: "success" };
 let testExecCount = 0;
+// n8n 2.34.0 renamed three tools with no alias (n8n-io/n8n#34347, #327). The
+// mock answers to the current names by default, like the n8n most users run;
+// `legacyToolNames` turns it into a pre-2.34 server, which knows ONLY the old
+// ones. Either way the other side gets the SDK's unknown-tool error — the
+// JSON-RPC shape the #327 report quotes — so a client that hard-codes one name
+// fails here exactly as it does against the real thing.
+const RENAMED_TOOLS: Record<string, string> = {
+  get_workflow_execution: "get_execution",
+  search_workflow_executions: "search_executions",
+  prepare_workflow_pin_data: "prepare_test_pin_data",
+};
+const LEGACY_TOOL_NAMES = new Set(Object.values(RENAMED_TOOLS));
+let legacyToolNames = false;
+const toolCallLog: string[] = []; // every tools/call name asked for, as asked
 const mkid = () => Math.random().toString(16).slice(2, 14).padEnd(12, "0");
 
 /** Apply an update_workflow op batch, mirroring the verified 2.30.7 semantics:
@@ -298,7 +312,15 @@ const server = http.createServer((req, res) => {
       if (msg.method !== "tools/call") {
         return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: `unknown method ${msg.method}` } }));
       }
-      const result = callMcpTool(msg.params.name, msg.params.arguments ?? {});
+      const asked: string = msg.params.name;
+      toolCallLog.push(asked);
+      if (legacyToolNames ? Object.hasOwn(RENAMED_TOOLS, asked) : LEGACY_TOOL_NAMES.has(asked)) {
+        return void res
+          .writeHead(200, { "content-type": "text/event-stream", "mcp-session-id": "e2e-session" })
+          .end(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32602, message: `Tool ${asked} not found` } })}\n\n`);
+      }
+      // the switch below speaks the old names; a current name maps onto its case
+      const result = callMcpTool(RENAMED_TOOLS[asked] ?? asked, msg.params.arguments ?? {});
       if (result === null) return; // hang forever (timeout step)
       const respond = () =>
         void res
@@ -2515,7 +2537,7 @@ await step("scenario create/check: named set into committed scenarios/, validate
   }
 });
 
-await step("scenario create --scaffold: schema-annotated fills from prepare_test_pin_data, no invented values", async () => {
+await step("scenario create --scaffold: schema-annotated fills from prepare_workflow_pin_data, no invented values", async () => {
   const scenarioDir = path.join(dirF, "scenarios");
   try {
     // bare --scaffold (no --execution) builds a from-scratch set over the wire
@@ -2962,8 +2984,12 @@ await step("test: instance-side pinned run — pin split, diff, non-TTY read-onl
   // in-sync, non-TTY, EXPLICIT capture: pins the trigger, runs, diffs clean, never mutates
   const updatesBefore = updateCount;
   testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+  const callsBefore = toolCallLog.length;
   r = await cli("test", "wfT1", "--execution=301");
   assert.equal(r.code, 0, r.out);
+  // #327: a current n8n is read by its current name, with no wasted probe
+  const asked = toolCallLog.slice(callsBefore);
+  assert.ok(asked.includes("get_workflow_execution") && !asked.includes("get_execution"), "current n8n: the run is read via get_workflow_execution only: " + asked.join(","));
   assert.match(r.out, /1 node\(s\) pinned from capture 301/);
   assert.match(r.out, /Compute: matches capture/);
   assert.match(r.out, /instance test matches the capture/);
@@ -3079,6 +3105,41 @@ await step("preflight: one scored, local-code gate that never writes and never r
   writeFileSync(computeFile, original);
   r = await cli("push", "wfT1");
   assert.equal(r.code, 0, "restore push returns the draft to the original");
+});
+
+await step("pre-2.34 n8n: test, preflight history and --scaffold still reach the OLD tool names, one probe each (#327)", async () => {
+  // n8n before 2.34 knows only get_execution / search_executions /
+  // prepare_test_pin_data. Each CLI process asks the current name once, gets
+  // "not found", and from then on calls the old name directly.
+  legacyToolNames = true;
+  const scenarioFile = path.join(wfDir("Instance Test Flow"), "scenarios", "legacy-names.json");
+  try {
+    testRunOutcome = { status: "success" };
+    testRunData = { Compute: [{ data: { main: [[{ json: { doubled: 2 } }]] } }] };
+    let from = toolCallLog.length;
+    let r = await cli("test", "wfT1", "--execution=301");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Compute: matches capture/, "the run data came back over the old name: " + r.out);
+    assert.deepEqual(toolCallLog.slice(from).filter((n) => /execution$/.test(n)), ["get_workflow_execution", "get_execution"], "one miss on the new name, then the old one");
+
+    // history must come from MCP, not the REST fallback this sync dir also allows
+    from = toolCallLog.length;
+    r = await cli("preflight", "wfT1", "--json");
+    assert.equal(r.code, 0, r.out);
+    const history = JSON.parse(r.out.slice(r.out.indexOf("{"))).checks.find((c: any) => c.id === "history");
+    assert.ok(history && history.status !== "skip", "history ran: " + JSON.stringify(history));
+    assert.deepEqual(toolCallLog.slice(from).filter((n) => /executions$/.test(n)), ["search_workflow_executions", "search_executions"], "history read via the old MCP name");
+
+    from = toolCallLog.length;
+    r = await cli("scenario", "create", "wfT1", "legacy-names", "--scaffold");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /scaffold coverage/, "the schema oracle answered over the old name: " + r.out);
+    assert.deepEqual(toolCallLog.slice(from).filter((n) => /pin_data$/.test(n)), ["prepare_workflow_pin_data", "prepare_test_pin_data"]);
+    assert.ok(JSON.parse(readFileSync(scenarioFile, "utf8"))._decanterScenario.fill.some((f: any) => f.node === "Hook" && f.expectedSchema), "Hook got its schema");
+  } finally {
+    legacyToolNames = false;
+    rmSync(scenarioFile, { force: true });
+  }
 });
 
 await step("archive over raw MCP: server semantics (unpublish + archived-first gate); decanter's pull refuses, folder kept", async () => {

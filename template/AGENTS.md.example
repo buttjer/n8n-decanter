@@ -632,7 +632,7 @@ n8n-decanter preflight "<workflow>" --simulate --scenario <slug>    # replay the
 ```
 
 Add `--scaffold` to `scenario create` to annotate each gap with its **output
-schema** (from n8n's read-only `prepare_test_pin_data`) — a `--scaffold` with no
+schema** (from n8n's read-only `prepare_workflow_pin_data`) — a `--scaffold` with no
 `--execution` builds a from-scratch set where *every* pinnable node is a fill
 entry. Provenance is tracked per node: `capture` (real, diff-asserted),
 `authored` (hand-filled), `scaffolded` (schema-guided). A run on a scenario with

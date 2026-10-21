@@ -12,9 +12,11 @@ import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { HOST_UNSET } from "../../lib/config.mts";
 import {
   authFilePath,
+  callToolByAnyName,
   createMcpClient,
   isUnavailableInMcp,
   McpClient,
+  MCP_TOOL,
   McpToolError,
   oauthDiscovery,
   readAuthFile,
@@ -170,6 +172,72 @@ describe("McpClient.callTool", () => {
     } finally {
       await new Promise<void>((r) => off.close(() => r()));
     }
+  });
+});
+
+describe("callToolByAnyName (#327: tools n8n renamed in 2.34)", () => {
+  /** A client whose server knows `known` and answers every other name the way `miss` says. */
+  function server(known: string, miss: (name: string) => Error) {
+    const calls: string[] = [];
+    const mcp = {
+      callTool: async (name: string) => {
+        calls.push(name);
+        if (name === known) return { via: name };
+        throw miss(name);
+      },
+    } as unknown as McpClient;
+    return { mcp, calls };
+  }
+  // the two carriers an unknown tool arrives in: the JSON-RPC error #327 quotes,
+  // and the SDK's isError result
+  const rpcMiss = (name: string) => new Error(`MCP tools/call error: Tool ${name} not found`);
+  const resultMiss = (name: string) => new McpToolError(name, `MCP error -32602: Tool ${name} not found`);
+
+  for (const [label, miss] of [["a JSON-RPC error", rpcMiss], ["an isError result", resultMiss]] as const) {
+    it(`a pre-2.34 server (miss as ${label}): one probe, then the old name directly`, async () => {
+      const { mcp, calls } = server("get_execution", miss);
+      assert.deepEqual(await callToolByAnyName(mcp, MCP_TOOL.getExecution, {}), { via: "get_execution" });
+      assert.deepEqual(await callToolByAnyName(mcp, MCP_TOOL.getExecution, {}), { via: "get_execution" });
+      assert.deepEqual(calls, ["get_workflow_execution", "get_execution", "get_execution"]);
+    });
+  }
+
+  it("a current server is asked the current name only", async () => {
+    const { mcp, calls } = server("get_workflow_execution", rpcMiss);
+    await callToolByAnyName(mcp, MCP_TOOL.getExecution, {});
+    assert.deepEqual(calls, ["get_workflow_execution"]);
+  });
+
+  it("the tool's OWN not-found is the answer, not a reason to try the old name", async () => {
+    const { mcp, calls } = server("none", () => new McpToolError("get_workflow_execution", "Execution 'e1' not found for workflow 'wf1'"));
+    await assert.rejects(callToolByAnyName(mcp, MCP_TOOL.getExecution, {}), /Execution 'e1' not found/);
+    await assert.rejects(callToolByAnyName(mcp, MCP_TOOL.getExecution, {}), /Execution 'e1' not found/);
+    assert.deepEqual(calls, ["get_workflow_execution", "get_workflow_execution"], "the name exists, so it is remembered");
+  });
+
+  it("a transport failure is not proof the name exists: the next call probes again", async () => {
+    const calls: string[] = [];
+    let flaky = true;
+    const mcp = {
+      callTool: async (name: string) => {
+        calls.push(name);
+        if (flaky) {
+          flaky = false;
+          throw new Error("MCP tools/call failed: 502 Bad Gateway");
+        }
+        if (name === "get_execution") return { via: name };
+        throw rpcMiss(name);
+      },
+    } as unknown as McpClient;
+    await assert.rejects(callToolByAnyName(mcp, MCP_TOOL.getExecution, {}), /502/);
+    assert.deepEqual(await callToolByAnyName(mcp, MCP_TOOL.getExecution, {}), { via: "get_execution" });
+    assert.deepEqual(calls, ["get_workflow_execution", "get_workflow_execution", "get_execution"]);
+  });
+
+  it("a server with neither name fails with its own not-found, after trying both", async () => {
+    const { mcp, calls } = server("none", rpcMiss);
+    await assert.rejects(callToolByAnyName(mcp, MCP_TOOL.searchExecutions, {}), /Tool search_executions not found/);
+    assert.deepEqual(calls, ["search_workflow_executions", "search_executions"]);
   });
 });
 

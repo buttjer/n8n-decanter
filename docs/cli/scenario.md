@@ -110,9 +110,10 @@ makes a scenario worth tracking.
   (`executions/<id>.json`); nodes with captured output are recorded as
   **`capture`** provenance, each remaining gap is listed under
   `_decanterScenario.fill`.
-- **`--scaffold`** calls n8n's read-only MCP tool `prepare_test_pin_data` and
-  annotates each gap with its output **JSON Schema** (`expectedSchema`),
-  provenance `scaffolded`. **It never invents values** — the tool returns
+- **`--scaffold`** calls n8n's read-only MCP tool `prepare_workflow_pin_data`
+  (named `prepare_test_pin_data` before n8n 2.34; decanter uses whichever your
+  instance has) and annotates each gap with its output **JSON Schema**
+  (`expectedSchema`), provenance `scaffolded`. **It never invents values** — the tool returns
   schemas and coverage counts only, no data (`readOnlyHint: true`); a person
   or agent still authors every value, reviewed in the diff like any other
   scenario edit. Composes with `--execution`: the capture seeds what it
@@ -296,7 +297,7 @@ Scenarios are chosen explicitly by slug (`preflight --simulate --scenario <slug>
 ## Relation to the official n8n skills
 
 n8n's own `n8n-workflow-lifecycle-official` skill teaches agents an
-**ephemeral** in-session pin flow: `prepare_test_pin_data` → the agent
+**ephemeral** in-session pin flow: `prepare_workflow_pin_data` → the agent
 generates values → `test_workflow`, per-execution, nothing persisted.
 Scenarios are decanter's **durable** counterpart to the same tool pair: a
 scenario is committed, human-reviewed, reused across runs, and (when
