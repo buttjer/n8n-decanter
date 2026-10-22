@@ -19,12 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`publish` and `push --publish` no longer claim the code is "live now".**
-  From n8n 2.40 on, n8n switches a workflow's triggers to the published
-  version in the background. On n8n 2.44.5 a webhook call made right after
-  the publish still ran the previous version; the switch landed within about
-  a second. n8n does not expose that status over MCP or its public API, so
-  decanter cannot wait for it. The success line now says the switch is
-  under way, and the [publish docs](/docs/cli/publish/)
+  From n8n 2.40 on, n8n marks the new version published at once but
+  activates it in the background. On n8n 2.44.5 a webhook call made right
+  after the publish still ran the previous version; the new one was active
+  within about a second. n8n does not expose that status over MCP or its
+  public API, so decanter cannot wait for it. The success line now says the
+  activation is under way, and the [publish docs](/docs/cli/publish/)
   explain it.
 - **`preflight --simulate` replays pinned items' binary data**
   ([#328](https://github.com/buttjer/n8n-decanter/issues/328)). The stand-in

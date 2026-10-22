@@ -704,10 +704,10 @@ Guard errors abort and are *not* bypassable with `--force`.
    round-trip warning if the server normalized anything.
 5. `--publish` → `publish_workflow` afterwards. Result lines state the draft
    reality: `— draft updated; the live version is unchanged (run "publish"
-   to go live)` / `— unpublished draft` / `published … — n8n switches its triggers to this
-   version now (on n8n 2.40+ in the background, …)` (Plan 95: from n8n 2.40
-   `publish_workflow` returns before the triggers switch, and no MCP or
-   public-API signal says when they have — so the line can't claim "live now").
+   to go live)` / `— unpublished draft` / `published … — n8n activates it in the
+   background (n8n 2.40+); …` (Plan 95: from n8n 2.40 `publish_workflow`
+   returns before the new version is active, and no MCP or public-API signal
+   says when it is — so the line can't claim "live now").
 6. Optional auto-commit (`commitOnPush`).
 
 ## Compliance guard (`lib/validate.mts` — the push/watch gate + preflight+s `layout` check)
@@ -1641,10 +1641,10 @@ API-era build that still hold are kept; superseded ones are marked.
 - **Publishing is asynchronous from n8n 2.40 (Plan 95, measured 2026-10-22).**
   `N8N_USE_WORKFLOW_PUBLICATION_SERVICE` defaults on from 2.40.0 (off through
   2.39.5): `publish_workflow` commits `activeVersionId` plus an outbox record
-  and returns; the leader drains the outbox and re-registers the triggers
+  and returns; the leader drains the outbox and activates the new version
   (woken at once, 15 s fallback poll). On 2.44.5, 3 of 3 webhook calls made
-  right after the publish returned ran the previous version; the switch landed
-  within ~1 s. On 2.31.4, 0 of 3. The settled state is only readable at the
+  right after the publish returned ran the previous version; the new one was
+  active within ~1 s. On 2.31.4, 0 of 3. The settled state is only readable at the
   cookie-authed `GET /rest/workflows/:id/publication-status`
   (`status`/`liveVersionId`/`pendingVersionId`) — not over MCP, not over the
   public API — so `publish` cannot wait on it and its success line no longer

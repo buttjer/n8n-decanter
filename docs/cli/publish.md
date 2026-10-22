@@ -19,10 +19,11 @@ the deliberate go-live half:
   promotes the newer draft.
 - **`unpublish`** returns the workflow to draft-only.
 
-**From n8n 2.40 on, the switch takes a moment.** n8n accepts the publish,
-then moves the triggers to the new version in the background. Measured on
-n8n 2.44.5, a webhook call made right after `publish` returned still ran the
-previous version; the switch landed within about a second. decanter can't
+**From n8n 2.40 on, going live takes a moment.** n8n marks the new version
+as published at once, then activates it in the background. Until that is
+done, the previous version keeps running. Measured on n8n 2.44.5, a webhook
+call made right after `publish` returned still ran the previous version; the
+new one was active within about a second. decanter can't
 wait for it: n8n reports that status only to a signed-in editor session, not
 over MCP or its public API. So if a script calls the webhook straight after
 `publish`, give it a second, or check the run's version. Unpublishing works

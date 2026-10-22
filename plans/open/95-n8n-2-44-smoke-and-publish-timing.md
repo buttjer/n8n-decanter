@@ -65,7 +65,7 @@ says which version ran without trusting the executions list.
 - **Cause:** `N8N_USE_WORKFLOW_PUBLICATION_SERVICE`, default `true` from
   2.40.0 (`false` through 2.39.5). `publish_workflow` commits
   `activeVersionId` and an outbox record, then returns; the leader drains the
-  outbox and re-registers the triggers (woken at once, 15 s fallback poll).
+  outbox and activates the new version (woken at once, 15 s fallback poll).
 - **No client-reachable "is it live" signal.** n8n has one —
   `GET /rest/workflows/:id/publication-status` (`status`, `liveVersionId`,
   `pendingVersionId`) — but it is cookie-authed internal REST. MCP
@@ -83,9 +83,9 @@ says which version ran without trusting the executions list.
 
 ## Done
 
-- `publish` / `push --publish` success line: "n8n switches its triggers to
-  this version now (on n8n 2.40+ in the background, usually within a
-  second)" instead of "code is live now". CHANGELOG Fixed, `docs/cli/publish.md`,
+- `publish` / `push --publish` success line: "n8n activates it in the
+  background (n8n 2.40+); the previous version may still run for about a
+  second" instead of "code is live now". CHANGELOG Fixed, `docs/cli/publish.md`,
   `docs/cli/push.md`, PLAN.md.
 - Smoke: `webhookExecution` (trigger once, read that run by id), `webhookLive`
   (trigger until a run executes the current `activeVersionId`, 20 s budget) —

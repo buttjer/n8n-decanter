@@ -29,7 +29,7 @@
 // Not yet in the matrix: n8nio/n8n:2.44.5, latest stable on 2026-10-21 and the
 // first tested tag past n8n 2.34's MCP tool renames (#327). It passes locally
 // since Plan 95; adding it to ci.yml needs a token with the `workflow` scope.
-// From n8n 2.40 a publish (and an unpublish) only queues the trigger switch,
+// From n8n 2.40 a publish (and an unpublish) only queues the activation,
 // so steps that run right after one wait on the run's workflowVersionId
 // (`webhookLive`) and cleanups go through `deleteWorkflow`.
 import assert from "node:assert/strict";
@@ -169,9 +169,9 @@ const webhookExecution = async (wf: string, payload: unknown, hookPath = "smoke-
 };
 /**
  * Trigger until a run executes the workflow's CURRENT activeVersionId (Plan 95).
- * From n8n 2.40 a publish returns before the triggers switch (measured on
- * 2.44.5: the first call after it ran the old version, every time; the switch
- * landed within ~1 s). n8n's fallback outbox poll is 15 s, so the budget is 20 s.
+ * From n8n 2.40 a publish returns before the new version is active (measured
+ * on 2.44.5: the first call after it ran the previous version, every time; the
+ * new one was active within ~1 s). n8n's fallback outbox poll is 15 s, so the budget is 20 s.
  * `tries` > 1 is that lag made visible; on 2.30/2.31 it is always 1.
  */
 const webhookLive = async (wf: string, payload: unknown, hookPath = "smoke-hook"): Promise<{ out: any; exec: any; tries: number }> => {
@@ -467,7 +467,7 @@ try {
     assert.notEqual(between.versionId, between.activeVersionId, "the draft diverged from the live version");
     r = await cli("push", "--publish"); // no code change left — publish still runs
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /n8n switches its triggers to this version/, r.out);
+    assert.match(r.out, /n8n activates it in the background/, r.out);
     const out = await webhook({ n: 5 });
     assert.deepEqual(out, [{ doubled: 10, mode: "each" }], JSON.stringify(out));
   });
@@ -545,7 +545,7 @@ try {
     assert.deepEqual(out, [{ doubled: 6, mode: "forced" }], "workflow still executes after rename: " + JSON.stringify(out));
     assert.ok(exec.data?.resultData?.runData?.["Ümläut Nödé"], `the live run used the renamed node: ${Object.keys(exec.data?.resultData?.runData ?? {}).join(",")}`);
     renamedExecId = exec.id;
-    if (tries > 1) console.log(`  publish returned before the triggers switched: ${tries - 1} run(s) still executed the previous version`);
+    if (tries > 1) console.log(`  publish returned before the new version was active: ${tries - 1} run(s) still executed the previous version`);
     r = await cli("diff", wfId);
     assert.match(r.out, /no differences — every tracked node matches the draft/, "in sync after rename round-trip: " + r.out);
   });
@@ -1042,7 +1042,7 @@ try {
     // publish → live; activeVersionId now matches the draft
     r = await cli("publish", lifeId);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /published "Smoke Lifecycle" \([^)]+\) — n8n switches its triggers to this version/);
+    assert.match(r.out, /published "Smoke Lifecycle" \([^)]+\) — n8n activates it in the background/);
     remote = await api("GET", `/api/v1/workflows/${lifeId}`);
     assert.equal(remote.active, true, "publish took it live");
     assert.equal(remote.activeVersionId, remote.versionId, "publish set activeVersionId to the draft");
