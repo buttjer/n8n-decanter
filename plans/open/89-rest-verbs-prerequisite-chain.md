@@ -12,7 +12,7 @@ nacktes REST-404. `backup create` genauso"). Verified the same day — **the
 `backup create` half did not reproduce as described**, see "Findings". Same batch
 as [Plan 86](../done/86-init-writes-when-asked-for-help.md),
 [Plan 87](../done/87-auth-errors-point-the-wrong-way.md),
-[Plan 88](88-data-tables-stale-rows-and-refs.md),
+[Plan 88](../done/88-data-tables-stale-rows-and-refs.md),
 [Plan 90](90-backup-source-instance-stamp.md) and
 [Plan 91](../draft/91-guard-hint-for-credential-type-refusal.md).
 **Snapshot:** 2026-09-02T04:57Z @ 3c5ee4d
