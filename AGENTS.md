@@ -64,6 +64,19 @@ could be rebuilt from it.
 decision or observation, update the PLAN.md.
 Never let PLAN.md silently drift from the code, update it unasked.**
 
+## Optimise for the latest n8n
+
+**decanter is always optimised for the latest stable n8n release** (operator
+decision, 2026-10-23). Behaviour, messages, docs and defaults describe what
+the newest n8n does. Older 2.x releases in the smoke matrix must keep
+working — a correct result, no crash — but they get no version checks, no
+version-specific wording and no code paths of their own, unless decanter
+would otherwise break on them (the #327 tool-name fallback is that case).
+Where the newest n8n behaves differently and decanter can't tell which one
+it is talking to, assume the newest behaviour. Plan 95 is the example: from
+n8n 2.40 a publish activates in the background, so the success line says so
+on every version, without a version check.
+
 ## Before you start: read your permission allowlist
 
 Every task/plan execution starts by **reading the harness's permission config
