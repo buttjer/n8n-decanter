@@ -21,7 +21,7 @@ export function dataTableSlug(id: string | number, name: string): string {
 
 /** Options for a data-table fetch — the CLI's filter/slice flags. */
 export interface FetchDataTablesOptions {
-  /** Ids or exact names to scope the fetch to; empty = every table. */
+  /** Ids, names (any case) or folder names to scope the fetch to; empty = every table. */
   tableRefs?: string[];
   /** Rows per page (default 100, API cap 250). */
   limit?: number;
@@ -35,13 +35,33 @@ export interface FetchDataTablesOptions {
   all?: boolean;
 }
 
-/** Pick the tables named by `tableRefs` (id or exact name); empty = all. */
+/**
+ * Resolve one ref against candidates, in two tiers: precise (id, name or
+ * folder, each compared case-insensitively) first, and only when that hits
+ * nothing a loose kebab match on the name. Tiers are per ref, so one ref's
+ * loose hit never pulls in another ref's precise twin — `sync-queue` stays the
+ * table literally named that, not also `Sync Queue`. `kebabCase(ref)` covers
+ * the spaced, underscored and mixed-case forms; names kebab alike are all
+ * selected (names are not unique).
+ */
+function resolveRef<T extends { id: string; name: string; folder: string }>(ref: string, candidates: T[]): T[] {
+  const lc = ref.toLowerCase();
+  const precise = candidates.filter(
+    (c) => c.id === ref || c.name.toLowerCase() === lc || c.folder.toLowerCase() === lc,
+  );
+  if (precise.length > 0) return precise;
+  return candidates.filter((c) => kebabCase(c.name) === kebabCase(ref));
+}
+
+/** Pick the tables named by `tableRefs` (id, name in any case, or folder); empty = all. */
 function selectTables(tables: DataTable[], tableRefs: string[]): DataTable[] {
   if (tableRefs.length === 0) return tables;
+  // Server tables become candidates; the folder is what `pull` would name the
+  // dir, so a pasted dir name is itself a valid ref.
+  const candidates = tables.map((t) => ({ id: String(t.id), name: t.name, folder: dataTableSlug(t.id, t.name) }));
   const picked = new Map<string, DataTable>();
   for (const ref of tableRefs) {
-    const lc = ref.toLowerCase();
-    const hits = tables.filter((t) => String(t.id) === ref || t.name.toLowerCase() === lc);
+    const hits = resolveRef(ref, candidates).map((c) => tables.find((t) => String(t.id) === c.id)!);
     if (hits.length === 0) {
       const known = tables.map((t) => `"${t.name}" (${t.id})`).join(", ");
       throw new Error(`no data table matches "${ref}"${known ? ` — tables: ${known}` : " — no data tables on the server"}`);

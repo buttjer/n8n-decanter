@@ -815,7 +815,14 @@ records stand as before:
 - `data-tables [table…] [--filter/--search/--sort/--limit/--all]` fetches
   schema + rows into the top-level self-gitignored `data-tables/` dir;
   read-only by design; config-gated by `dataTables`; `clean` offline. Scopes
-  and endpoint facts in the plan25-datatables-api-facts memory.
+  and endpoint facts in the plan25-datatables-api-facts memory. A ref matches
+  a table's id, its name in any case, or its kebab-cased folder form, exact
+  match preferred over the kebab form (Plan 88). On a per-table fetch
+  failure its existing `rows.json` is renamed to `rows.stale.json` (never
+  deleted, so a transient error doesn't cost a large table's last good
+  fetch) and the run exits 1 naming which tables refreshed; a successful run
+  also names any other local table dir it left untouched, with its
+  `fetchedAt`/stale state.
 
 ## Watch mode (`n8n-decanter watch <workflow>`)
 
