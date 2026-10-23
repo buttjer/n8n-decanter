@@ -1,6 +1,6 @@
 # Plan 95 — n8n 2.44: two smoke failures, and whether `publish` returns before the version is live
 
-**Status:** In progress — code, docs and smoke done; the `ci.yml` matrix line is the operator's
+**Status:** Done
 **Priority:** P2 — the second failure is test-only. The first one could mean
 `publish` reports success before the new version runs, which users would feel.
 Unproven either way; reproduce before building.
@@ -95,7 +95,5 @@ says which version ran without trusting the executions list.
   the "still being unpublished" 409, bounded (40 × 500 ms).
 - Smoke 36/36 on 2.44.5 and 2.30.7.
 
-## Left
-
-- Add `"2.44.5"` to `n8n_tag` in `.github/workflows/ci.yml` — needs a token
-  with the `workflow` scope (the operator's). Then this plan moves to `done/`.
+- `"2.44.5"` added to the CI smoke matrix (`n8n_tag` in
+  `.github/workflows/ci.yml`), 2026-10-23 in #343.

@@ -24,11 +24,9 @@
 // (PLAN.md) is asserted across the line, not just one pinned point release.
 // Passing set, last verified 2026-07-20: n8nio/n8n:2.30.7 (oldest supported —
 // the floor Plan 18's pinData seeding needs), 2.31.0 (middle), 2.31.4
-// (latest at verification time). Keep this list and .github/workflows/ci.yml's
-// `smoke` matrix in sync.
-// Not yet in the matrix: n8nio/n8n:2.44.5, latest stable on 2026-10-21 and the
-// first tested tag past n8n 2.34's MCP tool renames (#327). It passes locally
-// since Plan 95; adding it to ci.yml needs a token with the `workflow` scope.
+// (latest at verification time), and since Plan 95 n8nio/n8n:2.44.5 (latest
+// stable on 2026-10-21, the first tested tag past n8n 2.34's MCP tool renames,
+// #327). Keep this list and .github/workflows/ci.yml's `smoke` matrix in sync.
 // From n8n 2.40 a publish (and an unpublish) only queues the activation,
 // so steps that run right after one wait on the run's workflowVersionId
 // (`webhookLive`) and cleanups go through `deleteWorkflow`.
