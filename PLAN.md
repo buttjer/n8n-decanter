@@ -1650,7 +1650,13 @@ API-era build that still hold are kept; superseded ones are marked.
   and returns; the leader drains the outbox and activates the new version
   (woken at once, 15 s fallback poll). On 2.44.5, 3 of 3 webhook calls made
   right after the publish returned ran the previous version; the new one was
-  active within ~1 s. On 2.31.4, 0 of 3. The settled state is only readable at the
+  active within ~1 s. On 2.31.4, 0 of 3. **Re-measured 2026-10-23 over 50
+  publishes on 2.44.5** (25 single-main, 25 queue mode with Postgres + Redis +
+  one worker): the immediate call ran the previous version 50 of 50; the new
+  one answered after median 0.4 s, p90 0.5 s, max 2.3 s — queue mode no slower
+  (408 vs 416 ms median), the 15 s fallback never hit. Multi-main stays
+  unmeasured (enterprise licence). Hence the line's "a second or two"; the
+  smoke step "activation lag" logs the same numbers on every run. The settled state is only readable at the
   cookie-authed `GET /rest/workflows/:id/publication-status`
   (`status`/`liveVersionId`/`pendingVersionId`) — not over MCP, not over the
   public API — so `publish` cannot wait on it and its success line no longer

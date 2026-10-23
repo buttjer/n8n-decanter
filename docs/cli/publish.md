@@ -21,13 +21,14 @@ the deliberate go-live half:
 
 **From n8n 2.40 on, going live takes a moment.** n8n marks the new version
 as published at once, then activates it in the background. Until that is
-done, the previous version keeps running. Measured on n8n 2.44.5, a webhook
-call made right after `publish` returned still ran the previous version; the
-new one was active within about a second. decanter can't
+done, the previous version keeps running. Measured on n8n 2.44.5 over 50
+publishes, in regular and in queue mode: a webhook call made right after
+`publish` returned ran the previous version every time. The new one answered
+after about 0.4 s as a rule, and after 2.3 s at the slowest. decanter can't
 wait for it: n8n reports that status only to a signed-in editor session, not
 over MCP or its public API. So if a script calls the webhook straight after
-`publish`, give it a second, or check the run's version. Unpublishing works
-the same way.
+`publish`, give it a few seconds, or check the run's version. Unpublishing
+works the same way.
 
 Both go over n8n's MCP server. Without refs they act on the workflows listed
 in `decanter.config.json`. `push --publish` combines a push with the publish

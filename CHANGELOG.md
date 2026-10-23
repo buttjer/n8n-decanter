@@ -22,7 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   From n8n 2.40 on, n8n marks the new version published at once but
   activates it in the background. On n8n 2.44.5 a webhook call made right
   after the publish still ran the previous version; the new one was active
-  within about a second. n8n does not expose that status over MCP or its
+  within a second or two (median 0.4 s over 50 publishes, regular and queue
+  mode). n8n does not expose that status over MCP or its
   public API, so decanter cannot wait for it. The success line now says the
   activation is under way, and the [publish docs](/docs/cli/publish/)
   explain it.

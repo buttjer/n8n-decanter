@@ -8,9 +8,12 @@ import { danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
  * (`N8N_USE_WORKFLOW_PUBLICATION_SERVICE`, default on) `publish_workflow`
  * marks the new version published and returns; n8n activates that version
  * (the whole workflow, triggers included) from a background outbox. Measured
- * on 2.44.5 (Plan 95): 3 of 3 webhook calls made right after it returned ran
- * the PREVIOUS version, and the new one was active within ~1 s; n8n's own
- * fallback poll is 15 s. The only signal that activation finished is n8n's
+ * on 2.44.5 over 50 publishes (25 single-main, 25 queue mode with a worker,
+ * 2026-10-23): the webhook call made right after it returned ran the PREVIOUS
+ * version every time; the new one answered after a median 0.4 s, 48 of 50
+ * under 0.6 s, the slowest 2.3 s. Queue mode was no slower, and n8n's 15 s
+ * fallback poll never fired. Multi-main is unmeasured (it needs an enterprise
+ * licence). The only signal that activation finished is n8n's
  * cookie-authed
  * `/rest/workflows/:id/publication-status`, which neither MCP nor the public
  * API exposes, so there is nothing for decanter to wait on — the message says
@@ -19,7 +22,7 @@ import { danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
  * turn the background activation off, so the version wouldn't tell anyway.
  */
 export const publishedNote = (name: string, id: string): string =>
-  `published "${name}" (${id}) — n8n activates it in the background; the previous version may still run for about a second`;
+  `published "${name}" (${id}) — n8n activates it in the background; the previous version may still run for a second or two`;
 
 /**
  * `publish` — take the draft live (MCP `publish_workflow`, Plan 32). Since

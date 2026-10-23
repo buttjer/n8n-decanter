@@ -169,7 +169,7 @@ const webhookExecution = async (wf: string, payload: unknown, hookPath = "smoke-
  * Trigger until a run executes the workflow's CURRENT activeVersionId (Plan 95).
  * From n8n 2.40 a publish returns before the new version is active (measured
  * on 2.44.5: the first call after it ran the previous version, every time; the
- * new one was active within ~1 s). n8n's fallback outbox poll is 15 s, so the budget is 20 s.
+ * new one was active within 2.3 s over 50 publishes). n8n's fallback outbox poll is 15 s, so the budget is 20 s.
  * `tries` > 1 is that lag made visible; on 2.30/2.31 it is always 1.
  */
 const webhookLive = async (wf: string, payload: unknown, hookPath = "smoke-hook"): Promise<{ out: any; exec: any; tries: number }> => {
@@ -1074,6 +1074,58 @@ try {
     await deleteWorkflow(lifeId);
     const gone = await fetch(`${HOST}/api/v1/workflows/${lifeId}`, { headers: { "X-N8N-API-KEY": KEY } });
     assert.equal(gone.status, 404, "cleanup delete succeeded");
+  });
+
+  // The publish success line promises the previous version runs "for a second
+  // or two" at most (lib/lifecycle.mts publishedNote). This step measures that
+  // on every smoke run: a publish over raw MCP, then the webhook straight away.
+  // The response body carries a per-round tag, so it names the version that
+  // ran without trusting the executions list. It only fails past the 20 s
+  // budget; a lag (or none, on n8n before 2.40) is logged, not asserted.
+  await step("activation lag: a webhook straight after a raw MCP publish — logged, not asserted (n8n 2.40+ activates in the background)", async () => {
+    const made = await api("POST", "/api/v1/workflows", {
+      name: "smoke activation lag",
+      nodes: [
+        { id: "l1", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0],
+          parameters: { httpMethod: "POST", path: "smoke-lag-hook", responseMode: "responseNode" } },
+        { id: "l2", name: "Tag", type: "n8n-nodes-base.code", typeVersion: 2, position: [220, 0],
+          parameters: { jsCode: "return [{ json: { tag: 'r0' } }];\n" } },
+        { id: "l3", name: "Respond", type: "n8n-nodes-base.respondToWebhook", typeVersion: 1.1, position: [440, 0],
+          parameters: { respondWith: "allIncomingItems" } },
+      ],
+      connections: {
+        Webhook: { main: [[{ node: "Tag", type: "main", index: 0 }]] },
+        Tag: { main: [[{ node: "Respond", type: "main", index: 0 }]] },
+      },
+      settings: { executionOrder: "v1" },
+    });
+    const lagId = made.id;
+    await enableMcpAccess(lagId);
+    const { McpClient } = await import(pathToFileURL(path.join(PROJECT, "lib", "mcp.mts")).href);
+    const mcpLag = new McpClient({ host: HOST, auth: { kind: "bearer", token: MCP } });
+    const ranTag = async (): Promise<string | null> => {
+      const res = await fetch(`${HOST}/webhook/smoke-lag-hook`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+      const text = await res.text();
+      return res.ok && text ? (JSON.parse(text)?.[0]?.tag ?? null) : null;
+    };
+    /** Publish `tag` and return [ms until a call ran it, calls that ran something older]. */
+    const publishAndWait = async (tag: string): Promise<[number, number]> => {
+      await mcpLag.callTool("update_workflow", { workflowId: lagId, operations: [{ type: "updateNodeParameters", nodeName: "Tag", parameters: { jsCode: `return [{ json: { tag: '${tag}' } }];\n` } }] });
+      await mcpLag.callTool("publish_workflow", { workflowId: lagId });
+      const t0 = performance.now();
+      for (let stale = 0; ; stale++) {
+        if ((await ranTag()) === tag) return [Math.round(performance.now() - t0), stale];
+        const waited = performance.now() - t0;
+        assert.ok(waited < 20_000, `${tag} was not served ${Math.round(waited)} ms after publish_workflow returned (${IMAGE})`);
+        await sleep(100);
+      }
+    };
+    await publishAndWait("r0"); // first activation also registers the route — not counted
+    const rounds: Array<[number, number]> = [];
+    for (let i = 1; i <= 5; i++) rounds.push(await publishAndWait(`r${i}`));
+    const staleFirst = rounds.filter(([, stale]) => stale > 0).length;
+    console.log(`  activation lag on ${IMAGE}: the first call after publish ran the previous version in ${staleFirst} of ${rounds.length}; the new one answered after ${rounds.map(([ms]) => `${ms} ms`).join(", ")}`);
+    await deleteWorkflow(lagId);
   });
 
   // Plan 21 authoring verbs against real n8n. A dedicated workflow (not the
