@@ -387,23 +387,29 @@ const server = http.createServer((req, res) => {
   // workflows; columns is a bare array; rows takes server-side filter/search/
   // sortBy/limit + cursor). The CLI only ever GETs these.
   if (req.method === "GET" && req.url!.startsWith("/api/v1/data-tables")) {
+    const tables = [...DATA_TABLES, ...dtMock.extra];
     const cols = req.url!.match(/^\/api\/v1\/data-tables\/([^/?]+)\/columns/);
     if (cols) {
-      const t = DATA_TABLES.find((d) => String(d.id) === cols[1]);
+      const fail = dtMock.failColumns.get(cols[1]);
+      if (fail) return void res.writeHead(fail).end("injected columns failure");
+      const t = tables.find((d) => String(d.id) === cols[1]);
       if (!t) return void res.writeHead(404).end("not found");
       return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(t.columns));
     }
     const rows = req.url!.match(/^\/api\/v1\/data-tables\/([^/?]+)\/rows/);
     if (rows) {
-      const t = DATA_TABLES.find((d) => String(d.id) === rows[1]);
+      const fail = dtMock.failRows.get(rows[1]);
+      if (fail) return void res.writeHead(fail).end("injected rows failure");
+      const t = tables.find((d) => String(d.id) === rows[1]);
       if (!t) return void res.writeHead(404).end("not found");
       const params = new URL(req.url!, "http://localhost").searchParams;
       return void res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(queryRows(t.rows, params)));
     }
     // list — omit rows/columns so the separate columns fetch is exercised
+    if (dtMock.failList) return void res.writeHead(dtMock.failList).end("injected list failure");
     return void res
       .writeHead(200, { "content-type": "application/json" })
-      .end(JSON.stringify({ data: DATA_TABLES.map((d) => ({ id: d.id, name: d.name, projectId: d.projectId })), nextCursor: null }));
+      .end(JSON.stringify({ data: tables.map((d) => ({ id: d.id, name: d.name, projectId: d.projectId })), nextCursor: null }));
   }
   res.writeHead(404).end("nope");
 });
@@ -451,6 +457,23 @@ const DATA_TABLES = [
     rows: [{ id: 1, email: "a@example.com" }, { id: 2, email: "b@example.com" }],
   },
 ];
+
+// Plan 88 knobs, set inside a data-tables/* step and reset in its finally, so
+// the permanent fixtures above keep their counts for the older steps.
+// `extra` adds tables to the list; the fail* fields answer that call with the
+// given HTTP status (keyed by table id for columns/rows) instead of data.
+const dtMock = {
+  extra: [] as Array<{ id: number | string; name: string; projectId: string; columns: unknown[]; rows: any[] }>,
+  failList: 0,
+  failColumns: new Map<string, number>(),
+  failRows: new Map<string, number>(),
+};
+function resetDtMock(): void {
+  dtMock.extra = [];
+  dtMock.failList = 0;
+  dtMock.failColumns.clear();
+  dtMock.failRows.clear();
+}
 
 function queryRows(rows: any[], params: URLSearchParams): { data: any[]; nextCursor: string | null } {
   let out = [...rows];
@@ -2835,6 +2858,346 @@ await step('data-tables: "dataTables": false refuses the fetch but still cleans'
     assert.match(r.out, /no data-tables\/ dir to clean/);
   } finally {
     writeFileSync(configFile, saved);
+  }
+});
+
+// ---- Plan 88: data-tables refs, stale rows, notice of untouched dirs ----
+// Every step starts from no data-tables/ dir and leaves none behind; mock knobs
+// are reset in `finally` so a red step cannot leak a failure into the next one.
+const dtTable = (id: number | string, name: string) => ({
+  id, name, projectId: "proj-1",
+  columns: [{ id: 1, name: "v", type: "string" }] as unknown[],
+  rows: [{ id: 1, v: `${name} row` }] as any[],
+});
+const dtHas = (folder: string, file: string) => existsSync(path.join(dtDir, folder, file));
+const dtRead = (folder: string, file: string) => read(dtDir, folder, file);
+const dtFetchedAt = (folder: string) => JSON.parse(dtRead(folder, "meta.json")).fetchedAt as string;
+const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// The report line for each anchor. The lookbehind keeps a `not refreshed: `
+// line from satisfying the `refreshed: ` check.
+const refreshedLine = (out: string) => out.split("\n").find((l) => /(?<!not )refreshed: /.test(l)) ?? "";
+const notRefreshedLine = (out: string) => out.split("\n").find((l) => /not refreshed: /.test(l)) ?? "";
+const noticeLines = (out: string) => out.split("\n").filter((l) => /not refreshed by this run: /.test(l));
+const dtCleanup = () => {
+  resetDtMock();
+  rmSync(dtDir, { recursive: true, force: true });
+};
+
+await step("data-tables/refs: kebab, spaced, mixed-case, folder and id forms all select a multi-word table", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  // real n8n ids are mixed-case tokens, and the folder keeps their case
+  dtMock.extra = [dtTable("Xy7AbCd9", "cardmuseum marketplace sync queue")];
+  const folder = "cardmuseum-marketplace-sync-queue-Xy7AbCd9";
+  try {
+    // a ref that hits nothing in either tier keeps today's miss text, listing every server table
+    let r = await cli("data-tables", "cardmuseum-sync");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /no data table matches "cardmuseum-sync" — tables: "Orders" \(1\), "Customers" \(2\), "cardmuseum marketplace sync queue" \(Xy7AbCd9\)/);
+    assert.ok(!existsSync(dtDir), "a miss writes nothing: " + r.out);
+    assert.equal(notRefreshedLine(r.out), "", "a miss with nothing to name prints only the miss error: " + r.out);
+    assert.equal(refreshedLine(r.out), "", "a miss with nothing to name prints only the miss error: " + r.out);
+
+    const refs = ["Xy7AbCd9", "cardmuseum marketplace sync queue", "Cardmuseum Marketplace Sync Queue",
+      "cardmuseum-marketplace-sync-queue", folder, folder.toLowerCase()];
+    for (const ref of refs) {
+      rmSync(dtDir, { recursive: true, force: true });
+      r = await cli("data-tables", ref);
+      assert.equal(r.code, 0, `ref "${ref}" must select the table: ${r.out}`);
+      assert.ok(dtHas(folder, "rows.json"), `ref "${ref}" wrote ${folder}/rows.json`);
+      assert.ok(!existsSync(path.join(dtDir, "orders-1")) && !existsSync(path.join(dtDir, "customers-2")), `ref "${ref}" selects only that table`);
+    }
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/refs: a precise hit does not also pull a loose one; a loose ref takes every kebab twin", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  dtMock.extra = [dtTable(4, "sync-queue"), dtTable(5, "Sync Queue"), dtTable(6, "Audit Log")];
+  const selected = () => readdirSync(dtDir).filter((d) => d !== ".gitignore").sort();
+  try {
+    // precise by name: the literal name wins, its kebab twin is not pulled in
+    let r = await cli("data-tables", "sync-queue");
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(selected(), ["sync-queue-4"], r.out);
+    rmSync(dtDir, { recursive: true, force: true });
+    r = await cli("data-tables", "sync queue");
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(selected(), ["sync-queue-5"], r.out);
+    // precise by folder: `sync-queue-5` names one dir, not both tables
+    rmSync(dtDir, { recursive: true, force: true });
+    r = await cli("data-tables", "sync-queue-5");
+    assert.equal(r.code, 0, `folder ref must select its table: ${r.out}`);
+    assert.deepEqual(selected(), ["sync-queue-5"], r.out);
+    // loose only: no table is named SYNC_QUEUE, both kebab to sync-queue
+    rmSync(dtDir, { recursive: true, force: true });
+    r = await cli("data-tables", "SYNC_QUEUE");
+    assert.equal(r.code, 0, `loose ref must select by kebab: ${r.out}`);
+    assert.deepEqual(selected(), ["sync-queue-4", "sync-queue-5"], r.out);
+    // tiers are per ref: audit_log needs the loose tier, sync-queue does not,
+    // so the loose tier must not reach sync-queue's kebab twin
+    rmSync(dtDir, { recursive: true, force: true });
+    r = await cli("data-tables", "sync-queue", "audit_log");
+    assert.equal(r.code, 0, `one precise and one loose ref: ${r.out}`);
+    assert.deepEqual(selected(), ["audit-log-6", "sync-queue-4"], r.out);
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/stale: a failed rows fetch moves rows.json to rows.stale.json and leaves meta.json", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  const ledger = dtTable(7, "Ledger");
+  dtMock.extra = [ledger];
+  try {
+    let r = await cli("data-tables", "ledger");
+    assert.equal(r.code, 0, r.out);
+    const rowsBefore = dtRead("ledger-7", "rows.json");
+    const metaBefore = dtRead("ledger-7", "meta.json");
+    const colsBefore = dtRead("ledger-7", "columns.json");
+
+    // the server's columns change, so a columns.json rewrite would show
+    ledger.columns = [{ id: 1, name: "v", type: "string" }, { id: 2, name: "added", type: "number" }];
+    dtMock.failRows.set("7", 500);
+    r = await cli("data-tables", "ledger");
+    assert.equal(r.code, 1, r.out);
+    assert.ok(!dtHas("ledger-7", "rows.json"), "a failed refresh must not leave yesterday's rows.json in place: " + r.out);
+    assert.ok(dtHas("ledger-7", "rows.stale.json"), "rows.json renamed to rows.stale.json");
+    assert.equal(dtRead("ledger-7", "rows.stale.json"), rowsBefore, "rows.stale.json is the old rows.json, byte for byte");
+    assert.equal(dtRead("ledger-7", "meta.json"), metaBefore, "meta.json untouched, so fetchedAt still dates the stale rows");
+    assert.equal(dtRead("ledger-7", "columns.json"), colsBefore, "columns.json untouched for a fetch that did not complete");
+    assert.match(r.out, /failed: 500/, "the original API error is the failure message");
+    assert.match(notRefreshedLine(r.out), /"Ledger" \(7\)/, r.out);
+    assert.equal(refreshedLine(r.out), "", "nothing was refreshed, so no refreshed: line: " + r.out);
+    assert.match(r.out, /rows\.stale\.json/, "the output says rows.json was moved: " + r.out);
+    assert.deepEqual(noticeLines(r.out), [], "the success notice stays silent on a failed run: " + r.out);
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/stale: a successful refetch brings rows.json back and deletes rows.stale.json", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  try {
+    let r = await cli("data-tables", "customers");
+    assert.equal(r.code, 0, r.out);
+    // the state a failed run leaves (pinned by the step above), set up by hand
+    renameSync(path.join(dtDir, "customers-2", "rows.json"), path.join(dtDir, "customers-2", "rows.stale.json"));
+    r = await cli("data-tables", "customers");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(dtHas("customers-2", "rows.json"), "rows.json written again");
+    assert.ok(!dtHas("customers-2", "rows.stale.json"), "a successful refresh deletes the leftover rows.stale.json: " + r.out);
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/stale: table 2 of 3 fails — table 1 fresh, tables 2 and 3 stale, report names them", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  dtMock.extra = [dtTable(3, "Invoices")];
+  try {
+    let r = await cli("data-tables");
+    assert.equal(r.code, 0, r.out);
+    const ordersFetchedAt = dtFetchedAt("orders-1");
+    const customersRows = dtRead("customers-2", "rows.json");
+    const customersMeta = dtRead("customers-2", "meta.json");
+    const invoicesRows = dtRead("invoices-3", "rows.json");
+
+    dtMock.failColumns.set("2", 403);
+    r = await cli("data-tables");
+    assert.equal(r.code, 1, r.out);
+    // before k: refreshed and fresh
+    assert.ok(dtHas("orders-1", "rows.json") && !dtHas("orders-1", "rows.stale.json"), "table 1 stays fresh");
+    assert.notEqual(dtFetchedAt("orders-1"), ordersFetchedAt, "table 1 was refreshed by this run");
+    // k and after: stale, meta untouched
+    assert.ok(!dtHas("customers-2", "rows.json"), "the failing table goes stale: " + r.out);
+    assert.equal(dtRead("customers-2", "rows.stale.json"), customersRows);
+    assert.equal(dtRead("customers-2", "meta.json"), customersMeta);
+    assert.ok(!dtHas("invoices-3", "rows.json"), "a table after the failing one goes stale too: " + r.out);
+    assert.equal(dtRead("invoices-3", "rows.stale.json"), invoicesRows);
+    assert.match(r.out, /refused \(403\)/, "the original API error is the failure message");
+    assert.match(refreshedLine(r.out), /"Orders" \(1\)/, r.out);
+    assert.doesNotMatch(refreshedLine(r.out), /"Customers"|"Invoices"/, r.out);
+    assert.match(notRefreshedLine(r.out), /"Customers" \(2\)/, r.out);
+    assert.match(notRefreshedLine(r.out), /"Invoices" \(3\)/, r.out);
+    assert.doesNotMatch(notRefreshedLine(r.out), /"Orders"/, r.out);
+    assert.match(r.out, /rows\.stale\.json/, r.out);
+    assert.deepEqual(noticeLines(r.out), [], "the success notice stays silent on a failed run: " + r.out);
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/stale: a failed table list stales the local dir a ref selects, or every local dir unscoped", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  try {
+    let r = await cli("data-tables");
+    assert.equal(r.code, 0, r.out);
+    const ordersRows = dtRead("orders-1", "rows.json");
+    // a dir without meta.json is still a local table dir, known by its folder
+    mkdirSync(path.join(dtDir, "orphan"));
+    writeFileSync(path.join(dtDir, "orphan", "rows.json"), "[]\n");
+
+    // scoped, matched by meta.json's name
+    dtMock.failList = 500;
+    r = await cli("data-tables", "orders");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /failed: 500/);
+    assert.ok(!dtHas("orders-1", "rows.json"), "scoped: the dir the ref selects goes stale: " + r.out);
+    assert.equal(dtRead("orders-1", "rows.stale.json"), ordersRows);
+    assert.ok(dtHas("customers-2", "rows.json"), "scoped: a dir the ref does not select is left alone");
+    assert.ok(dtHas("orphan", "rows.json"), "scoped: a dir the ref does not select is left alone");
+    assert.match(notRefreshedLine(r.out), /"Orders" \(1\)/, r.out);
+    assert.doesNotMatch(notRefreshedLine(r.out), /"Customers"/, r.out);
+    assert.deepEqual(noticeLines(r.out), [], "the success notice stays silent on a failed run: " + r.out);
+
+    // scoped, matched by folder name alone (no meta.json to match against)
+    r = await cli("data-tables", "orphan");
+    assert.equal(r.code, 1, r.out);
+    assert.ok(!dtHas("orphan", "rows.json") && dtHas("orphan", "rows.stale.json"), "scoped by folder: the dir goes stale: " + r.out);
+    assert.ok(dtHas("customers-2", "rows.json"), "scoped by folder: a dir the ref does not select is left alone");
+    assert.match(notRefreshedLine(r.out), /orphan/, "a dir without meta.json is named by its folder: " + r.out);
+    assert.deepEqual(noticeLines(r.out), [], r.out);
+
+    // unscoped, and the existing 404 rewording survives the stale treatment
+    dtMock.failList = 404;
+    r = await cli("data-tables");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /data-tables API is not available \(404\)/, r.out);
+    assert.ok(!dtHas("customers-2", "rows.json") && dtHas("customers-2", "rows.stale.json"), "unscoped: every local dir goes stale: " + r.out);
+    assert.equal(dtRead("orders-1", "rows.stale.json"), ordersRows, "an already stale dir is left as it was");
+    const named = notRefreshedLine(r.out);
+    assert.match(named, /"Orders" \(1\)/, r.out);
+    assert.match(named, /"Customers" \(2\)/, r.out);
+    assert.match(named, /orphan/, r.out);
+    assert.match(r.out, /rows\.stale\.json/, r.out);
+    assert.deepEqual(noticeLines(r.out), [], r.out);
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/stale: a missed ref stales the other refs' tables and the local dir it selects", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  dtMock.extra = [dtTable(9, "Legacy"), dtTable(8, "Old Stuff"), dtTable(10, "Archive")];
+  try {
+    let r = await cli("data-tables");
+    assert.equal(r.code, 0, r.out);
+    const ordersRows = dtRead("orders-1", "rows.json");
+    const legacyRows = dtRead("legacy-9", "rows.json");
+    // all three are deleted on the server; their fetched dirs stay behind locally
+    dtMock.extra = [];
+
+    // each missed ref selects a local dir by a different C1 rule: legacy-9 by
+    // folder, OLD_STUFF only by kebab of meta.json's name, 10 only by its id
+    r = await cli("data-tables", "orders", "legacy-9", "OLD_STUFF", "10");
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /no data table matches "(legacy-9|OLD_STUFF|10)" — tables: "Orders" \(1\), "Customers" \(2\)/);
+    assert.ok(!dtHas("orders-1", "rows.json"), "the table the other ref selects goes stale: " + r.out);
+    assert.equal(dtRead("orders-1", "rows.stale.json"), ordersRows);
+    assert.ok(!dtHas("legacy-9", "rows.json"), "the local dir the missed ref selects goes stale: " + r.out);
+    assert.equal(dtRead("legacy-9", "rows.stale.json"), legacyRows);
+    for (const folder of ["old-stuff-8", "archive-10"]) {
+      assert.ok(!dtHas(folder, "rows.json") && dtHas(folder, "rows.stale.json"), `the local dir ${folder} goes stale: ` + r.out);
+    }
+    assert.ok(dtHas("customers-2", "rows.json") && !dtHas("customers-2", "rows.stale.json"), "an unselected table is left alone");
+    assert.match(notRefreshedLine(r.out), /"Orders" \(1\)/, r.out);
+    assert.match(notRefreshedLine(r.out), /"Legacy" \(9\)/, r.out);
+    assert.equal(refreshedLine(r.out), "", "nothing is fetched on a miss: " + r.out);
+    assert.deepEqual(noticeLines(r.out), [], "the success notice stays silent on a failed run: " + r.out);
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/stale: a failed run creates no data-tables dir and no dir for a table that had none", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  try {
+    // the list fails with nothing on disk: nothing may appear
+    dtMock.failList = 500;
+    let r = await cli("data-tables");
+    assert.equal(r.code, 1, r.out);
+    assert.ok(!existsSync(dtDir), "a failed list must not create data-tables/: " + r.out);
+    dtMock.failList = 0;
+
+    // the first table fails: nothing was refreshed, so nothing may appear on
+    // disk, yet both tables the run was meant to refresh are named
+    dtMock.failColumns.set("1", 500);
+    r = await cli("data-tables");
+    assert.equal(r.code, 1, r.out);
+    assert.ok(!existsSync(dtDir), "a failed run must not create data-tables/: " + r.out);
+    assert.match(notRefreshedLine(r.out), /"Orders" \(1\)/, r.out);
+    assert.match(notRefreshedLine(r.out), /"Customers" \(2\)/, r.out);
+    assert.equal(refreshedLine(r.out), "", "nothing was refreshed: " + r.out);
+    dtMock.failColumns.clear();
+
+    // table 1 refreshes, table 2 fails on rows: no customers-2 dir appears
+    r = await cli("data-tables", "orders");
+    assert.equal(r.code, 0, r.out);
+    const ordersFetchedAt = dtFetchedAt("orders-1");
+    dtMock.failRows.set("2", 500);
+    r = await cli("data-tables");
+    assert.equal(r.code, 1, r.out);
+    assert.ok(dtHas("orders-1", "rows.json"), "table 1 keeps its rows.json");
+    assert.notEqual(dtFetchedAt("orders-1"), ordersFetchedAt, "table 1 was refreshed by this run");
+    assert.ok(!existsSync(path.join(dtDir, "customers-2")), "no dir for a table whose fetch did not complete: " + r.out);
+    assert.match(refreshedLine(r.out), /"Orders" \(1\)/, r.out);
+    assert.doesNotMatch(refreshedLine(r.out), /"Customers"/, r.out);
+    assert.match(notRefreshedLine(r.out), /"Customers" \(2\)/, r.out);
+    assert.doesNotMatch(notRefreshedLine(r.out), /"Orders"/, r.out);
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/notice: a scoped fetch names the other local dirs with their fetchedAt; none after a full fetch", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  try {
+    let r = await cli("data-tables");
+    assert.equal(r.code, 0, r.out);
+    const fetchedAt = dtFetchedAt("customers-2");
+
+    r = await cli("data-tables", "orders");
+    assert.equal(r.code, 0, r.out);
+    const lines = noticeLines(r.out);
+    assert.equal(lines.length, 1, "one notice line naming the dirs this run did not write: " + r.out);
+    assert.match(lines[0], new RegExp(`customers-2 \\(fetched ${reEsc(fetchedAt)}\\)`), r.out);
+    assert.doesNotMatch(lines[0], /orders-1/, "the dir this run wrote is not named");
+    // after the per-table wrote lines, before the ok summary
+    const at = r.out.indexOf("not refreshed by this run: ");
+    assert.ok(r.out.indexOf("wrote ") < at, "notice follows the wrote lines: " + r.out);
+    assert.ok(at < r.out.search(/data tables? -> /), "notice precedes the summary: " + r.out);
+
+    r = await cli("data-tables");
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(noticeLines(r.out), [], "a run that wrote every local dir prints no notice: " + r.out);
+  } finally {
+    dtCleanup();
+  }
+});
+
+await step("data-tables/notice: a stale sibling is marked stale, a dir without readable meta.json says so", async () => {
+  rmSync(dtDir, { recursive: true, force: true });
+  try {
+    let r = await cli("data-tables");
+    assert.equal(r.code, 0, r.out);
+    const fetchedAt = dtFetchedAt("customers-2");
+    // the state a failed run leaves (pinned by the stale steps), set up by hand
+    renameSync(path.join(dtDir, "customers-2", "rows.json"), path.join(dtDir, "customers-2", "rows.stale.json"));
+    mkdirSync(path.join(dtDir, "orphan"));
+    writeFileSync(path.join(dtDir, "orphan", "rows.json"), "[]\n");
+    mkdirSync(path.join(dtDir, "broken"));
+    writeFileSync(path.join(dtDir, "broken", "meta.json"), "{not json");
+
+    r = await cli("data-tables", "orders");
+    assert.equal(r.code, 0, r.out);
+    const lines = noticeLines(r.out);
+    assert.equal(lines.length, 1, "one notice line: " + r.out);
+    assert.match(lines[0], new RegExp(`customers-2 \\(stale, fetched ${reEsc(fetchedAt)}\\)`), r.out);
+    assert.match(lines[0], /orphan \(no meta\.json\)/, r.out);
+    assert.match(lines[0], /broken \(no meta\.json\)/, r.out);
+  } finally {
+    dtCleanup();
   }
 });
 
