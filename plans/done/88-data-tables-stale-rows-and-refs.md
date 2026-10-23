@@ -1,6 +1,6 @@
 # Plan 88 — a failed `data-tables` fetch leaves yesterday's rows, and the name on disk is not an accepted ref
 
-**Status:** Not started
+**Status:** Done
 **Priority:** P2 — the ref fix is a one-line comparison; the staleness fix needs
 a small decision (stamp vs. remove) but no design change.
 **Source:** user field feedback 2026-09-02, report 1 ("Kleinigkeiten"), verified
@@ -8,8 +8,8 @@ against the code the same day. Twenty minutes of the reporter's debugging went
 into an evaluation run that silently read the previous fetch. Same batch as
 [Plan 86](../done/86-init-writes-when-asked-for-help.md),
 [Plan 87](../done/87-auth-errors-point-the-wrong-way.md),
-[Plan 89](89-rest-verbs-prerequisite-chain.md),
-[Plan 90](90-backup-source-instance-stamp.md) and
+[Plan 89](../open/89-rest-verbs-prerequisite-chain.md),
+[Plan 90](../open/90-backup-source-instance-stamp.md) and
 [Plan 91](../draft/91-guard-hint-for-credential-type-refusal.md).
 **Snapshot:** 2026-09-02T04:57Z @ 3c5ee4d
 **Model:** Haiku — mechanical, two small edits in one file, plus tests.

@@ -718,6 +718,14 @@ Rules:
   whole `data-tables/` dir).
 - **Config-gated.** Available when `"dataTables"` is on in `decanter.config.json`
   (its default); if it's `false` the fetch refuses (`clean` still works).
+- **A table ref can be its folder name**, not just its id or exact display
+  name — `n8n-decanter data-tables "orders-7"` matches the same table as
+  `n8n-decanter data-tables "Orders"`.
+- **A `rows.json` missing next to a `rows.stale.json` means the last fetch
+  for that table failed** — don't read `rows.stale.json` as current data;
+  re-run `data-tables` for that table. `meta.json`'s `fetchedAt` always dates
+  whichever rows file is present, so check it before trusting the rows as
+  fresh.
 
 ## Commands — who runs what
 

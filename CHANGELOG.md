@@ -15,9 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `json._files.<key>`) — readable on the source instance, not on a
   `--simulate` replay's local engine. The warning names the node and key and
   says how to fix it: base64 the bytes into `data`, then drop `id`.
+- **`data-tables` reports a local table dir it didn't refresh.** After a
+  successful fetch, if `data-tables/` holds another table's folder from an
+  earlier run, a `not refreshed by this run:` line names it and its
+  `meta.json` `fetchedAt` (or `stale`, or `no meta.json`), so a leftover
+  fetch doesn't pass for current. This also fires when an unscoped run finds
+  zero tables on the server — any local table dirs left from an earlier run
+  still get named.
 
 ### Fixed
 
+- **`data-tables` accepts the folder/kebab form of a table name, not just its
+  exact display name** — `cardmuseum-marketplace-sync-queue` now matches a
+  table named `cardmuseum marketplace sync queue`, the same way its printed
+  folder name does. An exact id or name match still wins over the kebab form.
+- **`data-tables/.gitignore` heals itself on every successful fetch, not just
+  when `data-tables/` is first created.** If it was deleted by hand, or the
+  dir predates this self-ignore, the next successful run restores it instead
+  of leaving fetched rows unignored by git.
+- **A failed `data-tables` fetch no longer leaves the previous run's
+  `rows.json` looking current.** On a columns/rows fetch error, a failed
+  table-list call, or a missed `<table>` ref, the affected tables' existing
+  `rows.json` is renamed to `rows.stale.json` instead of being left in place
+  or deleted — a columns/rows error stales that table and every table after it
+  in the run; a failed table-list call stales every local dir the refs select
+  (or every local dir, unscoped); a missed ref stales the tables the *other*
+  refs select. The command exits 1 naming which tables refreshed and which
+  didn't.
 - **`publish` and `push --publish` no longer claim the code is "live now".**
   From n8n 2.40 on, n8n marks the new version published at once but
   activates it in the background. On n8n 2.44.5 a webhook call made right

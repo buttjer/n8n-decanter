@@ -9,7 +9,7 @@ dieselbe Instanz sind. Ein Vergleich der Instanz-Id würde die Warnung dort
 sparen"). Verified the same day — correct diagnosis, larger fix than it looks.
 Same batch as [Plan 86](../done/86-init-writes-when-asked-for-help.md),
 [Plan 87](../done/87-auth-errors-point-the-wrong-way.md),
-[Plan 88](88-data-tables-stale-rows-and-refs.md),
+[Plan 88](../done/88-data-tables-stale-rows-and-refs.md),
 [Plan 89](89-rest-verbs-prerequisite-chain.md) and
 [Plan 91](../draft/91-guard-hint-for-credential-type-refusal.md).
 **Snapshot:** 2026-09-02T04:57Z @ 3c5ee4d

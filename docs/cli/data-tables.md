@@ -17,7 +17,12 @@ workflow against the **real table contents** offline (e.g. to give a
 a table holds). **Read-only against the API** — the CLI never creates, updates,
 or deletes a data table, column, or row.
 
-A `<table>` is a table's **id or its exact name** (case-insensitive). With no
+A `<table>` is a table's **id, its name in any case, its kebab form, or its
+folder name**. A table `cardmuseum marketplace sync queue` with id `3` is
+matched by `3`, `cardmuseum marketplace sync queue`, `Cardmuseum Marketplace
+Sync Queue`, `cardmuseum-marketplace-sync-queue`, or
+`cardmuseum-marketplace-sync-queue-3` — an exact name or id match always wins
+over the kebab form, so two similarly-named tables don't collide. With no
 argument, every table is fetched.
 
 Uses the n8n **public API key** (`N8N_API_KEY`) — MCP's data-table tools
@@ -34,14 +39,54 @@ land in a **single top-level `data-tables/` dir** next to
 ```txt
 data-tables/
   <table-slug>/
-    meta.json       # id, name, projectId, fetchedAt, rowCount + the applied filter/search/sort/limit
-    columns.json    # the table schema (each column's name + type)
-    rows.json       # the (possibly filtered) rows
+    meta.json         # id, name, projectId, fetchedAt, rowCount + the applied filter/search/sort/limit
+    columns.json      # the table schema (each column's name + type)
+    rows.json         # the (possibly filtered) rows
+    rows.stale.json   # present only after a failed refetch — see below
 ```
 
 The slug is the kebab of the table name with its id appended (names aren't
 guaranteed unique). `meta.json` records what produced `rows.json`, so a filtered
-slice is self-describing and never mistaken for the whole table.
+slice is self-describing and never mistaken for the whole table. Its
+`fetchedAt` is the field to check for freshness — it dates whatever rows the
+dir currently holds, fresh or stale.
+
+## When a fetch fails
+
+Any of these failures renames the affected tables' existing `rows.json` to
+`rows.stale.json` rather than deleting it or leaving it in place:
+
+- A table's columns or rows fail to fetch — a dropped connection, a 403 from
+  a key missing a scope. That table goes stale, and so does **every table
+  after it** in the run (the ones not yet fetched): once one table fails, the
+  run stops rather than retrying or continuing past it.
+- The initial table-list call itself fails. Every local table dir the run's
+  refs would have selected (or every local dir, if run with no refs) goes
+  stale, since none of them could have been refreshed.
+- One of several `<table>` refs doesn't match anything on the server. The run
+  aborts before fetching **any** table, so the local dirs the *other*, valid
+  refs select go stale too — a typo in one ref can stale rows for an
+  unrelated table named correctly on the same command line.
+
+`meta.json` and `columns.json` are untouched by any of this, so `meta.json`'s
+`fetchedAt` still dates the stale rows honestly. A table dir with a
+`rows.stale.json` and no `rows.json` means its last refetch failed; the next
+successful fetch restores `rows.json` and removes `rows.stale.json`.
+
+Renaming rather than deleting means a transient failure never costs you a
+large table's previously-fetched rows. Renaming rather than leaving a
+separate "stale" marker next to an untouched `rows.json` means anyone opening
+`rows.json` directly sees "file not found" instead of silently reading
+yesterday's data as if it were current.
+
+The command fails with exit code 1 and reports, by name, which tables it
+refreshed and which it didn't — including any table it renamed `rows.json` to
+`rows.stale.json` for.
+
+After a successful run, if the `data-tables/` dir holds other local table
+folders the run wasn't asked to fetch, it prints one line naming each of
+them and its `fetchedAt` (or `stale`, or `no meta.json`), so you can see at a
+glance which tables are from an earlier run.
 
 ## Pull a filtered slice
 

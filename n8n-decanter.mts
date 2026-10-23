@@ -870,10 +870,11 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
     }
     case "data-tables": {
       // grammar mirrors executions: "clean" may sit anywhere; every other
-      // positional is a data-table ref (id or exact name). Data tables are
-      // project-scoped, not per-workflow, so refs are NOT workflow refs and
-      // land here unresolved — fetchDataTables matches them against the table
-      // list. clean is offline; the fetch is online and config-gated.
+      // positional is a data-table ref (id, name in any case, or folder name).
+      // Data tables are project-scoped, not per-workflow, so refs are NOT
+      // workflow refs and land here unresolved — fetchDataTables matches them
+      // against the table list. clean is offline; the fetch is online and
+      // config-gated.
       const tableRefs = rest.filter((a) => a !== "clean");
       if (rest.includes("clean")) {
         cleanDataTables(config.configDir, log);
