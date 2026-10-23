@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n8n_tag: ["2.30.7", "2.31.0", "2.31.4"]
+        n8n_tag: ["2.30.7", "2.31.0", "2.31.4", "2.44.5"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
