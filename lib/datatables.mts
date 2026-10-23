@@ -301,6 +301,30 @@ export async function fetchDataTables(
     }
   }
 
+  // C5: name every local dir this run did not write. No age threshold: every
+  // such dir is older than this run by definition, and nothing has measured
+  // where "much older" begins — the reader judges from the timestamps.
+  const writtenFolders = new Set(selected.map((t) => dataTableSlug(t.id, t.name)));
+  const untouched = localCandidates(outRoot).filter((c) => !writtenFolders.has(c.folder));
+  if (untouched.length > 0) {
+    // fetchedAt comes from each dir's own meta.json (C5); the reader judges
+    // freshness from those timestamps — no age threshold anywhere.
+    const part = (c: LocalCandidate): string => {
+      let fetchedAt: string | undefined;
+      if (c.hasMeta && existsSync(path.join(c.dir, "meta.json"))) {
+        try {
+          const m = JSON.parse(readFileSync(path.join(c.dir, "meta.json"), "utf8")) as { fetchedAt?: unknown };
+          if (typeof m.fetchedAt === "string") fetchedAt = m.fetchedAt;
+        } catch {
+          // unreadable meta.json — the line degrades to the no-meta label
+        }
+      }
+      if (fetchedAt === undefined) return `${c.folder} (no meta.json)`;
+      const stale = existsSync(path.join(c.dir, "rows.stale.json")) && !existsSync(path.join(c.dir, "rows.json"));
+      return `${c.folder} (${stale ? "stale, " : ""}fetched ${fetchedAt})`;
+    };
+    log.info(`not refreshed by this run: ${untouched.map(part).join(", ")}`);
+  }
   log.ok(`${selected.length} data table${selected.length === 1 ? "" : "s"}${filterDesc} -> ${rel(outRoot)} (gitignored — temp data, "data-tables clean" removes it)`);
 }
 
