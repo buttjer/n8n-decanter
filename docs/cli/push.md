@@ -53,9 +53,9 @@ has the full rules:
 ## Flags
 
 - `--publish` — take the draft live after a successful push (also publishes
-  when there was nothing new to push). On n8n 2.40+ n8n activates the new
-  version in the background, so the first moment after it can still run the
-  previous version — see [publish](/docs/cli/publish/).
+  when there was nothing new to push). n8n activates the new version in the
+  background, so the first moment after it can still run the previous
+  version — see [publish](/docs/cli/publish/).
 - `--force` — bypass the per-node drift guard. It overrides the protection
   for code edited on the instance — don't use it casually, and never let an
   agent use it unasked.

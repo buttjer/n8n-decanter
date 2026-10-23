@@ -14,10 +14,12 @@ import { danglingNodeRefs, describeDanglingRefs } from "./validate.mts";
  * cookie-authed
  * `/rest/workflows/:id/publication-status`, which neither MCP nor the public
  * API exposes, so there is nothing for decanter to wait on — the message says
- * so instead of claiming "live now".
+ * so instead of claiming "live now". It says so on every n8n, with no version
+ * check: decanter is optimised for the latest n8n (AGENTS.md), and 2.40+ can
+ * turn the background activation off, so the version wouldn't tell anyway.
  */
 export const publishedNote = (name: string, id: string): string =>
-  `published "${name}" (${id}) — n8n activates it in the background (n8n 2.40+); the previous version may still run for about a second`;
+  `published "${name}" (${id}) — n8n activates it in the background; the previous version may still run for about a second`;
 
 /**
  * `publish` — take the draft live (MCP `publish_workflow`, Plan 32). Since

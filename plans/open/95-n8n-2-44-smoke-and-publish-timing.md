@@ -84,8 +84,9 @@ says which version ran without trusting the executions list.
 ## Done
 
 - `publish` / `push --publish` success line: "n8n activates it in the
-  background (n8n 2.40+); the previous version may still run for about a
-  second" instead of "code is live now". CHANGELOG Fixed, `docs/cli/publish.md`,
+  background; the previous version may still run for about a second" — on
+  every n8n, no version check (operator, 2026-10-23: optimise for the latest
+  n8n) instead of "code is live now". CHANGELOG Fixed, `docs/cli/publish.md`,
   `docs/cli/push.md`, PLAN.md.
 - Smoke: `webhookExecution` (trigger once, read that run by id), `webhookLive`
   (trigger until a run executes the current `activeVersionId`, 20 s budget) —

@@ -227,6 +227,12 @@ n8n-decanter/
   2.30.7), MCP access enabled instance-wide, and the per-workflow
   `availableInMCP` opt-in. Continuously verified against real 2.x instances
   by the plans/15 smoke suite (version matrix via `SMOKE_N8N_TAG`, plans/22).
+- **Optimised for the latest stable n8n (user decision 2026-10-23).** Within
+  the 2.x contract above, behaviour, messages and docs describe the newest
+  release. Older matrix versions must keep working but get no version checks
+  or version-specific wording unless decanter would break otherwise (the
+  #327 tool-name fallback). First applied in Plan 95: the publish line
+  describes background activation on every version. AGENTS.md has the rule.
 - **Plan 81 (2026-08-18): the unstated assumption "the sync dir is where the
   agent was started" is explicitly dropped.** Everything init scaffolds had
   treated the two as the same directory — true for a standalone sync dir, false
@@ -705,7 +711,7 @@ Guard errors abort and are *not* bypassable with `--force`.
 5. `--publish` → `publish_workflow` afterwards. Result lines state the draft
    reality: `— draft updated; the live version is unchanged (run "publish"
    to go live)` / `— unpublished draft` / `published … — n8n activates it in the
-   background (n8n 2.40+); …` (Plan 95: from n8n 2.40 `publish_workflow`
+   background; …` (Plan 95: from n8n 2.40 `publish_workflow`
    returns before the new version is active, and no MCP or public-API signal
    says when it is — so the line can't claim "live now").
 6. Optional auto-commit (`commitOnPush`).
