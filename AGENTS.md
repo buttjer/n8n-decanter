@@ -296,7 +296,7 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   still gate the merge, so watch them to green (`gh pr checks <n> --watch`)
   before merging.
 - **A `chore/release-*` PR additionally runs the full Docker smoke suite
-  automatically** (`test/smoke-n8n.mts` across the 3 pinned n8n tags). Every
+  automatically** (`test/smoke-n8n.mts` across the pinned n8n tags in `ci.yml`). Every
   other PR skips it — it boots real containers and is far too slow for the
   per-PR gate — so a release is the one merge that always has a real-instance
   run behind it. It is deliberately **not** in the ruleset's required-check
