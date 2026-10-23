@@ -53,7 +53,7 @@ function resolveRef<T extends { id: string; name: string; folder: string }>(ref:
   return candidates.filter((c) => kebabCase(c.name) === kebabCase(ref));
 }
 
-/** Server tables as C1 candidates; the folder is what `pull` would name the dir. */
+/** Server tables as ref-match candidates; the folder is what `pull` would name the dir. */
 function serverCandidates(tables: DataTable[]): { id: string; name: string; folder: string }[] {
   return tables.map((t) => ({ id: String(t.id), name: t.name, folder: dataTableSlug(t.id, t.name) }));
 }
@@ -63,7 +63,7 @@ function serverCandidates(tables: DataTable[]): { id: string; name: string; fold
  * folder), without throwing — a ref that hits nothing is reported in
  * `missedRefs` rather than aborting here, because `fetchDataTables` still
  * needs to know which *other* refs' tables to stale before it throws the
- * miss error (C3/C4b: nothing is fetched at all once any ref misses).
+ * miss error (nothing is fetched at all once any ref misses).
  */
 function selectTables(
   tables: DataTable[],
@@ -90,7 +90,7 @@ function missError(ref: string, tables: DataTable[]): Error {
   return new Error(`no data table matches "${ref}"${known ? ` — tables: ${known}` : " — no data tables on the server"}`);
 }
 
-/** One table dir directly under `data-tables/`, matchable by C1 (:17-54). */
+/** One table dir directly under `data-tables/`, matchable against a ref the same way a server table is (`resolveRef` above). */
 interface LocalCandidate {
   id: string;
   name: string;
@@ -155,13 +155,43 @@ interface NotRefreshedTarget {
   dir: string;
 }
 
-/** Prints the C4 report (refreshed/not-refreshed/moved), skipping empty lines. */
+/** Prints the stale-rows report (refreshed/not-refreshed/moved), skipping empty lines. */
 function printFailureReport(log: Log, refreshedLabels: string[], targets: NotRefreshedTarget[]): void {
   if (refreshedLabels.length > 0) log.info(`refreshed: ${refreshedLabels.join(", ")}`);
   const notRefreshedLabels = targets.map((t) => t.label);
   if (notRefreshedLabels.length > 0) log.info(`not refreshed: ${notRefreshedLabels.join(", ")}`);
   const moved = targets.filter((t) => staleDir(t.dir)).map((t) => path.basename(t.dir));
   if (moved.length > 0) log.warn(`moved rows.json to rows.stale.json in: ${moved.join(", ")}`);
+}
+
+/**
+ * Name every local dir this run did not write — called both after a normal
+ * run and when a successful (possibly unscoped) fetch selects zero server
+ * tables, since local dirs from an earlier run can still sit under
+ * `outRoot` either way. No age threshold: every such dir is older than this
+ * run by definition, and nothing has measured where "much older" begins —
+ * the reader judges from the timestamps.
+ */
+function reportUntouched(outRoot: string, writtenFolders: Set<string>, log: Log): void {
+  const untouched = localCandidates(outRoot).filter((c) => !writtenFolders.has(c.folder));
+  if (untouched.length === 0) return;
+  // fetchedAt comes from each dir's own meta.json; the reader judges
+  // freshness from those timestamps — no age threshold anywhere.
+  const part = (c: LocalCandidate): string => {
+    let fetchedAt: string | undefined;
+    if (c.hasMeta && existsSync(path.join(c.dir, "meta.json"))) {
+      try {
+        const m = JSON.parse(readFileSync(path.join(c.dir, "meta.json"), "utf8")) as { fetchedAt?: unknown };
+        if (typeof m.fetchedAt === "string") fetchedAt = m.fetchedAt;
+      } catch {
+        // unreadable meta.json — the line degrades to the no-meta label
+      }
+    }
+    if (fetchedAt === undefined) return `${c.folder} (no meta.json)`;
+    const stale = existsSync(path.join(c.dir, "rows.stale.json")) && !existsSync(path.join(c.dir, "rows.json"));
+    return `${c.folder} (${stale ? "stale, " : ""}fetched ${fetchedAt})`;
+  };
+  log.info(`not refreshed by this run: ${untouched.map(part).join(", ")}`);
 }
 
 /** Human summary fragment naming the applied server-side filter, or "". */
@@ -196,8 +226,8 @@ export async function fetchDataTables(
   try {
     tables = await api.listDataTables();
   } catch (err) {
-    // C3/C4a: the server's table list couldn't be read, so every local dir a
-    // ref selects (or every local dir, unscoped) is what this run was meant
+    // The server's table list couldn't be read, so every local dir a ref
+    // selects (or every local dir, unscoped) is what this run was meant
     // to refresh — none of it was, so all of it goes stale before we throw.
     const locals = localCandidates(outRoot);
     const targets = (refs.length === 0 ? locals : dedupeByDir(refs.flatMap((ref) => resolveRef(ref, locals))))
@@ -212,9 +242,9 @@ export async function fetchDataTables(
 
   const { selected, missedRefs } = selectTables(tables, refs);
   if (missedRefs.length > 0) {
-    // C3/C4b: one or more refs missed, so nothing is fetched at all — the
-    // tables the *other* refs selected, and the local dirs the missed refs
-    // select, all go stale before the miss error is thrown.
+    // One or more refs missed, so nothing is fetched at all — the tables the
+    // *other* refs selected, and the local dirs the missed refs select, all
+    // go stale before the miss error is thrown.
     const locals = localCandidates(outRoot);
     const serverTargets = selected.map((t): NotRefreshedTarget => ({
       label: labelFor(t, ""),
@@ -229,6 +259,10 @@ export async function fetchDataTables(
 
   if (selected.length === 0) {
     log.info("no data tables on the server");
+    // This run (always unscoped here — a scoped run with no matches throws
+    // via missedRefs above) wrote nothing, so every local dir under outRoot
+    // is "not refreshed by this run".
+    reportUntouched(outRoot, new Set(), log);
     return;
   }
 
@@ -257,13 +291,16 @@ export async function fetchDataTables(
       } while (cursor !== undefined);
 
       // Nothing on disk changes until both fetches succeed — a failed run
-      // must never create data-tables/ or a table's dir (C2/C4).
+      // must never create data-tables/ or a table's dir.
       if (!rootReady) {
         mkdirSync(outRoot, { recursive: true });
-        // Self-ignoring dir: data tables can hold PII — same reasoning as executions/.
-        writeFileSync(path.join(outRoot, ".gitignore"), "*\n");
         rootReady = true;
       }
+      // Self-ignoring dir: data tables can hold PII — same reasoning as
+      // executions/. Rewritten on every successful fetch (not just when the
+      // dir is first created) so a hand-deleted or pre-existing .gitignore
+      // heals itself instead of staying wrong for the rest of this run and beyond.
+      writeFileSync(path.join(outRoot, ".gitignore"), "*\n");
       mkdirSync(dir, { recursive: true });
 
       const meta = {
@@ -289,7 +326,7 @@ export async function fetchDataTables(
       refreshedLabels.push(labelFor(table, ""));
       log.info(`wrote ${rel(dir)}/{meta,columns,rows}.json (${columns.length} column${columns.length === 1 ? "" : "s"}, ${rows.length} row${rows.length === 1 ? "" : "s"})`);
     } catch (err) {
-      // C4c: table i failed — everything before it is already fresh on disk;
+      // Table i failed — everything before it is already fresh on disk;
       // table i and everything after it (selection order) were meant to
       // refresh and did not, so they all go stale (no retry, no continuing).
       const notRefreshed = selected.slice(i).map((t): NotRefreshedTarget => ({
@@ -301,30 +338,8 @@ export async function fetchDataTables(
     }
   }
 
-  // C5: name every local dir this run did not write. No age threshold: every
-  // such dir is older than this run by definition, and nothing has measured
-  // where "much older" begins — the reader judges from the timestamps.
   const writtenFolders = new Set(selected.map((t) => dataTableSlug(t.id, t.name)));
-  const untouched = localCandidates(outRoot).filter((c) => !writtenFolders.has(c.folder));
-  if (untouched.length > 0) {
-    // fetchedAt comes from each dir's own meta.json (C5); the reader judges
-    // freshness from those timestamps — no age threshold anywhere.
-    const part = (c: LocalCandidate): string => {
-      let fetchedAt: string | undefined;
-      if (c.hasMeta && existsSync(path.join(c.dir, "meta.json"))) {
-        try {
-          const m = JSON.parse(readFileSync(path.join(c.dir, "meta.json"), "utf8")) as { fetchedAt?: unknown };
-          if (typeof m.fetchedAt === "string") fetchedAt = m.fetchedAt;
-        } catch {
-          // unreadable meta.json — the line degrades to the no-meta label
-        }
-      }
-      if (fetchedAt === undefined) return `${c.folder} (no meta.json)`;
-      const stale = existsSync(path.join(c.dir, "rows.stale.json")) && !existsSync(path.join(c.dir, "rows.json"));
-      return `${c.folder} (${stale ? "stale, " : ""}fetched ${fetchedAt})`;
-    };
-    log.info(`not refreshed by this run: ${untouched.map(part).join(", ")}`);
-  }
+  reportUntouched(outRoot, writtenFolders, log);
   log.ok(`${selected.length} data table${selected.length === 1 ? "" : "s"}${filterDesc} -> ${rel(outRoot)} (gitignored — temp data, "data-tables clean" removes it)`);
 }
 

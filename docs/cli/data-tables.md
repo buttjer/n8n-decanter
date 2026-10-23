@@ -53,13 +53,25 @@ dir currently holds, fresh or stale.
 
 ## When a fetch fails
 
-If a table's columns or rows fail to fetch — a dropped connection, a 403 from
-a key missing a scope — its existing `rows.json` is **renamed** to
-`rows.stale.json` rather than deleted or left in place. `meta.json` and
-`columns.json` are untouched, so `meta.json`'s `fetchedAt` still dates the
-stale rows honestly. A table dir with a `rows.stale.json` and no `rows.json`
-means its last refetch failed; the next successful fetch restores `rows.json`
-and removes `rows.stale.json`.
+Any of these failures renames the affected tables' existing `rows.json` to
+`rows.stale.json` rather than deleting it or leaving it in place:
+
+- A table's columns or rows fail to fetch — a dropped connection, a 403 from
+  a key missing a scope. That table goes stale, and so does **every table
+  after it** in the run (the ones not yet fetched): once one table fails, the
+  run stops rather than retrying or continuing past it.
+- The initial table-list call itself fails. Every local table dir the run's
+  refs would have selected (or every local dir, if run with no refs) goes
+  stale, since none of them could have been refreshed.
+- One of several `<table>` refs doesn't match anything on the server. The run
+  aborts before fetching **any** table, so the local dirs the *other*, valid
+  refs select go stale too — a typo in one ref can stale rows for an
+  unrelated table named correctly on the same command line.
+
+`meta.json` and `columns.json` are untouched by any of this, so `meta.json`'s
+`fetchedAt` still dates the stale rows honestly. A table dir with a
+`rows.stale.json` and no `rows.json` means its last refetch failed; the next
+successful fetch restores `rows.json` and removes `rows.stale.json`.
 
 Renaming rather than deleting means a transient failure never costs you a
 large table's previously-fetched rows. Renaming rather than leaving a
