@@ -2,7 +2,7 @@
 
 **Priority:** P2 (valuable; reuses Plan 14's machinery, but changes the `.js`
 sync contract — data-model + flow work)
-**Status:** Not started — reworked, ready to execute
+**Status:** Done (2026-10-25) — implemented, tested (unit, e2e, live smoke on n8n 2.30.7) and documented
 **Snapshot:** 2026-10-25T12:41Z @ 0cd61e2
 **Theme:** Let a `.js` node `import` from `shared/` (and opted-in npm packages)
 the same way `.ts` nodes already can (Plan 14) — bundled into the pushed node
