@@ -38,10 +38,10 @@ function scopeHint(method: string, pathname: string, authMode: AuthMode): string
  */
 function notFoundHint(method: string, pathname: string): string {
   if (method === "GET" && /^\/api\/v1\/executions\/[^/?]+(\?.*)?$/.test(pathname)) {
-    return " That execution does not exist on this instance — check the id; n8n's execution data-retention pruning may have removed it.";
+    return ". That execution does not exist on this instance — check the id; n8n's execution data-retention pruning may have removed it.";
   }
   if (method === "GET" && /^\/api\/v1\/workflows\/[^/?]+(\?.*)?$/.test(pathname)) {
-    return " That workflow does not exist on this instance — deleted since the last pull, or the API key's project cannot see it.";
+    return ". That workflow does not exist on this instance — deleted since the last pull, or the API key's project cannot see it.";
   }
   return "";
 }
