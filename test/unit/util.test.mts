@@ -7,6 +7,7 @@ import {
   findNodeRefs,
   forEachConnectionTarget,
   kebabCase,
+  markerExtension,
   placeholderFile,
   publicationState,
   publishedVersionLagsDraft,
@@ -150,6 +151,35 @@ describe("renderMarkerLine / withMarker", () => {
     const a = withMarker("return [];\n", PROV);
     const b = withMarker("return [];\n", { sourcePath: "workflows/other/code/renamed.ts", cliVersion: "9.9.9", commit: "deadbee+dirty", at: "2030-01-01T00:00Z" });
     assert.equal(a.hash, b.hash, "a rename, a new commit or a CLI bump must never look like a code change");
+  });
+});
+
+// Plan 24: the marker's source path is the only record of which extension a
+// managed node was built from — pull recreates a missing source from it.
+describe("markerExtension", () => {
+  it("reads .js off a leading marker whose source path ends .js", () => {
+    const { jsCode } = withMarker("return [];\n", { sourcePath: "workflows/orders/code/compute.js" });
+    assert.equal(markerExtension(splitMarker(jsCode)), ".js");
+  });
+
+  it("reads .ts off a leading marker whose source path ends .ts", () => {
+    const { jsCode } = withMarker("return [];\n", PROV);
+    assert.equal(markerExtension(splitMarker(jsCode)), ".ts");
+  });
+
+  it("defaults a leading marker without a source path to .ts", () => {
+    const split = splitMarker(withMarker("return [];\n", PROV).jsCode);
+    assert.equal(markerExtension({ ...split, sourcePath: null }), ".ts");
+  });
+
+  it("reads the legacy trailing marker as .ts — only .ts ever wrote it", () => {
+    const split = splitMarker(`return [];\n${MARKER}`);
+    assert.equal(split.where, "trailing");
+    assert.equal(markerExtension(split), ".ts");
+  });
+
+  it("returns null when there is no marker", () => {
+    assert.equal(markerExtension(splitMarker("return [];\n")), null);
   });
 });
 

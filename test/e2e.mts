@@ -46,6 +46,7 @@ const MCP_TOKEN = "test-mcp-token";
 const UNAVAILABLE_TEXT = "Workflow is not available in MCP. Enable MCP access from the workflow card in the workflows list, or from the workflow settings.";
 const db = new Map<string, any>();
 let updateCount = 0; // update_workflow calls served — watch steps assert deltas
+let lastUpdateOps: any[] | undefined; // the last update_workflow batch as sent (Plan 24 asserts on the op itself)
 let slowUpdateMs = 0; // when > 0, update_workflow responses are delayed (queued-push test)
 // Plan 92. When true the mock stands in for an n8n behind an auth proxy: it
 // 401s ANY client-sent credential, because that is what the real thing does —
@@ -179,6 +180,7 @@ function callMcpTool(name: string, args: any): any | null {
       const wf = db.get(args.workflowId);
       try {
         updateCount++;
+        lastUpdateOps = structuredClone(args.operations);
         applyOps(wf, args.operations);
       } catch (e) {
         return err(JSON.stringify({ error: (e as Error).message }));
@@ -2127,6 +2129,7 @@ await step("bundle: shared/ value import inlines on push, drifts on shared edit,
   r = await cli("diff");
   assert.equal(r.code, 0, "shared edit is local-only drift: " + r.out);
   assert.match(r.out, /Amazon Export: local changes in code\/amazon-export\.ts — push pending/);
+  assert.match(r.out, /\+\+\+ local \(code\/amazon-export\.ts\)(?:\n|$)/, "a .ts node's diff label carries nothing after the file name: " + r.out);
   assert.match(r.out, /\+.*l\.price \+ 1/, "diff shows the inlined shared change");
   r = await cli("push");
   assert.equal(r.code, 0, r.out);
@@ -2287,6 +2290,83 @@ await step("bundle: helper roots beyond shared/ bundle together; preflight types
     rmSync(path.join(TMP, "helpers"), { recursive: true, force: true });
     rmSync(path.join(TMP, "domain"), { recursive: true, force: true });
     rmSync(path.join(dirF, "local"), { recursive: true, force: true });
+  }
+  const r = await cli("push");
+  assert.equal(r.code, 0, r.out);
+});
+
+// Plan 24: a `.js` node with a top-level import is bundled exactly like a `.ts`
+// one (same esbuild pass, same line-1 marker, its path ending `.js`), and drops
+// back to verbatim two-way the moment the import goes. The flip in either
+// direction is announced by the push that makes it — once, not on every push.
+await step("bundle: a .js node importing shared/ bundles on push, stays .js on pull, flips back without the import (Plan 24)", async () => {
+  const jsFile = path.join(dirF, "code", "transform-eu-us.js");
+  const originalJs = read(dirF, "code", "transform-eu-us.js");
+  const moneyFile = path.join(TMP, "shared", "money.ts");
+  const originalMoney = read(TMP, "shared", "money.ts");
+  const nowImports = /Transform: EU\/US: code\/transform-eu-us\.js now imports — bundled on push, one-way from here \(pull no longer overwrites it\)/g;
+  const noImports = /Transform: EU\/US: code\/transform-eu-us\.js has no imports any more — pushed verbatim, two-way again/g;
+  const bundledJs =
+    'import { total } from "../../../shared/money";\n' +
+    "const lines = $input.all().map((i) => ({ qty: Number(i.json.qty), price: Number(i.json.price) }));\n" +
+    "return [{ json: { total: total(lines) } }];\n";
+  try {
+    // two-way → one-way: the import makes push bundle the .js
+    writeFileSync(jsFile, bundledJs);
+    let r = await cli("push");
+    assert.equal(r.code, 0, r.out);
+    const op = (lastUpdateOps ?? []).find((o: any) => o.nodeName === "Transform: EU/US");
+    assert.ok(op, "push sent an update for the importing .js node: " + JSON.stringify(lastUpdateOps));
+    const sent: string = op.parameters.jsCode;
+    assert.match(sent, /function total/, "helper inlined into the pushed .js node");
+    assert.match(sent, /shared\/money\.ts/, "sync-root-relative module label");
+    assert.match(sent, LEADING_MARKER, "marker on line 1, above the inlined helper");
+    assert.match(sent.split("\n")[0], / · \S*code\/transform-eu-us\.js · do not edit here · /, "the marker names the .js source");
+    assert.doesNotMatch(sent, /^import /m, "no import statement survives the bundle");
+    assert.equal(remoteNode("wf123", "n2").parameters.jsCode, sent, "the draft holds exactly what was sent");
+    assert.equal(r.out.match(nowImports)?.length, 1, "the one-way flip is announced exactly once: " + r.out);
+    assert.doesNotMatch(r.out, /does not match .* byte-exactly/, "a bundled .js push verifies by marker hash: " + r.out);
+    // unchanged → no op, no second note
+    r = await cli("push");
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /code already in sync — nothing to push/);
+    assert.doesNotMatch(r.out, nowImports, "the flip note belongs to the flipping push only: " + r.out);
+    // pull: in sync, the .js source is kept as-is, nothing turns into a .ts
+    r = await cli("pull");
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!r.out.includes("CONFLICT"), "bundled .js is in sync after push: " + r.out);
+    assert.doesNotMatch(r.out, /overwriting unpushed local changes/, r.out);
+    assert.doesNotMatch(r.out, /edited in the n8n UI/, r.out);
+    assert.equal(read(dirF, "code", "transform-eu-us.js"), bundledJs, "pull leaves the importing .js untouched");
+    assert.ok(!existsSync(path.join(dirF, "code", "transform-eu-us.ts")), "no .ts sibling appears");
+    assert.equal(state(dirF).nodes.n2.file, "code/transform-eu-us.js", "state still points at the .js");
+    assert.match(read(dirF, "workflow.json"), /"\/\/@file:code\/transform-eu-us\.js"/, "placeholder still points at the .js");
+    // a shared edit drifts the importing .js node; diff shows the inlined change
+    writeFileSync(moneyFile, originalMoney.replace("s + l.qty * l.price", "s + l.qty * l.price + 1"));
+    r = await cli("diff");
+    assert.equal(r.code, 0, "shared edit is local-only drift: " + r.out);
+    assert.match(r.out, /Transform: EU\/US: local changes in code\/transform-eu-us\.js — push pending/);
+    assert.match(r.out, /\+\+\+ local \(code\/transform-eu-us\.js, bundled\)/, "the local side is labelled as a bundle");
+    assert.match(r.out, /\+.*l\.price \+ 1/, "diff shows the inlined shared change");
+    // run executes the importing .js offline: (2*10+1) + (1*5+1) = 27
+    writeFileSync(path.join(TMP, "fx-bundle-js.json"),
+      JSON.stringify({ input: [{ json: { qty: 2, price: 10 } }, { json: { qty: 1, price: 5 } }] }));
+    r = await cli("node", "run", path.join("workflows", "order-sync", "code", "transform-eu-us.js"), "fx-bundle-js.json");
+    assert.equal(r.code, 0, r.out);
+    assert.deepEqual(runOutput(r.out), [{ json: { total: 27 } }]);
+    writeFileSync(moneyFile, originalMoney);
+    // one-way → two-way: without the import the next push is verbatim again
+    writeFileSync(jsFile, originalJs);
+    r = await cli("push");
+    assert.equal(r.code, 0, r.out);
+    const back = remoteNode("wf123", "n2").parameters.jsCode;
+    assert.equal(back, originalJs, "an import-free .js is pushed byte-for-byte");
+    assert.doesNotMatch(back, /n8n-decanter · |@ts-n8n/, "the push cleared the marker");
+    assert.equal(r.out.match(noImports)?.length, 1, "the two-way flip is announced exactly once: " + r.out);
+  } finally {
+    writeFileSync(jsFile, originalJs);
+    writeFileSync(moneyFile, originalMoney);
+    rmSync(path.join(TMP, "fx-bundle-js.json"), { force: true });
   }
   const r = await cli("push");
   assert.equal(r.code, 0, r.out);
