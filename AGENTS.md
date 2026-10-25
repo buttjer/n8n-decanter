@@ -284,10 +284,18 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   everything else → patch). **Merging that release PR is the release.** After
   merge, tag the squash commit `vX.Y.Z` on main, push the tag, and create the
   GitHub Release from it with that version's changelog section as the notes
-  (`gh release create vX.Y.Z --verify-tag --notes-file <section>`). The package
-  is on npm (plans/done/13-open-source-release.md), but **`npm publish` is the maintainer's step —
-  agents never run it.** An agent's release work ends at the pushed tag + GitHub
-  Release; the maintainer publishes to npm. **Cutting a release is the
+  (`gh release create vX.Y.Z --verify-tag --notes-file <section>`). **Publishing
+  the GitHub Release starts the npm publish, and the maintainer approves it.**
+  `.github/workflows/publish.yml` runs in the `npm` environment, whose required
+  reviewer is the maintainer: GitHub holds the job until they tap Approve (the
+  GitHub app notifies them), then it publishes via npm Trusted Publishing with
+  provenance — no npm token exists anywhere. An agent's release work ends at
+  the GitHub Release; tell the maintainer an approval is waiting, then confirm
+  with `npm view n8n-decanter version` once they have approved. **Agents never
+  run `npm publish` locally and never approve the deployment** — the token here
+  lacks that permission on purpose, and the Workflows permission too, so a
+  push touching `.github/workflows/` is refused; don't ask for either. A
+  workflow change is staged elsewhere and moved into place by the maintainer. **Cutting a release is the
   maintainer's call — open a release PR only when explicitly asked, never
   automatically because `[Unreleased]` is non-empty.**
 - CI (lint + typecheck + `npm test`) must be green before merge, now enforced
@@ -874,7 +882,11 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    verifies consistency: the latest git tag == `package.json` version, and that
    tag's `[x.y.z]` changelog section matches what's released. If those line up,
    surface the size/age of the pending `[Unreleased]` as an FYI and move on.
-   **`npm publish` is the maintainer's step — agents never run it.**
+   Also check that npm caught up: `npm view n8n-decanter version` == the
+   latest tag. If not, the publish run is probably waiting for the
+   maintainer's approval (`gh run list --workflow publish.yml`) — say so.
+   **Publishing to npm is the maintainer's approval — agents never run
+   `npm publish` or approve the run.**
 4. **Worktree & branch prune** — remove worktrees (in `.claude/worktrees/` and
    `.worktrees/`) whose branch is merged or gone (`git worktree remove`), delete
    merged local + remote branches, and clean stale `.git/config` `branch.<name>`

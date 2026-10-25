@@ -252,7 +252,10 @@ n8n-decanter/
   PR). **Feature PRs are decoupled from releases** — a user-facing PR only
   appends its entry under `[Unreleased]`; it does *not* bump `package.json`,
   tag, or release. Releasing is a separate, deliberate `chore/release-x.y.z`
-  PR. `npm publish` is the maintainer's step. Full scheme in AGENTS.md.
+  PR. Publishing to npm is the maintainer's step — since 2026-10-25 a tap:
+  the GitHub Release starts `publish.yml` (npm Trusted Publishing, no token),
+  which waits for the maintainer's approval in the `npm` environment. Full
+  scheme in AGENTS.md.
 - **n8n 2.x only (user decision 2026-07-19), with an MCP floor since Plan 32.**
   The tool targets the 2.x line exclusively; the MCP sync path additionally
   needs the built-in MCP server (~2.20+; all Plan 32 behavior verified on
