@@ -58,10 +58,11 @@ is **wrong** about how Code-node code is stored and edited here. The deviations:
    (e.g. `"jsCode": "//@file:code/amazon-feed.ts"`).
    Never inline JavaScript into `workflow.json`; edit the referenced file.
 2. **Code node sources live in the folder's `code/` subdir**, named after the
-   node in kebab-case (`Amazon Feed` → `code/amazon-feed.ts`). `.js` files are
-   pushed verbatim (what you write is exactly what runs in n8n). `.ts` files
-   are compiled on push; the local `.ts` is the only source of truth — n8n
-   holds compiled output.
+   node in kebab-case (`Amazon Feed` → `code/amazon-feed.ts`). A `.js` file
+   with no top-level import is pushed verbatim (what you write is exactly
+   what runs in n8n). `.ts` files, and a `.js` file that imports from
+   `shared/` or an opted-in npm package, are compiled (bundled) on push — the
+   local source is the only source of truth; n8n holds compiled output.
 3. **Never edit a Code node's `jsCode` on the instance** — not in the n8n UI,
    not with `update_workflow` from n8n's MCP server, not by following an n8n
    skill that says to. That bypasses the repo and drifts the source of truth;
@@ -370,26 +371,30 @@ The runtime contract (identical for `.js` and `.ts` — types are erased):
   Name')`, `$json`, `$binary`, the Luxon `DateTime`/`$now`/`$today`, `$workflow`,
   `$execution`, `$getWorkflowStaticData`, …). If node code needs a global that
   file doesn't declare yet, add it there.
-- **Imports**: `.js` nodes — none at all (they run verbatim; assume the
-  instance allows no external or built-in modules). `.ts` nodes — imports
-  from inside the sync dir (any folder; `shared/` is the scaffolded default)
-  and from npm packages
-  listed in `decanter.config.json`'s `"bundleDependencies"` are **bundled
-  into the compiled node on push** (self-contained output, works on any
-  instance incl. n8n Cloud). Rules: imports at the **top of the file** only;
-  unlisted npm packages and Node builtins (`node:*`, `fs`, `crypto`, …) are
-  **compile errors**; a relative path leaving the sync dir (or an absolute
-  path) **warns without blocking** — the push still fails loudly if the
-  target can't be resolved. Never `require()`.
+- **Imports**: both `.js` and `.ts` nodes can import — from inside the sync
+  dir (any folder; `shared/` is the scaffolded default) and from npm
+  packages listed in `decanter.config.json`'s `"bundleDependencies"`. An
+  import is what makes a node **managed**: it is **bundled into the compiled
+  node on push** (self-contained output, works on any instance incl. n8n
+  Cloud) and becomes one-way (see below) — a plain `.js` node with no
+  top-level import stays verbatim and two-way. Rules: imports at the **top of
+  the file** only; unlisted npm packages and Node builtins (`node:*`, `fs`,
+  `crypto`, …) are **compile errors**; a relative path leaving the sync dir
+  (or an absolute path) **warns without blocking** — the push still fails
+  loudly if the target can't be resolved. Never `require()`.
 - `console.log` is available for debugging (visible in the execution view).
 - `$('Node Name')` takes the node's **name**, so a rename can strand it. The
   n8n editor rewrites these refs for you; the `renameNode` MCP op does **not**
   — see "Renaming a node" above for the repair order.
 
-### `.js` nodes (default — lossless)
+### `.js` nodes (default — lossless, unless it imports)
 
-What you write is byte-for-byte what runs and what round-trips back on pull.
-Type-safety via JSDoc:
+What you write is byte-for-byte what runs and what round-trips back on pull —
+**as long as the file has no top-level import.** The moment it imports from
+`shared/` or a `bundleDependencies` package it becomes **managed**: push
+bundles it like a `.ts` node (see below) and it stops round-tripping.
+Removing the import again makes it lossless and two-way the next time it is
+pushed. Type-safety via JSDoc:
 
 ```js
 // @ts-check
@@ -428,8 +433,10 @@ ends in a top-level `return`. Never commit compiled output; never add the
 marker line.
 
 **Shared code (`shared/` by default)**: put helpers and types used by several
-nodes in `shared/*.ts` and import them from `.ts` nodes — types *and*
-functions. The actual rule is the sync-dir boundary, not the folder name:
+nodes in `shared/*.ts` and import them from a `.ts` node, or from a `.js`
+node — either way the importing node becomes **managed** (see "`.js` nodes"
+above for what that costs a `.js` file). The actual rule is the sync-dir
+boundary, not the folder name:
 helper code may live in **any folder inside the sync dir** — this directory
 tree, the one holding `decanter.config.json` — **in any number of folders**
 (a second root, a per-workflow `local/` dir next to `code/` — all fine);
@@ -460,8 +467,10 @@ importing node show up as "push pending" in `preflight` (and in `diff`, with
 the lines); push to propagate.
 Small npm libraries work the same way once installed here (`npm i zod`) and
 opted in via `"bundleDependencies": ["zod"]` in `decanter.config.json` —
-pure-JS packages only (no native addons, no builtins). `.js` nodes cannot
-import; give them JSDoc `@typedef`s or convert to `.ts`.
+pure-JS packages only (no native addons, no builtins). A `.js` node can
+import these too (it becomes managed, same as importing `shared/`); for type
+shapes without an import, JSDoc `@typedef`s stay the lossless option, or
+convert to `.ts`.
 
 ### Switching a node `.js` → `.ts` (or back)
 
@@ -595,7 +604,8 @@ divergence.
   never mutate and say so when your local edits aren't pushed yet.
 - `n8n-decanter diff [workflow…]` — the **inspection** view next to
   `preflight`'s gate: per-node line diffs of local code vs what n8n holds
-  (`.ts` compiled first, so a `shared/` edit shows in every importing node).
+  (a managed node — `.ts`, or a `.js` with an import — is compiled first, so
+  a `shared/` edit shows in every importing node).
   Always exits 0 — it shows, it doesn't grade.
 
 The loop: **`edit → preflight → push → test → publish`** — going live

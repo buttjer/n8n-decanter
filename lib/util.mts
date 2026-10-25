@@ -99,6 +99,20 @@ export function splitMarker(code: string): SplitMarker {
 }
 
 /**
+ * Which extension a split marker says the node was built FROM (plan 24 — the
+ * two-tier `.js` split lets a marker's path end either `.ts` or `.js`). A
+ * leading marker with no `sourcePath` (shouldn't happen from push, but a
+ * hand-edited or truncated line could do it) still means `.ts` — that was the
+ * only extension the leading form ever wrote before this plan. The legacy
+ * trailing form never carried a path at all and only `.ts` ever wrote it.
+ */
+export function markerExtension(split: SplitMarker): ".js" | ".ts" | null {
+  if (split.markerHash === null) return null;
+  if (split.where === "trailing") return ".ts";
+  return split.sourcePath?.endsWith(".js") ? ".js" : ".ts";
+}
+
+/**
  * Render line 1 for a compiled artifact.
  *
  * Human facts first, machine facts last — reading left to right you stop
@@ -116,7 +130,7 @@ export function renderMarkerLine(prov: Provenance, hash: string): string {
   return MARKER_LINE_PREFIX + fields.join(MARKER_SEP);
 }
 
-/** Build the jsCode payload for a TS-managed node from compiled JS. */
+/** Build the jsCode payload for a managed node from compiled JS. */
 export function withMarker(compiledJs: string, prov: Provenance): { jsCode: string; hash: string } {
   const body = compiledJs.endsWith("\n") ? compiledJs : compiledJs + "\n";
   const hash = sha256(body);

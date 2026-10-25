@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs, findBundleContext } from "./compile.mts";
+import { compileNode, findBundleContext } from "./compile.mts";
 import { ForceableError } from "./errors.mts";
 import { commitWorkflowDir, headCommit } from "./git.mts";
 import { cliVersion } from "./init.mts";
@@ -65,7 +65,7 @@ export async function buildNodeCode(dir: string, file: string, log?: Log, opts?:
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) throw new Error(`referenced node file missing: ${filePath}`);
   if (file.endsWith(".ts")) {
-    return withMarker(await compileTs(filePath, log, opts), { sourcePath: sourcePathFor(dir, file), ...opts?.stamp });
+    return withMarker(await compileNode(filePath, log, opts), { sourcePath: sourcePathFor(dir, file), ...opts?.stamp });
   }
   const jsCode = readFileSync(filePath, "utf8");
   return { jsCode, hash: sha256(jsCode) };

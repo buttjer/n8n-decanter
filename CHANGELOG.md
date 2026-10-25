@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`.js` Code nodes can now import from `shared/` and opted-in npm
+  packages, bundled on push just like `.ts` nodes.** A `.js` file with a
+  top-level import is compiled (its import inlined) instead of pushed
+  verbatim; a plain `.js` with no import is unaffected.
 - **`scenario check` and `scenario create` warn about reference-only binary
   data.** A captured attachment often stores its bytes outside the item (an
   `id` under `binary.<key>` or, in `binaryMode: combined`, under
@@ -25,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A `.js` Code node with an import is now one-way, like a `.ts` node.**
+  `pull` no longer overwrites its remote code (the compiled output isn't the
+  source of truth you can reconstruct from); removing the import and pushing
+  again makes the node lossless and two-way the next time it is synced.
 - **`pull it first` / `no workflow matches` errors now also name the MCP
   opt-in that `pull` needs.** A workflow you have not pulled cannot be
   pulled unless it is opted into n8n's MCP server, so the errors say: pull it

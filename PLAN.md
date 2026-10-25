@@ -155,11 +155,37 @@ n8n-decanter/
   Consequence: instance-side edits on TS nodes can't be auto-merged back into
   the `.ts`; they are *detected* and warned about (the `diff` verb to
   inspect; the `.remote.js` artifact files died with Plan 32).
-- **`.js` nodes are the lossless default**: pushed/pulled verbatim, byte-identical
-  round-trip. Type-check via JSDoc + `checkJs`. Git merges them like any file.
-- **`.ts` nodes are one-way**: local `.ts` is source of truth. Push compiles and
-  stamps a marker line (see below). Pull never touches the `.ts`.
-- **Marker** identifies TS-managed nodes. Since Plan 84 it is **line 1** of the
+- **Two-tier `.js` (Plan 24): managed vs. plain.** A node file is **managed**
+  (`isManagedSource`, `lib/compile.mts`) when it ends `.ts`, or ends `.js` and
+  has at least one top-level static `import` (JSDoc `import('…')` types,
+  dynamic `import()` and `import.meta` never count). A managed node — `.ts`
+  always, a `.js` only once it imports — is **bundled**: esbuild compiles it
+  like a `.ts` node (loader picked from the extension) and push stamps the
+  same line-1 marker, whose path ends in that file's own extension. A plain
+  `.js` (no import) is unchanged: pushed/pulled verbatim, byte-identical
+  round-trip, no marker, two-way. Type-check via JSDoc + `checkJs`. Git merges
+  a plain `.js` like any file.
+- **Managed nodes are one-way**: the local source is the source of truth.
+  Push compiles and stamps the marker (see below); pull never touches a
+  managed `.ts`, and never overwrites a managed `.js`'s source. Removing a
+  `.js` node's last import and pushing again returns it to the plain,
+  two-way tier (push's "flip notes" announce both directions).
+- **`markerExtension(split)`** (`lib/util.mts`) reads which extension a
+  remote marker names — `".js"`, `".ts"`, or `null` when there is no marker
+  (a legacy **trailing** marker, pre-Plan-84, always reads `".ts"`, since only
+  `.ts` ever wrote one there). Push's reconciliation is **build-keyed**: it
+  compares the built marker against the remote one and, alongside the
+  existing missing-/stray-marker ops, now also sends a **`wrongExtension`**
+  op when both have a marker but the remote one names a different extension
+  than the local file actually has (e.g. a `.ts` → `.js` conversion, or vice
+  versa) — this is what moves the marker's recorded path, not just its body.
+- **Pull's clobber guard**: a managed local `.js` (it imports) whose remote
+  code carries **no** marker is not a decanter bundle — it was pushed from
+  elsewhere, or predates this feature. Pull keeps the local file rather than
+  overwriting it with the markerless remote body, re-baselines the sync hash
+  to the remote body, and warns that the next push will overwrite the remote
+  code. This runs before the existing `.ts`-sibling conflict branch.
+- **Marker** identifies a managed node. Since Plan 84 it is **line 1** of the
   compiled artifact, and it is self-describing — a signpost for whoever opens
   the node in the n8n UI, not just a token:
 
@@ -183,7 +209,7 @@ n8n-decanter/
   other way — an older CLI's trailing-only reader does not recognise a
   newly-pushed node (pre-1.0, accepted, no compat shim).
 
-  Presence of the marker in either position ⇒ node is TS-managed
+  Presence of the marker in either position ⇒ node is managed
   (self-describing, no config entry). Pull strips the marker line before
   hashing/comparing. Push also sends a body-equal node when the remote lacks
   the marker (so a freshly converted `.ts` node gets marked on its first push
@@ -666,7 +692,7 @@ For each configured workflow:
    edit, which otherwise treated the stale `.js` map entry as authoritative and
    rewrote the placeholder back to `.js` (Plan 35 field-test finding).
 4. For each JS Code node (`n8n-nodes-base.code`), matched by node id:
-   - **Marker present** → TS-managed: compare `hash(remote body)` vs
+   - **Marker present** → managed (`.ts`, or a `.js` with an import): compare `hash(remote body)` vs
      `hash(compile(local .ts))` — in sync → nothing; local == lastPushedHash
      → **instance-side edit**: warn (inspect via `diff`), `.ts`
      untouched; remote == lastPushedHash **or no baseline recorded** → local
@@ -696,8 +722,8 @@ Guard errors abort and are *not* bypassable with `--force`.
    a conversion survives an intervening pull.
 2. MCP `get_workflow_details` (fresh read). For each tracked node id: resolve
    its **current remote name** (the name↔id reconciliation — renames made
-   anywhere are absorbed here), build the local payload (`.js` verbatim;
-   `.ts` esbuild + marker), and compare hashes:
+   anywhere are absorbed here), build the local payload (plain `.js` verbatim;
+   `.ts`, or a `.js` with an import, esbuild + marker), and compare hashes:
    - remote body moved off `lastPushedHash` *and* differs from the local
      payload → **per-node drift**: abort with "pull first" (`--force`
      overrides). A remote edit that equals the local payload re-baselines

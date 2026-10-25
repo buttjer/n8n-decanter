@@ -8,6 +8,7 @@
 // The summary half (`git status`) is `preflight`. Like `git diff` it is an
 // inspection view, not a gate — it always exits 0.
 import path from "node:path";
+import { isManagedSource } from "./compile.mts";
 import { getWorkflowDetails, type McpClient } from "./mcp.mts";
 import { findWorkflowDir } from "./state.mts";
 import { computeSyncFacts, type NodeSync } from "./status.mts";
@@ -135,14 +136,15 @@ export async function diffWorkflow(mcp: McpClient, root: string, id: string, log
   }
 
   for (const node of changed) {
-    // Replay this node's captured compileTs warnings before its line — they are
-    // about the very build being diffed.
+    // Replay this node's captured compileNode warnings before its line — they
+    // are about the very build being diffed.
     for (const w of node.warnings ?? []) log.warn(w);
     const { level, text } = headline(node);
     log[level](`  ${node.name}: ${text}`);
     if (node.remoteBody === undefined || node.localBody === undefined || node.localBody === null || node.file === undefined) continue;
     log.info(`    ${style.dim("--- remote (n8n)")}`);
-    log.info(`    ${style.dim(`+++ local (${node.file})`)}`);
+    const bundled = isManagedSource(path.join(dir, node.file)) && node.file.endsWith(".js");
+    log.info(`    ${style.dim(`+++ local (${node.file}${bundled ? ", bundled" : ""})`)}`);
     for (const line of unifiedDiff(node.remoteBody, node.localBody)) {
       const styled = line.startsWith("+") ? style.green(line) : line.startsWith("-") ? style.red(line) : style.dim(line);
       log.info(`    ${styled}`);

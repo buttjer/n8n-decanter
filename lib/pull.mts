@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mts";
+import { compileNode } from "./compile.mts";
 import { type CommitResult, commitWorkflowDir } from "./git.mts";
 import { getWorkflowDetails, type McpClient } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, renameNodeFilePair, writeState } from "./state.mts";
@@ -122,7 +122,7 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
       if (!existsSync(filePath)) {
         log.warn(`${wf.name} / ${node.name}: TS-managed on remote but no local ${file} — pull cannot reconstruct .ts source; add the file (its compiled code stays on the n8n draft, see \`n8n-decanter diff\`) before pushing`);
       } else {
-        const compiled = await compileTs(filePath, log);
+        const compiled = await compileNode(filePath, log);
         const localHash = sha256(compiled);
         if (localHash === remoteHash) {
           // in sync — nothing to do
