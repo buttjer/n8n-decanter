@@ -160,6 +160,21 @@ exception, since it *creates* one: it takes its target as a positional
 argument and rejects `--dir`. See
 [configuration](/docs/concepts/configuration/#pointing-at-a-nested-sync-dir).
 
+Credentials come from `.env` next to `decanter.config.json` (searched upward
+from the current directory, or from `--dir` / `N8N_DECANTER_DIR`) or the
+environment. `N8N_HOST` plus **MCP credentials** (OAuth minted by
+[`init`](/docs/cli/init/) into
+`.decanter-auth.json`, or an `N8N_MCP_TOKEN`) power the sync and lifecycle
+verbs; the **public API key** (`N8N_API_KEY`, optional) powers only
+`executions`, `data-tables`, and `backup` — the surfaces n8n's MCP server
+doesn't cover.
+
+Behind a proxy that attaches the n8n credentials for you, set
+`N8N_DECANTER_AUTH=upstream` (or `init --auth upstream`) and decanter sends no
+credential header at all — including on the REST verbs, which then need no
+`N8N_API_KEY`. See
+[configuration](/docs/concepts/configuration/#when-a-proxy-in-front-of-n8n-holds-the-credentials).
+
 ## Which verbs need a pulled workflow
 
 A `<workflow>` ref resolves against the **local mirror** — except `pull`,
@@ -185,21 +200,6 @@ access** for it (⋯ menu on the workflow card in the workflows list, or the
 workflow settings) → `pull` — and only then do the verbs above work. A
 workflow without MCP access cannot be pulled, and the "not pulled" errors
 from the verbs above say so.
-
-Credentials come from `.env` next to `decanter.config.json` (searched upward
-from the current directory, or from `--dir` / `N8N_DECANTER_DIR`) or the
-environment. `N8N_HOST` plus **MCP credentials** (OAuth minted by
-[`init`](/docs/cli/init/) into
-`.decanter-auth.json`, or an `N8N_MCP_TOKEN`) power the sync and lifecycle
-verbs; the **public API key** (`N8N_API_KEY`, optional) powers only
-`executions`, `data-tables`, and `backup` — the surfaces n8n's MCP server
-doesn't cover.
-
-Behind a proxy that attaches the n8n credentials for you, set
-`N8N_DECANTER_AUTH=upstream` (or `init --auth upstream`) and decanter sends no
-credential header at all — including on the REST verbs, which then need no
-`N8N_API_KEY`. See
-[configuration](/docs/concepts/configuration/#when-a-proxy-in-front-of-n8n-holds-the-credentials).
 
 ## Output and scripting
 
