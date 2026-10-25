@@ -6,8 +6,7 @@ need a pulled workflow" section in `docs/cli/overview.md`; tests in
 `test/unit/api-not-found.test.mts`, `rest-prerequisite.test.mts` and
 `push-drift-hint.test.mts`). Task 2 (the 401 mapping) landed earlier with Plan
 92 (9c926ca, changelogged in 0.11.1). Task 4 is dropped (see
-"Re-evaluation"). The cut and its reviews:
-[89-rest-verbs-prerequisite-chain.machine.md](89-rest-verbs-prerequisite-chain.machine.md).
+"Re-evaluation").
 **Priority:** P2 — no correctness bug, but the failure lands as an unmapped HTTP
 status and the prerequisite behind it is nowhere in the text.
 **Source:** user field feedback 2026-09-02, report 1 ("`executions <id>` braucht
