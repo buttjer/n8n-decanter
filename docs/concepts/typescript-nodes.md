@@ -161,11 +161,11 @@ Two asymmetries to know about helper files (both by design):
   `push`.
 
 Rules: imports at the top of the file only — an import below the first
-statement is bundled on `.ts` but only warned about on `.js` (the layout
-check can't tell a stray mid-file import from a verbatim node that happens to
-use the word, so it warns rather than blocking; move it to the top either
-way, or the node fails: at push time for a bundled node, at runtime in n8n
-for a verbatim `.js`); pure-JS packages only — unlisted npm packages and Node
+statement is always warned about, never bundled, on either extension (the
+layout check can't tell a stray mid-file import from a verbatim node that
+happens to use the word, so it warns rather than blocking; move it to the
+top either way, or the node fails: at push time for a bundled node, at
+runtime in n8n for a verbatim `.js`); pure-JS packages only — unlisted npm packages and Node
 builtins (`node:*`, `fs`, `crypto`, …) are **compile errors**; a relative
 path leaving the sync dir, or an absolute path, **warns without blocking**;
 never `require()`. A plain `.js` node (no top-level import) stays

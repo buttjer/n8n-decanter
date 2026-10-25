@@ -43,17 +43,17 @@ by hand. See [TypeScript nodes](/docs/concepts/typescript-nodes/).
 
 If a managed node's local file is missing entirely, pull writes nothing and
 warns instead of guessing an extension:
-`<wf> / <node>: managed on remote but no local <file> — pull cannot
+``<wf> / <node>: managed on remote but no local <file> — pull cannot
 reconstruct the source; add the file (its compiled code stays on the n8n
-draft, see \`n8n-decanter diff\`) before pushing`.
+draft, see `n8n-decanter diff`) before pushing``.
 
 **Clobber guard** — if the remote code carries no marker (so it looks like a
 plain `.js` node) but your local `.js` file has a top-level import, pull
 keeps your file instead of overwriting it, and warns:
 `<wf> / <node>: local <file> imports shared code but the remote code is not a
 decanter bundle — keeping your source; the next push overwrites the remote
-code`. This is the one case where an importing `.js` node still gets
-re-baselined on pull — the next push is what reconciles it.
+code`. Like every managed node (see below), it is re-baselined on this pull
+too — the next push is what reconciles it.
 
 ## Pull re-baselines the sync state
 

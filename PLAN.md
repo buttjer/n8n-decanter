@@ -700,9 +700,17 @@ For each configured workflow:
      are written (Plan 32).
    - **No marker, local `.ts` exists** → never clobber TS source: keep the
      `.ts`, warn ("not pushed from TS yet?"), re-baseline.
-   - **No marker** → plain JS: overwrite `code/<node>.js` with the remote
-     body (git is the safety net; a warning flags when that clobbers
-     unpushed local edits).
+   - **No marker, local `.js` has a top-level import** → clobber guard
+     (Plan 24): writing the remote body would destroy the import source, so
+     keep the local file as-is, warn ("not a decanter bundle — keeping your
+     source"), re-baseline; the file is never written.
+   - **No marker, local `.js` has no top-level import** → plain JS: overwrite
+     `code/<node>.js` with the remote body (git is the safety net; a warning
+     flags when that clobbers unpushed local edits).
+   - Every branch above re-baselines `lastPushedHash` to the remote body
+     hash, whether or not the file was written — the next push is what
+     reconciles a kept-but-stale local file (managed, no-local-file, and
+     clobber-guard cases alike).
    - Node renamed → rename the file (id-keyed map), update state.
 5. Write the `workflow.json` snapshot (placeholders substituted; derived
    fields stripped — see layout).

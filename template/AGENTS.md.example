@@ -252,7 +252,8 @@ Code-node override above, which wins over anything a skill says.
 | File | Written by | May the agent edit it? |
 |---|---|---|
 | `workflow.json` | pull only | Only `//@file:` placeholders (file-map re-points). Everything else is a read-only snapshot — structure changes go through n8n. |
-| `code/<node>.js` | pull + you | Yes — this is live node code, verbatim. |
+| `code/<node>.js` (no top-level import) | pull + you | Yes — this is live node code, verbatim. |
+| `code/<node>.js` (with a top-level import) | you only | Yes — pull never writes it (compares only, keeps your source on a markerless remote); push sends the compiled bundle, not the file verbatim. |
 | `code/<node>.ts` | you only | Yes — pull never touches it. |
 | `.decanter.json` | tool only | No. |
 | `.decanter-auth.json` | tool only | No — MCP OAuth credentials (gitignored). |
