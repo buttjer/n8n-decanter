@@ -25,7 +25,9 @@ daily loop is [pull](/docs/cli/pull/) / [push](/docs/cli/push/) over MCP).
 
 Uses the n8n **public API key** (`N8N_API_KEY`) — the full-fidelity workflow
 `GET`/`POST` is a surface MCP can't serve. Without a key, `create`/`restore`
-fail with guidance (`list` is offline and needs none).
+fail with guidance (`list` is offline and needs none). Both also need the
+workflow to be pulled first — see
+[which verbs need a pulled workflow](/docs/cli/overview/#which-verbs-need-a-pulled-workflow).
 
 ## The store
 

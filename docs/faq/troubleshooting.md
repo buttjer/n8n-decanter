@@ -263,6 +263,9 @@ was spent or revoked.
 
 Workflow refs match by id, name, or unique name prefix — case-insensitively,
 and ambiguity errors instead of prompting. Use more of the name, or the id.
+If the workflow was never pulled, that is the cause — only `pull` searches
+the instance for unpulled workflows; see
+[which verbs need a pulled workflow](/docs/cli/overview/#which-verbs-need-a-pulled-workflow).
 Since the verb comes first (`n8n-decanter <verb> <workflow>`), a workflow
 literally named like a verb needs no special handling — `n8n-decanter diff push`
 runs `diff` on the workflow named `push`.

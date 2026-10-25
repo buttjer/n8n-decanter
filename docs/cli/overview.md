@@ -160,6 +160,32 @@ exception, since it *creates* one: it takes its target as a positional
 argument and rejects `--dir`. See
 [configuration](/docs/concepts/configuration/#pointing-at-a-nested-sync-dir).
 
+## Which verbs need a pulled workflow
+
+A `<workflow>` ref resolves against the **local mirror** — except `pull`,
+which also searches the instance. Most verbs therefore need the workflow to
+be pulled first:
+
+- **Need the workflow pulled** into the local mirror: [`push`](/docs/cli/push/),
+  [`diff`](/docs/cli/diff/), [`watch`](/docs/cli/watch/),
+  [`preflight`](/docs/cli/preflight/), [`test`](/docs/cli/test/),
+  [`scenario`](/docs/cli/scenario/), [`executions`](/docs/cli/executions/)
+  (also `executions <id>` — the execution's workflow must be pulled), and
+  [`backup`](/docs/cli/backup/).
+- **Do not need it**: [`pull`](/docs/cli/pull/) (it *creates* the mirror),
+  [`list`](/docs/cli/list/) (`list --remote` shows unpulled workflows too),
+  [`data-tables`](/docs/cli/data-tables/) (tables are project-scoped, not
+  per-workflow), and [`publish`](/docs/cli/publish/)/[`unpublish`](/docs/cli/publish/)
+  (they act on the instance by id — but a workflow that is not pulled yet can
+  only be addressed by that **id**; a name resolves against pulled
+  workflows, except for `pull`, which also searches the instance).
+
+**A workflow you just built in the n8n UI:** create it → turn on **MCP
+access** for it (⋯ menu on the workflow card in the workflows list, or the
+workflow settings) → `pull` — and only then do the verbs above work. A
+workflow without MCP access cannot be pulled, and the "not pulled" errors
+from the verbs above say so.
+
 Credentials come from `.env` next to `decanter.config.json` (searched upward
 from the current directory, or from `--dir` / `N8N_DECANTER_DIR`) or the
 environment. `N8N_HOST` plus **MCP credentials** (OAuth minted by

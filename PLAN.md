@@ -143,7 +143,13 @@ n8n-decanter/
   versioning + DR layer outside n8n. `restore` creates a **new** workflow (new workflow id,
   node ids preserved), landing unpublished — it never reconciles an existing
   one; structure ownership stays with n8n. Consequence: the API-only surface
-  is `executions` + `data-tables` + `backup`.
+  is `executions` + `data-tables` + `backup`. **Plan 89 (2026-10-25): the
+  REST verbs address only pulled workflows** (the local mirror is the ref
+  registry), so the user-facing chain is create → opt in to MCP → pull. The
+  "not pulled" errors carry that chain from one shared definition in
+  `lib/mcp.mts` (beside `ENABLE_MCP_HINT`), and a REST 404 on
+  `/executions/<id>` or `/workflows/<id>` carries a per-endpoint hint in
+  `lib/api.mts`.
 - **esbuild** compiles `.ts` node files (`bundle: false`, `format: "cjs"`,
   `target: node18`). Comments are stripped and lines shift — accepted.
   Consequence: instance-side edits on TS nodes can't be auto-merged back into

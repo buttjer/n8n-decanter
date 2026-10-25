@@ -5,7 +5,7 @@ import { ForceableError } from "./errors.mts";
 import { commitWorkflowDir, headCommit } from "./git.mts";
 import { cliVersion } from "./init.mts";
 import { publishedNote } from "./lifecycle.mts";
-import { getWorkflowDetails, type McpClient, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
+import { getWorkflowDetails, type McpClient, NOT_PULLED_HINT, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
 import { isJsCodeNode, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
@@ -202,7 +202,7 @@ export async function pushWorkflow(
   log: Log,
 ): Promise<{ dir: string; name: string }> {
   const dir = findWorkflowDir(root, id, log);
-  if (!dir) throw new Error(`workflow ${id} not found under ${root} — pull it first`);
+  if (!dir) throw new Error(`workflow ${id} not found under ${root} — ${NOT_PULLED_HINT}`);
   assertCompliant(validateWorkflowDir(dir), log, `"${path.basename(dir)}"`);
   const state = readState(dir)!;
 

@@ -23,7 +23,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zero tables on the server — any local table dirs left from an earlier run
   still get named.
 
+### Changed
+
+- **`pull it first` / `no workflow matches` errors now also name the MCP
+  opt-in that `pull` needs.** A workflow you have not pulled cannot be
+  pulled unless it is opted into n8n's MCP server, so the errors say: pull it
+  first, and turn on MCP access for it first. The line comes from one shared
+  definition, so every affected error (`push`, `diff`, `watch`, `preflight`,
+  `test`, `scenario`, `executions`, `backup`) carries the same chain — `pull`
+  itself is the exception and keeps its own message.
+
 ### Fixed
+
+- **A REST 404 (`executions <id>`, `backup create`) now explains the cause.**
+  A fetch that ends in `404 Not Found` on `GET /executions/<id>` or
+  `GET /workflows/<id>` now says that the execution or workflow does not
+  exist on this instance — check the id (n8n's data-retention pruning may
+  have removed the execution) or the workflow was deleted since the last
+  pull, or the API key's project cannot see it — instead of only surfacing
+  the raw HTTP status.
 
 - **`data-tables` accepts the folder/kebab form of a table name, not just its
   exact display name** — `cardmuseum-marketplace-sync-queue` now matches a

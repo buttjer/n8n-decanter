@@ -22,6 +22,18 @@ export const PROTOCOL_VERSION = "2025-03-26";
  */
 export const ENABLE_MCP_HINT = 'enable MCP access from the workflow card in the n8n workflows list (⋯ menu), or from the workflow settings, then retry';
 
+/**
+ * The prerequisite chain for a REST verb (`executions`, `backup`) on a
+ * workflow that isn't in the local mirror (Plan 89): pulling it is the fix,
+ * and `pull` itself needs the workflow opted into MCP — a user who just built
+ * something in the n8n UI hits that wall first, so the message names both
+ * links, not just the first one. Reuses `ENABLE_MCP_HINT` verbatim rather than
+ * retyping n8n's own wording. Not for `pull` itself: there, "no match" means
+ * nothing on the instance matches (or the remote list failed), and telling
+ * the user to pull is wrong advice.
+ */
+export const NOT_PULLED_HINT = `pull it first, and \`pull\` needs the workflow opted into MCP: ${ENABLE_MCP_HINT}`;
+
 /** One workflow row from `search_workflows` (all workflows, opted-in or not). */
 export interface McpWorkflowSummary {
   id: string;

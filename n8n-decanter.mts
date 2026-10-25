@@ -9,7 +9,7 @@ import { assertNoLegacyFixtures, cleanExecutions, EXECUTIONS_DIR, fetchExecution
 import { cliVersion, init, printBanner } from "./lib/init.mts";
 import { checkScenarios, listScenarioSlugs, writeScenario } from "./lib/simulate.mts";
 import { publishWorkflow, unpublishWorkflow } from "./lib/lifecycle.mts";
-import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, prepareTestPinData, searchWorkflows } from "./lib/mcp.mts";
+import { createMcpClient, ENABLE_MCP_HINT, isUnavailableInMcp, type McpClient, NOT_PULLED_HINT, prepareTestPinData, searchWorkflows } from "./lib/mcp.mts";
 import { runStdioGuard } from "./lib/mcpconnect.mts";
 import { DEFAULT_GUARD_PORT, startGuardProxy } from "./lib/mcpserve.mts";
 import { createMirror } from "./lib/mirror.mts";
@@ -694,7 +694,11 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
     }
     if (looksLikeWorkflowId(ref)) return ref;
     const known = listWorkflowRefs(config.root).map((r) => `"${r.name}"`);
-    throw new Error(`no workflow matches "${ref}"${known.length > 0 ? ` — pulled workflows: ${known.join(", ")}` : " — nothing pulled yet"}`);
+    // For `pull` itself a no-match means nothing on the instance matches (or
+    // the remote list failed) — telling the user to pull is wrong advice
+    // there, so only every other verb gets the chain (Plan 89).
+    const chain = command === "pull" ? "" : ` — ${NOT_PULLED_HINT}`;
+    throw new Error(`no workflow matches "${ref}"${known.length > 0 ? ` — pulled workflows: ${known.join(", ")}` : " — nothing pulled yet"}${chain}`);
   };
 
   /**
@@ -901,7 +905,7 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
     case "test": {
       if (refs.length !== 1) throw new Error("test needs exactly one workflow ref: n8n-decanter test <workflow> [--execution <id> | --scenario <slug>] [--trigger <node>]");
       const dir = findWorkflowDir(config.root, refs[0], log);
-      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — ${NOT_PULLED_HINT}`);
       migrateScenariosDir(dir, log);
       assertNoLegacyFixtures(dir);
       const scenarioSlug = valueFlags.get("scenario");
@@ -989,7 +993,7 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
         const dir = targets.get(id);
         if (!dir) {
           failed = true;
-          log.error(`${id}: not found under ${config.root} — pull it first`);
+          log.error(`${id}: not found under ${config.root} — ${NOT_PULLED_HINT}`);
           continue;
         }
         let name = id;
@@ -1030,7 +1034,7 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
     case "scenario:create": {
       if (refs.length < 1) throw new Error('scenario create needs a workflow ref: n8n-decanter scenario create <workflow> ["<slug>"] [--execution <id>] [--scaffold] [--extend]');
       const dir = findWorkflowDir(config.root, refs[0], log);
-      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — ${NOT_PULLED_HINT}`);
       migrateScenariosDir(dir, log);
       assertNoLegacyFixtures(dir);
       // --extend tops an EXISTING scenario up with the pinnable nodes it lacks
@@ -1099,7 +1103,7 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
     case "scenario:check": {
       if (refs.length < 1) throw new Error('scenario check needs a workflow ref: n8n-decanter scenario check <workflow> ["<slug>"]');
       const dir = findWorkflowDir(config.root, refs[0], log);
-      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — ${NOT_PULLED_HINT}`);
       migrateScenariosDir(dir, log);
       const slug = refs[1];
       if (jsonFlag) {
@@ -1122,7 +1126,7 @@ async function dispatch(command: string, rest: string[], flags: Flags, syncDir: 
     case "backup:list": {
       if (refs.length < 1) throw new Error(`backup ${command.slice("backup:".length)} needs a workflow ref: n8n-decanter ${command.replace(":", " ")} <workflow>`);
       const dir = findWorkflowDir(config.root, refs[0], log);
-      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — pull it first`);
+      if (!dir) throw new Error(`workflow ${refs[0]} not found under ${config.root} — ${NOT_PULLED_HINT}`);
       if (command === "backup:list") {
         backupList(dir, log, { json: jsonFlag });
         break;

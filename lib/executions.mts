@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { N8nApi } from "./api.mts";
+import { NOT_PULLED_HINT } from "./mcp.mts";
 import { findWorkflowDir, listWorkflowDirs } from "./state.mts";
 import type { Execution, Log, Workflow } from "./types.mts";
 
@@ -129,7 +130,7 @@ export async function fetchExecutions(
   log: Log,
 ): Promise<void> {
   const dir = findWorkflowDir(root, workflowId, log);
-  if (!dir) throw new Error(`workflow ${workflowId} not found under ${root} — pull it first`);
+  if (!dir) throw new Error(`workflow ${workflowId} not found under ${root} — ${NOT_PULLED_HINT}`);
   const executions = await api.listExecutions({ workflowId, status, limit });
   if (executions.length === 0) {
     log.info(`no executions on the server for ${workflowId}${status !== undefined ? ` with status "${status}"` : ""}`);
@@ -149,7 +150,7 @@ export async function fetchExecutionById(api: N8nApi, root: string, executionId:
   const workflowId = typeof exec.workflowId === "string" ? exec.workflowId : undefined;
   if (workflowId === undefined) throw new Error(`execution ${executionId}: response carries no workflowId — cannot place it`);
   const dir = findWorkflowDir(root, workflowId, log);
-  if (!dir) throw new Error(`execution ${executionId} belongs to workflow ${workflowId}, which is not pulled under ${root} — pull it first`);
+  if (!dir) throw new Error(`execution ${executionId} belongs to workflow ${workflowId}, which is not pulled under ${root} — ${NOT_PULLED_HINT}`);
   writeExecutionFiles(dir, [exec], log);
   warnStaleCaptures(dir, [exec], log);
   log.ok(`execution ${executionId} -> ${path.relative(process.cwd(), path.join(dir, EXECUTIONS_DIR))}`);

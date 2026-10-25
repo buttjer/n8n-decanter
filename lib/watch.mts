@@ -1,7 +1,7 @@
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import { commitWorkflowDir } from "./git.mts";
-import type { McpClient } from "./mcp.mts";
+import { type McpClient, NOT_PULLED_HINT } from "./mcp.mts";
 import { pullWorkflow } from "./pull.mts";
 import { pushSingleNode } from "./push.mts";
 import { findWorkflowDir, readState } from "./state.mts";
@@ -42,7 +42,7 @@ export async function watchWorkflow(
   log: Log,
 ): Promise<WatchHandle> {
   const found = findWorkflowDir(config.root, id, log);
-  if (!found) throw new Error(`workflow ${id} not found under ${config.root} — pull it first`);
+  if (!found) throw new Error(`workflow ${id} not found under ${config.root} — ${NOT_PULLED_HINT}`);
   let dir = found;
   const { commitOnPush, commitOnPull } = config;
 
