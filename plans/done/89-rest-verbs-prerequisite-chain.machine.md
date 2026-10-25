@@ -23,8 +23,9 @@ afterwards, so hashing `test/` is stable across runs.
 | # | Slug | Type | Turns | Test command | Status |
 |---|---|---|---|---|---|
 | 0 | tests | cut-opus | 35+15 | `node --test test/unit/api-not-found.test.mts test/unit/rest-prerequisite.test.mts test/unit/push-drift-hint.test.mts` — red for the right reason | done: 15 tests, 9 red on the new behaviour, 6 regression guards green |
-| 1 | code | cut-sonnet | 40 | `npm run typecheck && npm run lint && npm test` | — |
-| 1 | docs | cut-qwen | 20 | `npm run check:docs` | — |
+| 1 | code | cut-sonnet | 40 | `npm run typecheck && npm run lint && npm test` | green on the first attempt, 643d10b |
+| 1 | docs | cut-qwen | 20 | `npm run check:docs` | green on the first attempt, 643d10b |
+| — | review-fixes | cut-sonnet | — | the whole suite plus `check:docs` | green, ed04be4 |
 
 Phases `code` and `docs` are one wave (disjoint files, listed under each).
 Plan bookkeeping (Status → Done, move to `plans/done/`, inbound links) stays
@@ -256,4 +257,11 @@ whole — grep, then read about 60 lines around the spot.
   `nothing pulled yet` was not pinned; nothing guarded the push drift abort,
   now `test/unit/push-drift-hint.test.mts`. Round 2: none. No `plan` findings.
   17 behaviours pinned.
-- End review: —
+- End review (cut-review at `high`, run wf_856a2ec5-1ff): 2 findings, both
+  `fix`, both fixed in `review-fixes` — the 404 hint also fired on any other
+  failed status of those two paths (500, 429), and the new docs section split
+  "Offline vs. online", leaving its credentials and proxy paragraphs under the
+  wrong heading. 0 left for the hub.
+- Hub check after the run: typecheck, lint and `check:docs` clean; `npm test`
+  824 unit, e2e 108, guard-proxy 34, mcp-spawn 8, interactive 18, all green;
+  `test/` unchanged since 94f9ecb.
