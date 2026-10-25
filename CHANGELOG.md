@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-10-25
+
 ### Added
 
 - **`.js` Code nodes can now import from `shared/` and opted-in npm
