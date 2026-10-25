@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-10-25
+
+### Changed
+
+- **Releases are now published to npm with provenance.** Each version on
+  npm links to the GitHub Actions run that built it. 0.11.4 carries exactly
+  the changes listed under 0.11.3 below, which was never published to npm.
+
 ## [0.11.3] - 2026-10-25
+
+Not published to npm — install 0.11.4, which contains these changes.
 
 ### Added
 
