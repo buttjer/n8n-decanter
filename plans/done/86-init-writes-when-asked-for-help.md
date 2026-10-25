@@ -8,7 +8,7 @@ help request scaffold files into a directory the user never vetted.
 verified claim-by-claim against the code the same day. Same batch as
 [Plan 87](87-auth-errors-point-the-wrong-way.md),
 [Plan 88](88-data-tables-stale-rows-and-refs.md),
-[Plan 89](../open/89-rest-verbs-prerequisite-chain.md),
+[Plan 89](89-rest-verbs-prerequisite-chain.md),
 [Plan 90](../open/90-backup-source-instance-stamp.md) and
 [Plan 91](../draft/91-guard-hint-for-credential-type-refusal.md). Task 2
 finishes what [Plan 81](81-nested-syncdir-agent-wiring.md) started: 81

@@ -1,9 +1,13 @@
 # Plan 89 — the REST verbs need a pulled workflow, and never say so until the raw HTTP shows through
 
-**Status:** Partial — Task 2 (the 401 mapping) landed with Plan 92 (9c926ca:
-`lib/api.mts` maps a public-API 401, covered by `test/unit/api-scopes.test.mts`,
-changelogged in 0.11.1). Tasks 1, 3 and 5 are open; Task 4 is dropped
-(re-evaluated 2026-10-25, see "Re-evaluation").
+**Status:** Done (2026-10-25) — Tasks 1, 3 and 5 landed together (the 404
+hints in `lib/api.mts`, `NOT_PULLED_HINT` in `lib/mcp.mts`, the "Which verbs
+need a pulled workflow" section in `docs/cli/overview.md`; tests in
+`test/unit/api-not-found.test.mts`, `rest-prerequisite.test.mts` and
+`push-drift-hint.test.mts`). Task 2 (the 401 mapping) landed earlier with Plan
+92 (9c926ca, changelogged in 0.11.1). Task 4 is dropped (see
+"Re-evaluation"). The cut and its reviews:
+[89-rest-verbs-prerequisite-chain.machine.md](89-rest-verbs-prerequisite-chain.machine.md).
 **Priority:** P2 — no correctness bug, but the failure lands as an unmapped HTTP
 status and the prerequisite behind it is nowhere in the text.
 **Source:** user field feedback 2026-09-02, report 1 ("`executions <id>` braucht
@@ -13,7 +17,7 @@ nacktes REST-404. `backup create` genauso"). Verified the same day — **the
 as [Plan 86](../done/86-init-writes-when-asked-for-help.md),
 [Plan 87](../done/87-auth-errors-point-the-wrong-way.md),
 [Plan 88](../done/88-data-tables-stale-rows-and-refs.md),
-[Plan 90](90-backup-source-instance-stamp.md) and
+[Plan 90](../open/90-backup-source-instance-stamp.md) and
 [Plan 91](../draft/91-guard-hint-for-credential-type-refusal.md).
 **Snapshot:** 2026-10-25T10:24Z @ 45521e2
 **Model:** Sonnet — the work is judgement about wording and where a shared

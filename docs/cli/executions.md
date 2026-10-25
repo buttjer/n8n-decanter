@@ -19,7 +19,9 @@ everything else is a `<workflow>`.
 
 Uses the n8n **public API key** (`N8N_API_KEY`) — execution data is one of
 the surfaces n8n's MCP server doesn't serve, so this verb keeps the REST
-path. Without a key it fails with guidance.
+path. Without a key it fails with guidance. Like `executions <id>` it also
+needs the execution's workflow to be pulled first — see
+[which verbs need a pulled workflow](/docs/cli/overview/#which-verbs-need-a-pulled-workflow).
 
 ## Options
 

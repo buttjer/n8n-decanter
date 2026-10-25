@@ -31,6 +31,21 @@ function scopeHint(method: string, pathname: string, authMode: AuthMode): string
   return scope === "" ? "Check the key's scopes in n8n → Settings → n8n API." : scope;
 }
 
+/**
+ * A 404's own cause, for the two by-id reads where "Not Found" alone hides an
+ * actionable reason (Plan 89). Keyed on the exact single-resource path so it
+ * never leaks onto the list/create/data-table routes that share the prefix.
+ */
+function notFoundHint(method: string, pathname: string): string {
+  if (method === "GET" && /^\/api\/v1\/executions\/[^/?]+(\?.*)?$/.test(pathname)) {
+    return ". That execution does not exist on this instance — check the id; n8n's execution data-retention pruning may have removed it.";
+  }
+  if (method === "GET" && /^\/api\/v1\/workflows\/[^/?]+(\?.*)?$/.test(pathname)) {
+    return ". That workflow does not exist on this instance — deleted since the last pull, or the API key's project cannot see it.";
+  }
+  return "";
+}
+
 /** The scope a refused path needed, or `""` when the path is not one we map. */
 function scopeName(method: string, pathname: string): string {
   const readOnly = " decanter only ever READS data tables — no write scope is needed.";
@@ -187,7 +202,11 @@ export class N8nApi {
             ? `${method} ${pathname} was refused (403) — the API key the upstream auth proxy attaches is valid but lacks a scope. ${scopeHint(method, pathname, this.#authMode)}`
             : `${method} ${pathname} was refused (403) — N8N_API_KEY is valid but lacks a scope. ${scopeHint(method, pathname, this.#authMode)}`);
         }
-        throw new Error(`${method} ${pathname} failed: ${res.status} ${res.statusText}\n${text.slice(0, 2000)}`);
+        // 404 keeps the bare status line + n8n's body for every path (the
+        // token `404` must survive — lib/datatables.mts matches it), and adds
+        // a cause only for the two by-id reads where "Not Found" alone hides
+        // an actionable reason (Plan 89); every other 404 is unchanged.
+        throw new Error(`${method} ${pathname} failed: ${res.status} ${res.statusText}${res.status === 404 ? notFoundHint(method, pathname) : ""}\n${text.slice(0, 2000)}`);
       }
       return text ? JSON.parse(text) : undefined;
     } catch (err) {

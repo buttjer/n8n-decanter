@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import path from "node:path";
 import { createInterface } from "node:readline";
 import type { N8nApi } from "./api.mts";
+import { NOT_PULLED_HINT } from "./mcp.mts";
 import { assertCompliant, buildNodeCode } from "./push.mts";
 import { readState } from "./state.mts";
 import { style } from "./style.mts";
@@ -97,7 +98,7 @@ export async function backupCreate(
   log: Log,
 ): Promise<{ file: string | null; skipped: boolean }> {
   const state = readState(dir);
-  if (!state) throw new Error(`missing .decanter.json in ${path.basename(dir)} — pull first`);
+  if (!state) throw new Error(`missing .decanter.json in ${path.basename(dir)} — ${NOT_PULLED_HINT}`);
   const wf = await api.getWorkflow(state.workflowId);
 
   const backups = listBackups(dir);
