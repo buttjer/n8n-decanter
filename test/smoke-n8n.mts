@@ -436,6 +436,48 @@ try {
     assert.deepEqual(out, [{ doubled: 42, plus: 121 }], `bundled node must compute through shared/ AND the npm package: ${JSON.stringify(out)}`);
   });
 
+  // Plan 24: a `.js` node with a top-level import goes through the same bundle
+  // as a `.ts` one. Plan 14's getter-neutering trap is a property of the
+  // sandbox, not of the source language, so only a real instance can show the
+  // `.js` bundle survives it too.
+  await step("bundled .js imports execute in the real Code-node sandbox (Plan 24)", async () => {
+    const tsFile = path.join(wfDir, "code", "compute.ts");
+    const jsFile = path.join(wfDir, "code", "compute.js");
+    const originalTs = read(wfDir, "code", "compute.ts");
+    const originalSnapshot = read(wfDir, "workflow.json");
+    try {
+      unlinkSync(tsFile);
+      writeFileSync(path.join(wfDir, "workflow.json"),
+        originalSnapshot.replace("//@file:code/compute.ts", "//@file:code/compute.js"));
+      writeFileSync(jsFile, [
+        'import { double } from "../../../shared/math";',
+        "const n = Number($input.first().json.body.n ?? 0);",
+        "return [{ json: { doubled: double(n), lang: \"js\" } }];",
+        "",
+      ].join("\n"));
+      let r = await cli("push");
+      assert.equal(r.code, 0, r.out);
+      // the previous step left a .ts-path marker on the remote, so this push is a
+      // marker-extension change (.ts → .js), not a two-way → one-way flip: no note
+      assert.doesNotMatch(r.out, /now imports/, "a .ts → importing .js conversion is not a flip: " + r.out);
+      r = await cli("publish", wfId);
+      assert.equal(r.code, 0, r.out);
+      const deployed: string = (await api("GET", `/api/v1/workflows/${wfId}`)).nodes.find((n: any) => n.id === "c1").parameters.jsCode;
+      const line1 = deployed.split("\n")[0];
+      assert.match(line1, /^\/\/ n8n-decanter · \S*code\/compute\.js · do not edit here · @ts-n8n sha256:[0-9a-f]{64}(?: · [^\n]*)?$/, "line 1 names the .js source: " + line1);
+      assert.doesNotMatch(deployed, /^import /m, "no import statement reaches n8n");
+      const out = await webhook({ n: 21 });
+      assert.deepEqual(out, [{ doubled: 42, lang: "js" }], `bundled .js node must compute through shared/: ${JSON.stringify(out)}`);
+    } finally {
+      // back to the .ts node the each-item step builds on
+      if (existsSync(jsFile)) unlinkSync(jsFile);
+      writeFileSync(tsFile, originalTs);
+      writeFileSync(path.join(wfDir, "workflow.json"), originalSnapshot);
+    }
+    const r = await cli("push");
+    assert.equal(r.code, 0, r.out);
+  });
+
   await step("each-item mode: structure set by a second client, code + --publish by decanter", async () => {
     // the node's `mode` is structure now (Plan 32) — n8n's side owns it; the
     // public API PUT plays the second client here, then pull mirrors it

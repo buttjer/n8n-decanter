@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mts";
+import { isManagedSource, localBody } from "./compile.mts";
 import { type CommitResult, commitWorkflowDir } from "./git.mts";
 import { getWorkflowDetails, type McpClient } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, renameNodeFilePair, writeState } from "./state.mts";
@@ -10,6 +10,7 @@ import {
   FILE_PLACEHOLDER_PREFIX,
   isJsCodeNode,
   kebabCase,
+  markerExtension,
   sha256,
   splitMarker,
   stableWorkflowJson,
@@ -67,10 +68,11 @@ function resolveNodeFile(dir: string, nodeState: Partial<NodeState>, node: Workf
  * (the editor view — the draft when one exists, else the published content),
  * extract each Code node's `jsCode` into `code/`, and refresh the read-only
  * `workflow.json` structure snapshot. Code files in git are the source of
- * truth for Code-node source: `.js` files are overwritten with the remote body
- * (git is the safety net — a warning flags overwritten unpushed edits), `.ts`
- * sources are never touched (divergence is warned, inspect with
- * the `diff` verb; no `.remote.js` artifacts since Plan 32).
+ * truth for Code-node source: plain `.js` files are overwritten with the
+ * remote body (git is the safety net — a warning flags overwritten unpushed
+ * edits); managed sources (`.ts`, or a `.js` that imports — Plan 24) are
+ * never touched (divergence is warned, inspect with the `diff` verb; no
+ * `.remote.js` artifacts since Plan 32).
  */
 export async function pullWorkflow(mcp: McpClient, root: string, id: string, { commitOnPull = false }: { commitOnPull?: boolean } = {}, log: Log): Promise<{ dir: string; name: string; clobbered: string[] }> {
   /** Node files whose unpushed local edits this pull overwrote (Plan 68). */
@@ -111,19 +113,31 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
     if (!isJsCodeNode(node)) continue;
     const nodeState: Partial<NodeState> = state.nodes[node.id] ?? {};
     const remote = node.parameters.jsCode;
-    const { body: remoteBody, markerHash } = splitMarker(remote);
+    const split = splitMarker(remote);
+    const { body: remoteBody, markerHash } = split;
     const remoteHash = sha256(remoteBody);
-    const tsManaged = markerHash !== null;
+    const managed = markerHash !== null;
 
-    const { file, base } = resolveNodeFile(dir, nodeState, node, tsManaged ? ".ts" : ".js", usedNames, log);
+    // Managed: an existing tracked source keeps its own extension. The marker
+    // only says which extension to RECREATE — re-pointing an existing file at
+    // a missing sibling would undo a `.js`↔`.ts` conversion that was
+    // re-pointed but not pushed yet (state + placeholder jump to the missing
+    // file, next push fails "referenced file … is missing"). Markerless stays
+    // `.js`: the `.ts`-sibling branch below owns a local `.ts`, and changing
+    // the extension here would let resolveNodeFile rename it out from under
+    // that branch.
+    const tracked = nodeState.file;
+    const trackedExt = tracked && (tracked.endsWith(".js") || tracked.endsWith(".ts")) && existsSync(path.join(dir, tracked)) ? path.extname(tracked) : null;
+    const ext = managed ? (trackedExt ?? markerExtension(split) ?? ".ts") : ".js";
+    const { file, base } = resolveNodeFile(dir, nodeState, node, ext, usedNames, log);
     const filePath = path.join(dir, file);
 
-    if (tsManaged) {
-      if (!existsSync(filePath)) {
-        log.warn(`${wf.name} / ${node.name}: TS-managed on remote but no local ${file} — pull cannot reconstruct .ts source; add the file (its compiled code stays on the n8n draft, see \`n8n-decanter diff\`) before pushing`);
+    if (managed) {
+      const local = await localBody(dir, file, log);
+      if (local === null) {
+        log.warn(`${wf.name} / ${node.name}: managed on remote but no local ${file} — pull cannot reconstruct the source; add the file (its compiled code stays on the n8n draft, see \`n8n-decanter diff\`) before pushing`);
       } else {
-        const compiled = await compileTs(filePath, log);
-        const localHash = sha256(compiled);
+        const localHash = sha256(local);
         if (localHash === remoteHash) {
           // in sync — nothing to do
         } else if (localHash === nodeState.lastPushedHash) {
@@ -137,6 +151,16 @@ export async function pullWorkflow(mcp: McpClient, root: string, id: string, { c
           log.warn(`${wf.name} / ${node.name}: CONFLICT — both ${file} and the remote code changed since last sync; inspect with \`n8n-decanter diff\` and reconcile before pushing`);
         }
       }
+    } else if (existsSync(filePath) && isManagedSource(filePath)) {
+      // Clobber guard (Plan 24): a markerless remote over a local `.js` that
+      // imports shared code. Writing the remote body would destroy the import
+      // source and bake whatever the UI holds into the file, so keep it and
+      // re-baseline like the `.ts`-sibling branch below. Not a clobber — the
+      // file is untouched.
+      log.warn(`${wf.name} / ${node.name}: local ${file} imports shared code but the remote code is not a decanter bundle — keeping your source; the next push overwrites the remote code`);
+      placeholders.set(node.id, file);
+      state.nodes[node.id] = { ...nodeState, file, lastPushedHash: remoteHash, name: node.name };
+      continue;
     } else if (nodeState.file?.endsWith(".ts") || existsSync(path.join(dir, CODE_DIR, base + ".ts"))) {
       // Local .ts exists but remote carries no marker: never clobber TS source
       // and don't drop a competing .js next to it. Pick the actual `.ts` path —

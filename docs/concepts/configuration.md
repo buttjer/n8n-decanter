@@ -35,7 +35,7 @@ come from `.env` / `.decanter-auth.json` next to it or from the environment.
 | `dataTables` | `true` | Whether the read-only [data-tables](/docs/cli/data-tables/) fetch is available. `false` refuses it (and the API key needn't carry the data-table read scopes); `data-tables clean` still works. |
 | `liveMirror` | `true` | Run a full [`pull`](/docs/cli/pull/) in the background after an agent restructures a workflow through the [guard](/docs/cli/mcp-connect/) (a forwarded `update_workflow`) — `workflow.json`, the `code/` files and `.decanter.json`, including file moves on a rename. It is a pull, not a snapshot-only refresh, so it can overwrite unpushed local edits; it safety-commits first, and stops if that commit fails. `false` disables the auto-refresh (CI / deterministic setups). |
 | `backupLimit` | `20` | Cap on the retained [`backups/`](/docs/cli/backup/) working set per workflow. Each `backup create` rolling-prunes the oldest beyond this; `0` keeps all (git holds the full history regardless). |
-| `bundleDependencies` | `[]` | npm packages `.ts` nodes may import; [bundled on push](/docs/concepts/typescript-nodes/). Pure-JS only. |
+| `bundleDependencies` | `[]` | npm packages `.ts`/`.js` nodes may import; [bundled on push](/docs/concepts/typescript-nodes/). Pure-JS only. |
 
 ## Pointing at a nested sync dir
 

@@ -1,26 +1,40 @@
 ---
 title: TypeScript nodes & bundling
-description: Lossless .js vs one-way .ts, the marker line, shared-code imports, npm bundling.
+description: Lossless plain .js vs one-way bundled .js/.ts, the marker line, shared-code imports, npm bundling.
 order: 2
 ---
 
-Both tiers run as a Code-node **function body** — top-level `return`
+All three tiers run as a Code-node **function body** — top-level `return`
 required, and the same typed n8n globals (`$input`, `$('…')`, `DateTime`, …)
 are available.
 
-## `.js` nodes — the lossless default
+## The three tiers
 
-What you write is byte-for-byte what runs in n8n and what round-trips back on
-pull. Type safety via JSDoc (`// @ts-check` on the first line, `@typedef` for
-shapes). **No imports** — a `.js` node is pushed verbatim into n8n, where
-Code nodes cannot load modules; the layout guard rejects them (at push time,
-and as [preflight](/docs/cli/preflight/)'s `layout` check).
-Comments survive into n8n and document the node in place.
+The `.js` tier splits in two, by whether the file has a top-level import —
+a `.ts` file is always in the bundled tier:
 
-## `.ts` nodes — one-way
+| Tier | Has imports? | Push | Pull |
+|---|---|---|---|
+| plain `.js` | no | pushed verbatim, byte-for-byte | round-trips: lossless, two-way |
+| bundled `.js` | yes | compiled with esbuild, line-1 marker, same as `.ts` | one-way — pull never overwrites it |
+| `.ts` | — (always bundled) | compiled with esbuild, line-1 marker | one-way — pull never touches `.ts` sources |
+
+A plain `.js` node is pushed verbatim into n8n, where Code nodes cannot load
+modules on their own — **no imports** is what keeps it byte-for-byte and
+two-way. Adding a top-level `import` to a `.js` file moves it into the
+bundled tier: push now runs it through esbuild like a `.ts` node, and the
+node becomes one-way, the same as `.ts` — see [Shared code and npm
+packages](#shared-code-and-npm-packages) below. Type safety on either `.js`
+tier is via JSDoc (`// @ts-check` on the first line, `@typedef` for shapes).
+Comments survive into n8n on the plain tier and document the node in place;
+the bundled tiers strip comments (see below).
+
+## `.ts` and bundled `.js` nodes — one-way
 
 Choose `.ts` when the type surface is heavy (interfaces, generics,
-discriminated unions). The local `.ts` is the only source of truth:
+discriminated unions); choose an importing `.js` when you just want to pull
+in a helper without switching extension. Either way, the local file is the
+only source of truth once it imports something:
 
 - [push](/docs/cli/push/) compiles it with esbuild and puts a **provenance
   line on line 1** of the uploaded code:
@@ -32,10 +46,11 @@ discriminated unions). The local `.ts` is the only source of truth:
   It says which tool wrote the node, which source file it came from, that
   editing it in n8n is pointless (the next push overwrites it), and how it was
   built — CLI version, git commit (`+dirty` when it was built from
-  working-tree state), and the push time. The `@ts-n8n sha256:` part is what
-  pull uses to recognize a TS-managed node, and it covers **everything below
-  line 1** — so a rename, a new commit or a CLI upgrade never makes the node
-  look changed. Never write that line yourself.
+  working-tree state), and the push time. The source path's extension (`.ts`
+  or `.js`) is what pull uses to recognize which tier the node is on, and the
+  `@ts-n8n sha256:` part covers **everything below line 1** — so a rename, a
+  new commit or a CLI upgrade never makes the node look changed. Never write
+  that line yourself.
 - **Nodes pushed by an older decanter carry the same marker as a `// @ts-n8n
   sha256:…` line at the *bottom* instead.** That form is read forever and
   counts as fully in sync: nothing re-pushes a node just to move its marker,
@@ -44,29 +59,38 @@ discriminated unions). The local `.ts` is the only source of truth:
   and would treat it as a plain `.js` node on pull.
 - **Comments are stripped and line numbers shift** in the compiled output —
   n8n error line numbers won't match the source, and the node code shown in
-  the n8n UI is undocumented output. Documentation belongs in the `.ts`.
-- [pull](/docs/cli/pull/) never touches `.ts` sources; instance-side edits
-  are warned about — inspect them with [diff](/docs/cli/diff/) and port what
-  you want to keep into the `.ts` by hand (the next push overwrites the remote
-  edit).
+  the n8n UI is undocumented output. Documentation belongs in the local file.
+- [pull](/docs/cli/pull/) never touches `.ts` sources, and never overwrites an
+  importing `.js` either; instance-side edits are warned about — inspect them
+  with [diff](/docs/cli/diff/) and port what you want to keep into the local
+  file by hand (the next push overwrites the remote edit).
 
-To convert a node, replace `code/<node>.js` with `code/<node>.ts` and change
-its `//@file:` placeholder in `workflow.json` — the tool picks up the new
-extension on the next push. A [pull](/docs/cli/pull/) in between (for example
-the live-mirror refresh after a structure edit) keeps your re-pointed `.ts` and
-won't revert the placeholder.
+To convert a node between tiers, edit the file and re-point its `//@file:`
+placeholder in `workflow.json` if the filename changes — the tool picks up
+the new extension and/or import on the next push. There are three states —
+**plain `.js`** (no imports) ↔ **importing `.js`** (bundled) ↔ **`.ts`**
+(always bundled) — and you can move between any two of them:
 
-The reverse works the same way: replace the `.ts` with a `code/<node>.js`
-(plain JavaScript — the file is pushed verbatim) and re-point the
-placeholder. The next push clears the remote `@ts-n8n` marker line (in either
-position) even when the
-code is otherwise identical, so the node stops being TS-managed. **Push
-before you pull again**: until that push lands, a pull still sees the remote
-marker and treats the node as TS-managed (renaming the file back to `.ts`).
+- **plain `.js` → importing `.js`**: add a top-level import to the existing
+  `.js` file — no rename needed. The next push bundles it and prints a note
+  that the node is now one-way.
+- **importing `.js` → plain `.js`**: remove the import. The next push clears
+  the remote marker and the node goes back to lossless, two-way, with a note
+  that it has no imports any more.
+- **`.js` ↔ `.ts`**: replace the extension (`code/<node>.js` ↔
+  `code/<node>.ts`) and change the placeholder in `workflow.json` to match. A
+  [pull](/docs/cli/pull/) in between (for example the live-mirror refresh
+  after a structure edit) keeps your re-pointed file and won't revert the
+  placeholder, as long as that file already exists locally.
+
+In every direction, **push before you pull again**: until that push lands, a
+pull still sees the remote marker (or its absence) as it was before your
+edit, and resolves the node on that basis.
 
 ## Shared code and npm packages
 
-`.ts` nodes can import helper files (values *and* types) from **any folder
+Both `.ts` and `.js` nodes can import helper files (values *and* types, for
+`.ts`) from **any folder
 inside the [sync dir](/docs/concepts/sync-layout/#the-sync-dir), in any number
 of folders** — `shared/` is simply the default [init](/docs/cli/init/)
 scaffolds, not a rule — and from npm packages installed in the sync dir and
@@ -136,8 +160,14 @@ Two asymmetries to know about helper files (both by design):
   helper does not re-push its importers; they sync on their next save or
   `push`.
 
-Rules: imports at the top of the file only; pure-JS packages only — unlisted
-npm packages and Node builtins (`node:*`, `fs`, `crypto`, …) are **compile
-errors**; a relative path leaving the sync dir, or an absolute path,
-**warns without blocking**; never `require()`. `.js` nodes stay import-free —
-that tier is byte-lossless by contract.
+Rules: imports at the top of the file only — an import below the first
+statement is always warned about, never bundled, on either extension (the
+layout check can't tell a stray mid-file import from a verbatim node that
+happens to use the word, so it warns rather than blocking; move it to the
+top either way, or the node fails: at push time for a bundled node, at
+runtime in n8n for a verbatim `.js`); pure-JS packages only — unlisted npm packages and Node
+builtins (`node:*`, `fs`, `crypto`, …) are **compile errors**; a relative
+path leaving the sync dir, or an absolute path, **warns without blocking**;
+never `require()`. A plain `.js` node (no top-level import) stays
+byte-lossless by contract — adding one moves it into the bundled tier, as
+above.

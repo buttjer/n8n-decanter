@@ -153,13 +153,14 @@ them):
   or at files outside `code/`
 - an `@ts-n8n` marker line inside a node source file — `.js` or `.ts`, on
   line 1 or on the last line; push writes that line, it is never source
-- an `import` in a `.js` node file — `.js` is pushed verbatim and n8n has no
-  module loader; convert the node to `.ts`, where imports are bundled on push
-- an import in a `.ts` node that breaks the blocking half of the
-  [bundling rules](/docs/concepts/typescript-nodes/#shared-code-and-npm-packages):
-  a Node builtin (`node:*`, `fs`, `crypto`, …) or an npm package not opted
-  into `bundleDependencies` — esbuild is silent about both, so without the
-  block the failure would surface at runtime on the instance
+- an import in a `.js` or `.ts` node that breaks the blocking half of the
+  [bundling rules](/docs/concepts/typescript-nodes/#shared-code-and-npm-packages) —
+  same bundling rules as `.ts`: a Node builtin (`node:*`, `fs`, `crypto`, …)
+  or an npm package not opted into `bundleDependencies` — esbuild is silent
+  about both, so without the block the failure would surface at runtime on
+  the instance. A `.js` import that passes these rules makes the node
+  bundled, same as `.ts`; a plain `.js` node with no import is pushed
+  verbatim and stays unaffected by this check
 - dangling connection sources/targets
 - duplicate node names or ids
 - orphan `.js`/`.ts` files nothing references

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mts";
+import { compileNode, isManagedSource } from "./compile.mts";
 import { nodeFileContextDir } from "./state.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
 import { isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
@@ -310,8 +310,10 @@ async function invoke(code: string, globals: Record<string, unknown>): Promise<u
 
 /**
  * Execute a Code node's body locally against a (fake) n8n context and print
- * what it returns. Offline; no credentials, no network. `.ts` is compiled with
- * the same esbuild pass as push; `.js` runs verbatim (marker stripped if any).
+ * what it returns. Offline; no credentials, no network. A managed source
+ * (`.ts`, or a `.js` with a top-level import) is compiled with the same
+ * esbuild pass as push; a plain `.js` runs verbatim (marker stripped if any
+ * — though a non-managed file never carries one).
  */
 export async function runNode(file: string, fixturePath: string | undefined, log: Log, opts: { allowEnv?: boolean } = {}): Promise<unknown> {
   const resolved = path.resolve(file);
@@ -323,8 +325,8 @@ export async function runNode(file: string, fixturePath: string | undefined, log
   const mode = node?.parameters?.mode ?? "runOnceForAllItems";
   if (!node) log.warn(`no workflow.json placeholder points at ${basename} — assuming ${mode}`);
 
-  const code = resolved.endsWith(".ts")
-    ? await compileTs(resolved, log)
+  const code = isManagedSource(resolved)
+    ? await compileNode(resolved, log)
     : splitMarker(readFileSync(resolved, "utf8")).body;
 
   const fixture = loadFixture(fixturePath);

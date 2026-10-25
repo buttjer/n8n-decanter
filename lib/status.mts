@@ -5,18 +5,10 @@
 // `diff` (lib/diff.mts) renders the changed lines. Nothing here logs or exits.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs } from "./compile.mts";
+import { localBody } from "./compile.mts";
 import { readState, reconcileFileMapFromSnapshot } from "./state.mts";
 import type { Log, Workflow } from "./types.mts";
 import { isJsCodeNode, sha256, splitMarker, workflowStructureHash } from "./util.mts";
-
-/** The comparable local body: file content for .js, the compiled JS for .ts. */
-async function localBody(dir: string, file: string, log?: Log): Promise<string | null> {
-  const filePath = path.join(dir, file);
-  if (!existsSync(filePath)) return null;
-  if (file.endsWith(".ts")) return compileTs(filePath, log);
-  return readFileSync(filePath, "utf8");
-}
 
 /** Per-node code-sync verdict — the parity/drift ladder, computed as a fact. */
 export type NodeSyncState =
@@ -43,8 +35,8 @@ export interface NodeSync {
   remoteBody?: string;
   localBody?: string | null;
   /**
-   * `compileTs` warnings raised while building this node's local body (`.ts`
-   * lazy-wrapped modules / oversized bundles). Captured, not printed, so the
+   * `compileNode` warnings raised while building this node's local body
+   * (managed-source lazy-wrapped modules / oversized bundles). Captured, not printed, so the
    * fact computation is silent; `diffWorkflow` replays them per node, right
    * before the node they were raised for.
    */
@@ -75,7 +67,7 @@ export interface SyncFacts {
  * deleted-remotely set. Both `diffWorkflow` (which renders the changed lines)
  * and `preflight` (which scores them) consume this, so the two can't drift.
  * Caller supplies the already-fetched `remote` — no second MCP read. Silent by
- * construction: per-node `compileTs` warnings are captured onto
+ * construction: per-node `compileNode` warnings are captured onto
  * {@link NodeSync.warnings}, not printed, so the caller decides whether to
  * surface them (`diffWorkflow` replays them; `preflight` ignores them).
  *
@@ -116,7 +108,7 @@ export async function computeSyncFacts(remote: Workflow, dir: string): Promise<S
     }
     const remoteBody = splitMarker(node.parameters.jsCode).body;
     const remoteHash = sha256(remoteBody);
-    // Capture compileTs warnings instead of printing them, so the fact
+    // Capture compileNode warnings instead of printing them, so the fact
     // computation is silent; diffWorkflow replays them per node (preserving
     // the pre-extraction order), preflight drops them.
     const warnings: string[] = [];

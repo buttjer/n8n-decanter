@@ -60,19 +60,13 @@ export function validateNodeFile(dir: string, file: string, label: string = file
     const where = marker.where === "leading" ? "on line 1" : "on its last line";
     errors.push(`${label}: ${file} carries an @ts-n8n marker ${where} — that line is a push artifact decanter writes itself, never source; remove it`);
   }
-  if (file.endsWith(".js")) {
-    const jsSource = readFileSync(filePath, "utf8");
-    // .js is pushed verbatim — an import would reach n8n unbundled and fail
-    // at runtime (imports are a .ts feature, bundled on push; plans/14)
-    if (scanNodeImports(jsSource).specifiers.length > 0) {
-      errors.push(`${label}: ${file} has an import — .js nodes run verbatim in n8n, where import/require fail; convert the node to .ts (imports are bundled on push) or inline the code`);
-    }
-  }
-  if (file.endsWith(".ts")) {
-    // bundling rules (plans/14), offline lexical subset: same checker the
-    // compiler runs, so check and push can't disagree. Blocking vs advisory
-    // is the checker's call (Plan 79 task 7): builtins and un-opted-in
-    // packages block, sync-dir escapes and absolute paths warn.
+  if (file.endsWith(".ts") || file.endsWith(".js")) {
+    // bundling rules (plans/14, widened to .js by plan 24), offline lexical
+    // subset: same checker the compiler runs, so check and push can't
+    // disagree. Blocking vs advisory is the checker's call (Plan 79 task 7):
+    // builtins and un-opted-in packages block, sync-dir escapes and absolute
+    // paths warn. A .js node with no top-level import is not managed — it is
+    // pushed verbatim, two-way, and never reaches this block at all.
     const { specifiers, body } = scanNodeImports(readFileSync(filePath, "utf8"));
     if (specifiers.length > 0) {
       const verdict = checkNodeImports(filePath, specifiers, findBundleContext(dir));
@@ -80,7 +74,12 @@ export function validateNodeFile(dir: string, file: string, label: string = file
       for (const p of verdict.advisory) warnings.push(`${label}: ${p}`);
     }
     if (/^import[ \t]/m.test(body)) {
-      warnings.push(`${label}: ${file} has an import below the first statement — only imports at the top of the file are bundled; the push compile will fail on it`);
+      // True for either extension once it has a top-level import: a
+      // bundled node fails at push (the compile only sees the leading
+      // block), a verbatim .js never reaches push's compiler at all and
+      // fails in n8n itself. The regex is lexical, so a mid-file import
+      // can't be bypassed — it stays a warning, not an error.
+      warnings.push(`${label}: ${file} has an import below the first statement — only imports at the top of the file are bundled; move it to the top, or the node fails (at push for a bundled node, at runtime in n8n for a verbatim .js)`);
     }
   }
   const remoteSibling = file.replace(/\.(ts|js)$/, ".remote.js");

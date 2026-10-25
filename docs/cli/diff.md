@@ -89,14 +89,17 @@ Two things the state line deliberately does **not** do:
   node shows its `.ts` under `push pending` — not the deleted `.js` as
   *missing*.
 
-## `.ts` nodes are compiled before comparing
+## `.ts` and bundled `.js` nodes are compiled before comparing
 
-For a `.ts` node the local side of the diff is the **compiled** JavaScript —
-the exact bytes `push` would send, helper imports bundled in. So editing
-one shared helper shows up as a diff in **every node that imports it**, which is
-the honest answer to "what does this helper change touch?". See
-[TypeScript nodes](/docs/concepts/typescript-nodes/). Compile warnings for a
-node are replayed immediately above that node's diff.
+For a `.ts` node, or a `.js` node with a top-level import, the local side of
+the diff is the **compiled** JavaScript — the exact bytes `push` would send,
+helper imports bundled in, and the `+++ local (<file>)` header gains a
+`, bundled` suffix (`+++ local (code/<node>.js, bundled)`) so the label
+itself says which tier produced the compiled bytes; a `.ts` node's label is
+unchanged. So editing one shared helper shows up as a diff in **every node
+that imports it**, which is the honest answer to "what does this helper
+change touch?". See [TypeScript nodes](/docs/concepts/typescript-nodes/).
+Compile warnings for a node are replayed immediately above that node's diff.
 
 ## What `diff` deliberately does not tell you
 

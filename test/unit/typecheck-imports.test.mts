@@ -24,14 +24,14 @@ const TMP = mkdtempSync(path.join(os.tmpdir(), "decanter-typecheck-imports-"));
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 /** A sync dir with the scaffolded tsconfig, a shared helper, and one node file. */
-function project(name: string, nodeSource: string): string {
+function project(name: string, nodeSource: string, nodeFile = "node.ts"): string {
   const proj = path.join(TMP, name);
   mkdirSync(path.join(proj, "shared"), { recursive: true });
   mkdirSync(path.join(proj, "workflows", "a", "code"), { recursive: true });
   writeFileSync(path.join(proj, "tsconfig.json"), readFileSync(TEMPLATE_TSCONFIG, "utf8"));
   writeFileSync(path.join(proj, "shared", "money.ts"), "export const total = (lines: number[]): number => lines.reduce((a, b) => a + b, 0);\n");
   writeFileSync(path.join(proj, "workflows", "a", ".decanter.json"), JSON.stringify({ workflowId: "a", nodes: {} }));
-  writeFileSync(path.join(proj, "workflows", "a", "code", "node.ts"), nodeSource);
+  writeFileSync(path.join(proj, "workflows", "a", "code", nodeFile), nodeSource);
   return proj;
 }
 
@@ -62,5 +62,26 @@ describe("helper imports in node files", () => {
     // TS5097 (extension rejected) would mean the import never really landed.
     assert.match(out, /code[/\\]node\.ts\(3,\d+\): error TS2345/, "the argument type error must be reported on the node file's own line");
     assert.doesNotMatch(out, /TS2307|TS5097/, out);
+  });
+
+  // Plan 24: a .js node may import the same helpers. The editor parity half
+  // already holds — the scaffolded tsconfig has checkJs, and the wrapper treats
+  // a .js node file like a .ts one — so these pin it rather than build it.
+  it("typechecks a .js node that imports a shared helper (top-level return allowed)", async () => {
+    const proj = project("js-import", 'import { total } from "../../../shared/money";\n\nreturn [{ json: { total: total([1, 2]) } }];\n', "node.js");
+    const { code, out } = await typecheck(proj);
+    assert.equal(code, 0, out);
+  });
+
+  it("checks a JSDoc import('…') type in a .js node against the helper", async () => {
+    const proj = project(
+      "js-jsdoc",
+      '/** @type {typeof import("../../../shared/money").total} */\nconst sum = (lines) => lines.length;\nreturn [{ json: { total: sum("nope") } }];\n',
+      "node.js",
+    );
+    const { code, out } = await typecheck(proj);
+    assert.equal(code, 1, out);
+    assert.match(out, /code[/\\]node\.js\(3,\d+\): error TS2345/, "the argument type error must be reported on the node file's own line");
+    assert.doesNotMatch(out, /TS2307|TS1108/, out);
   });
 });

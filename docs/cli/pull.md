@@ -35,18 +35,33 @@ After a successful pull the folder is git-committed automatically
 
 ## What pull never touches
 
-`.ts` node sources are one-way — pull never modifies them. Remote changes to
-a TS-managed node (for example a UI edit) are **warned about**, not merged:
-inspect them with [`diff`](/docs/cli/diff/) and port what you want to keep into
-the `.ts` by hand. See [TypeScript nodes](/docs/concepts/typescript-nodes/).
+`.ts` node sources, and `.js` node sources with a top-level import, are
+one-way — pull never modifies them. Remote changes to a managed node (for
+example a UI edit) are **warned about**, not merged: inspect them with
+[`diff`](/docs/cli/diff/) and port what you want to keep into the local file
+by hand. See [TypeScript nodes](/docs/concepts/typescript-nodes/).
+
+If a managed node's local file is missing entirely, pull writes nothing and
+warns instead of guessing an extension:
+``<wf> / <node>: managed on remote but no local <file> — pull cannot
+reconstruct the source; add the file (its compiled code stays on the n8n
+draft, see `n8n-decanter diff`) before pushing``.
+
+**Clobber guard** — if the remote code carries no marker (so it looks like a
+plain `.js` node) but your local `.js` file has a top-level import, pull
+keeps your file instead of overwriting it, and warns:
+`<wf> / <node>: local <file> imports shared code but the remote code is not a
+decanter bundle — keeping your source; the next push overwrites the remote
+code`. Like every managed node (see below), it is re-baselined on this pull
+too — the next push is what reconciles it.
 
 ## Pull re-baselines the sync state
 
 Pulling records the remote code as the new sync base — **after a warned
 pull, the next push overwrites the surfaced remote edits by design**, with
-[`diff`](/docs/cli/diff/) and git history as the safety net. `.js` files are
-overwritten with the remote body, and pull warns when that clobbers unpushed
-local edits.
+[`diff`](/docs/cli/diff/) and git history as the safety net. A plain `.js`
+file (no import) is overwritten with the remote body, and pull warns when
+that clobbers unpushed local edits.
 
 **git really is the safety net here**: pull takes a **snapshot commit before it
 writes anything**, so an uncommitted local edit is recoverable from that commit

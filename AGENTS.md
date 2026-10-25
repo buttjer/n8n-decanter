@@ -577,14 +577,16 @@ mock server.
     **or** pull)". The old whole-workflow structure hash is gone.
   - `.decanter-auth.json` (sync-dir root) — MCP OAuth credentials minted by
     init; refresh tokens are single-use (rotated + persisted on every use).
-  - `.js` node files are lossless (byte-identical round-trip). `.ts` files
-    are one-way: push compiles via esbuild (`bundle: true` — helper files
-    from anywhere in the sync dir (`shared/` is the scaffolded default) and
-    opted-in npm deps are inlined into each importing node) and prepends a
-    **line-1 provenance marker** (Plan 84) — `// n8n-decanter · <source path>
-    · do not edit here · @ts-n8n sha256:<hash of everything below line 1> ·
-    v<version> <commit> <push time>`. Marker presence is what identifies a
-    TS-managed node on pull; only the hash is load-bearing, the build stamp is
+  - A plain `.js` node file (no top-level import) is lossless (byte-identical
+    round-trip). A managed source — `.ts`, or a `.js` with a top-level import
+    (Plan 24, `isManagedSource`) — is one-way: push compiles via esbuild
+    (`bundle: true` — helper files from anywhere in the sync dir (`shared/` is
+    the scaffolded default) and opted-in npm deps are inlined into each
+    importing node) and prepends a **line-1 provenance marker** (Plan 84) —
+    `// n8n-decanter · <source path> · do not edit here · @ts-n8n
+    sha256:<hash of everything below line 1> · v<version> <commit> <push
+    time>`. Marker presence is what identifies a managed node on pull; only
+    the hash is load-bearing, the build stamp is
     never hashed. The **pre-Plan-84 trailing** form (`// @ts-n8n sha256:<hex>`
     as the last line) is still read forever and counts as fully in sync — a
     node adopts line 1 on its next real code push, and the layout guard rejects
@@ -614,7 +616,7 @@ mock server.
   go-live step. Pull reads the **tip** (draft if one exists). A workflow must
   be `availableInMCP` (per-workflow n8n-side switch) — the picker shows
   unavailable ones as a red third state with guidance.
-- Pull never touches `.ts` sources; remote edits to TS-managed nodes are
+- Pull never touches a managed source; remote edits to managed nodes are
   warned about (`diff` to inspect — no `.remote.js` artifacts since
   Plan 32). Pull re-baselines `lastPushedHash` even on conflict — meaning the
   next push overwrites remote edits by design. Pull's rename machinery also

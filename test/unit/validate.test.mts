@@ -336,11 +336,62 @@ describe("validateNodeFile", () => {
     }
   });
 
-  it("errors on an import in a .js node — verbatim tier, imports never bundle", () => {
-    const dir = scaffold({ files: { "code/main.js": 'import { x } from "../shared/x";\nreturn [x];\n' } });
-    const { errors } = validateNodeFile(dir, "code/main.js");
-    assert.equal(errors.length, 1);
-    assert.match(errors[0], /\.js nodes run verbatim in n8n.*convert the node to \.ts/);
+  // Plan 24: a .js node that imports is bundled like a .ts node, so a legal
+  // import is no longer an error — and no standing "one-way" warning either.
+  it("a legal .js import passes", () => {
+    const dir = scaffold({
+      files: {
+        "decanter.config.json": JSON.stringify({ root: "./workflows", workflows: [] }),
+        // the import check is lexical: inside the sync dir, relative — legal
+        "code/main.js": 'import { x } from "../shared/x";\nreturn [{ json: { x } }];\n',
+      },
+    });
+    const { errors, warnings } = validateNodeFile(dir, "code/main.js");
+    assert.deepEqual(errors, []);
+    assert.deepEqual(warnings, []);
+  });
+
+  // The illegal set gives a .js node the same messages, and the same
+  // error/warning split, as a .ts node — one block runs both.
+  it("a .js node and a .ts node get identical import findings", () => {
+    const sources: Record<string, string> = {
+      builtin: 'import { createHash } from "node:crypto";\nreturn [];\n',
+      npm: 'import x from "lodash";\nreturn [x];\n',
+      "mid-file": "const x = 1;\nimport late from \"./x\";\nreturn [x];\n",
+      escape: 'import { a } from "../../../../elsewhere/a";\nreturn [{ json: { a } }];\n',
+    };
+    for (const [kind, src] of Object.entries(sources)) {
+      const found: Record<string, { errors: string[]; warnings: string[] }> = {};
+      for (const ext of [".js", ".ts"]) {
+        const file = `code/main${ext}`;
+        const dir = scaffold({
+          state: JSON.stringify({ workflowId: "wf1", nodes: { n2: { file } } }),
+          files: { "decanter.config.json": JSON.stringify({ root: "./workflows", workflows: [] }), [file]: src },
+        });
+        const { errors, warnings } = validateNodeFile(dir, file);
+        // the file name differs by design; everything else must not
+        const norm = (s: string) => s.replace(/code\/main\.(js|ts)/g, "code/main.<ext>").replace(dir, "<dir>");
+        found[ext] = { errors: errors.map(norm), warnings: warnings.map(norm) };
+      }
+      assert.deepEqual(found[".js"], found[".ts"], kind);
+      const expectError = kind === "builtin" || kind === "npm";
+      assert.equal(found[".js"].errors.length > 0, expectError, `${kind}: ${JSON.stringify(found[".js"])}`);
+      assert.equal(found[".js"].warnings.length > 0, !expectError, `${kind}: ${JSON.stringify(found[".js"])}`);
+    }
+  });
+
+  it("words the mid-file import warning for both tiers, in .js and .ts alike", () => {
+    for (const file of ["code/main.js", "code/main.ts"]) {
+      const dir = scaffold({
+        state: JSON.stringify({ workflowId: "wf1", nodes: { n2: { file } } }),
+        files: { [file]: 'const x = 1;\nimport late from "./x";\nreturn [x];\n' },
+      });
+      const { errors, warnings } = validateNodeFile(dir, file);
+      assert.deepEqual(errors, [], file);
+      assert.deepEqual(warnings, [
+        `${file}: ${file} has an import below the first statement — only imports at the top of the file are bundled; move it to the top, or the node fails (at push for a bundled node, at runtime in n8n for a verbatim .js)`,
+      ], file);
+    }
   });
 
   it("errors on a builtin/unlisted import in a .ts node, warns on a mid-file import", () => {

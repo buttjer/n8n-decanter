@@ -20,8 +20,13 @@ const BUILTINS = new Set(builtinModules);
 // `ümläut-nödé.ts`, the comment follows, and the node reads "push pending"
 // forever on a comment-only diff. A fixed name keeps the entry label stable
 // across renames; the surrounding dir still comes from `resolveDir`, which is
-// sticky (a workflow folder never follows a remote rename — Plan 27).
-const ENTRY_SOURCEFILE = "node.ts";
+// sticky (a workflow folder never follows a remote rename — Plan 27). Kept
+// per extension (`node.ts` / `node.js`) so a bundled `.js` node and a `.ts`
+// node never share an entry label, but a rename within one extension never
+// changes the bytes either.
+function entrySourcefile(file: string): string {
+  return file.endsWith(".js") ? "node.js" : "node.ts";
+}
 
 export interface ScannedImports {
   /** Verbatim leading import block ("" when the file has none). */
@@ -91,6 +96,24 @@ export function scanNodeImports(source: string): ScannedImports {
     body: source.slice(end),
     importLines: importBlock.length === 0 ? 0 : importBlock.split("\n").length - (importBlock.endsWith("\n") ? 1 : 0),
   };
+}
+
+/**
+ * A node source is **managed** when push bundles it and writes a marker: a
+ * `.ts` file always, a `.js` file only once it carries a top-level static
+ * import (plan 24 — the two-tier `.js` split). Never throws: a missing or
+ * unreadable `.js` file reads as not managed, same as "no imports found".
+ */
+export function isManagedSource(filePath: string): boolean {
+  if (filePath.endsWith(".ts")) return true;
+  if (!filePath.endsWith(".js")) return false;
+  let source: string;
+  try {
+    source = readFileSync(filePath, "utf8");
+  } catch {
+    return false;
+  }
+  return scanNodeImports(source).specifiers.length > 0;
 }
 
 export interface BundleContext {
@@ -182,19 +205,23 @@ export function checkNodeImports(file: string, specifiers: string[], ctx: Bundle
 }
 
 /**
- * One-way compile of a .ts node file to the JS that runs inside n8n.
- * Without imports this is a plain esbuild transform — byte-identical to the
- * pre-bundling compiler, so existing nodes never change shape or hash. With
- * imports, the file is bundled self-contained (see the header comment); the
- * output is still a function body ending in a top-level `return`.
+ * One-way compile of a managed node file (`.ts`, or a `.js` with a top-level
+ * import) to the JS that runs inside n8n. Without imports this is a plain
+ * esbuild transform — byte-identical to the pre-bundling compiler, so
+ * existing `.ts` nodes never change shape or hash. With imports, the file is
+ * bundled self-contained (see the header comment); the output is still a
+ * function body ending in a top-level `return`. The esbuild loader (and the
+ * bundle's stdin entry label) is picked from the file's own extension, so a
+ * `.js` entry is parsed as JS, not typechecked as TS.
  */
-export async function compileTs(file: string, log?: Log, opts?: { quietImportWarnings?: boolean }): Promise<string> {
+export async function compileNode(file: string, log?: Log, opts?: { quietImportWarnings?: boolean }): Promise<string> {
   const source = readFileSync(file, "utf8");
   const { importBlock, specifiers, body } = scanNodeImports(source);
+  const loader = file.endsWith(".js") ? "js" : "ts";
 
   if (specifiers.length === 0) {
     const result = await transform(source, {
-      loader: "ts",
+      loader,
       format: "cjs",
       target: "node18",
       sourcefile: file,
@@ -249,9 +276,9 @@ export async function compileTs(file: string, log?: Log, opts?: { quietImportWar
     const result = await build({
       stdin: {
         contents: entry,
-        loader: "ts",
+        loader,
         resolveDir,
-        sourcefile: ENTRY_SOURCEFILE,
+        sourcefile: entrySourcefile(file),
       },
       bundle: true,
       format: "iife",
@@ -284,4 +311,17 @@ export async function compileTs(file: string, log?: Log, opts?: { quietImportWar
     log.warn(`${file}: compiled node is ${Math.round(code.length / 1024)} KB after bundling — large nodes bloat the workflow JSON; consider trimming imports`);
   }
   return code;
+}
+
+/**
+ * The comparable local body: the compiled JS for a managed source (`.ts`, or
+ * a `.js` with a top-level import), the raw file content verbatim otherwise.
+ * Shared by `status` (sync facts), `push` (`buildNodeCode`) and `pull`'s
+ * drift ladder, so all three agree on what "the local build" means.
+ */
+export async function localBody(dir: string, file: string, log?: Log, opts?: { quietImportWarnings?: boolean }): Promise<string | null> {
+  const filePath = path.join(dir, file);
+  if (!existsSync(filePath)) return null;
+  if (isManagedSource(filePath)) return compileNode(filePath, log, opts);
+  return readFileSync(filePath, "utf8");
 }

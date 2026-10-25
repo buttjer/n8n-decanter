@@ -11,21 +11,34 @@ n8n-decanter push [workflow…] [--force] [--publish] [--no-typecheck]
 Compiles and uploads each workflow's **Code-node source** over n8n's MCP
 server — one atomic batch of `jsCode`-only updates, addressed to each node by
 its current name (ids anchor the mapping, so renames made elsewhere don't
-matter). `.js` node files are pushed verbatim (byte-lossless); `.ts` files
-are compiled with esbuild and their imports — helper files from anywhere in
+matter). A `.js` node file with no top-level import is pushed verbatim
+(byte-lossless); a `.ts` file, or a `.js` file with a top-level import, is
+compiled with esbuild and its imports — helper files from anywhere in
 the [sync dir](/docs/concepts/sync-layout/#the-sync-dir) (`shared/` by
 default) and opted-in npm
 packages — are bundled in — see
 [TypeScript nodes](/docs/concepts/typescript-nodes/). Structure is never
 pushed — `workflow.json` is a read-only snapshot.
 
-A compiled `.ts` node is uploaded with a **provenance line on line 1** —
+A compiled `.ts` node, or a bundled `.js` node, is uploaded with a
+**provenance line on line 1** —
 `// n8n-decanter · <source path> · do not edit here · @ts-n8n sha256:… ·
 v<version> <commit> <time>` — so whoever opens the node in the n8n UI can tell
 which file it was built from, that editing it there is pointless, and how it
 was built. It is not hashed, so a rename, a new commit or a CLI upgrade never
 queues a push; see
-[TypeScript nodes](/docs/concepts/typescript-nodes/#ts-nodes--one-way).
+[TypeScript nodes](/docs/concepts/typescript-nodes/#ts-and-bundled-js-nodes--one-way).
+
+**Crossing tiers prints a one-time note**, after a successful push, for each
+`.js` node whose push changed its tier:
+
+- adding an import to a plain `.js` node: `<name>: <file> now imports —
+  bundled on push, one-way from here (pull no longer overwrites it)`
+- removing the last import from a bundled `.js` node: `<name>: <file> has no
+  imports any more — pushed verbatim, two-way again`
+
+No note for a `.ts` node, and none for a `.ts` → `.js` conversion (that file
+never imported either way).
 
 **Every push lands on the workflow's draft.** The live (published) version
 does not change until [`publish`](/docs/cli/publish/) — or `push --publish`,

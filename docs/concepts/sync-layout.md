@@ -124,8 +124,9 @@ compares against it.
 ## `code/`
 
 Node sources, named in kebab-case after their node (`Parse Order` →
-`code/parse-order.js`). `.js` files are lossless (byte-identical round-trip);
-`.ts` files are one-way — see
+`code/parse-order.js`). A `.js` file with no top-level import is lossless
+(byte-identical round-trip); a `.ts` file, or a `.js` file with a top-level
+import, is one-way — see
 [TypeScript nodes](/docs/concepts/typescript-nodes/). Layouts from older
 versions (files at the folder root) migrate automatically on the next pull.
 

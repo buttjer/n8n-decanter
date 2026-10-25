@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { compileTs, findBundleContext } from "./compile.mts";
+import { compileNode, findBundleContext, isManagedSource } from "./compile.mts";
 import { ForceableError } from "./errors.mts";
 import { commitWorkflowDir, headCommit } from "./git.mts";
 import { cliVersion } from "./init.mts";
@@ -8,7 +8,7 @@ import { publishedNote } from "./lifecycle.mts";
 import { getWorkflowDetails, type McpClient, NOT_PULLED_HINT, publishWorkflowMcp, updateWorkflow, type McpOperation } from "./mcp.mts";
 import { findWorkflowDir, readState, reconcileFileMapFromSnapshot, writeState } from "./state.mts";
 import type { DecanterState, Log, Workflow } from "./types.mts";
-import { isJsCodeNode, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
+import { isJsCodeNode, markerExtension, publicationState, sha256, splitMarker, withMarker } from "./util.mts";
 import { validateWorkflowDir, type ValidationResult } from "./validate.mts";
 
 /** Layout-compliance gate: warnings pass through, errors abort the push. */
@@ -58,14 +58,17 @@ function sourcePathFor(dir: string, file: string): string {
  * other two callers — `assembleForRestore` (lib/backup.mts) and
  * `lib/simulate.mts` — build an artifact for something that is not a push, and
  * must not stamp it with a "built and pushed at" claim. They still get the
- * marker line (it is what identifies a TS-managed node), just without the
+ * marker line (it is what identifies a managed node), just without the
  * version/commit/time fields.
  */
 export async function buildNodeCode(dir: string, file: string, log?: Log, opts?: { quietImportWarnings?: boolean; stamp?: BuildStamp }): Promise<{ jsCode: string; hash: string }> {
   const filePath = path.join(dir, file);
   if (!existsSync(filePath)) throw new Error(`referenced node file missing: ${filePath}`);
-  if (file.endsWith(".ts")) {
-    return withMarker(await compileTs(filePath, log, opts), { sourcePath: sourcePathFor(dir, file), ...opts?.stamp });
+  // Managed = a .ts file, or a .js file with a top-level import (Plan 24): a
+  // bundled .js gets the same line-1 marker, its sourcePath ending .js. A
+  // plain .js stays verbatim and byte-identical — no marker, two-way.
+  if (isManagedSource(filePath)) {
+    return withMarker(await compileNode(filePath, log, opts), { sourcePath: sourcePathFor(dir, file), ...opts?.stamp });
   }
   const jsCode = readFileSync(filePath, "utf8");
   return { jsCode, hash: sha256(jsCode) };
@@ -135,10 +138,14 @@ async function collectOps(
   remote: Workflow,
   onlyNodeIds: Set<string> | null,
   log: Log,
-): Promise<{ ops: McpOperation[]; problems: string[] }> {
+): Promise<{ ops: McpOperation[]; problems: string[]; flipNotes: string[] }> {
   const byId = new Map(remote.nodes.map((n) => [n.id, n]));
   const ops: McpOperation[] = [];
   const problems: string[] = [];
+  // Printed by the caller only once updateWorkflow succeeded — a note that a
+  // file "now imports" is a claim about the remote, so a failed write must
+  // not make it.
+  const flipNotes: string[] = [];
   // The single op-construction site, and therefore the single place line 1's
   // provenance is attached (Plan 84). pushSingleNode — the watch save — routes
   // through here too, so it inherits the stamp rather than re-deriving it.
@@ -161,20 +168,34 @@ async function collectOps(
       problems.push(`node "${node.name}": remote code changed since last sync`);
     }
     // A body-equal write is still needed when the marker state disagrees with
-    // the file kind (Plan 33): a freshly converted .ts node whose marker
-    // hasn't landed yet pushes to REGISTER TS management, and a node
-    // re-pointed back to .js whose remote still carries a marker pushes to
-    // CLEAR it (otherwise the next pull would resurrect the node as .ts).
+    // the BUILD (Plan 33, re-keyed on the build by Plan 24 — a .js file can
+    // be managed now, so the file extension alone no longer says whether a
+    // marker belongs): a build with a marker the remote lacks pushes to
+    // REGISTER management, a marker-less build whose remote still carries one
+    // pushes to CLEAR it (otherwise the next pull would treat the node as
+    // managed), and a remote marker naming the other extension pushes to
+    // correct the sourcePath (otherwise pull would resurrect the wrong file
+    // kind — a legacy trailing marker always means .ts).
     //
     // There is deliberately NO `wrongPosition` sibling (Plan 84): a marker
     // still sitting on the last line is neither absent nor stray, so a
     // body-equal legacy node stays on the `continue` path below. Relocation
     // alone must never force a write — the absence of line 1 is not even a
     // stale, which is what makes the move a non-event instead of a migration.
-    const missingMarker = ns.file.endsWith(".ts") && remoteSplit.markerHash === null;
-    const strayMarker = ns.file.endsWith(".js") && remoteSplit.markerHash !== null;
-    if (hash === remoteHash && !missingMarker && !strayMarker) continue; // already in sync — no write needed
+    const built = splitMarker(jsCode);
+    const remoteExt = markerExtension(remoteSplit);
+    const missingMarker = built.markerHash !== null && remoteSplit.markerHash === null;
+    const strayMarker = built.markerHash === null && remoteSplit.markerHash !== null;
+    const wrongExtension = built.markerHash !== null && remoteSplit.markerHash !== null && remoteExt !== path.extname(ns.file);
+    if (hash === remoteHash && !missingMarker && !strayMarker && !wrongExtension) continue; // already in sync — no write needed
     ops.push({ type: "updateNodeParameters", nodeName: node.name, parameters: { jsCode } });
+    // Flip notes only for a .js whose management changes: a .ts is always
+    // managed, and a stray marker that says .ts is a .ts → plain .js
+    // conversion — that file never imported.
+    if (ns.file.endsWith(".js")) {
+      if (missingMarker) flipNotes.push(`${node.name}: ${ns.file} now imports — bundled on push, one-way from here (pull no longer overwrites it)`);
+      else if (strayMarker && remoteExt === ".js") flipNotes.push(`${node.name}: ${ns.file} has no imports any more — pushed verbatim, two-way again`);
+    }
   }
   if (!onlyNodeIds) {
     for (const node of remote.nodes) {
@@ -183,7 +204,7 @@ async function collectOps(
       }
     }
   }
-  return { ops, problems };
+  return { ops, problems, flipNotes };
 }
 
 /**
@@ -213,12 +234,13 @@ export async function pushWorkflow(
   reconcileFileMapFromSnapshot(dir, state);
 
   const remote = await getWorkflowDetails(mcp, id);
-  const { ops, problems } = await collectOps(dir, state, remote, null, log);
+  const { ops, problems, flipNotes } = await collectOps(dir, state, remote, null, log);
   assertNoDrift(problems, force, log);
 
   let confirmed = remote;
   if (ops.length > 0) {
     await updateWorkflow(mcp, id, ops);
+    for (const note of flipNotes) log.info(note);
     confirmed = await getWorkflowDetails(mcp, id);
     verifyRoundTrip(dir, state, confirmed, log);
   }
@@ -248,8 +270,8 @@ function verifyRoundTrip(dir: string, state: DecanterState, confirmed: Workflow,
     const localFile = path.join(dir, ns.file);
     if (!existsSync(localFile)) continue;
     const { body: remoteBody, markerHash } = splitMarker(node.parameters.jsCode);
-    if (ns.file.endsWith(".ts")) {
-      // .ts: the pushed marker carries the compiled body's hash — a mismatch
+    if (isManagedSource(localFile)) {
+      // managed (.ts, or a bundled .js): the pushed marker carries the compiled body's hash — a mismatch
       // means the server normalized the code after the write (recompiling
       // here would be the expensive way to say the same thing)
       if (markerHash !== null && sha256(remoteBody) !== markerHash) {
@@ -298,12 +320,13 @@ export async function pushSingleNode(
   const remote = await getWorkflowDetails(mcp, state.workflowId);
   const node = remote.nodes.find((n) => n.id === nodeId);
   if (!node) throw new Error(`node ${nodeId} no longer exists in remote workflow ${state.workflowId}`);
-  const { ops, problems } = await collectOps(dir, state, remote, new Set([nodeId]), log);
+  const { ops, problems, flipNotes } = await collectOps(dir, state, remote, new Set([nodeId]), log);
   assertNoDrift(problems, force, log);
 
   let confirmed = remote;
   if (ops.length > 0) {
     await updateWorkflow(mcp, state.workflowId, ops);
+    for (const note of flipNotes) log.info(note);
     confirmed = await getWorkflowDetails(mcp, state.workflowId);
     // same invariant as a full push — watch saves must not skip it (it also
     // backstops a rename between the read and the name-addressed write)

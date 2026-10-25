@@ -8,9 +8,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { compileNode } from "../../lib/compile.mts";
 import { computeSyncFacts } from "../../lib/status.mts";
 import type { DecanterState, Workflow } from "../../lib/types.mts";
-import { sha256 } from "../../lib/util.mts";
+import { sha256, withMarker } from "../../lib/util.mts";
 
 const remoteWorkflow = (jsCode: string): Workflow => ({
   id: "wf1", name: "Order Sync", connections: {}, active: false, versionId: "v1", activeVersionId: null,
@@ -79,5 +80,34 @@ describe("computeSyncFacts — the parity/drift ladder", () => {
     const node = facts.nodes.find((n) => n.id === "c")!;
     assert.equal(node.file, "code/compute.ts", "the placeholder is the file map — the stale .js entry must not win");
     assert.equal(node.state, "push-pending", "the compiled .ts differs from the un-compiled remote body: local is ahead, nothing is missing");
+  });
+
+  // Plan 24: a .js node that imports is bundled on push, so the read side
+  // must compare the bundle — not the raw source — against the remote body.
+  // Otherwise every bundled .js reads "push pending" forever, and an edit to
+  // the shared helper it imports is invisible.
+  it("reads a bundled .js against its compiled bundle, helper edits included", async () => {
+    tmp = mkdtempSync(path.join(os.tmpdir(), "decanter-status-"));
+    writeFileSync(path.join(tmp, "decanter.config.json"), JSON.stringify({ root: ".", workflows: [] }));
+    mkdirSync(path.join(tmp, "shared"));
+    writeFileSync(path.join(tmp, "shared", "money.js"), "export function total(xs) {\n  return xs.reduce((a, b) => a + b, 0);\n}\n");
+    const src = 'import { total } from "../../shared/money";\nreturn [{ json: { t: total([1, 2]) } }];\n';
+    const dir = seed(
+      tmp,
+      { workflowId: "wf1", name: "Order Sync", nodes: { c: { file: "code/compute.js", name: "Compute" } } },
+      { "code/compute.js": src },
+      "code/compute.js",
+    );
+    // what push wrote: the bundle, behind its line-1 marker
+    const { jsCode, hash } = withMarker(await compileNode(path.join(dir, "code", "compute.js")), { sourcePath: "order-sync/code/compute.js" });
+    const state: DecanterState = { workflowId: "wf1", name: "Order Sync", nodes: { c: { file: "code/compute.js", lastPushedHash: hash, name: "Compute" } } };
+    writeFileSync(path.join(dir, ".decanter.json"), JSON.stringify(state, null, 2));
+
+    const synced = (await computeSyncFacts(remoteWorkflow(jsCode), dir)).nodes.find((n) => n.id === "c")!;
+    assert.equal(synced.state, "in-sync", "the bundle equals the remote body — nothing to push");
+
+    writeFileSync(path.join(tmp, "shared", "money.js"), "export function total(xs) {\n  return xs.reduce((a, b) => a + b, 100);\n}\n");
+    const edited = (await computeSyncFacts(remoteWorkflow(jsCode), dir)).nodes.find((n) => n.id === "c")!;
+    assert.equal(edited.state, "push-pending", "an edited helper changes the bundle of every .js node importing it");
   });
 });

@@ -9,7 +9,7 @@ that body came from. The build step should improve maintainability without
 making the deployed node feel mysterious."* Shape settled over the following
 session (prototyped against the real compiler at each step). Extends
 [Plan 14](../done/14-bundle-shared-code-into-ts-pushes.md); simplifies part of
-[Plan 24](../open/24-shared-code-in-js-nodes.md) — see Notes.
+[Plan 24](24-shared-code-in-js-nodes.md) — see Notes.
 **Snapshot:** 2026-08-24T06:41Z @ c4e6ec6
 **Theme:** A compiled/bundled Code node in the n8n UI says nothing about where
 it came from. Move the whole self-description to **line 1** — tool name, source
@@ -281,7 +281,7 @@ The explicit requirement, and the reason the design is read-both / write-one.
   position, no dual-write, no version negotiation. Pre-1.0, the break is wanted
   (compat item 3); a shim would only preserve the problem the plan exists to fix.
 - **No marker for verbatim `.js` nodes** — that tier's contract is a
-  byte-identical round-trip. When [Plan 24](../open/24-shared-code-in-js-nodes.md) lands,
+  byte-identical round-trip. When [Plan 24](24-shared-code-in-js-nodes.md) lands,
   bundled `.js` becomes managed and inherits line 1.
 - **No tamper-proofing.** Line 1 is outside the hash, so a viewer can edit it
   without detection (see compat item 5). It is a signpost; the audit record is
@@ -308,7 +308,7 @@ Shipped as designed. Three decisions the task list left open, and how they went:
   with `.js` unmanaged today a path-derived `.js` branch could only ever be
   dead code with a trap in it: it would immediately trip `strayMarker` and push
   to clear the very marker it just read. Recorded as a Post-Plan-84 review note
-  on [Plan 24](../open/24-shared-code-in-js-nodes.md), whose work it is.
+  on [Plan 24](24-shared-code-in-js-nodes.md), whose work it is.
 - **`+dirty` is scoped to the whole sync dir**, not to this node's own bundled
   inputs (esbuild's input list is not plumbed out of `compileTs`). It therefore
   over-reports — an unrelated edit elsewhere in the dir also reads as dirty —
@@ -349,7 +349,7 @@ example path, matching the shape agreed above byte for byte.
   nothing.
 - **Cross-links:** [Plan 14](../done/14-bundle-shared-code-into-ts-pushes.md)
   (the compiler and marker this relocates),
-  [Plan 24](../open/24-shared-code-in-js-nodes.md) (inherits line 1; loses its second
+  [Plan 24](24-shared-code-in-js-nodes.md) (inherits line 1; loses its second
   marker token), [Plan 79](../done/79-shared-code-roots-anywhere.md) (why
   machine-specific bytes must stay out of the hashed artifact),
   [Plan 27](../done/27-verb-first-cli-grammar.md) (sticky workflow folders — why
