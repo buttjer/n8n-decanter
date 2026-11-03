@@ -1,7 +1,7 @@
 # Plan 31 — Sandbox `run` for untrusted node code (`--unsafe` to opt out)
 
 **Priority:** P2 (real footgun for the primary audience)
-**Status:** Not started — reworked and probe-verified, ready to implement
+**Status:** Done
 **Snapshot:** 2026-11-03T16:14Z @ da6d183
 **Model:** Opus (safety-critical boundary; the failure mode is arbitrary local
 code execution)

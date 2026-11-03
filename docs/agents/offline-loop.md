@@ -17,7 +17,12 @@ which makes them safe for agents to run without supervision:
 - **[`node run`](/docs/cli/node-run/)** — executes a node's body against a faked n8n
   context and prints the items it returns. With a fixture, `$input`,
   `$('Node Name')`, env, and static data are all controllable — real
-  execution feedback without touching the instance.
+  execution feedback without touching the instance. **By default the body
+  runs sandboxed** (a worker thread with no `process`, no `fetch`, no
+  filesystem, no network, no dynamic `import()`) — that default is what
+  makes it safe to run unsupervised. `--unsafe` drops the sandbox for full
+  host access and asks for approval first; it is not part of the
+  credential-free loop below.
 
 Adding `--simulate` (`preflight --offline --simulate`) keeps the loop
 credential-free and still never contacts n8n, but it boots a throwaway local

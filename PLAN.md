@@ -1591,6 +1591,95 @@ Expression-language extensions (`$if`/`$min`/`$max`/`$ifEmpty`) are deliberately
 JS, so they throw in real n8n too. `scripts/globals-drift-audit.mts` reads n8n's
 proxy at a pinned tag to flag newly-added globals (names only, license-clean).
 
+### The `node run` sandbox boundary (Plan 31)
+
+`node run` executes a node's body **by default inside a `node:worker_threads`
+worker**, in that worker's own main realm, scrubbed down to an allowlist — not
+a faithful n8n sandbox (see "The emulated-globals surface" above for that
+distinction), but a boundary against the host: no `process`, no filesystem,
+no network (`fetch`/`Request`/`Response`/`Headers`/`FormData`, `WebSocket`,
+`EventSource`, `BroadcastChannel`, `MessageChannel`/`MessagePort`,
+`navigator`, `localStorage`/`sessionStorage` are all deleted), no dynamic
+`import()`. **`--unsafe`** drops the worker and runs the body in-process with
+today's full host access, printing a `log.warn` notice (`running with full
+host access — no sandbox (--unsafe)`) so the CLI's own output marks the
+escape.
+
+**The allowlist is not hand-written.** It is read from a fresh V8 realm
+(`vm.runInNewContext("globalThis")`) before the lock — only the key *names*
+cross, no object from that realm is kept — so it tracks V8's own additions
+(Temporal, Iterator) and matches the vm realm n8n's task runner itself starts
+from. That realm includes `WebAssembly`, `SharedArrayBuffer`, `Atomics` and
+`Intl`. On top of it, Node-specific extras are added by name: `Buffer`, the
+`setTimeout`/`setInterval`/`setImmediate` family and their `clear*`,
+`queueMicrotask`, `atob`/`btoa`, `TextEncoder`/`TextDecoder` and their
+`*Stream` variants, `URL`/`URLSearchParams`, `structuredClone`, `crypto`,
+`AbortController`/`AbortSignal`, `Event`/`EventTarget`, `DOMException`, and
+`performance`. `console` is replaced with decanter's own (see below); every
+other global not on this union is deleted, then `Reflect.ownKeys(globalThis)`
+is re-enumerated — if anything outside the allowlist is still there (a Node
+release where a global turned undeletable), the worker refuses to run the
+body at all (exit 1, naming the global and the Node version) rather than run
+with a silently wider hole than intended.
+
+Decanter's sandbox is **wider than n8n's own Code-node vm context** in a few
+places, and that is a deliberate fidelity gap, not a bug: n8n's `vm` realm
+has no `URL`, `structuredClone`, `crypto`, `AbortController`/`AbortSignal`,
+`Event`/`EventTarget`, `DOMException`, `queueMicrotask` or `performance` at
+all (a bare `vm` realm lacks them), and n8n has `FormData` where decanter
+does not (kept out with the rest of the fetch family, since it is a
+data-interchange type for network calls decanter's sandbox has no way to
+make). A node that depends on one of these wider globals runs fine under
+`node run` but would throw on the real instance — `test` (a real draft run
+over MCP) is the fidelity backstop that catches that gap; `node run` is the
+offline approximation, not a promise of n8n parity.
+
+**The import lock.** After the worker's own startup imports finish, a
+`module.registerHooks` resolve hook refuses **every** subsequent `import()`
+— including a specifier the worker already loaded — throwing an `Error`
+whose `code` is `ERR_DECANTER_SANDBOX_IMPORT`. This is what stops a bundled
+dependency from re-entering the host realm through a relative or cached
+import path once the body is running.
+
+**JSON hand-off.** The worker returns its result to the parent with JSON
+semantics: `toJSON` is honoured, functions and `undefined` are dropped the
+way `JSON.stringify` drops them, and a bare `undefined` return still prints
+as it does today — this is byte-identical to `--unsafe` for ordinary
+pure-logic nodes. Only what JSON itself refuses (a circular structure, a
+`BigInt`) becomes an error naming the item (`item <index>`) rather than a
+silent `DataCloneError`. The item count is always computed from the body's
+**raw** return value, never from the parsed JSON.
+
+**The two boundary error messages.** An error that escapes the body is
+mapped to a friendly line only in these cases (everything else — a typo, a
+`throw new Error("x")` — keeps today's message unchanged):
+
+- A removed global or a blocked import, sandboxed mode only:
+  `` ✗ `<name>` is not available in sandboxed `node run` — pass `--unsafe` to
+  allow host access. `` (`<name>` is `import()` for the import-lock case).
+- A CommonJS name (`require`/`module`/`exports`/`__dirname`/`__filename`),
+  in **both** modes, because the CLI is ESM either way: `` ✗ `<name>` is not
+  available in `node run` — node files are ES modules: use a top-level
+  `import` (npm packages need `bundleDependencies` in
+  decanter.config.json). `` — no `--unsafe` hint, since `--unsafe` would not
+  fix it.
+
+A body whose promise never settles is reported, not hung or swallowed: the
+CLI exits 1 with a message saying the node never returned, and a worker
+`error` event is surfaced the same way.
+
+**Agent tooling.** The scaffolded `.claude/settings.json.example` and
+`opencode.json.example` ask for approval before a `node run --unsafe`
+invocation (bare, `npx n8n-decanter`, and `npx --no-install
+n8n-decanter`), the same way they ask before `push --force` — because
+`--unsafe` is the one `node run` invocation that can touch the host. That
+match is a literal substring match on the argv, which is a known-incomplete
+guard: a Claude Code probe on 2026-11-03 found that a quoted or
+split flag (`--un''safe`) still reaches the shell as `--unsafe` and runs
+unsafely, but no longer contains the literal text the `ask` rule matches
+on — the escape is residual, not closed, and is named as such in the
+template `AGENTS.md`.
+
 ## Milestones
 
 1. ✅ Scaffold + pull, single workflow (API era — validated the data model).

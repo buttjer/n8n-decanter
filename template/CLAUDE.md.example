@@ -21,6 +21,11 @@ The contract above (from `AGENTS.md`) is authoritative. A few Claude-only notes:
   The hook is a quiet no-op until the CLI is on your PATH (install it globally or
   `npm link` it) — until then run `n8n-decanter preflight --offline` /
   `n8n-decanter node run` yourself.
+- **`n8n-decanter node run` is sandboxed by default — no approval needed.**
+  `--unsafe` gives the node body full host access and is gated by
+  `.claude/settings.json`'s `permissions.ask` rule (see AGENTS.md's
+  "Verification" section for the residual risk: a quoted `--un''safe` still
+  runs unsafely but can dodge the rule's literal match).
 - **Renames happen in n8n — and an MCP rename strands every `$('…')` ref**
   (see "Renaming a node" in AGENTS.md). The n8n editor rewrites them for you;
   the `renameNode` MCP op rewrites the connections only, then reports success.

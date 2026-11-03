@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`node run` scaffolds a Claude Code `permissions.ask` rule for
+  `--unsafe`.** `template/.claude/settings.json.example` now carries an
+  `ask` array with `Bash(n8n-decanter *--unsafe*)` and
+  `Bash(npx n8n-decanter *--unsafe*)`, so a `--unsafe` invocation still
+  prompts even where `node run` itself is pre-approved. The equivalent
+  entries land in `template/opencode.json.example`'s `permission.bash`
+  map. (Quoted obfuscated forms like `--un''safe` still slip past the
+  matcher — the scaffolded agent docs name this residual risk.)
+
+### Changed
+
+- **Breaking: `node run` is sandboxed by default.** The body now runs in a
+  separate worker with a scrubbed global scope: no `process`, no `fetch`
+  family, no `WebSocket`/`EventSource`/`BroadcastChannel`/`MessagePort`,
+  no `navigator`/`localStorage`/`sessionStorage`, and no dynamic `import()`
+  (including one that re-imports a module the CLI already loaded). `console`
+  is decanter's own; `import()` and host globals the scrub removed fail with
+  a message naming the global and pointing at `--unsafe`. The
+  ECMAScript built-ins plus `Buffer`, the timer family, `btoa`/`atob`,
+  `TextEncoder`/`TextDecoder` (and their stream variants),
+  `URL`/`URLSearchParams`, `structuredClone`, `crypto`,
+  `AbortController`/`AbortSignal`, `Event`/`EventTarget`, `DOMException`,
+  `queueMicrotask` and `performance` stay available — a wider surface than
+  n8n's own Code-node scope, so code that passes sandboxed is not
+  guaranteed to run in n8n. A node or bundled dependency that needs the
+  host reads `process`/`fetch` etc. should pass `--unsafe`, which runs the
+  body in-process with full host access and prints a
+  `running with full host access — no sandbox (--unsafe)` notice on stderr.
+  CommonJS names (`require`, `module`, `exports`, `__dirname`, `__filename`)
+  are undefined in both modes (the CLI is ESM) and get their own message
+  pointing at `import` and `bundleDependencies`, with no `--unsafe` hint.
+  Values the JSON hand-off refuses (circular structures, BigInt) now error
+  with the item named. A body whose promise never settles no longer hangs
+  the CLI — it exits 1 with a message saying the node never returned.
+  Use `preflight --simulate` for a faithful local-engine run.
+
 ## [0.11.4] - 2026-10-25
 
 ### Changed

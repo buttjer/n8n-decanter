@@ -132,6 +132,14 @@ that travels, package it and go the npm route
 that a `file:`/`npm link` target *outside your repo* resolves to a
 machine-specific path, so teammates would compile different bytes.
 
+**One caveat for `node run`:** the default offline run is **sandboxed** — no
+`process`, no `fetch`, no `import()` — so an opted-in npm package that reads
+`process.env` (or any other host global) **at load time** fails under the
+default `node run` with the sandbox's error. In n8n's own runner the same
+package loads fine, because n8n allows allowlisted modules to read the host
+environment. Run that node with **`--unsafe`** to give the body full host
+access and match n8n's behaviour for that dependency.
+
 **Same-named helpers never collide by path** — `shared/money.ts` and
 `domain/money.ts` are unrelated modules. What can collide is the **binding
 name** you import under: aliased
