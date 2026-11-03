@@ -120,6 +120,23 @@ Requirements the implementation must keep, or the above stops being true:
 - **Optimise for the latest n8n** (2026-10-23): nothing here is
   version-specific — `run` never talks to n8n.
 
+## Decided at implementation start (operator, 2026-11-03)
+
+- **CommonJS names get their own message.** `require`, `module`,
+  `exports`, `__dirname` and `__filename` are undefined in both modes (the
+  CLI is ESM), so `--unsafe` would not fix them. Their error points at a
+  top-level `import` (npm packages via `bundleDependencies`) instead of
+  Task 4's `--unsafe` hint.
+- **Return values keep JSON behaviour.** The worker hands the result back
+  with `JSON.stringify` semantics — functions dropped, `toJSON` honoured —
+  so output stays byte-identical to `--unsafe`. Only values JSON refuses
+  (circular, BigInt) get Task 2's error naming the item. This replaces
+  Task 2's error for a function or class instance.
+- **Claude Code probe (2.1.316):** `Bash(n8n-decanter *--unsafe*)` as an
+  `ask` rule beats the `node:*` allow wherever the flag sits, but a
+  shell-quoted `--un''safe` passes it. The template `AGENTS.md` names that
+  residual risk (Task 7's fallback, for that case only).
+
 ## Tasks
 
 1. **Extract the execution boundary.** Isolate `invoke` behind one interface
