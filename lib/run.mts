@@ -4,7 +4,7 @@ import tty from "node:tty";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { compileNode, isManagedSource } from "./compile.mts";
-import { buildGlobals, executeBody, type Fixture } from "./globals.mts";
+import { buildGlobals, commonJsHint, executeBody, type Fixture, referenceErrorIdent, serializeRaw } from "./globals.mts";
 import type { SandboxMessage, SandboxRequest } from "./runsandbox.mts";
 import { nodeFileContextDir } from "./state.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
@@ -73,11 +73,24 @@ interface ExecResult {
  */
 type Execute = (req: ExecRequest) => Promise<ExecResult>;
 
-/** `--unsafe`: today's in-process AsyncFunction, with full host access. */
+/**
+ * `--unsafe`: today's in-process AsyncFunction, with full host access. Still
+ * maps a CommonJS name (Plan 31, "Friendly boundary errors", operator
+ * decision 1) — `require`/`module`/`exports`/`__dirname`/`__filename` are
+ * undefined here too (the CLI is ESM), and `--unsafe` would not fix that, so
+ * the hint applies without the `--unsafe` text the sandbox message carries.
+ */
 const executeInProcess: Execute = async (req) => {
   const globals = await buildGlobals(req.fixture, { node: req.node, staticData: req.staticData, env: req.env, console });
-  const raw = await executeBody(req.code, req.mode, globals);
-  return { count: Array.isArray(raw) ? raw.length : raw === undefined ? 0 : 1, text: JSON.stringify(raw, null, 2) };
+  let raw: unknown;
+  try {
+    raw = await executeBody(req.code, req.mode, globals);
+  } catch (err) {
+    const ident = referenceErrorIdent(err);
+    const hint = ident === undefined ? undefined : commonJsHint(ident);
+    throw hint === undefined ? err : new Error(hint);
+  }
+  return { count: Array.isArray(raw) ? raw.length : raw === undefined ? 0 : 1, text: serializeRaw(raw) };
 };
 
 /**

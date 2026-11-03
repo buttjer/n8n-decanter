@@ -23,7 +23,7 @@ import { registerHooks } from "node:module";
 import { formatWithOptions } from "node:util";
 import vm from "node:vm";
 import { parentPort, workerData } from "node:worker_threads";
-import { append, buildGlobals, executeBody, type Fixture } from "./globals.mts";
+import { append, buildGlobals, commonJsHint, executeBody, type Fixture, referenceErrorIdent, serializeRaw } from "./globals.mts";
 import type { WorkflowNode } from "./types.mts";
 
 /** What the parent posts as `workerData`; every field structured-clones. */
@@ -152,12 +152,17 @@ const isAllowed = (k: PropertyKey): boolean => ReflectApply(SetHas, allowed, [k]
  * Delete every global outside the allowlist; turn the lazy accessors Node
  * uses for kept ones (`Buffer`, `crypto`, `performance`) into plain data
  * properties, so the body never calls a getter of Node's loader. Returns what
- * is still there that should not be — empty, or the run refuses.
+ * is still there that should not be (`left` — empty, or the run refuses) and
+ * the NAMES actually deleted (`removed` — the set "Friendly boundary errors"
+ * maps a `ReferenceError` against, so a typo like `fooo` — never a global at
+ * all — stays a plain `ReferenceError` instead of getting the sandbox hint).
  */
-function scrub(): string[] {
+function scrub(): { left: string[]; removed: Set<string> } {
+  const removed = new Set<string>();
   for (const k of ReflectOwnKeys(globalThis)) {
     if (!isAllowed(k)) {
       ReflectDeleteProperty(globalThis, k);
+      if (typeof k === "string") removed.add(k);
       continue;
     }
     const d = ReflectGetOwnPropertyDescriptor(globalThis, k);
@@ -166,7 +171,7 @@ function scrub(): string[] {
   ReflectDefineProperty(globalThis, "console", dataDescriptor(sandboxConsole, false));
   const left: string[] = [];
   for (const k of ReflectOwnKeys(globalThis)) if (!isAllowed(k)) append(left, StringCtor(k));
-  return left;
+  return { left, removed };
 }
 
 /** The import lock: refuses EVERY specifier, the worker's own included (the cache would serve those). */
@@ -181,6 +186,36 @@ function lockImports(): void {
 }
 
 const isObjectLike = (v: unknown): v is Record<string, unknown> => v !== null && (typeof v === "object" || typeof v === "function");
+
+/** The sandbox hint for a global the scrub removed, or `import()` (contract text, exact). */
+const sandboxHint = (name: string): string =>
+  `\`${name}\` is not available in sandboxed \`node run\` — pass \`--unsafe\` to allow host access.`;
+
+/**
+ * An error that ESCAPED the body (Plan 31, "Friendly boundary errors"):
+ * `require`/`module`/`exports`/`__dirname`/`__filename` get the CommonJS
+ * hint (checked first — those names are never real globals here, so they
+ * would not be in `removed` either); a `ReferenceError` for a name the scrub
+ * actually deleted, or the import-lock's `ERR_DECANTER_SANDBOX_IMPORT`, gets
+ * the sandbox hint; everything else (a typo, a thrown value, the
+ * fixture/static-data errors) keeps its message unchanged.
+ */
+function mapBoundaryError(err: unknown, removed: Set<string>): unknown {
+  const code = isObjectLike(err) ? (() => {
+    try {
+      return err.code;
+    } catch {
+      return undefined;
+    }
+  })() : undefined;
+  if (code === SANDBOX_IMPORT_CODE) return new ErrorCtor(sandboxHint("import()"));
+  const ident = referenceErrorIdent(err);
+  if (ident === undefined) return err;
+  const cjs = commonJsHint(ident);
+  if (cjs !== undefined) return new ErrorCtor(cjs);
+  if (ReflectApply(SetHas, removed, [ident])) return new ErrorCtor(sandboxHint(ident));
+  return err;
+}
 
 /** Read a thrown value into a plain message. Every read can run body code (getters), so each is guarded. */
 function failure(err: unknown): SandboxMessage {
@@ -222,7 +257,7 @@ async function main(): Promise<void> {
     send(failure(err));
     return;
   }
-  const left = scrub();
+  const { left, removed } = scrub();
   if (left.length > 0) {
     // Fail closed: a Node release where a global turned undeletable would
     // otherwise run the body next to it.
@@ -235,7 +270,7 @@ async function main(): Promise<void> {
   try {
     raw = await executeBody(request.code, request.mode, globals);
   } catch (err) {
-    send(failure(err));
+    send(failure(mapBoundaryError(err, removed)));
     return;
   }
   // Counted from the RAW value, exactly as --unsafe does; JSON semantics
@@ -243,7 +278,7 @@ async function main(): Promise<void> {
   const count = ArrayIsArray(raw) ? raw.length : raw === undefined ? 0 : 1;
   let text: string | undefined;
   try {
-    text = JSONStringify(raw, null, 2);
+    text = serializeRaw(raw);
   } catch (err) {
     send(failure(err));
     return;

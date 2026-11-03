@@ -291,8 +291,94 @@ const ReflectApply = Reflect.apply;
 const ReflectConstruct = Reflect.construct;
 const ReflectDefineProperty = Reflect.defineProperty;
 const ObjectKeys = Object.keys;
+const ArrayIsArray = Array.isArray;
+const JSONStringify = JSON.stringify;
+const StringCtor = String;
+const ErrorCtor = Error;
+const StringEndsWith = String.prototype.endsWith;
+const StringSlice = String.prototype.slice;
 // biome-ignore lint/complexity/useArrowFunction: need a function-expression handle to reach the AsyncFunction constructor.
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+const isObjectLikeG = (v: unknown): v is Record<string, unknown> => v !== null && (typeof v === "object" || typeof v === "function");
+
+/** A property read that never throws (a body may have put a throwing getter on its own thrown object). */
+function readProp(obj: unknown, key: PropertyKey): unknown {
+  if (!isObjectLikeG(obj)) return undefined;
+  try {
+    return (obj as Record<PropertyKey, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The bare identifier V8 names in an uncaught `<name> is not defined`
+ * ReferenceError, else `undefined` — any other error (a typo, a thrown
+ * value, a different error type) falls through untouched (Plan 31, "Friendly
+ * boundary errors": only a plain "is not defined" ReferenceError is a
+ * candidate for remapping).
+ */
+export function referenceErrorIdent(err: unknown): string | undefined {
+  if (readProp(err, "name") !== "ReferenceError") return undefined;
+  const message = readProp(err, "message");
+  if (typeof message !== "string") return undefined;
+  const suffix = " is not defined";
+  if (!ReflectApply(StringEndsWith, message, [suffix])) return undefined;
+  return ReflectApply(StringSlice, message, [0, message.length - suffix.length]) as string;
+}
+
+/** The five names a `.mts`/`.ts`/`.js` node file never has, in either run mode (operator decision 1). */
+const COMMONJS_NAMES = ["require", "module", "exports", "__dirname", "__filename"];
+
+/**
+ * The CommonJS boundary message for a `referenceErrorIdent` result, else
+ * `undefined`. Applies in BOTH run modes — the CLI is ESM, so these five
+ * names are undefined in-process too, and `--unsafe` would not fix it.
+ */
+export function commonJsHint(ident: string): string | undefined {
+  for (let i = 0; i < COMMONJS_NAMES.length; i++) {
+    if (ident === COMMONJS_NAMES[i]) {
+      return `\`${ident}\` is not available in \`node run\` — node files are ES modules: use a top-level \`import\` (npm packages need \`bundleDependencies\` in decanter.config.json).`;
+    }
+  }
+  return undefined;
+}
+
+/** A marker key on a per-item `executeBody` result (never exposed to the body) carrying each collected item's INPUT index — an item an earlier call dropped (an `undefined` return) shifts later ones off their position in the returned array. */
+const ITEM_INDICES: unique symbol = Symbol("decanter.itemIndices");
+
+/**
+ * `JSON.stringify(raw, null, 2)`, but a value JSON refuses (circular, BigInt)
+ * is re-thrown naming the offending item (Plan 31, "Values JSON refuses"):
+ * the index in the returned array for all-items mode, or — per-item mode —
+ * the ORIGINAL INPUT index, read back off the `ITEM_INDICES` marker
+ * `executeBody` attaches, so a dropped `undefined` item doesn't shift later
+ * ones' reported index.
+ */
+export function serializeRaw(raw: unknown): string {
+  try {
+    return ReflectApply(JSONStringify, undefined, [raw, null, 2]) as string;
+  } catch (err) {
+    throw itemBoundaryError(raw, err);
+  }
+}
+
+function itemBoundaryError(raw: unknown, err: unknown): unknown {
+  if (ArrayIsArray(raw)) {
+    const indices = readProp(raw, ITEM_INDICES) as number[] | undefined;
+    for (let i = 0; i < (raw as unknown[]).length; i++) {
+      try {
+        ReflectApply(JSONStringify, undefined, [(raw as unknown[])[i]]);
+      } catch (e) {
+        const idx = indices ? indices[i] : i;
+        const msg = isObjectLikeG(e) ? StringCtor(readProp(e, "message")) : StringCtor(e);
+        return new ErrorCtor(`item ${idx}: ${msg}`);
+      }
+    }
+  }
+  return err;
+}
 
 /**
  * Append without `Array.prototype.push` and without a `[[Set]]` — a body can
@@ -328,6 +414,10 @@ export async function executeBody(code: string, mode: string, globals: Awaited<R
   if (mode !== "runOnceForEachItem") return await invoke(code, globals);
   const input = globals.$input.all();
   const collected: unknown[] = [];
+  // Parallel to `collected`: which INPUT index each collected entry came
+  // from — a dropped `undefined` return shifts later entries off their input
+  // position, so `serializeRaw` reads this back to name the right item.
+  const indices: number[] = [];
   for (let i = 0; i < input.length; i++) {
     const item = input[i];
     const perItem = {
@@ -338,7 +428,11 @@ export async function executeBody(code: string, mode: string, globals: Awaited<R
       $input: { ...globals.$input, item },
     };
     const ret = await invoke(code, perItem);
-    if (ret !== undefined) append(collected, ret);
+    if (ret !== undefined) {
+      append(collected, ret);
+      append(indices, i);
+    }
   }
+  ReflectDefineProperty(collected, ITEM_INDICES, { __proto__: null, value: indices, writable: false, enumerable: false, configurable: false } as PropertyDescriptor);
   return collected;
 }
