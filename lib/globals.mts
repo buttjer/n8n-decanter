@@ -376,8 +376,14 @@ function itemBoundaryError(raw: unknown, err: unknown): unknown {
         return new ErrorCtor(`item ${idx}: ${msg}`);
       }
     }
+    return err;
   }
-  return err;
+  // A single non-array return (all-items mode's most common shape, e.g.
+  // `return { json }`) still counts as one item (`run.mts`'s `count`), so it
+  // gets the same "item <index>" framing rather than the raw JSON.stringify
+  // error leaking past the boundary unnamed.
+  const msg = isObjectLikeG(err) ? StringCtor(readProp(err, "message")) : StringCtor(err);
+  return new ErrorCtor(`item 0: ${msg}`);
 }
 
 /**

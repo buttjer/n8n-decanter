@@ -1,7 +1,7 @@
 // Plan 31 — the sandbox worker entry for `node run`. One worker per
 // invocation runs the whole body loop in its OWN main realm, after that realm
 // has been scrubbed of everything host-capable. "How A holds" in
-// plans/open/31-run-sandbox-boundary.md is the measurement behind each step:
+// plans/done/31-run-sandbox-boundary.md is the measurement behind each step:
 //
 //   1. This module is strict (an .mts module always is), so a body's
 //      `Error.prepareStackTrace` gets `undefined` from `getFunction()` and
