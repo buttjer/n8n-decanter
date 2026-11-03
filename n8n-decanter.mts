@@ -151,7 +151,7 @@ const usageSections = (): Array<{ title: string; note?: string; entries: Array<{
     {
       title: b("Node"),
       entries: [
-        { verb: "node", lines: [`  ${b("node run")} <node-file> [fixture.json] [--allow-env]  ${d("run a node locally (offline)")}`] },
+        { verb: "node", lines: [`  ${b("node run")} <node-file> [fixture.json] [--allow-env] [--unsafe]  ${d("run a node locally (offline, sandboxed)")}`] },
       ],
     },
     {
@@ -334,6 +334,8 @@ async function main() {
   const scaffoldFlag = args.includes("--scaffold");
   const extendFlag = args.includes("--extend");
   const allowEnv = args.includes("--allow-env");
+  // Plan 31: `node run` is sandboxed by default; this opts back into host access.
+  const unsafeFlag = args.includes("--unsafe");
   const remoteFlag = args.includes("--remote");
   const jsonFlag = args.includes("--json");
   const allFlag = args.includes("--all");
@@ -476,7 +478,7 @@ async function main() {
   // Offline, config-free verbs — no decanter.config.json or credentials needed.
   if (command === "node:run") {
     if (rest.length < 1) throw new Error("node run needs a node file argument: n8n-decanter node run <node-file> [fixture.json]");
-    await runNode(rest[0], rest[1], log, { allowEnv });
+    await runNode(rest[0], rest[1], log, { allowEnv, unsafe: unsafeFlag });
     return;
   }
 
@@ -492,7 +494,7 @@ async function main() {
     // workflow names/ids — offline, credentials-free, silent without a config
     const words = [...VERBS].filter((v) => v !== "__complete" && v !== "help");
     words.push(...NODE_VERBS, ...SCENARIO_VERBS, ...BACKUP_VERBS, ...MCP_VERBS); // sub-verbs after `node` / `scenario` / `backup` / `mcp`
-    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--dir=", "--host=", "--token=", "--mcp-token=", "--api-key=", "--auth=", "--reauth", "--help", "--version");
+    words.push("--force", "--publish", "--no-typecheck", "--remote", "--status=", "--limit=", "--allow-env", "--unsafe", "--execution=", "--scenario=", "--scaffold", "--extend", "--json", "--n8n-version=", "--filter=", "--search=", "--sort=", "--all", "--port=", "--trigger=", "--simulate", "--offline", "--viewer", "--fail-on=", "--fail-fast", "--require=", "--no-fetch", "--dir=", "--host=", "--token=", "--mcp-token=", "--api-key=", "--auth=", "--reauth", "--help", "--version");
     try {
       const config = loadConfig(syncDir(), { requireHost: false });
       for (const ref of listWorkflowRefs(config.root)) words.push(...ref.names, ref.id);

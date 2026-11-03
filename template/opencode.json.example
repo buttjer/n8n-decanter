@@ -27,7 +27,10 @@
       "n8n-decanter push -f*": "deny",
       "npx n8n-decanter push --force*": "deny",
       "npx n8n-decanter push -f*": "deny",
-      "npx --no-install n8n-decanter push --force*": "deny"
+      "npx --no-install n8n-decanter push --force*": "deny",
+      "n8n-decanter *--unsafe*": "ask",
+      "npx n8n-decanter *--unsafe*": "ask",
+      "npx --no-install n8n-decanter *--unsafe*": "ask"
     }
   }
 }
