@@ -13,6 +13,22 @@
 //   4. The parent creates this worker with `env: {}`; `$env` under
 //      `--allow-env` is the snapshot the parent posts in `workerData`.
 //   5. The global allowlist is below.
+//   6. Every shared object the body can reach is frozen after all setup and
+//      before the body's first statement (Task 8, "The freeze" below).
+//
+// Why the freeze exists: the scrub removes names, but the body still shares
+// this realm's built-in prototypes with Node's own internals. Node reads
+// `process.noDeprecation` (and three siblings) while holding the real
+// `process`; those properties are not own, so the lookup falls through to
+// `Object.prototype`, and a getter a body planted there ran with
+// `this === process` (the end review of Tasks 1-7 verified it with
+// `Buffer(1)`'s DEP0005 warning). Closing that one key would leave the class
+// open: any shared object Node also reads or calls while holding a privileged
+// one. So everything shared is made immutable. It mirrors n8n's
+// `freezeGlobals()` (`packages/@n8n/task-runner/src/js-task-runner/
+// prototype-hardening.ts`), with one difference: n8n freezes its host realm
+// and runs user code in a separate `vm` realm, while here the body shares the
+// realm it freezes (a second realm is the escape described next).
 //
 // The body runs in this realm through the AsyncFunction constructor, never in
 // a `vm` context: a second realm is exactly what lets
@@ -63,6 +79,14 @@ const StringCtor = String;
 const ErrorCtor = Error;
 const SetHas = Set.prototype.has;
 const NODE_VERSION = process.version;
+const HOST_PROCESS: unknown = process;
+const ReflectGetPrototypeOf = Reflect.getPrototypeOf;
+const ObjectFreeze = Object.freeze;
+const ObjectIsFrozen = Object.isFrozen;
+const ObjectPrototype = Object.prototype;
+const TypeErrorCtor = TypeError;
+const PromiseCtor = Promise;
+const PromiseThen = Promise.prototype.then;
 
 const port = parentPort;
 if (port === null) throw new Error("lib/runsandbox.mts is a worker entry; `node run` starts it");
@@ -187,6 +211,277 @@ function lockImports(): void {
 
 const isObjectLike = (v: unknown): v is Record<string, unknown> => v !== null && (typeof v === "object" || typeof v === "function");
 
+// ---- the freeze (requirement 6) ----
+//
+// The reachable set is the one the phase-0 walk in
+// test/unit/run-sandbox-frozen.test.mts checks, so the freeze and its test
+// cannot disagree about what "reachable" means. Frozen: every object reached
+// through a [[Prototype]] link or a `.prototype`, and every function and
+// namespace object reached through a shared object. NOT frozen: `globalThis`
+// (a sloppy body's implicit global still has to work) and per-run data — the
+// fixture items, `$json`, static data, instances. Their own functions (a
+// stream controller's algorithms) are per-run too: no other run shares them,
+// so freezing them would protect nothing.
+
+/** A namespace object: plain, with its own string `Symbol.toStringTag` (JSON, Math, Intl, …). */
+function isNamespace(v: unknown): boolean {
+  if (v === null || typeof v !== "object") return false;
+  if (ReflectGetPrototypeOf(v) !== ObjectPrototype) return false;
+  const tag = ReflectGetOwnPropertyDescriptor(v, Symbol.toStringTag);
+  return tag !== undefined && typeof tag.value === "string";
+}
+
+/**
+ * Root (a): constructors and namespace objects as the realm had them before
+ * the scrub. A deleted name can still lead somewhere through a kept one, and
+ * Node's internals keep using them either way. Only data properties are
+ * read: a lazy accessor of a removed global (`fetch`, `navigator`) would load
+ * its whole module just to be frozen, and nothing the body holds leads to it.
+ *
+ * The undici family is skipped: those names are V8 lazy DATA properties, and
+ * merely reading one's descriptor loads undici, which leaves
+ * `Symbol(undici.globalDispatcher.2)` (a live network Agent) on the global
+ * object, where the scrub cannot remove it. Measured on Node 26.7.0, one
+ * descriptor read per global name, each in a fresh worker: 8 of 141 names
+ * added globals (+2 each), exactly these. Should another release add one, the
+ * scrub's own check finds the new global and the run refuses to start.
+ */
+const CAPTURE_SKIP = new Set<PropertyKey>(["FormData", "Headers", "Request", "Response", "MessageEvent", "CloseEvent", "ErrorEvent", "WebSocket"]);
+function captureBuiltins(): Array<[string, unknown]> {
+  const out: Array<[string, unknown]> = [];
+  for (const k of ReflectOwnKeys(globalThis)) {
+    if (CAPTURE_SKIP.has(k)) continue;
+    const d = ReflectGetOwnPropertyDescriptor(globalThis, k);
+    if (d === undefined || !("value" in d)) continue;
+    const v: unknown = d.value;
+    if (v === globalThis || v === HOST_PROCESS) continue;
+    if (typeof v === "function" || isNamespace(v)) append(out, [StringCtor(k), v]);
+  }
+  return out;
+}
+
+// The global names that are injected values in the walk's sense; they belong
+// to the getter-free phase. Same set as the phase-0 walk.
+const INJECTED_GLOBAL_NAMES = new Set<PropertyKey>(["DateTime", "Duration", "Interval", "console"]);
+const isInjectedKey = (k: PropertyKey): boolean => typeof k === "string" && (k.startsWith("$") || INJECTED_GLOBAL_NAMES.has(k));
+
+/** Defensive: the real `process` is never walked or frozen, wherever it turns up. */
+const isHostProcess = (v: object): boolean => v === HOST_PROCESS || ReflectGetOwnPropertyDescriptor(v, "dlopen") !== undefined;
+
+type Entry = [path: string, value: unknown, shared: boolean];
+
+/**
+ * Collect every object to freeze, keyed to the path that reached it (the
+ * fail-closed message names it). Two queues: built-ins get their getters
+ * called with the reached object as receiver — that is the only way to
+ * `crypto.subtle` or a stream's reader — while injected values and Luxon are
+ * read through descriptors only. Luxon's getters cache onto `this`
+ * (`fastNumbers` onto `Locale.prototype`, which then breaks every new Locale
+ * after the freeze), and `$node`, `$vars`, `$secrets` are Proxies that throw
+ * on a string-key read; their targets are empty, so descriptor reads never
+ * reach a trap.
+ */
+async function collectShared(globals: Record<string, unknown>, before: Array<[string, unknown]>): Promise<Map<object, string>> {
+  const freeze = new Map<object, string>();
+  const builtins: Entry[] = [];
+  const injected: Entry[] = [];
+  const mark = (v: object, p: string): void => {
+    if (v !== globalThis && !freeze.has(v)) freeze.set(v, p);
+  };
+  const enqueue = (getters: boolean, p: string, v: unknown, shared: boolean): void => {
+    if (!isObjectLike(v)) return;
+    if (shared && (typeof v === "function" || isNamespace(v))) mark(v, p);
+    (getters ? builtins : injected).push([p, v, shared]);
+  };
+  const viaProto = (getters: boolean, p: string, v: unknown): void => {
+    if (!isObjectLike(v)) return;
+    mark(v, p);
+    enqueue(getters, p, v, true);
+  };
+  // An instance is walked as per-run data, and its prototype as shared. A root
+  // that cannot be built on this Node has no instance a body could build
+  // either, so it is skipped rather than refused.
+  const root = (getters: boolean, label: string, make: () => unknown): unknown => {
+    let v: unknown;
+    try {
+      v = make();
+    } catch {
+      return undefined;
+    }
+    if (!isObjectLike(v)) return undefined;
+    enqueue(getters, label, v, false);
+    viaProto(getters, `${label}<proto>`, ReflectGetPrototypeOf(v));
+    return v;
+  };
+  const g = globalThis as Record<string, any>;
+
+  // (a) and (b): the realm before and after the scrub
+  for (const [k, v] of before) enqueue(true, k, v, true);
+  enqueue(true, "globalThis", globalThis, true);
+  for (const k of ReflectOwnKeys(globals)) {
+    const d = ReflectGetOwnPropertyDescriptor(globals, k);
+    if (d !== undefined && "value" in d) enqueue(false, StringCtor(k), d.value, true);
+  }
+
+  // (c) prototypes no global name leads to
+  viaProto(true, "GeneratorFunction.prototype", ReflectGetPrototypeOf(function* () {}));
+  viaProto(true, "AsyncGeneratorFunction.prototype", ReflectGetPrototypeOf(async function* () {}));
+  viaProto(true, "AsyncFunction.prototype", ReflectGetPrototypeOf(async () => {}));
+  root(true, "ArrayIterator", () => [].values());
+  root(true, "StringIterator", () => ""[Symbol.iterator]());
+  root(true, "MapIterator", () => new Map().entries());
+  root(true, "SetIterator", () => new Set().values());
+  root(true, "RegExpStringIterator", () => "a".matchAll(/a/g));
+  root(true, "IteratorHelper", () => g.Iterator.prototype.map.call([].values(), Math.abs));
+  viaProto(true, "globalThis<proto>", ReflectGetPrototypeOf(globalThis));
+
+  // (d) instances that carry built-in prototypes no global leads to. The
+  // timers stay live during the walk (their TimersList is only reachable
+  // then), and every trace is removed before the body runs.
+  const MARK = "decanter-freeze-mark";
+  const MEASURE = "decanter-freeze-measure";
+  let tmo: unknown;
+  let imm: unknown;
+  try {
+    tmo = root(true, "setTimeout()", () => setTimeout(Math.max, 600_000));
+    imm = root(true, "setImmediate()", () => setImmediate(Math.max));
+    root(true, "performance.mark()", () => performance.mark(MARK));
+    root(true, "performance.measure()", () => performance.measure(MEASURE));
+    root(true, "AbortController", () => new AbortController());
+    root(true, "Buffer.alloc(-1) error", () => {
+      try {
+        Buffer.alloc(-1);
+      } catch (e) {
+        return e;
+      }
+      return undefined;
+    });
+    const tes = root(true, "TextEncoderStream", () => new TextEncoderStream()) as TextEncoderStream | undefined;
+    if (tes !== undefined) {
+      root(true, "ReadableStream", () => tes.readable);
+      root(true, "WritableStream", () => tes.writable);
+      root(true, "ReadableStreamDefaultReader", () => tes.readable.getReader());
+      root(true, "WritableStreamDefaultWriter", () => tes.writable.getWriter());
+    }
+    let key: unknown;
+    try {
+      key = await crypto.subtle.importKey("raw", new Uint8Array(16), "AES-GCM", false, ["encrypt"]);
+    } catch {}
+    root(true, "CryptoKey", () => key);
+    const segs = root(true, "Intl.Segments", () => new Intl.Segmenter("en", { granularity: "word" }).segment("a b")) as Iterable<unknown> | undefined;
+    if (segs !== undefined) root(true, "Intl.SegmentIterator", () => segs[Symbol.iterator]());
+    root(true, "Iterator.from wrapper", () => g.Iterator.from({ next: Math.random }));
+    const DateTime = globals.DateTime as Record<string, any>;
+    root(false, "Luxon IANAZone", () => DateTime.fromISO("2024-01-01T00:00:00Z").setZone("Europe/Berlin").zone);
+    root(false, "Luxon Invalid", () => ReflectGetOwnPropertyDescriptor(DateTime.invalid("decanter-freeze"), "invalid")?.value);
+
+    const seen = new Map<unknown, boolean>();
+    for (const [queue, getters] of [[builtins, true], [injected, false]] as Array<[Entry[], boolean]>) {
+      for (let i = 0; i < queue.length; i++) {
+        const [p, v, shared] = queue[i];
+        if (!isObjectLike(v) || (seen.has(v) && (seen.get(v) || !shared))) continue;
+        seen.set(v, shared);
+        if (isHostProcess(v)) continue;
+        for (const k of ReflectOwnKeys(v)) {
+          const d = ReflectGetOwnPropertyDescriptor(v, k);
+          if (d === undefined) continue;
+          const kp = `${p}.${StringCtor(k)}`;
+          const gk = getters && !(v === globalThis && isInjectedKey(k));
+          if ("value" in d) {
+            if (k === "prototype") viaProto(gk, kp, d.value);
+            else enqueue(gk, kp, d.value, shared);
+          }
+          if (d.get) enqueue(gk, `${kp}<get>`, d.get, shared);
+          if (d.set) enqueue(gk, `${kp}<set>`, d.set, shared);
+        }
+        if (getters) {
+          // every getter on the chain, called with this object as receiver
+          for (let o: object | null = v; o !== null; o = ReflectGetPrototypeOf(o)) {
+            for (const k of ReflectOwnKeys(o)) {
+              if (o === globalThis && isInjectedKey(k)) continue;
+              const d = ReflectGetOwnPropertyDescriptor(o, k);
+              if (!d?.get) continue;
+              let got: unknown;
+              try {
+                got = ReflectApply(d.get, v, []);
+              } catch {
+                continue;
+              }
+              // a getter on the wrong receiver may hand back a rejected promise
+              // (a stream reader's `closed`); unhandled, it would end the run
+              if (got instanceof PromiseCtor) ReflectApply(PromiseThen, got, [undefined, noop]);
+              enqueue(true, `${p}.${StringCtor(k)}<got>`, got, shared);
+            }
+          }
+        }
+        viaProto(getters, `${p}<proto>`, ReflectGetPrototypeOf(v));
+      }
+    }
+  } finally {
+    clearTimeout(tmo as ReturnType<typeof setTimeout>);
+    clearImmediate(imm as ReturnType<typeof setImmediate>);
+    performance.clearMarks(MARK);
+    performance.clearMeasures(MEASURE);
+  }
+  return freeze;
+}
+
+const OVERRIDE_NAMES = ["constructor", "name", "message", "toString", "valueOf", "toLocaleString"];
+
+/**
+ * The override mistake, tamed the way Agoric SES's `lockdown` enablements do:
+ * a frozen prototype's data property makes the same name unassignable on
+ * every instance, which broke Node's own `warning.name = …` (so `Buffer(1)`
+ * died), `TextEncoderStream`'s `constructor`, and every Error subclass that
+ * sets `this.name`. These six names become accessors whose setter defines the
+ * value on the receiver instead. The frozen object itself stays refused, in
+ * sloppy code too — an accessor cannot see the caller's mode, and a silent
+ * `Error.prototype.name = …` would rename every error the runner formats.
+ * Both functions are methods (no `.prototype`), frozen, and use only
+ * built-ins captured at module load: `globalThis` stays writable, so a
+ * global looked up at call time would be whatever the body put there.
+ */
+function enableOverrides(owner: object): void {
+  for (let i = 0; i < OVERRIDE_NAMES.length; i++) {
+    const key = OVERRIDE_NAMES[i];
+    const d = ReflectGetOwnPropertyDescriptor(owner, key);
+    if (d === undefined || !("value" in d) || d.writable !== true || d.configurable !== true) continue;
+    const value: unknown = d.value;
+    const accessor = {
+      get(): unknown {
+        return value;
+      },
+      set(this: unknown, v: unknown): void {
+        if (this === owner || !isObjectLike(this) || !ReflectDefineProperty(this, key, dataDescriptor(v, true))) {
+          throw new TypeErrorCtor(`Cannot assign to read only property '${key}' of a frozen built-in`);
+        }
+      },
+    };
+    const get = ReflectGetOwnPropertyDescriptor(accessor, "get")!.value as () => unknown;
+    const set = ReflectGetOwnPropertyDescriptor(accessor, "set")!.value as (v: unknown) => void;
+    ObjectFreeze(get);
+    ObjectFreeze(set);
+    ReflectDefineProperty(owner, key, { __proto__: null, get, set, enumerable: d.enumerable === true, configurable: false } as PropertyDescriptor);
+  }
+}
+
+/** Freeze the reachable set; the path of the first object that did not freeze, or `undefined`. */
+async function freezeShared(globals: Record<string, unknown>, before: Array<[string, unknown]>): Promise<string | undefined> {
+  const set = await collectShared(globals, before);
+  for (const [o, p] of set) {
+    try {
+      enableOverrides(o);
+      ObjectFreeze(o);
+    } catch {
+      return p;
+    }
+  }
+  // Fail closed, re-checked as a separate pass: a Proxy or an exotic object
+  // can survive `Object.freeze` without throwing.
+  for (const [o, p] of set) if (!ObjectIsFrozen(o)) return p;
+  return undefined;
+}
+
 /** The sandbox hint for a global the scrub removed, or `import()` (contract text, exact). */
 const sandboxHint = (name: string): string =>
   `\`${name}\` is not available in sandboxed \`node run\` — pass \`--unsafe\` to allow host access.`;
@@ -257,6 +552,7 @@ async function main(): Promise<void> {
     send(failure(err));
     return;
   }
+  const before = captureBuiltins();
   const { left, removed } = scrub();
   if (left.length > 0) {
     // Fail closed: a Node release where a global turned undeletable would
@@ -265,6 +561,18 @@ async function main(): Promise<void> {
     return;
   }
   lockImports();
+  // Last: every setup step before this one may still write to a built-in
+  // (the lock's `registerHooks` among them), and nothing after it may.
+  let unfrozen: string | undefined;
+  try {
+    unfrozen = await freezeShared(globals as unknown as Record<string, unknown>, before);
+  } catch (err) {
+    unfrozen = `(the walk itself failed: ${StringCtor(isObjectLike(err) ? err.message : err)})`;
+  }
+  if (unfrozen !== undefined) {
+    send({ k: "fail", message: `sandboxed \`node run\` refused to start: the shared object \`${unfrozen}\` could not be frozen on Node ${NODE_VERSION}` });
+    return;
+  }
 
   let raw: unknown;
   try {
