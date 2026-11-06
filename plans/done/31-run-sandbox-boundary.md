@@ -1,11 +1,8 @@
 # Plan 31 — Sandbox `run` for untrusted node code (`--unsafe` to opt out)
 
 **Priority:** P2 (real footgun for the primary audience)
-**Status:** In progress — Tasks 1–7 built on branch
-`worktree-plan-cut-31-run-sandbox-boundary-d460244b` (2026-11-03); the end
-review found an escape, Task 8 is open. Not mergeable until Task 8 is done.
-(The file already sits in `done/` from that run; it stays there and only
-this line flips back to `Done`.)
+**Status:** Done — Tasks 1–7 (2026-11-03) and Task 8 (2026-11-06, frozen
+realm; fresh xhigh review found no code defect).
 **Snapshot:** 2026-11-03T16:14Z @ da6d183
 **Model:** Opus (safety-critical boundary; the failure mode is arbitrary local
 code execution)
