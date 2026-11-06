@@ -1634,6 +1634,72 @@ make). A node that depends on one of these wider globals runs fine under
 over MCP) is the fidelity backstop that catches that gap; `node run` is the
 offline approximation, not a promise of n8n parity.
 
+**The freeze (fourth layer).** The scrub, the import lock and the console
+replacement remove *names*; the freeze removes the ability to *modify* the
+built-ins that keep their names. Before the body's first statement, every
+shared object the body can reach is frozen: every constructor and namespace
+object on `globalThis` (captured before and after the scrub), their
+prototypes, and instance-only prototypes no global name leads to (`Timeout`,
+`Immediate`, generator / async-generator / async-function, the
+Array/String/Map/Set/RegExp string iterators, iterator helpers, and the
+`[[Prototype]]` chain of `globalThis`). From each object, the freeze follows
+own data-property values, accessor functions, the `[[Prototype]]`, and —
+for built-ins only — getters along the whole prototype chain called with
+the reached object as receiver (guarded). A second freeze step walks
+instances that carry built-in prototypes no global leads to: live
+`Timeout`/`Immediate` handles, `performance.mark()` and `.measure()`,
+`new AbortController()`, a Node error (the error-code class levels),
+`new TextEncoderStream()` (→ `ReadableStream`/`WritableStream` and their
+default reader/writer), a `CryptoKey`, `Intl.Segmenter` segments, an
+`Iterator.from` wrapper, Luxon's `IANAZone` and `Invalid`.
+
+The escape this closes (verified in the end review of Tasks 1–7): Node's
+own internals read properties the real `process` does not have as own
+properties (`process.noDeprecation`, `traceProcessWarnings`,
+`throwDeprecation`, `traceDeprecation`). These lookups fall through
+`process`'s prototype chain to `Object.prototype`. A body that defines a
+getter there and triggers a deprecation warning (e.g. `Buffer(1)` without
+`new`, DEP0005) has that getter called with `this === <the real process>`:
+`dlopen`, `binding`, `env`, `exit` — an escape. Closing that one key would
+leave the class open: any shared object Node also reads or calls while
+holding a privileged one.
+
+**SES-style override accessors.** A plain freeze breaks `Buffer(1)`'s
+warning path (Node's own warning code does `warning.name = …`),
+`TextEncoderStream`/`TextDecoderStream` (the `constructor` name), and
+`class E extends Error { constructor(m){ super(m); this.name = "E" } }`.
+So before freezing, on every object that is about to be frozen, the
+writable, configurable data properties named `constructor`, `name`,
+`message`, `toString`, `valueOf`, `toLocaleString` become non-configurable
+accessors: the getter returns the original value; the setter defines an
+own data property on the receiver, and throws a `TypeError` if the receiver
+is the frozen object itself — in sloppy code too, since an accessor cannot
+tell the caller's mode. (Agoric SES `lockdown`'s "enablements" are the
+model.)
+
+**Fail-closed self-check.** After freezing, the worker re-checks every
+collected object with `Object.isFrozen`; any that is not → the run refuses
+to start with `sandboxed `node run` refused to start: …` (same shape as
+the scrub self-check), never runs the body.
+
+**Modelled on n8n, not identical.** n8n's task runner freezes its host
+realm and runs user code in a separate `vm` realm (see
+`packages/@n8n/task-runner/src/js-task-runner/prototype-hardening.ts`).
+Decanter freezes the realm the body shares, because a second realm is
+exactly what lets `x.constructor.constructor("return process")()` escape:
+a `vm` context's `Function.prototype` points at the *host* realm, and the
+host realm has `process`. Here every function the body can reach belongs
+to the scrubbed realm, so that expression evaluates against a global
+object without `process`.
+
+**Not frozen:** `globalThis` itself (a sloppy body's implicit global still
+works), and per-run data — fixture items, `$json`, `staticData`, objects
+the body creates. Instances stay mutable; what they inherit from does
+not. `--unsafe` runs in the CLI's own realm and freezes nothing.
+
+Option B (a `vm` realm for the body) remains the fallback if the freeze
+turns out insufficient.
+
 **The import lock.** After the worker's own startup imports finish, a
 `module.registerHooks` resolve hook refuses **every** subsequent `import()`
 — including a specifier the worker already loaded — throwing an `Error`

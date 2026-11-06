@@ -50,6 +50,16 @@ fails with the sandbox message — e.g.
 ✗ `process` is not available in sandboxed `node run` — pass `--unsafe` to allow host access.
 ```
 
+**The built-ins are frozen.** Before the body runs, the sandbox freezes the
+built-in constructors, their prototypes and the namespace objects
+(`JSON`, `Math`, `Reflect`, `Intl`, …), modelled on n8n's task runner, which
+freezes its built-ins too — though n8n runs the code in a separate `vm` realm,
+so the two are not identical. Patching a built-in is refused: `Object.defineProperty`
+on a prototype, `Array.prototype.x = 1`, `Error.prepareStackTrace = f` each throw
+a `TypeError`, or have no effect in non-strict code. Assigning `name`, `message`,
+`toString`, `valueOf`, `toLocaleString` or `constructor` **on your own objects
+and errors** still works. `--unsafe` freezes nothing.
+
 **Still available:** the ECMAScript built-ins, plus `Buffer`,
 `setTimeout`/`setInterval`/`setImmediate` (and their `clear*`), `btoa`/`atob`,
 `TextEncoder`/`TextDecoder` (and their stream variants), `URL`/`URLSearchParams`,

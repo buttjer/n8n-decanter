@@ -33,7 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AbortController`/`AbortSignal`, `Event`/`EventTarget`, `DOMException`,
   `queueMicrotask` and `performance` stay available — a wider surface than
   n8n's own Code-node scope, so code that passes sandboxed is not
-  guaranteed to run in n8n. A node or bundled dependency that needs the
+  guaranteed to run in n8n. The sandboxed body's built-in constructors,
+  their prototypes and namespace objects are frozen before the body runs,
+  so patching a built-in (e.g. `Object.defineProperty` on a prototype,
+  `Array.prototype.x = 1`, `Error.prepareStackTrace = f`) is refused —
+  a `TypeError`, or no effect in non-strict code; assigning `name`,
+  `message`, `toString`, `valueOf`, `toLocaleString` or `constructor` on
+  your own objects and errors still works. `--unsafe` freezes nothing. A node or bundled dependency that needs the
   host reads `process`/`fetch` etc. should pass `--unsafe`, which runs the
   body in-process with full host access and prints a
   `running with full host access — no sandbox (--unsafe)` notice on stderr.
