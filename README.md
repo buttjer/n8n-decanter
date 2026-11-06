@@ -44,7 +44,9 @@ clean git diffs.
   build stamp (CLI version, git commit, push time) on line 1, so a bundle full
   of inlined helpers is never a mystery artifact.
 - **Agent-native** — `init` scaffolds Claude Code / Cursor / Codex configs;
-  `preflight --offline` and `node run` give agents a credential-free loop.
+  `preflight --offline` and `node run` give agents a credential-free,
+  **sandboxed** loop (no `process`, no `fetch` by default — `--unsafe` opts
+  in to full host access).
 - **Guarded agent access to n8n's MCP, wired by default** — the scaffolded
   `.mcp.json` forwards n8n's full MCP surface except Code-node `jsCode` writes,
   and the read-only `workflow.json` snapshot refreshes itself afterwards.
@@ -141,7 +143,7 @@ Full flag reference: `n8n-decanter --help`, or the
 | `backup create` / `restore` / `list` | Git-native disaster recovery — capture / redeploy / list versioned full-export backups |
 | `list [--remote]` | Pulled workflows (`--remote` adds unpulled ones) |
 | `mcp connect` / `mcp serve` | Guarded MCP access for coding agents |
-| `node run <node-file>` | Run a Code node offline, print its items |
+| `node run <node-file>` | Run a Code node offline (sandboxed — no `process`/`fetch`), print its items |
 
 A `<workflow>` is its **id, name, unique name-prefix, or folder name**
 (case-insensitive; ambiguity errors instead of prompting). Creating,

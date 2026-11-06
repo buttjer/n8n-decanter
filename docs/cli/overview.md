@@ -50,7 +50,7 @@ n8n-decanter backup list <workflow>                             # retained backu
 n8n-decanter list [--remote] [--json]
 
 # Node
-n8n-decanter node run <node-file> [fixture.json] [--allow-env]  # run a node locally (offline)
+n8n-decanter node run <node-file> [fixture.json] [--allow-env] [--unsafe]  # run a node locally (offline, sandboxed)
 
 # Agent guard — structure/lifecycle acts go through n8n's MCP, guarded
 n8n-decanter mcp connect            # stdio MCP guard (spawned from the scaffolded .mcp.json; no secret)
@@ -143,7 +143,7 @@ errors with *unknown verb*. Flags may still appear in any position.
 
 | Verbs | Network |
 | --- | --- |
-| `preflight --offline`, `node run`, `list`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`list --remote` is the exception; `preflight --offline --simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
+| `preflight --offline`, `node run`, `list`, `scenario check`, `completion`, `executions clean`, `data-tables clean` | Fully offline — no credentials needed (`node run` is sandboxed by default — no `process`, no `fetch`, no `import()`; `--unsafe` gives the body full host access; `list --remote` is the exception; `preflight --offline --simulate` needs Docker but never the n8n instance; `scenario create --scaffold` is the exception in the `scenario` namespace — it needs MCP) |
 | `diff`, `list --remote`, `executions`, `data-tables`, `backup create`/`restore` | Read the remote (`backup restore` also writes a **new** workflow, never touching the source) |
 | `backup list` | Fully offline — reads the local `backups/` store |
 | `test` | Grades the workflow's **draft** on the instance — run it **after a push** so the draft holds your code. **Bare**: a static check (dangling `$('…')` references), nothing executes, no capture needed. **With `--execution`/`--scenario`**: a pinned run. There is no fallback to the newest capture — executing means saying so. On a terminal, when local differs: a **published** workflow gets a local-vs-draft prompt; an **unpublished** one is pushed without asking (a draft nobody runs). Non-interactive runs never write |

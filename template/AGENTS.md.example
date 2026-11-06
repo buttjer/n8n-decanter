@@ -506,7 +506,18 @@ Two offline tools, always available (no credentials, no network, no live n8n):
 - **`n8n-decanter node run <file> [fixture.json]`** — actually executes a node's body
   against a faked n8n context (`$input`, `$json`, `$('Node')`, `DateTime`, …) and
   prints the items it returns. Prefer this over hand-rolling a throwaway test
-  script.
+  script. **By default the body runs sandboxed** (a worker thread whose
+  globals are scrubbed to an ECMAScript-plus-web-standard allowlist — no
+  `process`, no `fetch`, no filesystem, no network, no dynamic `import()`),
+  so running it needs no approval. `--unsafe` drops the sandbox and runs the
+  body with full host access (today's in-process behaviour) — only pass it
+  when a node genuinely needs the host (e.g. a bundled dependency that reads
+  `process` at load) and say so; `.claude/settings.json`'s `permissions.ask`
+  rule is what prompts for it. That rule matches on the literal substring
+  `--unsafe`, so a quoted or split flag (`--un''safe`, `--uns"afe"`) still
+  reaches the shell as `--unsafe` but no longer matches the rule text — don't
+  rely on the rule to catch a deliberately obfuscated flag; the risk is
+  residual, not closed.
   - The optional fixture JSON supplies the context; every field is optional:
 
     ```json

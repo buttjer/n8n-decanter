@@ -138,7 +138,7 @@ that boundary safe by construction.
 
 | Commands | Agent policy |
 | --- | --- |
-| `preflight --offline`, `node run`, `scenario` | Offline and safe — run freely (`scenario create --scaffold` is the exception; it needs MCP). Adding `--simulate` stays credential-free but boots a local Docker engine — minutes, not milliseconds, so opt in deliberately. |
+| `preflight --offline`, `node run`, `scenario` | Offline and safe — run freely (`scenario create --scaffold` is the exception; it needs MCP). `node run` is sandboxed by default (no `process`/`fetch`/filesystem/network/dynamic `import()`), which is what makes it safe to run freely; `node run --unsafe` gives the node body full host access and asks for approval first — not part of this row. Adding `--simulate` stays credential-free but boots a local Docker engine — minutes, not milliseconds, so opt in deliberately. |
 | `preflight`, `diff`, `list --remote` | Read the remote, no writes — safe, but they do contact the instance. `preflight` is the gate (exit 1 when `not ready`); `diff` is the view and **always exits 0**. |
 | `pull`, `push`, `watch` | Sync code with the instance. A push lands on the **draft** and never changes what is running, so it is **part of finishing the work** — code that only exists in the folder is not done. Say a word first if the workflow is published/active or a teammate is editing it. |
 | `publish`, `unpublish`, `push --publish` | **Change what is actually live — only when the user explicitly asks.** Never fold going live into "finishing the work". |

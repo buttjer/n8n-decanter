@@ -212,7 +212,7 @@ is a hard error. No viewer code was deleted.
 ## Naming note
 `simulate` was kept over sandbox / playground / container / rehearse. Rationale
 for the record: **sandbox** is already overloaded in this repo (shell-sandbox +
-the `node run` boundary, [Plan 31](../open/31-run-sandbox-boundary.md)); **playground**
+the `node run` boundary, [Plan 31](../done/31-run-sandbox-boundary.md)); **playground**
 implies interactivity this one-shot CI check doesn't have; **container** names
 the mechanism and would age wrong against the [Plan 26](../draft/26-npx-engine-backend.md)
 npx backend; **rehearse/replay** were viable verbs but not worth the churn. If

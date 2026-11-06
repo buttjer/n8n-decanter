@@ -1,41 +1,18 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import tty from "node:tty";
+import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 import { compileNode, isManagedSource } from "./compile.mts";
+import { buildGlobals, commonJsHint, executeBody, type Fixture, referenceErrorIdent, serializeRaw } from "./globals.mts";
+import type { SandboxMessage, SandboxRequest } from "./runsandbox.mts";
 import { nodeFileContextDir } from "./state.mts";
 import type { Log, Workflow, WorkflowNode } from "./types.mts";
 import { isJsCodeNode, placeholderFile, splitMarker } from "./util.mts";
 
-// biome-ignore lint/complexity/useArrowFunction: need a function-expression handle to reach the AsyncFunction constructor.
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-
-/** An n8n item ({ json, binary? }); json stays untyped — it's user data. */
-interface Item {
-  json: any;
-  binary?: any;
-}
-
-/**
- * Fixture file shape; every field is optional.
- *
- * `input` and each `nodes` entry take **either** a plain items array (one
- * output — the common case) **or** an array of items arrays, one per output
- * (Plan 66): `[[…output 0…], [], […output 2…]]`. The nested form is what makes
- * `$('Node').all(1)` / `$items('Node', 1)` / `$input.all(1)` answerable offline.
- */
-interface Fixture {
-  input?: unknown[];
-  nodes?: Record<string, unknown[]>;
-  params?: Record<string, unknown>;
-  env?: Record<string, string | undefined>;
-  /** Pins the instance-scoped `$vars`/`$secrets` (otherwise they signpost `test`). */
-  vars?: Record<string, string>;
-  secrets?: Record<string, unknown>;
-  workflow?: unknown;
-  execution?: unknown;
-  prevNode?: unknown;
-  /** Overrides the workflow.json staticData seed, per slice. `node` means the node being run. */
-  staticData?: { global?: unknown; node?: unknown };
-}
+// Re-exported: the emulated surface moved to lib/globals.mts (Plan 31), and
+// callers — test/unit/globals.test.mts among them — import it from here.
+export { buildGlobals };
 
 /**
  * Locate the node whose //@file: placeholder points at the given file (for
@@ -58,31 +35,6 @@ function findNodeContext(resolved: string): { node: WorkflowNode | null; staticD
   return { node, staticData: wf.staticData };
 }
 
-/**
- * The two staticData slices a node can see. Workflow JSON stores them as
- * `{ global: …, "node:<node name>": … }` (n8n's own key scheme); a fixture's
- * `staticData.global` / `staticData.node` replaces the matching slice whole.
- * The returned objects are mutable during the run — like in n8n — but `run`
- * never persists them (offline by design).
- */
-function staticDataSlices(raw: unknown, nodeName: string | undefined, fixture: Fixture): { global: Record<string, unknown>; node: Record<string, unknown> } {
-  let parsed = raw;
-  if (typeof parsed === "string") {
-    // the API may deliver staticData in its DB-serialized string form
-    try {
-      parsed = JSON.parse(parsed);
-    } catch {
-      parsed = undefined;
-    }
-  }
-  const seed = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
-  const slice = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
-  return {
-    global: slice(fixture.staticData?.global ?? seed.global),
-    node: slice(fixture.staticData?.node ?? (nodeName === undefined ? undefined : seed[`node:${nodeName}`])),
-  };
-}
-
 /** Load and shape a fixture file; every field is optional. */
 function loadFixture(fixturePath: string | undefined): Fixture {
   if (!fixturePath) return {};
@@ -97,225 +49,117 @@ function loadFixture(fixturePath: string | undefined): Fixture {
   return raw;
 }
 
-/** Normalize a value into an n8n item ({ json, binary? }). */
-function asItem(value: unknown): Item {
-  if (value && typeof value === "object" && "json" in value) return value as Item;
-  return { json: value ?? {} };
+/** What one `node run` hands the execution boundary. */
+interface ExecRequest {
+  code: string;
+  mode: string;
+  fixture: Fixture;
+  node: WorkflowNode | null;
+  staticData: unknown;
+  /** The CLI's environment snapshot, only under `--allow-env`. */
+  env?: Record<string, string | undefined>;
+}
+
+/** What comes back: the item count of the RAW return, and its `JSON.stringify(…, null, 2)`. */
+interface ExecResult {
+  count: number;
+  text: string | undefined;
 }
 
 /**
- * A branch the fixture does not pin has no honest answer (Plan 63 task 5).
- *
- * `all(branchIndex)` and `$items(name, outputIndex)` once accepted the argument
- * and **ignored** it, handing back output 0's items — so a Code node reading an
- * IF's false branch got the true branch's data and looked like it worked. That
- * is *wrong* data, not missing data: nothing fails, and the node is graded
- * against a shape it will never see live.
- *
- * Plan 66 turns the refusal into an answer wherever the fixture supplies one —
- * a per-output fixture entry (`[[…], […]]`) makes the branch readable — so this
- * now fires only when the asked-for output genuinely isn't pinned, and says how
- * many are.
+ * The execution boundary (Plan 31 task 1). Both sides build the same globals
+ * and run the same `executeBody` loop; they differ only in WHERE. Results
+ * cross as JSON text either way, so stdout is byte-identical between them.
  */
-function branchSignpost(call: string, requested: number, pinnedOutputs: number): never {
-  throw new Error(
-    `${call} asks for output ${requested}, which this fixture does not pin — it supplies ${pinnedOutputs} output(s). ` +
-      `Pin that branch by giving the node one items array PER OUTPUT: "nodes": { "Name": [[…output 0…], […output 1…]] } (an empty array is a valid output). ` +
-      `Or run it for real with \`n8n-decanter test\`.`,
-  );
-}
+type Execute = (req: ExecRequest) => Promise<ExecResult>;
 
 /**
- * Read a fixture value as **outputs**: `[[…output 0…], […output 1…]]`.
- *
- * A plain items array is one output, the shape every fixture used before
- * Plan 66. The nested form is recognised when *every* element is an array — so
- * to pin a single output whose items are themselves arrays, write the explicit
- * item form (`[{ "json": [1, 2] }]`), which is not an array of arrays.
+ * `--unsafe`: today's in-process AsyncFunction, with full host access. Still
+ * maps a CommonJS name (Plan 31, "Friendly boundary errors", operator
+ * decision 1) — `require`/`module`/`exports`/`__dirname`/`__filename` are
+ * undefined here too (the CLI is ESM), and `--unsafe` would not fix that, so
+ * the hint applies without the `--unsafe` text the sandbox message carries.
  */
-function asOutputs(value: unknown[] | undefined): Item[][] {
-  if (value === undefined) return [[]];
-  if (value.length > 0 && value.every((v) => Array.isArray(v))) return (value as unknown[][]).map((out) => out.map(asItem));
-  return [value.map(asItem)];
-}
-
-function makeNodeRef(outputs: Item[][], label = "$('Node')") {
-  const list = outputs[0] ?? [];
-  // A branch the fixture DOES pin is answered; one it doesn't still refuses,
-  // because handing back output 0's items there is wrong data that looks right
-  // (Plan 63 task 5 — the refusal this builds on).
-  const branch = (branchIndex: number | undefined, method: string): Item[] => {
-    const i = branchIndex ?? 0;
-    const out = outputs[i];
-    if (out === undefined) branchSignpost(`${label}.${method}(${i})`, i, outputs.length);
-    return out;
-  };
-  return {
-    all: (branchIndex?: number) => branch(branchIndex, "all"),
-    first: (branchIndex?: number) => branch(branchIndex, "first")[0],
-    last: (branchIndex?: number) => {
-      const out = branch(branchIndex, "last");
-      return out[out.length - 1];
-    },
-    // Approximation: offline `run` has no paired-item graph, so `.item` /
-    // `.itemMatching` read the fixture by position rather than resolving the
-    // true linked item. Documented as "partial" in docs/cli/node-run.md.
-    item: list[0],
-    itemMatching: (i: number) => list[i],
-    params: {},
-    context: {},
-    isExecuted: true,
-  };
-}
-
-/**
- * The friendly boundary (Plan 43). A global whose value is genuinely
- * instance-scoped — n8n workflow variables, external secrets, the expression
- * engine — has no honest offline meaning, so `run` refuses it with one
- * consistent message that names the global and points at the escape hatches
- * (`test` against the real instance, or pinning it in the fixture) instead of
- * letting it surface as a bare `ReferenceError` at the call site.
- */
-function signpost(name: string, why: string, fixtureField?: string): never {
-  const pin = fixtureField ? `, or pin \`${fixtureField}\` in the fixture` : "";
-  throw new Error(`${name} is not emulated in \`run\` — ${why}. Run against the real instance with \`n8n-decanter test\`${pin}.`);
-}
-
-/** A function-shaped signpost (e.g. `$evaluateExpression`). */
-const signpostFn = (name: string, why: string, fixtureField?: string) => (): never => signpost(name, why, fixtureField);
-
-/**
- * Keys that serializers/inspectors probe (JSON.stringify's `toJSON`, thenable
- * detection's `then`, and every well-known symbol like `Symbol.toStringTag`) —
- * an emulated Proxy must return `undefined` for these rather than treat them as
- * a real access, so `JSON.stringify`/`console.log` of the proxy don't throw.
- */
-const isProbeKey = (prop: string | symbol): boolean => typeof prop !== "string" || prop === "toJSON" || prop === "then";
-
-/** A value-shaped signpost (e.g. `$vars`/`$secrets`): any real property read throws. */
-function signpostValue(name: string, why: string, fixtureField: string): Record<string, never> {
-  return new Proxy({} as Record<string, never>, {
-    get: (_t, prop) => (isProbeKey(prop) ? undefined : signpost(name, why, fixtureField)),
-  });
-}
-
-/**
- * Build the globals an n8n Code node sees (Plan 43 — the emulated surface). Each
- * global is one of: **emulated** (a pure/offline meaning — `$jmespath`, `$items`,
- * `$node`, Luxon), **pinnable** from the fixture (`$input`/`$json`/`$env`/`$vars`/…),
- * or a friendly **signpost** to `test` for genuinely instance-scoped values
- * (`$vars`/`$secrets` unpinned, `$evaluateExpression`). The set of keys returned
- * here is held in lock-step with `n8n-globals.d.ts` by the parity test. The
- * each-item loop in `runNode` overrides `$json`/`$binary`/`$itemIndex`/`$input.item`.
- */
-export async function buildGlobals(fixture: Fixture, context: { node?: WorkflowNode | null; staticData?: unknown; allowEnv?: boolean } = {}) {
-  const node = context.node ?? null;
-  const staticData = staticDataSlices(context.staticData, node?.name, fixture);
-  // `$input`'s branch index is the node's INPUT index (a Merge node's second
-  // input), and it reads from the fixture the same way a node's outputs do.
-  const inputs = asOutputs(fixture.input ?? [{ json: {} }]);
-  const input = inputs[0];
-  const nodes: Record<string, ReturnType<typeof makeNodeRef>> = {};
-  for (const [name, items] of Object.entries(fixture.nodes ?? {})) {
-    nodes[name] = makeNodeRef(asOutputs(items), `$(${JSON.stringify(name)})`);
+const executeInProcess: Execute = async (req) => {
+  const globals = await buildGlobals(req.fixture, { node: req.node, staticData: req.staticData, env: req.env, console });
+  let raw: unknown;
+  try {
+    raw = await executeBody(req.code, req.mode, globals);
+  } catch (err) {
+    const ident = referenceErrorIdent(err);
+    const hint = ident === undefined ? undefined : commonJsHint(ident);
+    throw hint === undefined ? err : new Error(hint);
   }
-  const $inputRef = makeNodeRef(inputs, "$input");
-  const $input = {
-    all: $inputRef.all,
-    first: $inputRef.first,
-    last: $inputRef.last,
-    item: input[0],
-    params: fixture.params ?? {},
-  };
-  const nodeRef = (name: string) => {
-    if (!nodes[name]) {
-      throw new Error(`node "${name}" has no fixture data — add it under "nodes" in the fixture JSON`);
-    }
-    return nodes[name];
-  };
-  // Legacy views over the same fixture `nodes` map: `$node.Name` mirrors
-  // `$("Name")`; `$items("Name")` is that node's `.all()` items array (and,
-  // with no name, the current input — n8n's own default).
-  const $node = new Proxy({} as Record<string, ReturnType<typeof makeNodeRef>>, {
-    get: (_t, prop) => (isProbeKey(prop) ? undefined : nodeRef(prop as string)),
-  });
-  const $items = (name?: string, outputIndex?: number, _runIndex?: number) =>
-    name === undefined ? $input.all(outputIndex) : nodeRef(name).all(outputIndex);
+  return { count: Array.isArray(raw) ? raw.length : raw === undefined ? 0 : 1, text: serializeRaw(raw) };
+};
 
-  // Luxon backs DateTime/Duration/Interval; jmespath backs `$jmespath` (n8n
-  // pins 0.16.0, data-first `search(data, expr)`). Both are hard deps, so a
-  // normal install always has them — imported eagerly because a Code node calls
-  // them synchronously.
-  const { DateTime, Duration, Interval } = await import("luxon");
-  const { search: jmespathSearch } = await import("jmespath");
-  const $jmespath = (data: unknown, expression: string) => {
-    // Mirror n8n's arg guard so bad-arg errors match (the security guard it also
-    // wraps `search` in is Plan 31's concern, not needed offline).
-    if (typeof data !== "object" || typeof expression !== "string") {
-      throw new Error("expected two arguments (Object, string) for this function");
-    }
-    return jmespathSearch(data, expression);
-  };
+/**
+ * Whether this process's `console` colours what it prints to `stream` — the
+ * worker formats console arguments but runs with `env: {}`, so it is told.
+ * Mirrors Node's own console (`shouldColorize`): FORCE_COLOR decides when set,
+ * otherwise a TTY with more than 2 colour depth. `getColorDepth` reads only
+ * the env it is given, so calling it off the prototype works for a non-TTY.
+ */
+function colorsFor(stream: NodeJS.WriteStream): boolean {
+  const depth = (): number => tty.WriteStream.prototype.getColorDepth.call(stream, process.env);
+  if (process.env.FORCE_COLOR !== undefined) return depth() > 2;
+  return stream.isTTY === true && depth() > 2;
+}
 
-  return {
-    $input,
-    $: nodeRef,
-    $json: input[0]?.json ?? {},
-    $binary: input[0]?.binary ?? {},
-    $node,
-    $items,
-    // n8n's $env is scoped, not the whole host environment. A fixture's env
-    // always wins; otherwise $env is empty unless --allow-env opts into
-    // inheriting process.env (which can carry N8N_API_KEY and other secrets).
-    $env: fixture.env ?? (context.allowEnv ? { ...process.env } : {}),
-    // Instance-scoped: pinned from the fixture, else a friendly signpost to `test`.
-    $vars: fixture.vars ?? signpostValue("$vars", "n8n workflow variables live on the running instance", "vars"),
-    $secrets: fixture.secrets ?? signpostValue("$secrets", "external secrets live on the running instance", "secrets"),
-    // Single-item offline run: both pinned at 0 (the each-item loop advances
-    // $itemIndex). Stated as such in docs/cli/node-run.md.
-    $itemIndex: 0,
-    $runIndex: 0,
-    $now: DateTime.now(),
-    $today: DateTime.now().startOf("day"),
-    DateTime,
-    Duration,
-    Interval,
-    $workflow: fixture.workflow ?? { id: "local", name: "local", active: false },
-    $getWorkflowStaticData: (type: string) => {
-      if (type !== "global" && type !== "node") {
-        throw new Error(`$getWorkflowStaticData: type must be "global" or "node", got ${JSON.stringify(type)}`);
+/**
+ * The default: one worker per invocation (lib/runsandbox.mts), resolved with
+ * this module's own extension — `.mts` from the checkout, `.mjs` from the
+ * built dist/ the npm package ships.
+ */
+const executeSandboxed: Execute = (req) => {
+  const ext = path.extname(fileURLToPath(import.meta.url));
+  const entry = new URL(`./runsandbox${ext}`, import.meta.url);
+  const workerData: SandboxRequest = {
+    ...req,
+    colors: { stdout: colorsFor(process.stdout), stderr: colorsFor(process.stderr) },
+    debug: Boolean(process.env.DEBUG),
+  };
+  return new Promise<ExecResult>((resolve, reject) => {
+    // defence in depth: the worker deletes `process` anyway (requirement 4)
+    const worker = new Worker(entry, { workerData, env: {} });
+    let settled = false;
+    const finish = (settle: () => void): void => {
+      if (settled) return;
+      settled = true;
+      // a body may leave timers running; they must not hold the CLI open
+      void worker.terminate();
+      settle();
+    };
+    worker.on("message", (m: SandboxMessage) => {
+      if (settled) return;
+      if (m.k === "stdout") console.log(m.s);
+      else if (m.k === "stderr") console.error(m.s);
+      else if (m.k === "done") finish(() => resolve({ count: m.count, text: m.text }));
+      else {
+        const err = new Error(m.message) as Error & { code?: string };
+        if (m.name !== undefined) err.name = m.name;
+        if (m.code !== undefined) err.code = m.code;
+        if (m.stack !== undefined) err.stack = m.stack;
+        finish(() => reject(err));
       }
-      return staticData[type];
-    },
-    $execution: fixture.execution ?? { id: "local", mode: "test" },
-    $prevNode: fixture.prevNode ?? { name: "", outputIndex: 0, runIndex: 0 },
-    // Node identity, read straight from workflow.json's node entry (cheap and
-    // honest); stubbed when no placeholder points at the file being run.
-    $nodeId: node?.id ?? "local",
-    $nodeVersion: (node?.typeVersion as number | undefined) ?? 1,
-    $webhookId: node?.webhookId as string | undefined,
-    $jmespath,
-    $jmesPath: $jmespath,
-    // Needs n8n's expression engine — no offline meaning, so it signposts.
-    $evaluateExpression: signpostFn("$evaluateExpression", "it needs n8n's expression engine"),
-    console,
-  };
-}
-
-async function invoke(code: string, globals: Record<string, unknown>): Promise<unknown> {
-  const names = Object.keys(globals);
-  const fn = new AsyncFunction(...names, code);
-  return fn(...names.map((n) => globals[n]));
-}
+    });
+    worker.on("error", (err) => finish(() => reject(err)));
+    // Messages posted before the worker ended are delivered before `exit`, so
+    // reaching this unsettled means the body never returned. Without it the
+    // CLI would drain its own loop and exit 0 on nothing.
+    worker.on("exit", (code) => finish(() => reject(new Error(`the node never returned (sandbox worker exited with code ${code})`))));
+  });
+};
 
 /**
  * Execute a Code node's body locally against a (fake) n8n context and print
  * what it returns. Offline; no credentials, no network. A managed source
  * (`.ts`, or a `.js` with a top-level import) is compiled with the same
  * esbuild pass as push; a plain `.js` runs verbatim (marker stripped if any
- * — though a non-managed file never carries one).
+ * — though a non-managed file never carries one). The body runs sandboxed
+ * unless `unsafe` (Plan 31).
  */
-export async function runNode(file: string, fixturePath: string | undefined, log: Log, opts: { allowEnv?: boolean } = {}): Promise<unknown> {
+export async function runNode(file: string, fixturePath: string | undefined, log: Log, opts: { allowEnv?: boolean; unsafe?: boolean } = {}): Promise<unknown> {
   const resolved = path.resolve(file);
   if (!existsSync(resolved)) throw new Error(`node file not found: ${file}`);
   if (!/\.(ts|js)$/.test(resolved)) throw new Error(`not a node source file (need .js or .ts): ${file}`);
@@ -330,34 +174,16 @@ export async function runNode(file: string, fixturePath: string | undefined, log
     : splitMarker(readFileSync(resolved, "utf8")).body;
 
   const fixture = loadFixture(fixturePath);
-  const globals = await buildGlobals(fixture, { node, staticData, allowEnv: opts.allowEnv });
+  const execute = opts.unsafe ? executeInProcess : executeSandboxed;
+  if (opts.unsafe) log.warn("running with full host access — no sandbox (--unsafe)");
 
   log.info(`running ${basename} (${mode})${fixturePath ? ` with fixture ${path.basename(fixturePath)}` : ""}`);
   log.info("─".repeat(48));
 
-  let output: unknown;
-  if (mode === "runOnceForEachItem") {
-    const input = globals.$input.all();
-    const collected: unknown[] = [];
-    for (let i = 0; i < input.length; i++) {
-      const perItem = {
-        ...globals,
-        $json: input[i].json,
-        $binary: input[i].binary ?? {},
-        $itemIndex: i,
-        $input: { ...globals.$input, item: input[i] },
-      };
-      const ret = await invoke(code, perItem);
-      if (ret !== undefined) collected.push(ret);
-    }
-    output = collected;
-  } else {
-    output = await invoke(code, globals);
-  }
+  const { count, text } = await execute({ code, mode, fixture, node, staticData, env: opts.allowEnv ? { ...process.env } : undefined });
 
   log.info("─".repeat(48));
-  const count = Array.isArray(output) ? output.length : output === undefined ? 0 : 1;
   log.info(`returned ${count} item${count === 1 ? "" : "s"}:`);
-  console.log(JSON.stringify(output, null, 2));
-  return output;
+  console.log(text);
+  return text === undefined ? undefined : JSON.parse(text);
 }

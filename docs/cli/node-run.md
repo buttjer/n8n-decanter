@@ -5,13 +5,20 @@ order: 20
 ---
 
 ```sh
-n8n-decanter node run <node-file> [fixture.json] [--allow-env]
+n8n-decanter node run <node-file> [fixture.json] [--allow-env] [--unsafe]
 ```
 
 Executes a node's body against an **emulated** n8n context (`$input`, `$json`,
 `$('Node')`, `$jmespath`, `DateTime`, `$getWorkflowStaticData`, …) and prints the
 items it returns. Fully offline — no credentials, no network. Prefer this over
 hand-rolling a throwaway test script.
+
+By default the body runs **sandboxed**: it cannot reach the host — no
+`process`, no `fetch`, no `import()` of anything — so a node (or a bundled
+dependency) that reads the host environment or a host global gets a clear
+error instead of silently touching your machine. Pass `--unsafe` to run it
+in-process with full host access, as before: decanter prints a
+`running with full host access — no sandbox (--unsafe)` notice on stderr.
 
 `run` is the **fast, offline approximation** rung of the verification ladder — it
 is *not* a faithful n8n runtime. Where a global's value genuinely lives on the
@@ -22,6 +29,70 @@ the real n8n draft over MCP) instead of guessing. See
 The run mode (`runOnceForAllItems` / `runOnceForEachItem`) is read from the
 node's entry in `workflow.json`, so each-item nodes are looped once per input
 item.
+
+## The sandbox: what is blocked, what still runs
+
+The default (no `--unsafe`) runs the body in a separate worker process with a
+**scrubbed global scope** — every global not on the allowlist is deleted before
+the body runs, and dynamic `import()` is refused for the duration of the run.
+The self-check refuses to start the body at all if the scrub left anything
+behind, so a Node release that made a global undeletable fails loudly rather
+than silently widening the boundary.
+
+**Blocked by default:** `process`, `fetch` and the rest of the fetch family
+(`Request`, `Response`, `Headers`, `FormData`), `WebSocket`, `EventSource`,
+`BroadcastChannel`, `MessageChannel`/`MessagePort`, `navigator`,
+`localStorage`, `sessionStorage`, `Worker` — and every `import()`, including
+one that re-imports a module the CLI itself already loaded. A blocked name
+fails with the sandbox message — e.g.
+
+```sh
+✗ `process` is not available in sandboxed `node run` — pass `--unsafe` to allow host access.
+```
+
+**The built-ins are frozen.** Before the body runs, the sandbox freezes the
+built-in constructors, their prototypes and the namespace objects
+(`JSON`, `Math`, `Reflect`, `Intl`, …), plus the instance-only prototypes the
+sandbox reaches at startup — modelled on n8n's task runner, which freezes its
+built-ins too, though n8n runs the code in a separate `vm` realm, so the two
+are not identical. Patching a built-in is refused: `Object.defineProperty`
+on a prototype, `Array.prototype.x = 1`, `Error.prepareStackTrace = f` each throw
+a `TypeError`, or have no effect in non-strict code. Node also creates a
+prototype per internal error code and some internal iterators; not all of
+those can be enumerated, so a few stay patchable — no way to reach the host
+through them is known. Assigning `name`, `message`, `toString`, `valueOf` or
+`toLocaleString` **on your own objects and errors** still works. `constructor`
+assigns only on a plain object (`{}`) — on your own error instances, arrays,
+Maps and the like it is a silent no-op in sloppy code and a `TypeError` under
+`"use strict"`. `--unsafe` assigns `constructor` everywhere too, since it
+freezes nothing.
+
+**Still available:** the ECMAScript built-ins, plus `Buffer`,
+`setTimeout`/`setInterval`/`setImmediate` (and their `clear*`), `btoa`/`atob`,
+`TextEncoder`/`TextDecoder` (and their stream variants), `URL`/`URLSearchParams`,
+`structuredClone`, `crypto`, `AbortController`/`AbortSignal`, `Event`/`EventTarget`,
+`DOMException`, `queueMicrotask` and `performance`. A few of these (`URL`,
+`structuredClone`, `crypto`, `AbortController`, `performance`) are wider than
+n8n's own Code-node scope, which lacks them — so code that runs sandboxed is
+not guaranteed to run in n8n. The `console` is decanter's own: `log`/`info`/
+`debug` go to stdout, `warn`/`error` to stderr, and the rest (`table`, `dir`,
+`time`, …) are no-ops.
+
+**CommonJS names** (`require`, `module`, `exports`, `__dirname`, `__filename`)
+are undefined in **both** modes — the CLI is ESM — and get their own message
+pointing at `import`, with no `--unsafe` hint:
+
+```sh
+✗ `require` is not available in `node run` — node files are ES modules: use a top-level `import` (npm packages need `bundleDependencies` in decanter.config.json).
+```
+
+**Escalation.** A bundled npm dependency that reads `process` (or another
+blocked global) at load time fails sandboxed but runs with `--unsafe`. If the
+node itself needs the host, `--unsafe` is the answer — and if you need the
+node to run *faithfully*,
+[`preflight --simulate`](/docs/cli/preflight/#the---simulate-stage) is the
+jail: it replays your code on a local n8n engine, whereas the sandbox here is a
+boundary, not a model of n8n.
 
 ## What's emulated vs. unsupported
 

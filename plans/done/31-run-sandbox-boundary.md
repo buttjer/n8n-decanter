@@ -1,7 +1,8 @@
 # Plan 31 — Sandbox `run` for untrusted node code (`--unsafe` to opt out)
 
 **Priority:** P2 (real footgun for the primary audience)
-**Status:** Not started — reworked and probe-verified, ready to implement
+**Status:** Done — Tasks 1–7 (2026-11-03) and Task 8 (2026-11-06, frozen
+realm; fresh xhigh review found no code defect).
 **Snapshot:** 2026-11-03T16:14Z @ da6d183
 **Model:** Opus (safety-critical boundary; the failure mode is arbitrary local
 code execution)
@@ -120,6 +121,23 @@ Requirements the implementation must keep, or the above stops being true:
 - **Optimise for the latest n8n** (2026-10-23): nothing here is
   version-specific — `run` never talks to n8n.
 
+## Decided at implementation start (operator, 2026-11-03)
+
+- **CommonJS names get their own message.** `require`, `module`,
+  `exports`, `__dirname` and `__filename` are undefined in both modes (the
+  CLI is ESM), so `--unsafe` would not fix them. Their error points at a
+  top-level `import` (npm packages via `bundleDependencies`) instead of
+  Task 4's `--unsafe` hint.
+- **Return values keep JSON behaviour.** The worker hands the result back
+  with `JSON.stringify` semantics — functions dropped, `toJSON` honoured —
+  so output stays byte-identical to `--unsafe`. Only values JSON refuses
+  (circular, BigInt) get Task 2's error naming the item. This replaces
+  Task 2's error for a function or class instance.
+- **Claude Code probe (2.1.316):** `Bash(n8n-decanter *--unsafe*)` as an
+  `ask` rule beats the `node:*` allow wherever the flag sits, but a
+  shell-quoted `--un''safe` passes it. The template `AGENTS.md` names that
+  residual risk (Task 7's fallback, for that case only).
+
 ## Tasks
 
 1. **Extract the execution boundary.** Isolate `invoke` behind one interface
@@ -181,6 +199,20 @@ Requirements the implementation must keep, or the above stops being true:
    matches; if it doesn't, record that and name the residual risk in the
    template `AGENTS.md` instead. Mirror whatever lands in the repo's own
    counterparts (housekeeping step 8 checks the match).
+8. **Harden the realm (operator decision, 2026-11-06: harden A, not B).**
+   The xhigh end review of Tasks 1–7 found and reproduced an escape: Node's
+   own internals still hold the real `process` and read properties through
+   built-in prototypes the body is allowed to modify (finding anchored at
+   `lib/runsandbox.mts:160`). Close the class, not the instance: freeze the
+   intrinsics — built-in constructors and their prototypes, as n8n's
+   `prototype-hardening.ts` does — after the worker's setup and before the
+   body runs. Add a regression test for this class of vector. The existing
+   built-in patching test (`test/unit/run-sandbox.test.mts`, the patch
+   test) changes to expect patching to be refused. Update the docs where
+   they describe the boundary (frozen built-ins are also what n8n does).
+   Finish with a fresh xhigh security review. Option B stays the fallback
+   if the hardened realm is shown to leak again. Node 22/24 are covered by
+   CI only (Node 26 locally).
 
 ## Acceptance / verification
 

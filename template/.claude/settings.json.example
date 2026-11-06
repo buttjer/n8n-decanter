@@ -53,6 +53,10 @@
       "Bash(npx n8n-decanter push --force:*)",
       "Bash(npx --no-install n8n-decanter push --force)",
       "Bash(npx --no-install n8n-decanter push --force:*)"
+    ],
+    "ask": [
+      "Bash(n8n-decanter *--unsafe*)",
+      "Bash(npx n8n-decanter *--unsafe*)"
     ]
   },
   "hooks": {

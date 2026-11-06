@@ -251,7 +251,7 @@ Concretely:
 - **No `node run` stage.** Auto-running every Code node without per-node
   fixtures yields false reds; `run --from-execution` (the automation that
   would fix that) is a deliberately deferred backlog item, and
-  [Plan 31](../open/31-run-sandbox-boundary.md)'s sandbox question makes
+  [Plan 31](../done/31-run-sandbox-boundary.md)'s sandbox question makes
   auto-executing node bodies in the CLI process a safety regression besides.
   `node run` stays the inner-loop tool; preflight's runtime tiers use real
   engines with real pins.

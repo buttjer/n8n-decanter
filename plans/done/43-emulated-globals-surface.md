@@ -80,7 +80,7 @@ the escape hatch; `run` stays honest about its edges.
   refresh command.
 - Draft 44 — `run`'s faked context parity (backlog item), deferred severity
   "moderate": `$jmespath`, missing globals, undocumented boundary.
-- **Relates to** [Plan 31](../open/31-run-sandbox-boundary.md) — the sandbox/isolation
+- **Relates to** [Plan 31](../done/31-run-sandbox-boundary.md) — the sandbox/isolation
   boundary. This plan is the *inside* of that boundary (the emulated-global
   surface); Plan 31 line 151 already lists "changing the emulated-global
   surface" as its own **non-goal**, so the two are complementary by design.
@@ -274,7 +274,7 @@ it authors decanter's code, never pastes n8n's).
   whereas `run` is the **offline / no-instance / CI** path nothing else fills.
   Hand-mirroring `run`'s surface is justified by a niche the proxy never had, so
   the answer is *reframe* (defer fidelity to `test`), not *delete*.
-- **Sandboxing `run`** — that's [Plan 31](../open/31-run-sandbox-boundary.md); this plan
+- **Sandboxing `run`** — that's [Plan 31](../done/31-run-sandbox-boundary.md); this plan
   is the emulated-global *surface* inside that boundary, not the isolation
   mechanism.
 - **`run --from-execution`** fixture loading — Plan

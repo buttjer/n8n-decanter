@@ -61,6 +61,6 @@ the guard's scope really is narrow by design — it covers n8n's MCP tools, not 
 code-sync verbs, which are credentialed CLI calls on purpose. The reporter was
 **not** on the wrong surface.
 
-Adjacent but distinct: [Plan 31](../open/31-run-sandbox-boundary.md) is about isolating
+Adjacent but distinct: [Plan 31](../done/31-run-sandbox-boundary.md) is about isolating
 `node run`'s own execution, and Plan 30's Task 10 only trims the allow/deny lists.
 Neither covers this.
