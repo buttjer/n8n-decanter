@@ -13,7 +13,7 @@
 // without it a vector that is "blocked" because the probe itself is broken
 // would read the same as one blocked by the sandbox.
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -609,6 +609,57 @@ describe("node run: pure logic prints byte-identical stdout in both modes", () =
       if (c.node === "lux.js") assert.doesNotMatch(sandboxed.stdout, /"fn"/, "a function-valued field is dropped as JSON.stringify drops it");
     });
   });
+});
+
+describe("node run: large piped output survives a slow reader", () => {
+  // A test agent reported `node run --unsafe` cutting piped stdout off at
+  // exactly 65536 bytes — Linux's default pipe-buffer capacity, the classic
+  // symptom of a process exiting before an async pipe write drains. Extensive
+  // manual reproduction (up to 5.4 MB, both modes, real pipes, a deliberately
+  // paused reader to force backpressure) never reproduced it: `runNode`
+  // never calls `process.exit()`, so Node's normal shutdown already waits
+  // for pending writes. This guards that property against a future
+  // regression (e.g. an added `process.exit()` for faster CLI teardown).
+  const ITEMS = 6000; // JSON well past one 64 KB pipe buffer
+  const file = (() => put("large/big.js", `return Array.from({ length: ${ITEMS} }, (_, i) => ({ id: i, text: "x".repeat(50) }));\n`))();
+
+  /** Spawn over a real pipe; stdout is left unread for a beat so the OS pipe buffer fills and the writer hits backpressure before any byte is drained. */
+  function runWithDelayedRead(args: string[]): Promise<Res> {
+    return new Promise((resolve, reject) => {
+      const env = { ...process.env };
+      delete env.FORCE_COLOR;
+      delete env.NO_COLOR;
+      const child = spawn(process.execPath, [CLI, ...args], { cwd: TMP, env, stdio: ["ignore", "pipe", "pipe"] });
+      const chunks: Buffer[] = [];
+      let stderr = "";
+      child.stdout.pause();
+      const timer = setTimeout(() => {
+        child.stdout.on("data", (d: Buffer) => chunks.push(d));
+        child.stdout.resume();
+      }, 300);
+      child.stderr.on("data", (d) => (stderr += d));
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        resolve({ code: code ?? -1, stdout: Buffer.concat(chunks).toString("utf8"), stderr });
+      });
+    });
+  }
+
+  for (const unsafe of [false, true]) {
+    it(`stays byte-exact and parses as JSON under ${unsafe ? "--unsafe" : "the sandbox"}`, async () => {
+      const r = await runWithDelayedRead(["node", "run", file, ...(unsafe ? ["--unsafe"] : [])]);
+      assert.equal(r.code, 0, r.stdout + r.stderr);
+      const parsed = printed(r) as unknown[];
+      assert.equal(parsed.length, ITEMS);
+      const m = /returned \d+ items?:[^\n]*\n/.exec(r.stdout);
+      assert.ok(m);
+      assert.ok(r.stdout.length - m[0].length - m.index! > 64 * 1024, "the printed JSON must exceed one pipe buffer to exercise backpressure");
+    });
+  }
 });
 
 describe("node run: the --unsafe notice", () => {
