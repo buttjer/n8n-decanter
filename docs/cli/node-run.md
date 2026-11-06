@@ -60,9 +60,12 @@ on a prototype, `Array.prototype.x = 1`, `Error.prepareStackTrace = f` each thro
 a `TypeError`, or have no effect in non-strict code. Node also creates a
 prototype per internal error code and some internal iterators; not all of
 those can be enumerated, so a few stay patchable — no way to reach the host
-through them is known. Assigning `name`, `message`, `toString`, `valueOf`,
-`toLocaleString` or `constructor` **on your own objects and errors** still
-works. `--unsafe` freezes nothing.
+through them is known. Assigning `name`, `message`, `toString`, `valueOf` or
+`toLocaleString` **on your own objects and errors** still works. `constructor`
+assigns only on a plain object (`{}`) — on your own error instances, arrays,
+Maps and the like it is a silent no-op in sloppy code and a `TypeError` under
+`"use strict"`. `--unsafe` assigns `constructor` everywhere too, since it
+freezes nothing.
 
 **Still available:** the ECMAScript built-ins, plus `Buffer`,
 `setTimeout`/`setInterval`/`setImmediate` (and their `clear*`), `btoa`/`atob`,

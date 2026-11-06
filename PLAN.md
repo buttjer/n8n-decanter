@@ -1636,8 +1636,13 @@ offline approximation, not a promise of n8n parity.
 
 **The freeze (fourth layer).** The scrub, the import lock and the console
 replacement remove *names*; the freeze removes the ability to *modify* the
-built-ins that keep their names. Before the body's first statement, every
-shared object the body can reach is frozen: every constructor and namespace
+built-ins that keep their names. Before the body's first statement, the
+freeze covers the built-in constructors, their prototypes, the namespace
+objects and the instance-only prototypes the worker reaches at setup — not
+every shared object the body can reach; Plan 31 F3 below narrows this
+further: Node creates a prototype per internal error code and per some
+internal iterators that cannot all be enumerated, so a few stay patchable.
+The covered set is: every constructor and namespace
 object on `globalThis` (captured before and after the scrub), their
 prototypes, and the instance-only prototypes the worker reaches at setup
 (`Timeout`,
@@ -1676,8 +1681,8 @@ warning path (Node's own warning code does `warning.name = …`),
 `class E extends Error { constructor(m){ super(m); this.name = "E" } }`.
 So before freezing, on every object that is about to be frozen, the
 writable, configurable data properties named `name`, `message`,
-`toString`, `valueOf`, `toLocaleString` — and `constructor`, except on the
-prototypes listed below — become non-configurable
+`toString`, `valueOf`, `toLocaleString` — and, only on the prototypes
+listed below, `constructor` — become non-configurable
 accessors: the getter returns the original value; the setter defines an
 own data property on the receiver, and throws a `TypeError` if the receiver
 is the frozen object itself — in sloppy code too, since an accessor cannot
@@ -1693,8 +1698,9 @@ prototype chain names none of its own: with an accessor,
 the prototypes where Node's own code (or the body) assigns it on an
 instance after setup — an explicit, measured list:
 `WritableStream.prototype` and `ReadableStream.prototype` (Node's webstreams
-set `constructor` on their internal subclasses when the module loads lazily,
-so `new TextEncoderStream()` / `TextDecoderStream()` died otherwise) and
+assign `constructor` on each new instance of their internal subclasses —
+every `new TextEncoderStream()` / `TextDecoderStream()` sets it again on
+construction — so without the entry those constructors died) and
 `Object.prototype` (a body's plain `o.constructor = X` has to assign, and
 inspect only falls back to it for a chain that names none of its own, so
 the accessor leaves built-ins' output unchanged). Measured on Node 26.7.0
@@ -1702,8 +1708,11 @@ the accessor leaves built-ins' output unchanged). Measured on Node 26.7.0
 entries are necessary — dropping `WritableStream` or `ReadableStream`
 fails the stream-codec tests, dropping `Object.prototype` the
 plain-object override test; Luxon and jmespath need no entry. A miss
-elsewhere surfaces as a `TypeError` naming `constructor` and "a frozen
-built-in", never as a silent wrong value.
+elsewhere leaves `constructor` a frozen data property: assigning to it is
+a silent no-op in sloppy code, and under `"use strict"` throws V8's own
+`Cannot assign to read only property 'constructor' of object …` — not
+this module's `TypeError`, and never the phrase "frozen built-in", so
+grepping for that phrase after a missed entry finds nothing.
 
 **The guarantee is narrowed (Plan 31 F3).** What the freeze covers is the
 built-in constructors, their prototypes, the namespace objects and the

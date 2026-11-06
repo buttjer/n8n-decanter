@@ -13,8 +13,11 @@
 //   4. The parent creates this worker with `env: {}`; `$env` under
 //      `--allow-env` is the snapshot the parent posts in `workerData`.
 //   5. The global allowlist is below.
-//   6. Every shared object the body can reach is frozen after all setup and
-//      before the body's first statement (Task 8, "The freeze" below).
+//   6. The built-in constructors, their prototypes, the namespace objects
+//      and the instance-only prototypes reached at setup are frozen after
+//      all setup and before the body's first statement (Task 8, "The
+//      freeze" below) — not every shared object: some internal error-code
+//      and iterator prototypes can't all be enumerated and stay patchable.
 //
 // Why the freeze exists: the scrub removes names, but the body still shares
 // this realm's built-in prototypes with Node's own internals. Node reads
@@ -24,7 +27,8 @@
 // `this === process` (the end review of Tasks 1-7 verified it with
 // `Buffer(1)`'s DEP0005 warning). Closing that one key would leave the class
 // open: any shared object Node also reads or calls while holding a privileged
-// one. So everything shared is made immutable. It mirrors n8n's
+// one. So the reachable built-ins are made immutable (narrowed by the
+// enumeration limits above). It mirrors n8n's
 // `freezeGlobals()` (`packages/@n8n/task-runner/src/js-task-runner/
 // prototype-hardening.ts`), with one difference: n8n freezes its host realm
 // and runs user code in a separate `vm` realm, while here the body shares the
@@ -498,14 +502,19 @@ function enableOverrides(owner: object, constructorAccessor: boolean): void {
  * 26.7.0 (2026-11-06) against test/unit/run-sandbox{,-frozen}.test.mts: with
  * these three every case passes, and dropping any one of them fails one:
  * - `WritableStream.prototype`, `ReadableStream.prototype`: Node's webstreams
- *   set `constructor` on the internal subclasses' prototypes when the module
- *   loads lazily, so `new TextEncoderStream()` / `TextDecoderStream()` died.
+ *   assign `constructor` on each new instance of the internal subclasses
+ *   (e.g. every `new TextEncoderStream()`), not just once at module load, so
+ *   `new TextEncoderStream()` / `TextDecoderStream()` died without the entry.
  * - `Object.prototype`: a body's plain `o.constructor = X` has to assign. Its
  *   `constructor` is only what inspect falls back to for a chain that names
  *   none of its own, so the accessor there leaves built-ins' output unchanged.
  * Luxon and jmespath needed no entry: their cases in the same tests pass
- * without one. A miss elsewhere shows as a TypeError naming `constructor` and
- * "a frozen built-in", never as a silent wrong value.
+ * without one. A miss elsewhere leaves `constructor` a frozen data property,
+ * so an assignment to it is a silent no-op in sloppy code, and under
+ * `"use strict"` throws V8's own `Cannot assign to read only property
+ * 'constructor' of object …` — not this module's `TypeError`, and it never
+ * says "frozen built-in", so grepping this file's wording after a missed
+ * entry finds nothing.
  */
 function constructorAccessorOwners(before: Array<[string, unknown]>): Set<object> {
   const owners = new Set<object>([ObjectPrototype]);
