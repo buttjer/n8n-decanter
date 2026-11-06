@@ -14,7 +14,7 @@
 // step 8. `--strict` exits non-zero when a NEW (non-known-omitted) global drifts
 // in, so it can gate CI if ever wired up.
 //
-//   node scripts/globals-drift-audit.mts [--tag=n8n@2.33.3] [--strict]
+//   node scripts/globals-drift-audit.mts [--tag=n8n@2.46.6] [--strict]
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const strict = args.includes("--strict");
-const TAG = (args.find((a) => a.startsWith("--tag="))?.slice("--tag=".length) ?? process.env.N8N_TAG ?? "n8n@2.33.3").trim();
+const TAG = (args.find((a) => a.startsWith("--tag="))?.slice("--tag=".length) ?? process.env.N8N_TAG ?? "n8n@2.46.6").trim();
 
 const RAW = (p: string) => `https://raw.githubusercontent.com/n8n-io/n8n/${TAG}/${p}`;
 
@@ -54,7 +54,8 @@ function decanterDeclared(): Set<string> {
 
 // The pragmatic-subset boundary: n8n globals decanter *deliberately* omits
 // (rare/legacy/agent-only/instance-internal). Listed so the audit surfaces only
-// genuinely NEW globals, not the known omissions. Reviewed 2026-08-04 @ n8n@2.33.3
+// genuinely NEW globals, not the known omissions. Reviewed 2026-08-04 @ n8n@2.33.3,
+// re-run clean 2026-11-06 @ n8n@2.44.5 and @ n8n@2.46.6 (latest stable then)
 // (surface unchanged since 2.30.7: 43 authoritative, 27 declared).
 const KNOWN_OMITTED = new Set([
   "$data", "$self", "$parameter", "$rawParameter", "$mode", "$position",
