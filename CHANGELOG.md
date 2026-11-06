@@ -39,7 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Array.prototype.x = 1`, `Error.prepareStackTrace = f`) is refused —
   a `TypeError`, or no effect in non-strict code; assigning `name`,
   `message`, `toString`, `valueOf`, `toLocaleString` or `constructor` on
-  your own objects and errors still works. `--unsafe` freezes nothing. A node or bundled dependency that needs the
+  your own objects and errors still works. Node also creates a prototype
+  per internal error code and some internal iterators; not all of those
+  can be enumerated, so a few stay patchable — no way to reach the host
+  through them is known. `--unsafe` freezes nothing. A node or bundled dependency that needs the
   host reads `process`/`fetch` etc. should pass `--unsafe`, which runs the
   body in-process with full host access and prints a
   `running with full host access — no sandbox (--unsafe)` notice on stderr.

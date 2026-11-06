@@ -1639,7 +1639,8 @@ replacement remove *names*; the freeze removes the ability to *modify* the
 built-ins that keep their names. Before the body's first statement, every
 shared object the body can reach is frozen: every constructor and namespace
 object on `globalThis` (captured before and after the scrub), their
-prototypes, and instance-only prototypes no global name leads to (`Timeout`,
+prototypes, and the instance-only prototypes the worker reaches at setup
+(`Timeout`,
 `Immediate`, generator / async-generator / async-function, the
 Array/String/Map/Set/RegExp string iterators, iterator helpers, and the
 `[[Prototype]]` chain of `globalThis`). From each object, the freeze follows
@@ -1651,7 +1652,12 @@ instances that carry built-in prototypes no global leads to: live
 `new AbortController()`, a Node error (the error-code class levels),
 `new TextEncoderStream()` (→ `ReadableStream`/`WritableStream` and their
 default reader/writer), a `CryptoKey`, `Intl.Segmenter` segments, an
-`Iterator.from` wrapper, Luxon's `IANAZone` and `Invalid`.
+`Iterator.from` wrapper, Luxon's `IANAZone` and `Invalid`, plus the roots
+added in the end-review follow-up (Plan 31 F2): further Node error-code
+errors (`ERR_INVALID_ARG_TYPE` and siblings, an unknown `TextDecoder`
+label), `URLSearchParams` entries, the async iterator of a
+`TextEncoderStream().readable`, and Luxon's `FixedOffsetZone` with its
+`PolyDateFormatter` / `PolyNumberFormatter` / `PolyRelFormatter`.
 
 The escape this closes (verified in the end review of Tasks 1–7): Node's
 own internals read properties the real `process` does not have as own
@@ -1669,13 +1675,42 @@ warning path (Node's own warning code does `warning.name = …`),
 `TextEncoderStream`/`TextDecoderStream` (the `constructor` name), and
 `class E extends Error { constructor(m){ super(m); this.name = "E" } }`.
 So before freezing, on every object that is about to be frozen, the
-writable, configurable data properties named `constructor`, `name`,
-`message`, `toString`, `valueOf`, `toLocaleString` become non-configurable
+writable, configurable data properties named `name`, `message`,
+`toString`, `valueOf`, `toLocaleString` — and `constructor`, except on the
+prototypes listed below — become non-configurable
 accessors: the getter returns the original value; the setter defines an
 own data property on the receiver, and throws a `TypeError` if the receiver
 is the frozen object itself — in sloppy code too, since an accessor cannot
 tell the caller's mode. (Agoric SES `lockdown`'s "enablements" are the
 model.)
+
+**Why `constructor` keeps its shape almost everywhere (Plan 31 F1).**
+`util.inspect` reads the class name from the descriptor's `value` when the
+prototype chain names none of its own: with an accessor,
+`console.log(new Uint8Array([1, 2]))` printed
+`TypedArray(2) [Uint8Array] [ 1, 2 ]` (end review, 2026-11-06). So
+`constructor` stays a frozen data property on every frozen object except on
+the prototypes where Node's own code (or the body) assigns it on an
+instance after setup — an explicit, measured list:
+`WritableStream.prototype` and `ReadableStream.prototype` (Node's webstreams
+set `constructor` on their internal subclasses when the module loads lazily,
+so `new TextEncoderStream()` / `TextDecoderStream()` died otherwise) and
+`Object.prototype` (a body's plain `o.constructor = X` has to assign, and
+inspect only falls back to it for a chain that names none of its own, so
+the accessor leaves built-ins' output unchanged). Measured on Node 26.7.0
+(2026-11-06) against `test/unit/run-sandbox{,-frozen}.test.mts`: all three
+entries are necessary — dropping `WritableStream` or `ReadableStream`
+fails the stream-codec tests, dropping `Object.prototype` the
+plain-object override test; Luxon and jmespath need no entry. A miss
+elsewhere surfaces as a `TypeError` naming `constructor` and "a frozen
+built-in", never as a silent wrong value.
+
+**The guarantee is narrowed (Plan 31 F3).** What the freeze covers is the
+built-in constructors, their prototypes, the namespace objects and the
+instance-only prototypes the worker reaches at setup. Node creates a
+prototype per internal error code and per some internal iterators; those
+cannot all be enumerated, so some stay patchable. No escape through them
+is known: no privileged object inherits from them.
 
 **Fail-closed self-check.** After freezing, the worker re-checks every
 collected object with `Object.isFrozen`; any that is not → the run refuses

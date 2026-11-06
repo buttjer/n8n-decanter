@@ -52,13 +52,17 @@ fails with the sandbox message — e.g.
 
 **The built-ins are frozen.** Before the body runs, the sandbox freezes the
 built-in constructors, their prototypes and the namespace objects
-(`JSON`, `Math`, `Reflect`, `Intl`, …), modelled on n8n's task runner, which
-freezes its built-ins too — though n8n runs the code in a separate `vm` realm,
-so the two are not identical. Patching a built-in is refused: `Object.defineProperty`
+(`JSON`, `Math`, `Reflect`, `Intl`, …), plus the instance-only prototypes the
+sandbox reaches at startup — modelled on n8n's task runner, which freezes its
+built-ins too, though n8n runs the code in a separate `vm` realm, so the two
+are not identical. Patching a built-in is refused: `Object.defineProperty`
 on a prototype, `Array.prototype.x = 1`, `Error.prepareStackTrace = f` each throw
-a `TypeError`, or have no effect in non-strict code. Assigning `name`, `message`,
-`toString`, `valueOf`, `toLocaleString` or `constructor` **on your own objects
-and errors** still works. `--unsafe` freezes nothing.
+a `TypeError`, or have no effect in non-strict code. Node also creates a
+prototype per internal error code and some internal iterators; not all of
+those can be enumerated, so a few stay patchable — no way to reach the host
+through them is known. Assigning `name`, `message`, `toString`, `valueOf`,
+`toLocaleString` or `constructor` **on your own objects and errors** still
+works. `--unsafe` freezes nothing.
 
 **Still available:** the ECMAScript built-ins, plus `Buffer`,
 `setTimeout`/`setInterval`/`setImmediate` (and their `clear*`), `btoa`/`atob`,
