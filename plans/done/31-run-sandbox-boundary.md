@@ -1,7 +1,11 @@
 # Plan 31 — Sandbox `run` for untrusted node code (`--unsafe` to opt out)
 
 **Priority:** P2 (real footgun for the primary audience)
-**Status:** Done
+**Status:** In progress — Tasks 1–7 built on branch
+`worktree-plan-cut-31-run-sandbox-boundary-d460244b` (2026-11-03); the end
+review found an escape, Task 8 is open. Not mergeable until Task 8 is done.
+(The file already sits in `done/` from that run; it stays there and only
+this line flips back to `Done`.)
 **Snapshot:** 2026-11-03T16:14Z @ da6d183
 **Model:** Opus (safety-critical boundary; the failure mode is arbitrary local
 code execution)
@@ -198,6 +202,20 @@ Requirements the implementation must keep, or the above stops being true:
    matches; if it doesn't, record that and name the residual risk in the
    template `AGENTS.md` instead. Mirror whatever lands in the repo's own
    counterparts (housekeeping step 8 checks the match).
+8. **Harden the realm (operator decision, 2026-11-06: harden A, not B).**
+   The xhigh end review of Tasks 1–7 found and reproduced an escape: Node's
+   own internals still hold the real `process` and read properties through
+   built-in prototypes the body is allowed to modify (finding anchored at
+   `lib/runsandbox.mts:160`). Close the class, not the instance: freeze the
+   intrinsics — built-in constructors and their prototypes, as n8n's
+   `prototype-hardening.ts` does — after the worker's setup and before the
+   body runs. Add a regression test for this class of vector. The existing
+   built-in patching test (`test/unit/run-sandbox.test.mts`, the patch
+   test) changes to expect patching to be refused. Update the docs where
+   they describe the boundary (frozen built-ins are also what n8n does).
+   Finish with a fresh xhigh security review. Option B stays the fallback
+   if the hardened realm is shown to leak again. Node 22/24 are covered by
+   CI only (Node 26 locally).
 
 ## Acceptance / verification
 
