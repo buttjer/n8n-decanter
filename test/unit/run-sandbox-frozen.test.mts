@@ -198,7 +198,15 @@ describe("node run frozen: the Object.prototype deprecation-getter escape", () =
 // Paths that have no constructor name to match (the Intl segment prototypes,
 // the Iterator.from wrapper, the Node error-code class levels): checked by the
 // label the walk gave them.
-const WALK_LABELS = ["Intl.Segments<proto>", "Intl.SegmentIterator<proto>", "Iterator.from wrapper<proto>", "Buffer.alloc(-1) error<proto>", "GeneratorFunction.prototype", "IteratorHelper<proto>"];
+const WALK_LABELS = [
+  "Intl.Segments<proto>", "Intl.SegmentIterator<proto>", "Iterator.from wrapper<proto>", "Buffer.alloc(-1) error<proto>", "GeneratorFunction.prototype", "IteratorHelper<proto>",
+  // follow-up F2 (operator decision 2026-11-06): one prototype per Node error
+  // code, and two internal iterators, none of them named by any global. The
+  // error levels are all called TypeError/RangeError, so only a label tells
+  // them from TypeError.prototype.
+  "Buffer.from(5) error<proto>", "unknown encoding error<proto>", 'setTimeout("x") error<proto>', 'TextDecoder("nope") error<proto>',
+  "URLSearchParams iterator<proto>", "ReadableStream async iterator<proto>",
+];
 
 const WALK_BODY = `
 const MAX_VISITED = 100000;
@@ -273,6 +281,13 @@ try {
   root(true, "performance.measure()", () => performance.measure("sbx-frozen-measure"));
   root(true, "AbortController", () => new AbortController());
   root(true, "Buffer.alloc(-1) error", () => { try { Buffer.alloc(-1); } catch (e) { return e; } throw new Error("Buffer.alloc(-1) did not throw"); });
+  // F2: further Node error codes, each its own class level
+  const caught = (what, f) => () => { try { f(); } catch (e) { return e; } throw new Error(what + " did not throw"); };
+  root(true, "Buffer.from(5) error", caught("Buffer.from(5)", () => Buffer.from(5)));
+  root(true, "unknown encoding error", caught('toString("nope")', () => Buffer.alloc(1).toString("nope")));
+  root(true, 'setTimeout("x") error', caught('setTimeout("x")', () => setTimeout("x")));
+  root(true, 'TextDecoder("nope") error', caught('new TextDecoder("nope")', () => new TextDecoder("nope")));
+  root(true, "URLSearchParams iterator", () => new URLSearchParams("a=1").entries());
   const tes = root(true, "TextEncoderStream", () => new TextEncoderStream());
   if (tes) {
     root(true, "ReadableStream", () => tes.readable);
@@ -280,6 +295,8 @@ try {
     root(true, "ReadableStreamDefaultReader", () => tes.readable.getReader());
     root(true, "WritableStreamDefaultWriter", () => tes.writable.getWriter());
   }
+  // F2: a second codec, because the reader above already locked the first
+  root(true, "ReadableStream async iterator", () => new TextEncoderStream().readable.values());
   let key;
   try { key = await crypto.subtle.importKey("raw", new Uint8Array(16), "AES-GCM", false, ["encrypt"]); } catch (e) { key = e; }
   root(true, "CryptoKey", () => { if (key instanceof Error) throw key; return key; });
@@ -292,6 +309,16 @@ try {
   // (d) Luxon instances whose classes no global names
   root(false, "Luxon IANAZone", () => DateTime.fromISO("2024-01-01T00:00:00Z").setZone("Europe/Berlin").zone);
   root(false, "Luxon Invalid", () => Reflect.getOwnPropertyDescriptor(DateTime.invalid("sbx-frozen"), "invalid")?.value);
+  // F2: a fixed-offset zone, and the formatter Locale builds per call and never
+  // stores (reached through the DateTime's own \`loc\` data property)
+  root(false, "Luxon FixedOffsetZone", () => DateTime.fromISO("2024-01-01T00:00:00Z").setZone("UTC+2").zone);
+  root(false, "Luxon PolyDateFormatter", () => {
+    const dt = DateTime.fromISO("2024-01-01T00:00:00Z");
+    return Reflect.getOwnPropertyDescriptor(dt, "loc")?.value.dtFormatter(dt, {});
+  });
+  // its two siblings, built the same way by Locale and never stored either
+  root(false, "Luxon PolyNumberFormatter", () => Reflect.getOwnPropertyDescriptor(DateTime.fromISO("2024-01-01T00:00:00Z"), "loc")?.value.numberFormatter({}));
+  root(false, "Luxon PolyRelFormatter", () => Reflect.getOwnPropertyDescriptor(DateTime.fromISO("2024-01-01T00:00:00Z"), "loc")?.value.relFormatter({}));
 
   const seen = new Map();
   let visited = 0;
@@ -393,6 +420,10 @@ const WALK_ROOTS = [
   "setTimeout()", "setImmediate()", "performance.mark()", "performance.measure()", "AbortController", "Buffer.alloc(-1) error",
   "TextEncoderStream", "ReadableStream", "WritableStream", "ReadableStreamDefaultReader", "WritableStreamDefaultWriter",
   "CryptoKey", "Intl.Segments", "Intl.SegmentIterator", "Iterator.from wrapper", "Luxon IANAZone", "Luxon Invalid",
+  // follow-up F2
+  "Buffer.from(5) error", "unknown encoding error", 'setTimeout("x") error', 'TextDecoder("nope") error',
+  "URLSearchParams iterator", "ReadableStream async iterator", "Luxon FixedOffsetZone", "Luxon PolyDateFormatter",
+  "Luxon PolyNumberFormatter", "Luxon PolyRelFormatter",
 ];
 // prototypes the walk must reach, by constructor name. SubtleCrypto is only
 // reachable through the `crypto.subtle` getter and TimersList only through a
@@ -400,7 +431,7 @@ const WALK_ROOTS = [
 const WALK_PROTO_NAMES = [
   "SubtleCrypto", "TimersList", "Timeout", "Immediate", "PerformanceMark", "PerformanceMeasure", "AbortSignal", "EventTarget",
   "ReadableStream", "WritableStream", "ReadableStreamDefaultReader", "WritableStreamDefaultWriter", "TextEncoderStream",
-  "CryptoKey", "IANAZone", "Invalid", "Locale", "DateTime",
+  "CryptoKey", "IANAZone", "Invalid", "Locale", "DateTime", "FixedOffsetZone", "PolyDateFormatter", "PolyNumberFormatter", "PolyRelFormatter",
 ];
 
 interface WalkResult {
@@ -479,6 +510,8 @@ const TARGETS: Array<[string, string]> = [
   ["Timeout.prototype", "(() => { const t = setTimeout(Math.max, 0); clearTimeout(t); return Object.getPrototypeOf(t); })()"],
   ["ArrayIterator.prototype", "Object.getPrototypeOf([][Symbol.iterator]())"],
   ["DateTime.prototype", "DateTime.prototype"],
+  // follow-up F2: a Node error-code class level, reached through a thrown error
+  ["ERR_INVALID_ARG_TYPE error prototype", "(() => { try { Buffer.from(5); } catch (e) { return Object.getPrototypeOf(e); } return null; })()"],
 ];
 
 // The key is unique and removed in the same synchronous step that added it, so
@@ -933,4 +966,128 @@ describe("node run frozen: node code behaves the same under the freeze", () => {
     );
     assert.equal(sandboxed.stdout, unsafe.stdout, "stdout must be byte-identical between the sandbox and --unsafe");
   });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Inspect output: `constructor` stays a data property (follow-up F1).
+
+// \`util.inspect\` takes a value's constructor name from the \`value\` of the
+// \`constructor\` descriptor on its prototype chain; an accessor there hides it,
+// so \`console.log(new Uint8Array([1, 2]))\` printed \`TypedArray(2) [Uint8Array]
+// [ 1, 2 ]\` instead of \`Uint8Array(2) [ 1, 2 ]\` (end review, measured
+// 2026-11-06). Operator decision F1: \`constructor\` stays a frozen data property
+// except on the few prototypes Node assigns it on, so every case below prints
+// what --unsafe prints. The Map, the class instance, the Luxon DateTime, the
+// plain object and the array already match today: they are the controls that
+// keep matching while the rest changes.
+//
+// The second row is a sweep (test review): ten named classes alone would pass a
+// freeze that kept the accessor on every other prototype. It mixes values that
+// differ today (the other typed arrays, the BigInt wrapper, the remaining Intl
+// formatters, Temporal) with ones that already match, whose prototype the
+// freeze also touches. Every first line was measured stable across two runs in
+// each mode (2026-11-06, Node 26.7.0), so none was dropped.
+//
+// Only each case's FIRST line is compared: the lines below it carry what differs
+// between any two runs by nature — the DOMException's stack frames, a timer's
+// \`_idleStart\` and async id.
+const INSPECT_CASES = [
+  "Uint8Array", "Symbol object", "DOMException", "crypto.subtle", "Intl.NumberFormat", "Intl.Locale", "WeakRef", "FinalizationRegistry",
+  "Timeout", "Immediate", "Map", "class instance", "Luxon DateTime", "plain object", "array",
+  "Set", "Promise", "ArrayBuffer", "DataView", "WeakMap", "WeakSet", "Float64Array", "BigInt64Array", "BigInt object", "Number object",
+  "TextEncoder", "TextDecoder", "URLSearchParams", "AbortController", "AbortSignal.abort()", "Event", "EventTarget",
+  "Intl.DateTimeFormat", "Intl.Collator", "performance.mark()", "Temporal", "Luxon Duration", "generator",
+];
+
+const INSPECT_BODY = `
+let domex;
+try { structuredClone(() => {}); } catch (e) { domex = e; }
+const tmo = setTimeout(Math.max, 600000);
+clearTimeout(tmo);
+const imm = setImmediate(Math.max);
+clearImmediate(imm);
+class K { a = 1; }
+const mark = performance.mark("sbx-inspect-mark");
+performance.clearMarks("sbx-inspect-mark");
+const values = {
+  "Uint8Array": new Uint8Array([1, 2]),
+  "Symbol object": Object(Symbol("q")),
+  "DOMException": domex,
+  "crypto.subtle": crypto.subtle,
+  "Intl.NumberFormat": new Intl.NumberFormat("en-US"),
+  "Intl.Locale": new Intl.Locale("de"),
+  "WeakRef": new WeakRef({}),
+  "FinalizationRegistry": new FinalizationRegistry(() => {}),
+  "Timeout": tmo,
+  "Immediate": imm,
+  "Map": new Map([["k", 1]]),
+  "class instance": new K(),
+  "Luxon DateTime": DateTime.fromISO("2024-01-01T00:00:00.000Z", { zone: "utc" }),
+  "plain object": { a: 1 },
+  "array": [1, 2],
+  "Set": new Set([1]),
+  "Promise": Promise.resolve(1),
+  "ArrayBuffer": new ArrayBuffer(2),
+  "DataView": new DataView(new ArrayBuffer(2)),
+  "WeakMap": new WeakMap(),
+  "WeakSet": new WeakSet(),
+  "Float64Array": new Float64Array([1.5]),
+  "BigInt64Array": new BigInt64Array([1n]),
+  "BigInt object": Object(1n),
+  "Number object": new Number(1),
+  "TextEncoder": new TextEncoder(),
+  "TextDecoder": new TextDecoder(),
+  "URLSearchParams": new URLSearchParams("a=1"),
+  "AbortController": new AbortController(),
+  "AbortSignal.abort()": AbortSignal.abort(),
+  "Event": new Event("x"),
+  "EventTarget": new EventTarget(),
+  "Intl.DateTimeFormat": new Intl.DateTimeFormat("en-US"),
+  "Intl.Collator": new Intl.Collator("en-US"),
+  "performance.mark()": mark,
+  // absent on a Node without Temporal: the string then prints the same in both modes
+  "Temporal": typeof Temporal === "object" ? Temporal.PlainDate.from("2024-01-01") : "no Temporal",
+  "Luxon Duration": Duration.fromObject({ hours: 1 }),
+  "generator": (function* () {})(),
+};
+for (const k of ${JSON.stringify(INSPECT_CASES)}) console.log("@" + k + "|", values[k]);
+return [{ json: { cases: Object.keys(values).length } }];
+`;
+
+/** Case label → the first line `console.log` printed for it. */
+function inspectLines(r: Res): Map<string, string> {
+  assert.equal(r.code, 0, r.stdout + r.stderr);
+  const out = new Map<string, string>();
+  for (const line of r.stdout.split("\n")) {
+    const m = /^@([^|]+)\| (.*)$/.exec(line);
+    if (m) out.set(m[1], m[2]);
+  }
+  return out;
+}
+
+describe("node run frozen: console.log of built-ins prints the same as --unsafe", () => {
+  let sandboxed: Map<string, string>;
+  let unsafe: Map<string, string>;
+  before(async () => {
+    const [a, b] = await both("inspect/inspect.js", INSPECT_BODY);
+    sandboxed = inspectLines(a);
+    unsafe = inspectLines(b);
+  });
+
+  it("every case printed in both modes", () => {
+    assert.deepEqual([...sandboxed.keys()], INSPECT_CASES, "sandboxed");
+    assert.deepEqual([...unsafe.keys()], INSPECT_CASES, "--unsafe");
+  });
+
+  it("--unsafe reference: Node's own inspect output, as the end review measured it", () => {
+    assert.equal(unsafe.get("Uint8Array"), "Uint8Array(2) [ 1, 2 ]");
+    assert.equal(unsafe.get("Symbol object"), "[Symbol: Symbol(q)]");
+    assert.equal(unsafe.get("crypto.subtle"), "SubtleCrypto {}");
+  });
+
+  for (const k of INSPECT_CASES) {
+    it(`${k}: the first printed line matches --unsafe`, () => {
+      assert.equal(sandboxed.get(k), unsafe.get(k), k);
+    });
+  }
 });
