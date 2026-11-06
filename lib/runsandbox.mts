@@ -348,14 +348,25 @@ async function collectShared(globals: Record<string, unknown>, before: Array<[st
     root(true, "performance.mark()", () => performance.mark(MARK));
     root(true, "performance.measure()", () => performance.measure(MEASURE));
     root(true, "AbortController", () => new AbortController());
-    root(true, "Buffer.alloc(-1) error", () => {
+    // Node builds one error class per internal code, and its prototype is
+    // reachable from any caught error of that code. These are the codes a body
+    // trips over in ordinary use; the rest cannot be enumerated (Plan 31 F3 —
+    // no privileged object inherits from them, so no escape through them is
+    // known).
+    const caught = (f: () => unknown) => (): unknown => {
       try {
-        Buffer.alloc(-1);
+        f();
       } catch (e) {
         return e;
       }
       return undefined;
-    });
+    };
+    root(true, "Buffer.alloc(-1) error", caught(() => Buffer.alloc(-1)));
+    root(true, "Buffer.from(5) error", caught(() => Buffer.from(5 as unknown as string)));
+    root(true, "unknown encoding error", caught(() => Buffer.alloc(1).toString("nope" as BufferEncoding)));
+    root(true, 'setTimeout("x") error', caught(() => setTimeout("x" as unknown as () => void)));
+    root(true, 'TextDecoder("nope") error', caught(() => new TextDecoder("nope")));
+    root(true, "URLSearchParams iterator", () => new URLSearchParams("a=1").entries());
     const tes = root(true, "TextEncoderStream", () => new TextEncoderStream()) as TextEncoderStream | undefined;
     if (tes !== undefined) {
       root(true, "ReadableStream", () => tes.readable);
@@ -363,6 +374,8 @@ async function collectShared(globals: Record<string, unknown>, before: Array<[st
       root(true, "ReadableStreamDefaultReader", () => tes.readable.getReader());
       root(true, "WritableStreamDefaultWriter", () => tes.writable.getWriter());
     }
+    // a second codec: the reader above already locked the first one's readable
+    root(true, "ReadableStream async iterator", () => (new TextEncoderStream().readable as unknown as { values(): unknown }).values());
     let key: unknown;
     try {
       key = await crypto.subtle.importKey("raw", new Uint8Array(16), "AES-GCM", false, ["encrypt"]);
@@ -374,6 +387,15 @@ async function collectShared(globals: Record<string, unknown>, before: Array<[st
     const DateTime = globals.DateTime as Record<string, any>;
     root(false, "Luxon IANAZone", () => DateTime.fromISO("2024-01-01T00:00:00Z").setZone("Europe/Berlin").zone);
     root(false, "Luxon Invalid", () => ReflectGetOwnPropertyDescriptor(DateTime.invalid("decanter-freeze"), "invalid")?.value);
+    root(false, "Luxon FixedOffsetZone", () => DateTime.fromISO("2024-01-01T00:00:00Z").setZone("UTC+2").zone);
+    // Locale builds these three per call and never stores them, so no walk
+    // reaches them: build one each. `loc` is read by descriptor, and these are
+    // method calls, not getters — the Luxon no-getter rule above still holds.
+    const dt = DateTime.fromISO("2024-01-01T00:00:00Z");
+    const loc = ReflectGetOwnPropertyDescriptor(dt, "loc")?.value as Record<string, (...a: unknown[]) => unknown> | undefined;
+    root(false, "Luxon PolyDateFormatter", () => loc?.dtFormatter(dt, {}));
+    root(false, "Luxon PolyNumberFormatter", () => loc?.numberFormatter({}));
+    root(false, "Luxon PolyRelFormatter", () => loc?.relFormatter({}));
 
     const seen = new Map<unknown, boolean>();
     for (const [queue, getters] of [[builtins, true], [injected, false]] as Array<[Entry[], boolean]>) {
@@ -441,9 +463,10 @@ const OVERRIDE_NAMES = ["constructor", "name", "message", "toString", "valueOf",
  * built-ins captured at module load: `globalThis` stays writable, so a
  * global looked up at call time would be whatever the body put there.
  */
-function enableOverrides(owner: object): void {
+function enableOverrides(owner: object, constructorAccessor: boolean): void {
   for (let i = 0; i < OVERRIDE_NAMES.length; i++) {
     const key = OVERRIDE_NAMES[i];
+    if (key === "constructor" && !constructorAccessor) continue;
     const d = ReflectGetOwnPropertyDescriptor(owner, key);
     if (d === undefined || !("value" in d) || d.writable !== true || d.configurable !== true) continue;
     const value: unknown = d.value;
@@ -465,12 +488,42 @@ function enableOverrides(owner: object): void {
   }
 }
 
+/**
+ * The prototypes whose `constructor` gets the override accessor (Plan 31 F1).
+ * Everywhere else `constructor` stays a frozen data property, because
+ * `util.inspect` takes the class name from that descriptor's `value`: with an
+ * accessor, `console.log(new Uint8Array([1, 2]))` printed
+ * `TypedArray(2) [Uint8Array] [ 1, 2 ]` (end review, 2026-11-06). The list is
+ * what assigns `constructor` on an instance after setup, measured on Node
+ * 26.7.0 (2026-11-06) against test/unit/run-sandbox{,-frozen}.test.mts: with
+ * these three every case passes, and dropping any one of them fails one:
+ * - `WritableStream.prototype`, `ReadableStream.prototype`: Node's webstreams
+ *   set `constructor` on the internal subclasses' prototypes when the module
+ *   loads lazily, so `new TextEncoderStream()` / `TextDecoderStream()` died.
+ * - `Object.prototype`: a body's plain `o.constructor = X` has to assign. Its
+ *   `constructor` is only what inspect falls back to for a chain that names
+ *   none of its own, so the accessor there leaves built-ins' output unchanged.
+ * Luxon and jmespath needed no entry: their cases in the same tests pass
+ * without one. A miss elsewhere shows as a TypeError naming `constructor` and
+ * "a frozen built-in", never as a silent wrong value.
+ */
+function constructorAccessorOwners(before: Array<[string, unknown]>): Set<object> {
+  const owners = new Set<object>([ObjectPrototype]);
+  for (const [k, v] of before) {
+    if (k !== "WritableStream" && k !== "ReadableStream") continue;
+    const proto = isObjectLike(v) ? ReflectGetOwnPropertyDescriptor(v, "prototype")?.value : undefined;
+    if (isObjectLike(proto)) owners.add(proto);
+  }
+  return owners;
+}
+
 /** Freeze the reachable set; the path of the first object that did not freeze, or `undefined`. */
 async function freezeShared(globals: Record<string, unknown>, before: Array<[string, unknown]>): Promise<string | undefined> {
   const set = await collectShared(globals, before);
+  const ctorOwners = constructorAccessorOwners(before);
   for (const [o, p] of set) {
     try {
-      enableOverrides(o);
+      enableOverrides(o, ctorOwners.has(o));
       ObjectFreeze(o);
     } catch {
       return p;
