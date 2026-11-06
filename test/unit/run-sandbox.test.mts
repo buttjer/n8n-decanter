@@ -323,11 +323,20 @@ describe("node run: nothing host-capable is reachable from the body", () => {
   });
 });
 
-// Error.prepareStackTrace + CallSite.getFunction()/getThis(): a sloppy frame
-// would hand the body a runner function or a worker-internal `this`. Every
-// function the body owns carries MARK in its source; `function unmarked` is a
-// deliberate positive control — the hook must see exactly that one and nothing
-// else, which proves the hook fires and the detection works.
+// A stack-trace hook + CallSite.getFunction()/getThis(): a sloppy frame would
+// hand the body a runner function or a worker-internal `this`. Every function
+// the body owns carries MARK in its source; `function unmarked` is a deliberate
+// positive control — the hook must see exactly that one and nothing else, which
+// proves the hook fires and the detection works.
+//
+// The hook is installed by REBINDING the global `Error` to a subclass that owns
+// `prepareStackTrace`, not by assigning `Error.prepareStackTrace`: the sandbox
+// freezes the built-in `Error`, so that assignment is a no-op there (Plan 31
+// Task 8; the refusal itself is run-sandbox-frozen.test.mts's). `globalThis`
+// stays writable, and Node formats every stack — whichever constructor made the
+// error — through `globalThis.Error.prepareStackTrace`, so the rebound hook is
+// the one a body still has, and the one the strict-frame guarantee must hold for.
+// The subclass keeps `new Error()` working in the body and the getters below.
 const STACK_PRELUDE = `
 /*SBX-OWN-MARK*/
 const own = new Set();
@@ -335,17 +344,21 @@ const bad = [];
 const isOwnFn = (fn) => own.has(fn) || Function.prototype.toString.call(fn).includes("SBX-OWN-MARK");
 const isOwnThis = (t) => t === undefined || t === globalThis || own.has(t);
 const note = (s) => { /*SBX-OWN-MARK*/ bad.push(s); if (s !== "fn:unmarked") console.log("LEAK " + s); else console.log("CONTROL " + s); };
-Error.prepareStackTrace = (err, frames) => {
+globalThis.Error = class HookedError extends Error {
   /*SBX-OWN-MARK*/
-  for (const f of frames) {
-    let fn; let th;
-    try { fn = f.getFunction(); } catch {}
-    try { th = f.getThis(); } catch {}
-    if (fn !== undefined && !isOwnFn(fn)) note("fn:" + (fn.name || "<anonymous>"));
-    if (!isOwnThis(th)) note("this:" + Object.prototype.toString.call(th));
+  static prepareStackTrace(err, frames) {
+    /*SBX-OWN-MARK*/
+    for (const f of frames) {
+      let fn; let th;
+      try { fn = f.getFunction(); } catch {}
+      try { th = f.getThis(); } catch {}
+      if (fn !== undefined && !isOwnFn(fn)) note("fn:" + (fn.name || "<anonymous>"));
+      if (!isOwnThis(th)) note("this:" + Object.prototype.toString.call(th));
+    }
+    return "stack";
   }
-  return "stack";
 };
+own.add(globalThis.Error);
 new Error().stack;
 await null;
 new Error().stack;
@@ -399,18 +412,34 @@ describe("node run: stack-trace hooks see only the body's own frames", () => {
   });
 });
 
-// The body patches what the boundary may call after it returns. Each patch
-// checks its `this` and arguments; a worker internal shows up as an object
-// with `postMessage` (parentPort, a MessagePort) or `dlopen`/`binding`
-// (process). A leak is observable two ways: the patch prints a `LEAK …` line
-// through the injected console AND throws, so a boundary that swallows the
-// console line still fails the exit-code / output assertion below.
+// The body tries to patch what the boundary may call after it returns. Since
+// Plan 31 Task 8 the sandbox freezes every shared built-in before the body
+// runs, so each attempt must be REFUSED (a TypeError from defineProperty) — a
+// refused patch can never receive a worker internal. Every attempt is caught
+// and counted, and its label lands in `applied` or `refused`; the floor on
+// `attempts` keeps a probe that silently skipped its targets from passing.
+//
+// What stays patchable is the per-run value the body returns: an own `toJSON`
+// and own `name`/`message` accessors on it (the override names an error path
+// reads and assigns). Those stay live probes: each checks its `this` and
+// arguments, and a worker internal shows up as an object with `postMessage`
+// (parentPort, a MessagePort) or `dlopen`/`binding` (process). A leak prints a
+// `LEAK …` line through the injected console AND throws, so a boundary that
+// swallows the console line still fails the exit-code / output assertion.
+//
+// A patch that DOES apply is restored at once, before any other code runs:
+// under --unsafe the body shares the CLI's own realm, where the attempts are
+// expected to apply and only prove the probe can tell applied from refused.
 const PATCH_BODY = `
 const patch = (function () {
   "use strict";
-  const R = Reflect.apply;
   const DP = Object.defineProperty;
+  const GOPD = Object.getOwnPropertyDescriptor;
+  const TE = TypeError;
   const log = console.log;
+  const applied = [];
+  const refused = [];
+  const other = [];
   let busy = false;
   const has = (o, k) => { try { return k in o; } catch { return false; } };
   const internal = (x) => x !== null && (typeof x === "object" || typeof x === "function") && (has(x, "postMessage") || has(x, "dlopen") || has(x, "binding"));
@@ -424,19 +453,23 @@ const patch = (function () {
     } finally { busy = false; }
     if (hit !== "") { log("LEAK " + hit); throw new Error("LEAK " + hit); }
   };
+  // define, and if that worked put the original back before anything can call it
+  const attempt = (obj, key, label, desc) => {
+    const orig = GOPD(obj, key);
+    try { DP(obj, key, desc); }
+    catch (e) { (e instanceof TE ? refused : other).push(label); return; }
+    if (orig === undefined) delete obj[key]; else DP(obj, key, orig);
+    applied.push(label);
+  };
   const method = (obj, key, label) => {
-    const orig = obj[key];
-    if (typeof orig !== "function") return;
-    DP(obj, key, { value: function (...args) { check(label, this, args); return R(orig, this, args); }, writable: true, configurable: true });
+    if (typeof obj[key] !== "function") return;
+    attempt(obj, key, label, { value: function () { return undefined; }, writable: true, configurable: true });
   };
   const accessor = (key) => {
-    DP(Object.prototype, key, {
-      get() { check("Object.prototype get " + key, this, []); return undefined; },
-      set(v) { check("Object.prototype set " + key, this, [v]); DP(this, key, { value: v, writable: true, enumerable: true, configurable: true }); },
-      configurable: true,
-    });
+    attempt(Object.prototype, key, "Object.prototype." + key, { get() { return undefined; }, set(_v) {}, configurable: true });
   };
-  return { check, method, accessor };
+  const report = () => ({ attempts: applied.length + refused.length + other.length, applied: applied.slice(), refused: refused.length, other: other.slice() });
+  return { check, method, accessor, report };
 })();
 // property names a message/result/error path plausibly reads or assigns;
 // descriptor fields (value/get/set/…), then/done/next and toJSON stay unpatched
@@ -454,21 +487,68 @@ for (const k of ["exec", "test", Symbol.replace, Symbol.split, Symbol.match]) pa
 for (const k of ["stringify", "parse"]) patch.method(JSON, k, "JSON." + k);
 for (const k of ["push", "map", "join", "forEach", "slice", "filter", "concat", "indexOf", "includes", "splice", "reduce", "some", "every", "find", Symbol.iterator]) patch.method(Array.prototype, k, "Array." + String(k));
 for (const k of ["then", "catch", "finally"]) patch.method(Promise.prototype, k, "Promise." + k);
-const out = { json: { ok: 1, list: [1, 2, 3].map((x) => x * 2), etp } };
-out.toJSON = function (key) { patch.check("toJSON", this, [key]); return { json: this.json }; };
+const out = { json: { ok: 1, list: [1, 2, 3].map((x) => x * 2), etp, patches: patch.report() } };
+// the per-run value stays patchable: a toJSON (its marker in the output proves
+// it ran) and non-enumerable own name/message accessors, read or assigned by
+// whatever post-body code treats the value as error-like
+out.toJSON = function (key) { patch.check("toJSON", this, [key]); return { json: { ...this.json, viaToJSON: true } }; };
+for (const k of ["name", "message"]) {
+  let held;
+  Object.defineProperty(out, k, {
+    get() { patch.check("own get " + k, this, []); return held; },
+    set(v) { patch.check("own set " + k, this, [v]); held = v; },
+    configurable: true,
+  });
+}
 return [out];
 `;
 
+interface PatchReport {
+  attempts: number;
+  applied: string[];
+  refused: number;
+  other: string[];
+}
+interface PatchResult {
+  ok: number;
+  list: number[];
+  etp: boolean;
+  patches: PatchReport;
+  viaToJSON: boolean;
+}
+
+/** Fewer attempts than the body's target list means the probe skipped targets. 26 accessors + 3 EventTarget + 3 Function + 16 String + 5 RegExp + 2 JSON + 15 Array + 3 Promise. */
+const PATCH_ATTEMPTS = 73;
+
 describe("node run: post-body code ignores built-ins the body patched", () => {
-  it("patched prototypes, JSON and a toJSON never receive a worker internal", async () => {
+  it("every built-in patch is refused, and the returned value's toJSON and own name/message never receive a worker internal", async () => {
     const file = put("patch/patch.js", PATCH_BODY);
     const r = await cli(["node", "run", file]);
     const all = r.stdout + r.stderr;
-    assert.doesNotMatch(all, /LEAK /, "a patched built-in received a worker internal");
-    assert.equal(r.code, 0, all);
-    // etp: EventTarget.prototype was reached and patched — false would mean the
+    assert.doesNotMatch(all, /LEAK /, "a patched value received a worker internal");
+    const res = probeResult<PatchResult>(r);
+    // etp: EventTarget.prototype was reached — false would mean the
     // EventTarget vector silently went unchecked
-    assert.deepEqual(printed(r), [{ json: { ok: 1, list: [2, 4, 6], etp: true } }]);
+    assert.deepEqual({ ok: res.ok, list: res.list, etp: res.etp, viaToJSON: res.viaToJSON }, { ok: 1, list: [2, 4, 6], etp: true, viaToJSON: true });
+    const p = res.patches;
+    assert.equal(p.attempts, PATCH_ATTEMPTS, `the body attempted ${p.attempts} patches`);
+    assert.deepEqual(p.other, [], "a patch attempt failed with something other than a TypeError");
+    assert.equal(p.applied.length, 0, `define was not refused for ${p.applied.length} of ${p.attempts} built-ins, e.g. ${p.applied.slice(0, 5).join(", ")}`);
+    assert.equal(p.refused, PATCH_ATTEMPTS);
+  });
+
+  it("--unsafe control: the same patches apply, so the count above can tell refused from applied", async () => {
+    const file = put("patch/patch-unsafe.js", PATCH_BODY);
+    const r = await cli(["node", "run", file, "--unsafe"]);
+    const all = r.stdout + r.stderr;
+    assert.doesNotMatch(all, /LEAK /, "a patched value received a CLI internal");
+    const res = probeResult<PatchResult>(r);
+    assert.equal(res.viaToJSON, true, "the returned value's toJSON must run");
+    const p = res.patches;
+    assert.equal(p.attempts, PATCH_ATTEMPTS);
+    assert.deepEqual(p.other, []);
+    assert.equal(p.applied.length, PATCH_ATTEMPTS, "nothing is frozen under --unsafe");
+    assert.equal(p.refused, 0);
   });
 });
 
