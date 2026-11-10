@@ -4,7 +4,32 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait a few days after an upstream release before proposing it: a broken
+    # or compromised release is usually yanked within that window, and the
+    # auto-merge workflow would otherwise land it without a human look.
+    cooldown:
+      default-days: 3
+    groups:
+      # One PR per week for every dev-only minor/patch bump instead of one per
+      # package. These are the PRs dependabot-auto-merge.yml lands on green CI.
+      # Runtime dependencies (esbuild, jmespath, luxon) ship inside the npm
+      # package, so they stay ungrouped and wait for a human.
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Standing decision (AGENTS.md, housekeeping step 5): no TypeScript 7
+      # until a stable release exposes the programmatic compiler API that
+      # scripts/typecheck.mts and the ts-plugin tests drive. Remove this entry
+      # when that changes.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 3
+    groups:
+      actions:
+        update-types: [minor, patch]

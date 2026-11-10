@@ -893,11 +893,17 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    sections left by sandboxed deletes (see "Sandboxed shells" above). **Never
    `git clean -fdx` from the repo root** — it nukes both worktree dirs.
 5. **Dependency PR triage** — review open Dependabot PRs; merge the safe ones
-   (green CI, minor/patch). For majors, record the decision rather than silently
-   merging. **Standing decision — do NOT adopt TypeScript 7 (native/Go) until a
+   (green CI, minor/patch). Dev-dependency and GitHub Actions minor/patch bumps
+   arrive grouped and merge themselves on green CI
+   (`.github/workflows/dependabot-auto-merge.yml`), so what is left here is
+   runtime dependencies, majors, and any auto-merge PR stuck on red CI. For
+   majors, record the decision rather than silently merging. **Standing
+   decision — do NOT adopt TypeScript 7 (native/Go) until a
    stable release exposes the programmatic compiler API**: `scripts/typecheck.mts`
    drives a custom `CompilerHost` and the ts-plugin tests need that JS API, so a
    green-looking bump would silently break node-file typechecking. TS 6.x is fine.
+   `.github/dependabot.yml` ignores the TypeScript major for this reason; lift
+   both together.
 6. **Issue triage** — walk the open GitHub issues (`gh issue list --state open`)
    and place each one: already covered by a plan (which?), reproduced against
    current `main` or not, needs a new `plans/draft/` note, or is small enough
