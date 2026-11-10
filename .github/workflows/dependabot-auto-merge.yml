@@ -1,0 +1,38 @@
+name: Dependabot auto-merge
+
+# Turns on GitHub auto-merge for low-risk Dependabot PRs. It never merges
+# anything itself: the protect-main ruleset still holds the merge until the
+# required checks (Node 22, Node 24) are green, so a bump that breaks lint,
+# typecheck or tests simply stays open for a human.
+#
+# Scope, decided 2026-11-10: minor/patch only, and only dev dependencies or
+# GitHub Actions. Runtime dependencies ship inside the npm package, and a
+# major can change behaviour CI does not cover, so both wait for a human.
+#
+# Side effect worth knowing: a merge enabled by GITHUB_TOKEN triggers no
+# further workflow runs, so CI-on-push and the docs deploy do not run for
+# these merges. Neither changes anything a dev-dependency bump touches; the
+# next human merge runs both again.
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+      - name: Enable auto-merge
+        if: >-
+          steps.meta.outputs.update-type != 'version-update:semver-major' &&
+          (steps.meta.outputs.dependency-type == 'direct:development' ||
+           steps.meta.outputs.package-ecosystem == 'github_actions')
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
