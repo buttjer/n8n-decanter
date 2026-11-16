@@ -19,36 +19,22 @@ don't let either drift from the code.
 - Prefer bullet points over paragraphs.
 - **Highlight** important things and decisions so they stand out.
 
-## Session labels: `[decanter] #NN short name`
+## Session names: `🍷 #NN short name`
 
-Every session gets a label so concurrent sessions stay legible:
+Every session gets a name so concurrent sessions stay legible. The machine's
+base rules say how to set one (`<emoji> title`, the topic's emoji first);
+this repository adds only the plan number:
 
-- Task maps to a numbered backlog Plan → **`[decanter] #NN <name>`** (e.g.
-  `[decanter] #92 upstream auth`).
-- Task has no plan → **`[decanter] <name>`** (e.g. `[decanter] plans reorg`).
+- Task maps to a numbered backlog Plan → **`🍷 #NN <name>`** (e.g.
+  `🍷 #92 upstream auth`).
+- Task has no plan → **`🍷 <name>`** (e.g. `🍷 plans reorg`).
   There is no separate word for it — the missing `#NN` already says there is
   no plan.
 
 `<name>` is **very short and precise — 2–3 words** describing the actual work.
-
-**The subject in brackets is always `decanter`, never the plan number.** The
-sidebar these sessions are read in groups them by that word, and gives each
-subject one icon and colour for good. A bare number gets no face — it names
-nothing, and would spend a subject on a single task — so the labelling tool
-refuses it outright. The plan number rides in the `<name>` instead, first
-thing, where it still lines up with the branch and worktree at a glance.
-
-**Set the label yourself, as soon as the subject is clear.** An agent no longer
-has to ask for one; on this machine's Claude Code setup that is:
-
-```sh
-node ~/.claude/bin/session-label.ts '[decanter] #92 upstream auth'
-```
-
-The tool won't overwrite a name the operator typed, and when it can't write one
-at all (no CloudCLI, or a session it hasn't discovered yet) it prints a
-`/rename` line ready to hand over — pass that on and nothing else. Re-run it
-when the work shifts enough that the name no longer fits.
+The plan number goes first, where it still lines up with the branch and
+worktree at a glance. Rename when the work shifts enough that the name no
+longer fits.
 
 ## What this is
 
@@ -261,7 +247,7 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   `<type>/plan-NN-<slug>` and the **worktree dir** `<type>-plan-NN-<slug>` inside
   your default worktree dir (e.g. branch `feat/plan-27-verb-grammar`, worktree
   `.claude/worktrees/feat-plan-27-verb-grammar`), and **label the session**
-  `[decanter] #27 <short name>` (see the "Session labels" rule above). This ties
+  `🍷 #27 <short name>` (see the "Session names" rule above). This ties
   the session, branch, worktree, and PR back to the plan at a glance. The plan
   number is often known
   only *after* work has started (planning surfaces it, or an existing plan gets
@@ -270,7 +256,7 @@ opencode config, …) as thin pointers to it, so every agent stays in sync.
   task" for the move-files recipe), and rename the session. Zero-padding is
   optional (`plan-7` and `plan-07` are both fine); when the work has no plan
   number of its own (a `draft/` note not yet graduated, or misc work), use the
-  ordinary `<type>/<slug>` form and a `[decanter] <short name>` session label.
+  ordinary `<type>/<slug>` form and a `🍷 <short name>` session name.
 - **Feature PRs are decoupled from releases — merging one is never a release.**
   A user-facing PR only appends its entry under `[Unreleased]` (per the
   Changelog rules); it does **not** bump `package.json`, tag, or cut a Release.
