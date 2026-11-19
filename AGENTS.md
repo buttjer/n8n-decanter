@@ -63,6 +63,18 @@ it is talking to, assume the newest behaviour. Plan 95 is the example: from
 n8n 2.40 a publish activates in the background, so the success line says so
 on every version, without a version check.
 
+## Pre-1.0: breaking changes are wanted
+
+While decanter is 0.x, **breaking changes are expected and wanted** to keep the
+project moving (operator, 2026-08-24). Do not propose config flags, dual-write
+modes or version negotiation whose only purpose is sparing older CLI versions:
+a shim preserves the problem the change exists to fix, and 0.x semver already
+signals the instability. State the break plainly in the changelog with a
+**Breaking:** prefix and pick the design that best solves the problem. Cheap,
+permanent read-side tolerance is not a shim and is still welcome: Plan 84 reads
+the legacy trailing `@ts-n8n` marker forever, but writes only the new line-1
+form and ships no escape hatch for the old one.
+
 ## Before you start: read your permission allowlist
 
 Every task/plan execution starts by **reading the harness's permission config
@@ -897,6 +909,11 @@ Start from an up-to-date `main` (`git switch main && git pull`), then:
    untriaged in the report rather than guessing. **Never close, label, or
    comment on an issue without the operator** — the issue tracker is a public
    conversation with the reporter, and a reply there speaks for the project.
+   The same holds for a PR: link its issue with `Refs #N`, never a closing
+   keyword (`Fixes`, `Closes`, `Resolves #N`), which closes the issue on merge.
+   On 2026-10-21 PR #341 carried "Fixes #328" and closed the reporter's issue
+   before any release carried the fix. A squash title ending in `(#N)` closes
+   nothing and stays fine.
 7. **CI & tests green** — main's required checks are green, `npm test` and
    `npm run typecheck` pass locally, and no open PR is red.
 8. **Drift audits** — `template/*.example` still match their repo counterparts;
